@@ -1,0 +1,144 @@
+A Hardware-oriented Approach for Efficient
+Active Inference Computation and Deployment
+Nikola Pižurica2,3, Nikola Milović3, Igor Jovančević2,3, Conor Heins1, and
+Miguel de Prado1
+1 VERSES, Los Angeles, California, 90016, USA
+2 Computer Science Center, University of Montenegro, 81000 Podgorica, Montenegro
+3 Fain Tech, 81000 Podgorica, Montenegro
+nikola.p@ucg.ac.me miguel.deprado@verses.ai
+Abstract. ActiveInference(AIF)offersarobustframeworkfordecision-
+making,yetitscomputationalandmemorydemandsposechallengesfor
+deployment, especially in resource-constrained environments. This work
+presentsamethodologythatfacilitatesAIF’sdeploymentbyintegrating
+pymdp’s flexibility and efficiency with a unified, sparse, computational
+graphtailoredforhardware-efficientexecution.Ourapproachreducesla-
+tency by over 2x and memory by up to 35%, advancing the deployment
+of efficient AIF agents for real-time and embedded applications.
+Keywords: Active Inference · Deployment · Efficiency · Edge.
+1 Introduction
+Active Inference (AIF) [7] is emerging as a powerful paradigm for building in-
+telligent, adaptive agents, grounded in Bayesian inference and variational free
+energy. Despite its powerful theoretical foundations and growing practical rele-
+vance, deploying AIF agents efficiently on hardware (HW) remains challenging,
+especially in real-time or resource-constrained systems on the edge [8].
+Pymdp [5] is a flexible Python-based library for prototyping Active Infer-
+enceagents,offeringcomputationalefficiencyviaitsJAX backend[2].However,
+Pymdp suffersfromhighlyunstructuredgraphs,posingseveralissuesforefficient
+HW acceleration. Other libraries such as cpp-AIF (C++) [6], ActiveInference.jl
+[4], and RxInfer.jl [1] (Julia) have emerged with a strong focus on performance.
+Nonetheless, cpp-AIF requires low-level programming expertise and lacks the
+Python’shigh-levelabstractions,makingrapidprototypingandintegrationmore
+difficult.Incontrast,RxInfer.jl isapowerful,general-purposeBayesianinference
+engine but places less particular emphasis on active inference with POMDPs.
+Moreover, while Julia-based tools are performant and composable, they face
+adoptionchallengesduetothelanguage’srelativenoveltyandsmallerusercom-
+munity. This work proposes to remodel pymdp to produce compact, structured
+computational graphs, enabling efficient HW mapping and GPU acceleration.
+2 Methodology
+Principle: AIFisaprincipledframeworkforadaptivebehaviorgroundedinthe
+Free Energy Principle. It enables agents to learn and act under uncertainty by
+minimizingvariationalfreeenergy—aproxyforsurprise—withinaprobabilis-
+tic generative model [3]. This model captures the joint distribution over hidden
+states and observations, allowing to infer the latent causes of sensory inputs.
+5202
+guA
+21
+]IA.sc[
+1v77131.8052:viXra
+2 N. Pižurica, N. Milović, I. Jovančević, C. Heins, and M. de Prado
+Problem formulation: In pymdp, each observation modality om∈{1,...,L }
+m
+and hidden-state factor sn ∈ {1,...,K } is linked by a Categorical–Dirichlet
+n
+pair.WithN totalhiddenstatefactorsandM totalobservationmodalities,stor-
+ingeveryconditionaltable{p(om|s1,s2,...,sN)}M requiresO (cid:0) ML KN (cid:1)
+m=1 max max
+memory and an equal order of floating-point operations for each computation
+that operates on these tensors. L refers to the maximum cardinality (or al-
+max
+phabet size) across observation modalities, and K to the cardinality across
+max
+state factors. With more than a handful of factors, this “fully enumerated” rep-
+resentation becomes prohibitive.
+Current implementation: Recent patches4 let users specify the pattern of
+conditional independencies in the generative model. Exploiting this structural
+sparsity (the absence of links) avoids allocating tensors that are not relevant for
+inference, but leaves two problems untouched:
+1. Functional sparsity: even inside the remaining tensors most parameter
+values are still zero or negligible.
+2. Unwieldycomputationalgraphs:eachmodalityandfactorlivesinasep-
+aratePythonlist,forcingirregular-shapednestedfor-loopsduringinference
+and policy rollouts that lead to notable overheads and poor GPU mapping.
+Proposed methodology. We remodel pymdp to generate a unified, sparse
+structure,whichleavesallprobabilisticcomputationsmathematicallyunchanged:
+1. Unified dense view. All factors are packed into shape-aligned, padded
+arrays,allowinginferenceroutinestobeexpressedasbroadcastedtensorop-
+erations—removing for-loops and enabling efficient vectorization, see Fig 1.
+2. Restoringsparsity.WethenreplacedensearrayswithJAXBCOO objects
+[2],capturingbothstructural sparsity (missinglinks)andfunctional sparsity
+while preserving the unified computational graph obtained in step 1.
+3 Results and Discussion
+We apply the proposed methodology to a core computation used by pymdp’s
+inference routines, the log-likelihood method, demonstrating the practical effec-
+tiveness of our ongoing work on a set of parametrized AIF agents (Table 1).
+Figure 2a compares the log-likelihood computation latency between the current
+implementations in pymdp and our proposed approach. Our unified implemen-
+tationnotablyoutperformsthebaselinethankstoitscompressedrepresentation
+and efficient HW mapping, scaling significantly better and achieving speed-ups
+of over 2x. Even though our approach requires specifying model parameters in
+a way that incurs a higher parameter count, we are able to exploit sparsity to
+a larger degree, leading to fewer effective parameters. This is demonstrated in
+figure 2b, where a reduction of up to 35% in system memory is accomplished.
+Overall, our methodology establishes a path for deployment in edge devices
+by uniting pymdp’s flexibility, JAX’s efficiency, and optimized computational
+graphsforHWacceleration.Weareactivelyextendingsupporttothefullpymdp
+API and envision deployment on ultra-low-power platforms.
+4 pymdp #127
+A Hardware-oriented Approach for Efficient Active Inference 3
+(a) Pymdp’s original computational graph (ONNX format) with (b) Our unified
+functional sparsity, forcing irregular-shaped nested for-loops. sparse graph.
+Fig.1: Our methodology generates structured computational graphs, enabling
+efficient mapping to GPU kernels and facilitating HW acceleration.
+(a) Latency comparison (ms). (b) System memory comparison (MB)
+Fig.2: Comparison of the log-likelihood computation when our methodology is
+applied on a 100-run benchmark with a warm-up sample on an Nvidia Jetson
+Orin AGX, a high-end embedded device, featuring a multi-core CPU and an
+embedded GPU for robotics and edge AI applications. We parametrize a set of
+generative models sizing from XXS to XL, whose parameters are in Table 1.
+#Moda- #Hidden #Params Sparsity
+Model Type
+lities States (M) (%)
+XXS Orig. (Ours) 16 60 0.003 (0.010) 61.0 (89.4)
+XS Orig. (Ours) 46 180 0.026 (0.279) 59.7 (96.2)
+S Orig. (Ours) 92 364 0.108 (2.285) 57.6 (98.0)
+M Orig. (Ours) 154 612 0.304 (10.81) 56.4 (98.7)
+L Orig. (Ours) 232 924 0.694 (37.13) 55.7 (99.2)
+XL Orig. (Ours) 326 1300 1.373 (103.3) 55.2 (99.4)
+Table 1: Models’ parameters associated with the log-likelihood computation.
+4 N. Pižurica, N. Milović, I. Jovančević, C. Heins, and M. de Prado
+Acknowledgments. This work was partly supported by Horizon Europe dAIEdge
+under grant No. 101120726.
+References
+1. Bagaev,D.,Podusenko,A.,DeVries,B.:Rxinfer:Ajuliapackageforreactivereal-
+time bayesian inference. Journal of Open Source Software 8(84), 5161 (2023)
+2. Bradbury, J., Frostig, R., Hawkins, P., Johnson, M.J., Leary, C., Maclaurin, D.,
+Necula, G., Paszke, A., VanderPlas, J., Wanderman-Milne, S., Zhang, Q.: JAX:
+composabletransformationsofPython+NumPyprograms(2018),http://github.
+com/jax-ml/jax
+3. Friston,K.,FitzGerald,T.,Rigoli,F.,Schwartenbeck,P.,Pezzulo,G.,etal.:Active
+inference and learning. Neuroscience & Biobehavioral Reviews 68, 862–879 (2016)
+4. Gregoretti,F.,Pezzulo,G.,Maisto,D.:cpp-aif:Amulti-corec++implementationof
+activeinferenceforpartiallyobservablemarkovdecisionprocesses.Neurocomputing
+568, 127065 (2024)
+5. Heins,C.,Millidge,B.,Demekas,D.,Klein,B.,Friston,K.,Couzin,I.,Tschantz,A.:
+pymdp:Apythonlibraryforactiveinferenceindiscretestatespaces.arXivpreprint
+arXiv:2201.03904 (2022)
+6. Nehrer, S.W., Ehrenreich Laursen, J., Heins, C., Friston, K., Mathys, C.,
+Thestrup Waade, P.: Introducing activeinference. jl: A julia library for simulation
+and parameter estimation with active inference models. Entropy 27(1), 62 (2025)
+7. Parr, T., Pezzulo, G., Friston, K.J.: Active Inference: The Free En-
+ergy Principle in Mind, Brain, and Behavior. The MIT Press (03 2022).
+https://doi.org/10.7551/mitpress/12441.001.0001, https://doi.org/10.
+7551/mitpress/12441.001.0001
+8. Serb,A.,Manino,E.,Messaris,I.,Tran-Thanh,L.,Prodromakis,T.:Hardware-level
+bayesian inference (2017)

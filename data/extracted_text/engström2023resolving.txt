@@ -1,0 +1,1567 @@
+Resolving uncertainty on the fly: Modeling adaptive driving
+behavior as active inference
+Johan Engstro¨m1*, Ran Wei2, Anthony D. McDonald3, Alfredo Garcia2, Matt O’Kelly1,
+Leif Johnson1
+1 Waymo LLC, Mountain View, CA, USA
+2 Department of Industrial and Systems Engineering, Texas A&M, College Station, TX,
+USA
+3 Department of Industrial and Systems Engineering, University of Wisconsin-Madison,
+Madison, WI, USA
+* jengstrom@waymo.com
+Abstract
+Understanding adaptive human driving behavior, in particular how drivers manage
+uncertainty, is of key importance for developing simulated human driver models that
+can be used in the evaluation and development of autonomous vehicles. However,
+existing traffic psychology models of adaptive driving behavior either lack
+computational rigor or only address specific scenarios and/or behavioral phenomena.
+While models developed in the fields of machine learning and robotics can effectively
+learn adaptive driving behavior from data, due to their black box nature, they offer
+little or no explanation of the mechanisms underlying the adaptive behavior. Thus, a
+generalizable, interpretable, computational model of adaptive human driving behavior is
+still lacking. This paper proposes such a model based on active inference, a behavioral
+modeling framework originating in computational neuroscience. The model offers a
+principled solution to how humans trade progress against caution through policy
+selection based on the single mandate to minimize expected free energy. This casts
+goal-seeking and information-seeking (uncertainty-resolving) behavior under a single
+objective function, allowing the model to seamlessly resolve uncertainty as a means to
+obtain its goals. We apply the model in two apparently disparate driving scenarios that
+require managing uncertainty, (1) driving past an occluding object and (2) visual time
+sharing between driving and a secondary task, and show how human-like adaptive
+driving behavior emerges from the single principle of expected free energy minimization.
+Introduction
+A fundamental aspect of motor vehicle driving, and locomotion in general, is to find an
+adequate balance between progress and caution. The main purpose of driving is
+typically to get to the destination as efficiently as possible. However, one also needs to
+make sure to get there without crashing and avoid other undesired consequences (e.g.,
+getting ticketed). A key challenge here is to manage the uncertainty inherent in most
+traffic situations. For example, will the vehicle in front brake and, if so, how hard? Is
+there a risk of a pedestrian suddenly appearing behind the stopped bus ahead? Being
+too pessimistic about how a traffic situation may play out in uncertain situations could
+lead to overcautious behavior or even a complete lack of progress. Moreover,
+November 14, 2023 1/33
+3202
+voN
+01
+]OR.sc[
+1v71460.1132:viXra
+non-human-like, overcautious, behavior may be surprising to other road users with
+potential negative safety consequences [1]. Yet, being too assertive in an uncertain
+situation may incur a significant risk of collision.
+Human drivers are most often able to manage this tradeoff, even in highly complex
+and uncertain traffic situations. Thus, understanding how human drivers manage
+uncertainty is critical for developing realistic and explainable computational models of
+their behavior. Such models have a range of applications such as explaining crash
+causation [2], representing other road users in traffic simulation [3–6], establishing
+behavior benchmarks for autonomous vehicles [7] or as part of the AV software itself [8].
+Contemporary generative AI models can learn complex driving behaviors from large
+quantities of data (e.g., [4,9]). There has also been extensive work in machine learning
+and robotics on developing models able to manage uncertainty through concepts like
+artificial curiosity and intrinsic motivation (e.g., [10–12]). However, due to the
+black-box nature of these models, they do not lend themselves to explaining the
+cognitive mechanisms underlying human adaptive behavior, which is also typically not
+their purpose.
+There is a long-standing tradition in traffic psychology in modeling adaptive road
+user behavior, such as the regulation of speed and headway. Models in this tradition,
+often referred to as motivational models, include the risk homeostasis theory [13], the
+zero-risk theory [14,15], and the task capability interface (TCI) model [16] (see [17] for
+a review). In these models, excitatory forces such as the motivation to make progress
+towards the destination are balanced against inhibitory forces where uncertainty is
+typically a key component. However, these traditional motivational driving models are
+typically conceptual in nature, lacking mathematical rigor.
+One example of an early computational model of adaptive driving behavior, of
+particular relevance for this paper, is the pioneering work by Senders et al. [18] based on
+the visual occlusion paradigm. In visual occlusion, subjects wear a helmet featuring a
+visor that, while driving, intermittently occludes the subject’s view. The occlusion and
+viewing times may be fixed, or the subject could be given control over the occlusion time
+by means of a switch that opens the visor for fixed viewing time period (typically 0.25-1
+s). Senders et al. found that, when occlusion times were controlled at different levels,
+subjects adapted their speed such that shorter occlusion times resulted in higher speed
+and vice versa. Conversely, when subjects had voluntary control over the occlusion time,
+and speed was controlled, higher speeds led to shorter occlusion times and vice versa.
+To explain these results, the authors developed an information theoretic model based on
+the idea that uncertainty builds up during the occlusion intervals and that the observed
+adaptive behaviors (speed and occlusion interval adjustments) reflects the attempt of
+the driver to control this uncertainty. Senders et al. further proposed two main sources
+of uncertainty in driving that need to be controlled: (1) the uncertainty about the traffic
+situation ahead due to loss of relevant visual information and (2) uncertainty about the
+vehicle’s position on the road due to random disturbances in vehicle lateral control.
+These early occlusion results have since been replicated for other types of driving
+scenarios. For example, in a recent study, Pekkanen et al. [19] found reduced voluntary
+occlusion times with reduced headway. Pekkanen et al. [20] developed a computational
+model of drivers’ visual sampling where uncertainty about the consequences of action
+(acceleration), resulting from uncertainty in state estimation, is used to directly control
+attention (operationalized as a voluntary opening of the occlusion visor).
+Victor et al. [21] analyzed drivers’ visual time sharing between driving and a
+secondary task and found, in line with the occlusion studies, that the visual demand of
+driving during curve negotiation led to reduced off-road glance durations. Johnson et
+al. [22], based on earlier computational modeling in non-driving domains [23], proposed
+a model of visual time sharing during car following based on a tradeoff between task
+November 14, 2023 2/33
+priority and uncertainty.
+While most computational models of human adaptive driving behavior have focused
+on visual sampling, models with a more general behavioral scope are rare. One notable
+exception is the model by Kolekar et al. [24], based on zero-risk theory and the field of
+safe travel concept from Gibson and Crooks [25]. The model represents uncertainty
+about potential collisions in terms of a dynamical risk field, and was demonstrated to
+account for a wide range of empirical adaptive driving behavior results reported in the
+literature. However, the current version of the model is limited to static scenarios with
+no other road users present.
+A common denominator in most of these existing models is that adaptive driving
+behavior is, on the one hand, driven by a motivation to achieve goals and, on the other,
+by the need to control uncertainty. The computational models reviewed above represent
+specific aspects of this phenomenon (e.g., visual sampling and time sharing). However, a
+generic computational model of adaptive driving behavior, applicable across all types of
+scenarios and behaviors, is still lacking.
+In this paper, we propose such a model based on active inference, a behavior
+modeling framework originating from computational neuroscience [26,27]. The
+application of active inference and the closely related predictive processing
+framework [28–30] in the automotive domain were explored in Engstro¨m et al. [31], but
+only on a conceptual level. In a series of recent papers [32–34], we have demonstrated
+how computational driver models based on active inference can be implemented and
+learned from data, thus offering a potential “middle ground” between traditional “black
+box” machine learning models and mechanistic human behavior models. In this paper,
+we focus specifically on how active inference can provide a conceptual and
+computational basis for modeling human adaptive driving behavior and, in particular,
+how a (Bayes) optimal balance between goal-directed action and the resolution of
+uncertainty emerges “automatically” from the minimization of expected free energy.
+In active inference, the agent estimates the free energy associated with alternative
+future policies (defined as sequences of actions) within a defined planning time horizon
+and, at each time step, selects the action associated with the policy that has the lowest
+expected free energy (EFE). Expected free energy can be formulated in several different
+ways (see [26,35,36]. For present purposes we choose the formulation in Eq 1 which
+defines the expected free energy as the (negative) sum of a pragmatic value and an
+epistemic value, where the pragmatic value relates to goal seeking behavior and
+epistemic value to information-seeking (uncertainty-resolving) behavior, mapping
+conceptually to progress versus caution or exploitation vs. exploration.
+EFE =G(π)=−E [log(P(o)]−E D [Q(s|o,π)||Q(s|π)] (1)
+Q(o|π) Q(s,o|π) KL
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+Pragmaticvalue Epistemicvalue
+In (1), π =a is a policy, E denotes expectations, s=s and o=o are
+1:H 1:H 1:H
+sequences of future states and observations up to a lookahead time horizon H. Q(s|π)
+and Q(o,s|π) are the ego’s belief about future state and state-observation sequences,
+respectively. The pragmatic and epistemic value terms in 1 are further unpacked below.
+In the formulation of expected free energy in 1, the pragmatic value is defined based
+on a prior probability distribution over observations that is biased such that
+observations preferred by the agent have the highest probability and, hence, the highest
+pragmatic value. Thus, selecting policies that generate preferred observations will
+maximize the pragmatic value and contribute to minimizing the expected free energy.
+This hence implements a mechanism that generates goal-directed (or aversive) behavior,
+in a similar way as optimizing against a reward or cost function in optimal control or
+reinforcement learning [37].
+November 14, 2023 3/33
+The epistemic value represents the value of obtaining new information that may help
+to resolve uncertainty in the belief about future states. This may, in turn, enable (“open
+up”) new policies that maximize pragmatic value and thus realize the agent’s preferred
+observations. For example, when planning to overtake a car ahead, there is typically
+uncertainty about whether this will lead to a conflict with a potential vehicle
+approaching from behind in the adjacent lane. The uncertainty can be resolved by
+checking the rearview mirror to verify that the lane is clear. Epistemic value scores such
+information-seeking actions contributing to the overall expected free energy. In 1, the
+epistemic value of a policy is defined as the expected (Kullback-Leibler, KL) divergence
+(D ) between the agent’s prior and posterior beliefs about external states associated
+KL
+with that policy, corresponding to (expected) Bayesian Surprise [1,38]. Intuitively, this
+means that epistemic value is maximized for observations that lead to a maximum
+change in beliefs. Epistemic value can also be expressed as in (2), as the difference
+between the posterior predictive entropy and the expected ambiguity ( [36], p 135):
+E D [Q(s|o,π)||Q(s|π)]=H[Q(o|π)]−E H[P(o|s)] (2)
+Q(o|π) KL Q(s|π)
+where H denotes Shannon entropy.
+In (2), the posterior predictive entropy (first term; H[Q(o|π)]) represents the
+uncertainty about future observations associated with a given policy. That is, a policy
+with a high posterior predictive entropy can lead to a variety of different observations
+and thus a strong potential to gain new information. The expected ambiguity (second
+term; E H[P(o|s)]) represents the expected diversity of observations for a given
+Q(s|π)
+state. Intuitively, this means that the epistemic value of a policy is discounted if the
+state to be visited does not generate reliable observations (e.g., due to darkness or
+otherwise reduced visibility). Thus, epistemic value is maximized when the expected
+ambiguity is zero, that is, when the observation generated by the policy is expected to
+completely resolve the uncertainty.
+Thus, in uncertain situations, minimizing expected free energy “automatically”
+promotes policies with high epistemic value, generating observations expected to resolve
+the uncertainty. As we will see below, a single action (e.g., moving forward) often
+carries both pragmatic (moving closer to the goal or away from danger) and epistemic
+value (getting a better view to resolve uncertainty). This leads to a key distinguishing
+feature of active inference: Goal directed (pragmatic) and information-seeking
+(epistemic) value are defined in a common currency and an optimal balance between
+them (given the agent’s beliefs and preferences) can be established by minimizing the
+expected free energy.
+The key objective of this paper is to demonstrate how active inference can provide a
+novel conceptual and computational basis for modeling adaptive driving behavior. We
+explore how uncertainty can be resolved “on the fly” as an integral part of the general
+planning objective to minimize expected free energy. Specifically, we demonstrate how a
+model based on the single mandate to minimize expected free energy can account for
+two apparently disparate adaptive driving behaviors: (1) safely passing an occluding
+object and (2) visual time-sharing behavior, for example when texting on a cell phone.
+Methods
+Overview
+A conceptual overview of our model is given in Figure 1. Control actions (e.g.
+acceleration and steering inputs) are generated as the result of a planning process where
+policies (π), constituting sequences of future actions up to the planning horizon, are
+selected based on identifying the policy with the minimum expected free energy
+November 14, 2023 4/33
+(minG(π)). At each time step, the first action of the selected policy is executed. The
+action planning is based on the driver’s beliefs over hidden states (Q(s)) and preferences
+defined as priors over observations P(o). The beliefs are continuously updated into
+posterior beliefs (Q(s|o)) based on new observations. The precision (inverse variance) of
+the beliefs represent the certainty of these beliefs over states. The preferences P(o)
+define the observations that the driver is seeking to achieve through action (e.g.,
+maintain a speed near the speed limit) and their precision represent the “strength”, or
+priority, of the preference (i.e., how motivated the driver is to keep the speed near the
+speed limit).
+Fig 1. Schematic overview of the model. See the text for explanation.
+In action planning, a set of alternative counterfactual policies are sampled and rolled
+out up to a time horizon representing the planning window. In all simulations reported
+here, a planning horizon of 4 s is used. For each candidate policy, the beliefs over states
+are propagated forward in time from the current belief based on a state transition
+model and the propagated beliefs are used to calculate the counterfactual pragmatic
+and epistemic value at each future time step, τ, in the planning window. The prior
+preferences are used to score the pragmatic value based on the counterfactual
+observations generated, where the pragmatic value at a given future time step, τ, is
+computed based on the probability of the counterfactual observation made at that time
+step under the preference distribution. Similarly, epistemic value is computed based on
+counterfactual beliefs about future states and observations. The overall expected free
+energy of each policy is then scored based on (1) and (2) (as the negative sum of the
+epistemic and pragmatic values over the planning horizon), and the action at the next
+time step is sampled from a distribution of the first actions in the highest scoring
+policies. These general principles can be implemented in many different ways, where the
+current implementation is based on a particle filter, as described in more detail below.
+The driver’s generative model is represented as a discrete-time Partially Observable
+Markov Decision Process (POMDP) which describes how hidden environment states
+(e.g., pose of the ego vehicle) evolve over time depending on the ego vehicle driver’s
+chosen policies and resulting control actions, and generate signals observed by the
+driver, for example the new pose of the ego vehicle or the presence of a pedestrian.
+Importantly, some of these state variables are not always directly observable to the
+driver. For example, the driver cannot observe a pedestrian when they are occluded by
+November 14, 2023 5/33
+an object and cannot observe the road ahead while looking away from the road.
+The model uses a mixture of discrete and continuous state, observation and action
+variables with highly structured dependencies, which makes exact computation of the
+belief update and action selection intractable. We thus perform approximate belief
+update and policy/action selection using a particle filter and a particle planner. At a
+high level, this means that the model represents uncertainty about the hidden states
+using an ensemble of hypothetical states, where each ensemble member represents a
+different possibility. The model then selects the best actions by simulating future
+state-action-observation trajectories under different policies using a forward dynamics
+model and scores each policy for expected free energy using (1) and (2). Such a
+simulation-based inference method is known to approach the optimal solution with a
+large number of particles [39].
+Implementation
+In this section, we first describe the perception and action process of active inference
+agents. We then describe our particle-based implementation.
+Active Inference and Expected Free Energy
+We use the standard notation for POMDP [40], where S ={s} denotes a set of states,
+A={a} denotes a set of actions, O ={o} denotes a set of observations. The active
+inference agent has a generative model of the environment which consists of a state
+transition distribution P(s′|s,a) and an observation distribution P(o|s).
+Upon receiving an observation o , the agent updates its belief, defined as a
+t
+probability distribution over the hidden environment state Q(s ), by minimizing the
+t
+variational free energy of its generative model (see [36]). The optimal belief distribution
+is known to have the following form [41]:
+Q(s )∝exp (cid:0) logP(o |s )+E [logP(s |s ,a )] (cid:1) (3)
+t t t Q(st−1) t t−1 t−1
+Starting from the updated belief, the agent constructs predictions over future
+state-observation trajectories (s ,o ) for a lookahead horizon of H time
+t+1:t+H t+1:t+H
+steps given a policy π =a . These predictions, defined over the lookahead time steps
+1:H
+τ ∈{t+1,...,t+H} in the form of probability distributions, can be constructed
+sequentially (i.e., via rollout) as follow:
+Q(o ,s |π)=E [P(o |s )P(s |s ,a )] (4)
+τ τ Q(sτ−1) τ τ τ τ−1 τ−1
+The quality of each policy is scored by the expected free energy function defined in
+(1) as:
+H
+(cid:88)
+G(π)= −E [log(P(o )]−E D [Q(s |o ,π)||Q(s |π)]
+Q(oτ|π) τ Q(sτ,oτ|π) KL τ τ τ
+τ=1 (cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+Pragmaticvalue Epistemicvalue
+Particle-Based Algorithm
+We use a particle-based approach to belief representation, inference, evaluation, and
+planning. We describe these components below and summarize the entire process as
+pseudocode in Algorithm 1.
+Using a particle filter, we represent the ego’s belief b over all state variables using a
+t
+set of N particles {δ ,...,δ },δ ∈R|S|, where each particle consists of a vector
+1 N n
+(cid:80)
+corresponding to a realization of the state variables and a weight w ≥0, w =1
+n n n
+November 14, 2023 6/33
+Algorithm 1 Simulation of particle-based active inference agent
+Require: Environment model P(o|h,a), agent transition model P(s′|s,a), agent obser-
+vation model P(o|s), agent preference model P(o), number of belief particles N,
+numberofplanningparticlesN˜,numberofplanstoevaluateM,percentoftopplans
+to retain x, number of planning iterations K.
+1: Initialize environment observation o 0
+2: Initialize belief particles b 0 =(δ 0,1:N ,w 0,1:N )
+3: for t=0:T do
+4: # Agent planning
+5: Initialize planning particles δ˜ 1:N˜ using multinomial resampling from b t
+6: for k =1:K do
+7: Sample M action sequences {a m,1:H }M m=1 from distribution P(a 1:H )
+8: for m=1:M do
+9: # Evaluate plan
+10: Sample a sequence of state and observation particles (δ˜ 1:N˜,1:H ,o˜ 1:N˜,1:H )
+using forward rollouts of P(s′|s,a) and P(o|s)
+11: Compute the EFE of (δ˜ 1:N˜,1:H ,o˜ 1:N˜,1:H )
+12: Refit distribution P(a 1:H ) to the top x percent of the M action sequences
+by EFE
+13: end for
+14: end for
+15: # Choose action and update environment
+16: Choose a t as the mean of P(a 0 )
+17: Sample observation o t+1 ∼P(·|h t ,a t )
+18: # Update belief using particle filter
+19: Propagate belief particles forward: δ t+1,n ∼P(·|δ t,n ,a t )
+20: Update weights: w t+1,n ∝w t,n P(o t+1 |δ t+1,n )
+21: Apply systematic resampling on particles and weights if N/(1+ (cid:80) w2)≤N/2
+n n
+22: end for
+representing the likeliness of the realization under the ego’s belief distribution. Under
+this representation, the ego belief has high certainty (high precision) if all particles with
+high weights are similar, e.g., all particles correspond to the pedestrian being present,
+and low certainty if all particles have even weights and are substantially different, e.g.,
+the element representing the pedestrian’s position in each particle is evenly distributed
+on the road map.
+Upon executing an action and receiving a new observation o , we update the set of
+t+1
+particles, including both the state vectors and weights, using a Sequential Importance
+Resampling (SIR) filter [39]. The SIR filter first samples a next state conditioned on the
+current state and action and updates the weights using the following equation:
+w ∝w P(o |δ ) (5)
+t+1,n t,n t+1 t+1,n
+where δ ∼P(·|δ ,a).
+t+1,n t,n
+Then, it resamples the current set of particles if the effective sample size:
+N ≈N/(1+ (cid:80) w2) is less than N/2. To address the mode collapse problem common
+eff
+in particle filters, we use a large number of samples and apply systematic resampling so
+that the sampled particle weights are equidistant. In this way, low weight particles are
+still represented.
+November 14, 2023 7/33
+EFE computation
+Evaluating the EFE of an action sequence under a particular belief requires propagating
+the belief particles to compute the state and observation distributions at each
+counterfactual future time step and using the propagated particles to evaluate the
+pragmatic and epistemic values.
+The particles can be easily propagated by recursively sampling the next state from
+the transition distribution conditioned on the previous sampled state and policy action
+and then sampling the next observation from the observation distribution conditioned
+on the sampled next state, i.e., (4). To evaluate the pragmatic value (the first term 1 in
+(1)), we compute the average log likelihood of each observation sample under the
+preference distribution.
+To compute the epistemic value (term 2 in (1)), we use the decomposition of the
+expected information gain in (2), which is the difference between the posterior
+predictive entropy and the expected ambiguity:
+E D [Q(s|o,π)||Q(s|π)]=H[Q(o|π)]−E H[P(o|s)]
+Q(o|π) KL Q(s|π)
+We approximate the intractable posterior predictive entropy using a Kernel Density
+Estimator (similar to [42]).
+Model predictive control
+Given each updated belief, we compute the approximately optimal EFE-minimizing
+action using the Cross Entropy Method (CEM) for model predictive control [43]. CEM
+iteratively refines a distribution over action sequences, i.e., policies, by sampling a batch
+of action sequences, simulating their trajectories forward, selecting the top x percent
+scoring trajectories, and refitting the action distribution to the selected action sequences.
+This process can be understood as sampling from a distribution of action sequences in
+proportion to their EFE values similar to relative entropy policy search [44].
+Our application of CEM has two major differences from its normal use in optimal
+control and trajectory optimization. First, the optimal decision for an active inference
+agent is based on its belief as opposed to a known state. Thus, we adapt the default
+CEM by treating a set of belief particles as the state. Second, we use a mixture of
+discrete (gaze direction) and continuous actions (vehicle control) in the visual time
+sharing scenario, whereas the default CEM typically only optimizes continuous actions.
+We solve this by separately fitting the discrete and continuous variables once the best
+trajectory samples are selected in each iteration.
+Results
+This section describes the simulation results from applying our model to two different
+driving scenarios that require the control of uncertainty: (1) passing an occluding object
+and (2) visually time sharing gaze between driving and a secondary task. In the first
+scenario, the uncertainty concerns the potential presence of a pedestrian hidden behind
+the object who may step into the ego vehicle’s path. In the second scenario, uncertainty
+about the lateral position of the vehicle in the lane builds up during glances away from
+the road due to disturbances such as wind gusts and an uneven road surface [18].
+Scenario 1: Passing an occluding object
+In this scenario, the ego vehicle approaches a large occluding object (e.g., a parked bus)
+and there is uncertainty about whether a pedestrian, potentially hidden behind the
+November 14, 2023 8/33
+object, will encroach into the ego vehicle’s path (see Figure 2). We make the simplifying
+assumptions that a single pedestrian is the only possible obstacle that could be hidden
+behind the object and that, if a pedestrian is present, it will always step out in the road
+and cause a potential conflict with the ego vehicle. We further assume that the
+pedestrian can only be present at a given point along the horizontal (x) dimension so
+that it, if present, always becomes visible when it gets into the line of sight of the ego
+vehicle driver (see Figure 2). These assumptions simplify the current model
+implementation but they do not impose any fundamental limitations on the general
+modelling framework.
+We further assume that, as a default, the ego vehicle driver prefers to keep the speed
+at the speed limit to maximize progress while respecting the rules of the road. However,
+if the driver believes that there is a risk for a hidden pedestrian encroaching into their
+path, they need to adapt their speed to be able to stop well ahead of the pedestrian (to
+meet the preference of conflict avoidance) without harsh braking (to meet their
+preferences for deceleration comfort). When the ego vehicle reaches the line of sight, the
+driver’s uncertainty about the presence of the pedestrian is resolved and, if no
+pedestrian is present, they can speed up again to the preferred speed. Furthermore, as
+shown in Figure 2 (bottom), by moving left in its lane the ego driver can reach the line
+of sight earlier, thus resolving the uncertainty that hinders progress and enabling a
+potentially faster trajectory past the occluding object. The general goal of the current
+simulation is to demonstrate how these adaptive driving behaviors emerge solely on the
+basis of minimizing expected free energy.
+Model specification
+The state, observation and action variables in the model are listed in Table 1. The ego
+vehicle kinematic states are denoted as sego =[x,v ,a ,y,v ,a ] and are assumed to
+x x y y
+follow linear dynamics. The pedestrian’s position sped =[x,y] is determined by a
+context variable, I, denoting whether the pedestrian is present or not present. If the
+pedestrian is present, its x and y positions will be set next to the occluding object.
+Otherwise, its x and y position will be set to a null value far away from the ego vehicle
+(e.g., -1000). C represents whether there is a conflict between the ego and the
+pedestrian or if the vehicle exits the lane, in which case C is set to 1, and 0 otherwise.
+A conflict is defined as the pedestrian being present and the longitudinal distance
+between the ego and the pedestrian is less than a safe distance (2 m).
+As described above, the main source of uncertainty in this scenario is that the
+presence or absence of the pedestrian cannot be determined before the vehicle reaches
+the line of sight. Geometrically, as shown in Figure 2, the pedestrian is occluded if it is
+behind (i.e, with smaller x coordinate) the line of sight connecting the ego vehicle and
+the upper right tip of the occluding object (since, as described below, we are modeling
+the ego vehicle as a point mass which is also the reference point from which the
+observation is made). For the observation space, we introduce a variable oI to represent
+the context observed by the ego. oI is set to “observed” when the ego vehicle enters the
+line of sight, otherwise, it is set to “not observed”. The rest of the observation variables
+share the same semantics and dimensionality as the underlying state variables, except
+when the pedestrian is occluded. In this case, the observations of the pedestrian’s
+position, oped, are set to null. Hence, as long as there is no occlusion, we assume no
+uncertainty over the observations and that, hence, the ego can observe both its own and
+the pedestrian’s kinematics states exactly.
+As described above, the model’s preferences are defined as priors over observations.
+The preferences of the model used in Scenario 1 and their default values are given in
+Table 2. All simulations were run with a 200 ms time step (i.e, an update frequency of 5
+Hz). Due to the stochasticity of the model, each simulation run yields a unique trace.
+November 14, 2023 9/33
+Fig 2. Conceptual illustration of Scenario 1. Top: The ego vehicle driver ideally wants
+to keep speed as close as possible to the speed limit. However, until reaching the line of
+sight, the driver is uncertain whether a pedestrian is hidden behind the double-parked
+vehicle and thus needs to adapt their speed to make sure they can stop short of the
+location where a pedestrian may appear. Bottom: By moving left the ego driver could
+reach the line of sight earlier, thus resolving the uncertainty sooner and potentially
+enabling more efficient passing of the occluding object.
+However, for clarity, we only plot randomly selected single simulation traces.
+Simulations
+This section presents the results of different permutations of the occlusion scenario with
+the purpose to illustrate the key aspects of our model described above. We begin with
+the case where the ego driver can only drive straight (i.e., not move laterally, e.g., due
+to a narrow lane) and then extend this to allow for lateral movement that enables the
+November 14, 2023 10/33
+Table 1. State, observation and action variables in the POMDP for Scenario 1.
+Variablename Symbol Values Type
+States
+Pedestriancontext I notpresent(0),present(1) Discrete
+Isconflictorlaneexit C yes(1),no(0) Discrete
+Pedestrianposition sped xyposition Continuous
+Egokinematics sego xyposition,xyspeed,xyacceleration Continuous
+Observations
+Pedestriancontextobservation oI Notobserved(1),observed(2) Discrete
+Conflictobservation oC yes(1),no(0) Discrete
+Pedestrianpositionobservation oped xyposition,null Continuous
+Egokinematicsobservation oego xyposition,xyspeed,xyacceleration Continuous
+Action
+Egocontrol aego xyacceleration Continuous
+Table 2. Preference priors for Scenario 1.
+Preference prior Specification Default values
+Gaussian distribution µ=10m/s
+Speed keeping
+centered at the speed limit σ=1m/s
+Triangular distribution
+Lane keeping N/A
+centered at 0 and bounded at the lane boundaries
+Gaussian distribution µ=0m/s2
+Acceleration
+centered at zero for accelerations (x & y) σ=0.5m/s2
+Categorical distribution
+Conflict N/A
+representing an absolute preference over “no-conflict”
+driver to resolve uncertainty earlier through epistemic action (moving left to reach the
+line of sight earlier). In all simulations, we assume that no pedestrian is actually present
+while the ego driver model may, or may not, initially believe that a pedestrian could be
+present with a given probability.
+Simulation 1a: Safely passing an occluding object. The purpose of this initial
+simulation is to show how our active inference model generates successful adaptive
+behavior in the occlusion scenario, finding an optimal balance between progress and
+caution given its set beliefs and preferences. Since, in this first simulation, the driver
+can only drive straight and not move laterally, the ego driver’s preferences reduce to
+prior distributions on preferred speed, comfortable accelerations and avoiding conflicts.
+We initiate the model at the speed limit (10 m/s) and a 20% belief that the
+pedestrian is present. We assume that this belief matches the true probability that a
+pedestrian is present (in other words, the generative model matches the generative
+process). As shown in Figure 3 (top panel), the model initially slows down and then
+speeds up again after the uncertainty about the presence of the pedestrian has been
+resolved (bottom panel) when reaching the line of sight and it can be observed that no
+pedestrian is present (middle panel).
+In our model, the initial slowing down behavior results from selecting a policy that
+maximizes the probability of preferred observations (maintaining the preferred speed,
+avoiding harsh decelerations and avoiding conflicts) taking into account the initial
+uncertainty in the belief about the presence of the pedestrian. Uncertainty about the
+presence of the pedestrian is represented by the dispersion of belief particles on the
+pedestrian context and position variables, and these variables are not updated by the
+particle filter until the ego vehicle reaches the line of sight. Once the uncertainty about
+the presence of the pedestrian has been resolved (when the ego reaches the line of sight)
+the policies with the highest pragmatic value are those that generate speed observations
+November 14, 2023 11/33
+close to the preferred speed (i.e., the 10 m/s speed limit) and thus the model speeds up
+again. In this case, the behavior (policy selection) is driven solely by maximizing
+pragmatic value, thus minimizing expected free energy (1). The model’s behavior
+(moving forward) also carries epistemic value as it eventually brings the pedestrian site
+within its line of sight, but this epistemic value here “comes for free” with the
+move-forward policy that maximizes the pragmatic value. Thus, in this scenario,
+pragmatic value does not have to be traded against epistemic value. This illustrates the
+key point that a given behavior often carries both pragmatic and epistemic value. The
+simulation in Figure 3 provides a simple first illustration for how minimizing expected
+free energy (in this case by maximizing expected pragmatic value) leads to adaptive
+behavior that is optimal given the ego driver’s preferences and beliefs.
+Vx
+(m/s)
+Obs
+Belief
+10
+9
+8
+7
+1.00
+0.75
+0.50
+0.25
+0.00
+1.00
+0.75
+0.50
+0.25
+0.00
+0.0 2.5 5.0 7.5 10.0
+Time
+Fig 3. Results from simulation 1a with a model that initially believes there is a 20%
+chance of a pedestrian being present behind the occluding object. Bottom panel:
+Evolution of the model’s beliefs about the pedestrian presence (blue: pedestrian present;
+green: pedestrian absent). Middle panel: Observation of the area behind the occluding
+object. Top panel: Vehicle speed selected by the model. See the text for explanation.
+Simulation 1b: False certainty We now change the ego driver model’s prior belief
+from from a 20% to a 0% belief that a pedestrian is present. Since we assume that there
+is a true 20% chance that a pedestrian may appear, the model now has a false (overly
+certain) belief to the contrary. In other words, this represents a mismatch between the
+prior belief and the true statistics of the situation (i.e., the generative model does not
+match the generative process). As shown in Figure 4, as a result of the false belief
+(bottom panel) the ego maintains a constant speed near the speed limit (top panel) as it
+drives through the line of sight thus ignoring the potential presence of the pedestrian
+(middle panel).
+In terms of our model, due to the lack of uncertainty in the beliefs about the
+pedestrian (and the resulting false certainty about the lack of risk for a conflict), the
+policy that minimizes the expected free energy is that which maximizes progress, in this
+case maintaining the preferred speed past the occlusion. This can be seen as an example
+November 14, 2023 12/33
+Vx
+(m/s)
+Obs
+Belief
+10
+9
+8
+7
+1.00
+0.75
+0.50
+0.25
+0.00
+1.00
+0.75
+0.50
+0.25
+0.00
+0.0 2.5 5.0 7.5 10.0
+Time
+Fig 4. Results for simulation 1b, for a model with false certainty that no pedestrian is
+present. Otherwise similar to Figure 3 (see text for explanation).
+of “optimal behavior with a sub-optimal model” [45]. Behavior is optimal given the ego
+driver’s beliefs, but the beliefs do not match the true statistics of the environment, that
+is, the ego driver has a false certainty about the absence of pedestrians which leads to
+overly assertive behavior. Real world examples of this phenomenon include novice
+drivers that have not yet learned the true statistics (generative process) of all traffic
+situations or a drunk driver with a biased generative model (generating overly certain
+beliefs), resulting in reduced risk aversion.
+Results for simulation 1c: Harvesting epistemic value through lateral
+movement In Simulations 1a and 1b, policy and action selection was driven by
+pragmatic value only. However, in many real world situations, actions differ in their
+pragmatic and epistemic value and the optimal policy may, for example, involve an
+initial action yielding mainly epistemic value (e.g., turning on the light in a dark room,
+checking the rear view mirror) which resolves the uncertainty and enables pragmatic
+actions that realize the agent’s goal (exit the room, overtake the vehicle ahead). To
+illustrate how such policies, where uncertainty is resolved “on the fly”, can be found by
+minimizing expected free energy, we introduce the possibility for the ego vehicle to move
+laterally (along the y-axis). Due to the geometry of the situation (see Figure 2), the
+lateral movement allows the ego driver to resolve the uncertainty about the potential
+pedestrian earlier (by reaching the line of sight earlier; see Figure 2, bottom). This may
+lead to a more efficient overall path past the occluding object; even if the initial lateral
+movement temporarily reduces the pragmatic value (due to the agent’s prior preference
+to stay in the middle of the lane) this may be offset by the advantage of being able to
+speed up earlier (thus satisfying the preference of maintaining a speed close to the speed
+limit).
+The driver’s preferences are the same as in 1a and 1b with the addition of a lane
+keeping preference defined by a triangular distribution centered at 0 and bounded at the
+lane edges, with a lane width of 3 m. The driver’s prior belief is the same as in
+Simulation 1a, that is, the driver believes with 20% probability that a pedestrian would
+November 14, 2023 13/33
+appear.
+The simulation results are shown in Figure 5. The model initially slows down as in
+Simulation 1a (top panel) but also moves to the left, reaching the line of sight earlier.
+This allows the model to resolve the uncertainty one second earlier than in Simulation
+1a (around 2 s compared to 3 s in Simulation 1 a; see the bottom panels of Figure 3 and
+Figure 5) and is thus also able to speed up earlier than in Simulation 1a.
+Vx
+(m/s)
+Y
+(m)
+Obs
+Belief
+10
+9
+8
+7
+0.8
+0.6
+0.4
+0.2
+0.0
+1.00
+0.75
+0.50
+0.25
+0.00
+1.00
+0.75
+0.50
+0.25
+0.00
+0.0 2.5 5.0 7.5
+Time
+Fig 5. Simulation of epistemic action in 1c. The vehicle lateral position is added but
+otherwise the same as Figure 3 and 4.
+In our model, the leftward movement is generated by the possibility of the driver to
+harvest epistemic value, which contributes to minimizing the expected free energy (1).
+As described above (2), the epistemic value can be decomposed as the difference
+between the posterior predictive entropy and the expected ambiguity [36]. In the
+current simulation, we assume that once the ego vehicle reaches the line of sight, there
+is no ambiguity about whether a pedestrian is present. Hence the expected ambiguity is
+zero and the epistemic value is scored by the posterior predictive entropy only.
+To further illustrate this mechanism, we placed the ego vehicle at different positions
+on the road map and calculated the epistemic value for each ego position. Figure 6
+shows a plot of these ego vehicle positions, colored by the corresponding epistemic value
+(yellow indicates high epistemic value and purple indicates low epistemic value). The
+figure shows that lateral positions above and beyond the line of sight had about 75 more
+units of epistemic value than positions below the line of sight. This shows that there is
+high epistemic value to be gained by moving to the left in the lane, which temporarily
+trumps the pragmatic value of continuing forward in the center of the lane, leading to
+the selection of a policy that aims to reach the line of sight sooner. The pattern in
+November 14, 2023 14/33
+Figure 6 can be seen as a saliency map representing epistemic affordances in terms of
+future locations from which observations may yield valuable, uncertainty-resolving,
+information. Once the vehicle passes the line of sight, and uncertainty is resolved, the
+saliency map will change such that there is no longer a difference in epistemic value
+along the y dimension, and the driver model will shift back to the lane center, driven by
+the pragmatic value of maintaining the preferred central lane position.
+Fig 6. Epistemic affordance for moving left (see the text for explanation).
+This simulation illustrates one of the key takeaways of this paper: Since pragmatic
+and epistemic value are scored in the same currency and optimized under the same
+objective, selecting policies based on expected free energy minimization allows the driver
+to find an optimal balance between assertiveness and caution (conditioned on the drivers
+beliefs and preferences). This allows the driver to resolve uncertainty “on the fly”
+simply by moving to a location that provides a better view, an epistemic affordance,
+which unlocks pragmatic affordances for maintaining efficient progress.
+Simulation 1d: Epistemic value depends on the driver’s beliefs Figure 7
+shows the results of a simulation where, similar to Simulation 1b, we set the model’s
+prior belief such that it is (falsely) certain (believes with 100% probability) that no
+pedestrian is present. In contrast to Simulation 1c the ego vehicle no longer moves to
+the left but rather proceeds straight as in 1b. This happens because, from the model’s
+(false) perspective, there is no uncertainty about the pedestrian and hence no epistemic
+value to be gained by moving left. Thus, the model’s behavior is, again, driven by
+pragmatic value only. This is akin to a situation where a human driver is (falsely)
+certain that no other road users will enter into their path and thus fails to visually scan
+the road scene (or take other epistemic actions) to the extent that is warranted by the
+true uncertainty of the situation.
+Scenario 2: Visual time sharing
+In this scenario, we apply a slightly expanded version of the model applied in Scenario 1
+to a scenario where the ego vehicle driver is performing a visually demanding secondary
+task that requires looking away from the road, such as texting on a cellphone. For
+simplicity, the specifics of the visual task is not modeled, only its effect on glance
+behavior. That is, we are assuming that the modelled glances away from the road are
+associated with a visual secondary task that the driver is motivated to perform.
+Furthermore, we assume that during the off-road glances, no visual information of the
+road ahead is available to the driver (i.e., ignoring peripheral vision). The driving task
+involves maintaining longitudinal and lateral vehicle control on a straight road with no
+other traffic, with a default lane width of 3 m. This set-up is akin to the visual
+occlusion paradigm [18–20]. However, a key difference is that we are here explicitly
+November 14, 2023 15/33
+Vx
+(m/s)
+Y
+(m)
+Obs
+Belief
+10
+9
+8
+7
+0.8
+0.6
+0.4
+0.2
+0.0
+1.00
+0.75
+0.50
+0.25
+0.00
+1.00
+0.75
+0.50
+0.25
+0.00
+0.0 2.5 5.0 7.5
+Time
+Fig 7. Simulation results for 1d illustrating a scenario where the driver has a strong
+prior belief that the pedestrian is not present. The vehicle kinematics for this scenario
+are illustrated in black lines. Grey dashed reference lines illustrate the comparison to
+the results from Simulation 1c, where uncertainty is present.
+modeling the motivation to perform the secondary task in terms of a preference (prior
+distribution) for on-road versus off-road glances.
+During off-road glances, the uncertainty about the situation on the road ahead and
+the vehicle’s position in the lane (i.e.,the two sources of uncertainty identified by [18]
+discussed above) builds up and the driver needs to intermittently look back to the road
+to update their beliefs and reset the uncertainty. In the active inference framework,
+such on-road glances can be seen as actions carrying epistemic value, similar to looking
+behind the occluding object in Scenario 1 to check for pedestrians. The drive to reduce
+uncertainty through epistemic actions (on-road glances) is offset by the motivation to
+look away from the road to perform the secondary task. At the same time, the driver is
+motivated to keep up speed, maintaining a central lane position and avoid exiting the
+lane. All Scenario 2 simulations were performed for a segment of 30 seconds. Each
+scenario was run for 10 times and the time series plots below show one randomly
+selected run. However, the results from all 10 runs were used to compute summary
+statistic metrics for comparison with human data.
+Model specification
+The visual time sharing model builds on the model described under Scenario 1 and,
+unless otherwise stated, uses the same parameters and values. In this scenario, we
+November 14, 2023 16/33
+replaced the point mass vehicle dynamics model in the previous scenario with a
+kinematic bicycle model to more accurately capture the vehicle motion constraints [46].
+To generate uncertainty in the ego vehicle’s actual position on the road we introduce a
+small steering noise (0.001 rad/s) to represent the disturbance caused by uncontrollable
+environment effects such as uneven road surface or wind gusts.
+We model the state of the driver-vehicle system using the kinematic state of the
+vehicle in lane coordinates sego =[x,y,θ,δ,v,a,w], two binary variables Cl and Cr for
+whether the vehicle has crossed the left or right lane boundary, and a binary variable I
+for the driver’s gaze direction (i.e., off-road or on-road). The lane crossing variables can
+be seen as representing rumble strips that generate vibrations and sound when crossed,
+thus conveying to the driver their lane positions even when the driver is looking off-road.
+The model makes decisions about two types of actions: the kinematic control of the
+vehicle acontrol, and the gaze action, aI, which represents a deterministic transition of
+the corresponding gaze state.
+To represent the buildup of uncertainty in the model’s belief about the vehicle’s
+position and heading angle during off-road glances we added steering noise also to the
+model’s counterfactual steering actions, matching the noise added to the actual steering
+(0.001 rad/s). Thus, the driver’s generative model matched the generative process. Since
+the road ahead was always empty, we here only address the second source of uncertainty
+proposed by Senders et al’s [18] related to vehicle position in the lane. However, the
+model could be extended to incorporate other sources of uncertainty, for example,
+related to the behavior of other road users (the first type of uncertainty in [18]).
+We define the observations in the same space as the state variables. However, when
+the driver glances off-road, we assume that the vehicle’s lateral (y) and longitudinal (x)
+position and the heading angle (θ) cannot be observed and they are thus set to null
+values. This means that, due to the noise in the propagation of the beliefs about these
+states, the uncertainty in the beliefs continue to grow until the driver looks back to the
+road and the uncertainty is reset. For simplicity, we assume that the belief update when
+looking back occurs instantaneously during a single time step. That is, we are not
+modeling the time course of the belief updating process. As a consequence, on-road
+glances in our simulations typically have a duration of a single time step (200 ms) which
+isclearlynotarealisticrepresentationofvisualbehaviorbutsufficientfordemonstrating
+the key principles of the model. This is similar to the occlusion setup where the viewing
+(visor opening) times also have a fixed duration (250 - 1000 ms in [18]). The state,
+observation and action variables used in Scenario 2 are listed in Table 3.
+Table 3. State, observation and action variables in the POMDP for Scenario 2
+Variablename Symbol Values Type
+States
+Gaze I off-road(0), onroad(1) Discrete
+Leftboundcrossed Cl yes (1),no(0) Discrete
+Rightboundcrossed Cr yes (1),no(0) Discrete
+Egokinematics sego x,y,θ,δ,v,a,w Continuous
+Observations
+Gazeobservation oI offroad (0),onroad(1) Discrete
+Leftboundcrossed observation oCl yes (1),no(0) Discrete
+Rightboundcrossedobservation oCr yes (1),no(0) Discrete
+Egokinematics observation oego x,y,θ,δ,v,a,w Continuous
+Action
+Egokinematic control acontrol acceleration(a), steeringrate(w) Continuous
+Gazeaction aI offroad (0),onroad(1) Discrete
+The model’s default preferences are generally the same as in Scenario 1, but the
+lateral acceleration preference is replaced by a preference on steering rate and, as
+November 14, 2023 17/33
+mentioned above, we include two categorical distributions (Cl and Cr) to represent a
+strong preference for not exiting the lane. Since preferences are defined over
+observations, during off road glances we do not evaluate the pragmatic value over the
+variables that cannot be observed when glancing off-road (i.e., vehicle lateral and
+longitudinal position and the heading angle, as mentioned above).
+We also specify a preference over gaze direction using the log probability of on-road
+glances based on which we can also compute the log probability of off-road glances to
+ensure a normalized Bernoulli distribution. The preferences and their default values are
+defined in Table 4.
+Table 4. Preferences specifications for Scenario 2
+Preference Specification Defaultvalues
+Gaussiandistribution µ=10m/s
+Speedkeeping
+centeredatthespeedlimit σ=1m/s
+Triangulardistribution
+Lanekeeping N/A
+centeredat0andboundedatthelaneboundaries
+Gaussiandistribution µ=0m/s2
+Longitudinalacceleration
+centeredatzero σ=0.5m/s2
+Gaussiandistribution µ=0rad/s
+Steeringrate
+centeredatzero σ=0.005rad/s
+Thelogprobabilityofanon-roadglancebasedona
+Gazepreference -7
+Bernoullidistributionofon-road/offglances.
+Categoricaldistribution
+Laneexitleft/right N/A
+representinganabsolutepreferencefornotexitingthelane
+Simulations
+Simulation 2a: Effects of visual time sharing on vehicle control The goal of
+this first simulation was to establish that our model could generate realistic visual time
+sharing behavior and reproduce effects of visual time sharing on vehicle control
+established in the literature. These effects include (1) increased lateral control
+variability (e.g. [47–53], (2) an increased frequency and magnitude of steering
+corrections [52,54,55] and (3) a reduction in speed (e.g. [51,52,56].
+To establish a baseline condition representing vehicle control only (i.e., with no
+visual time sharing), the preference value for on-road gaze was set to 0 (i.e., the prior
+probability of on-road glances equals 100%), resulting in a simulation with no eyes off
+road glances. We then added a visual secondary task to be performed concurrently with
+the vehicle control task by lowering the on-road gaze preference from 0 to -7 (hence in
+effect increasing the preference for looking off road). This can be seen as endowing the
+model with a motivation to glance off road to perform the visual secondary task.
+Simulation results for the baseline and visual time sharing conditions are shown in
+Figure 8. As can be seen, the model finds a way to visually timeshare between the
+driving and the secondary task. When the model is looking off road, the uncertainty in
+the belief about lateral position (the standard deviation of the belief particles, σ(by))
+increases until it is reset by an on-road glance. By visual inspection of the plot, it can
+also be observed that the model reduces speed and the variation in lateral vehicle
+position, and the amount of steering control activity increases during visual time
+sharing.
+Figure 9 compares summary statistic metrics of speed, lane position and steering
+reversals. The metrics were mean speed, standard deviation of lane position and the
+number of large steering reversals, which were computed for all 10 simulation runs, for
+the baseline and visual time sharing conditions respectively. Steering reversal rate was
+defined as the number of time steps the front wheel angle exceeds 0.0025 rad/0.14 deg.
+As shown in the plots, the model reproduces the general effects of visual time sharing on
+November 14, 2023 18/33
+V(m
+s)
+A(m
+s
+s)
+q
+(rad)
+d
+(rad
+s)
+Y(m)
+m
+(by)(m)
+s
+(by)(m)
+Gaze
+10
+9
+8
+1
+0
+−1
+−2
+−3
+0.010
+0.005
+0.000
+−0.005
+−0.010
+0.004
+0.002
+0.000
+−0.002
+0.2
+0.0
+−0.2
+0.3
+0.2
+0.1
+0.0
+−0.1
+−0.2
+0.100
+0.075
+0.050
+0.025
+0.000
+1.00
+0.75
+0.50
+0.25
+0.00
+0 10 20 30
+Time
+Fig 8. Simulation of baseline (on-road gaze preference = 0; light blue lines) and visual
+time sharing between the vehicle control and the secondary task (on-road gaze
+preference = -7; green lines). The charts correspond to the following variables: V =
+speed, A = longitudinal acceleration, θ = heading angle, δ = steering angle, y = lateral
+position.
+vehicle control in the human data reviewed above, showing a pattern of increased
+standard deviation of lane position (SDLP), increased rate of large steering reversals
+and reduced speed.
+The increased lane keeping variability (SDLP) can be generally explained as the
+result of increased lane drifts that occur during off-road glances driven by the secondary
+task preference. The increasing number of steering corrections can be explained as
+November 14, 2023 19/33
+Speed SDLP Steering reversals
+10.0
+0.20
+20
+7.5
+0.15
+5.0
+0.10
+10
+2.5 0.05
+0.0 0.00 0
+Baseline VTS Baseline VTS Baseline VTS
+Scenario
+Fig 9. Effects of visual time sharing (VTS; on-road gaze preference = -7) on vehicle
+control compared to baseline (on-road gaze preference = 0) in the current simulation.
+corrections to the lane drifts that the driver performs to align the observed lane position
+with their prior lane keeping preference. Finally, the speed reduction can be understood
+as a way to settle on an optimal balance between the preference to maximize time on
+the secondary task and the competing preference to keep the speed close to the speed
+limit. By reducing speed, the model can “buy” more time for the secondary task (since
+it takes longer to reach the lane boundary at lower speed), but the model cannot slow
+down more than mandated by the speed prior preference distribution.
+To help explain the underlying visual time sharing mechanism implemented by our
+expected free energy minimizing model, we visualize the tradeoff between pragmatic and
+epistemic value in Figure 10. As in Scenario 1, the pragmatic value is determined by the
+deviation of observations from the modes of the preference prior distributions and the
+epistemic value is solely driven by the posterior predictive entropy (first term in 2) since,
+again, there is no ambiguity in the state-observation mapping (i.e., the second term in 2
+equals zero).
+Figure 10 illustrates how the pragmatic, epistemic and total value (negative
+expected free energy) when gazing off-road (green) vs on-road (blue) vary with
+increasing standard deviation of artificially generated belief particles representing
+uncertainty in lateral position. Here, the expected free energy was evaluated for each
+individual time step (and not for the 4s policy as a whole). The top and bottom panels
+differ only in the value of the on-road preference. In the top panels we use the default
+value of -7 and in the bottom panels, we reduced it to -10 (representing a stronger
+motivation to look off road). In the plots for pragmatic and total value, we truncate the
+log preference probability of lane exits (a very large negative value) to -100 in order to
+visualize critical decision points along the vertical axis.
+The left panels show that on-road glances generally have lower pragmatic value
+because they do not fulfill the preference of engaging with the secondary task. The total
+pragmatic value during on-road glances is higher for the higher on-road glance
+preference (-7) compared to the lower on-road gaze preference (-10). With increasing
+dispersion in the belief about lateral position (b(y)), the pragmatic values during
+November 14, 2023 20/33
+Pragmatic value Epistemic value Total value
+preference
+=
+−7
+preference
+=
+−10
+On−road
+glance
+On−road
+glance
+0
+−20
+−40
+−60
+0
+−20
+−40
+−60
+0.0 0.1 0.2 0.3 0.4 0.50.0 0.1 0.2 0.3 0.4 0.50.0 0.1 0.2 0.3 0.4 0.5
+b(y) sd
+Fig 10. Pragmatic value (left), epistemic value (middle), and total value (right) during
+eyes on road (light blue) and eyes off road (green) glances. Top panels: On-road glance
+preference=-7. Bottom panels: On-road glance preference -10. The dashed reference
+lines on the total value charts indicate the standard deviation of belief where the total
+free energy of the off road glance exceeds that of the on road glances.
+on-road and off-road glances initially do not change significantly (it is constant for
+off-road glances and decreases slightly for on-road glances but this is not visible in the
+figure), but both start decreasing after a cut-off point, reflecting the increased
+counterfactual risk of exiting the lane. The middle panels show that the epistemic value
+of an on-road glance increases with increasing uncertainty in the belief about lateral
+position, which is unaffected by gaze preference (i.e., the top and bottom plots are very
+similar). Combining the trend in pragmatic and epistemic value, the right panels shows
+that the total value (negative expected free energy) during an on-road glance exceeds
+that of an off-road glance at a certain value of b(y) which depends on the gaze
+preference. At this crossover point (dashed lines in Figure 10), a policy involving a
+glance back to road will thus be selected. Thus, due to the stronger prior preference for
+on-road glances, the model in the top panel requires less epistemic value to cross over
+than the model in the bottom panel with weaker on-road glance preference. Hence, the
+former model is more prone to look back to the road than the latter when the
+uncertainty about lateral position increases.
+The on-road visual sampling in our model is driven by epistemic value in the same
+principal way as in the occluded pedestrian scenario in Simulation 1 above. The
+posterior predictive entropy entropy in (2) (which in our model fully determines the
+epistemic value) of a policy will be highest when the belief is dispersed (high
+uncertainty) and the model chooses to look back to the road, since this policy is
+expected to generate a greater variety of possible observations compared to when
+continuing to look away (and observe nothing) or looking back when the belief is certain
+(and no new information expected is from looking back). Hence, looking back to the
+road in this scenario is analogous to reaching the line of sight in the occluded pedestrian
+scenario.
+To summarize, this simulation demonstrates how visual time sharing behavior and
+November 14, 2023 21/33
+its effect on vehicle control emerges from selecting policies that minimize expected free
+energy. Based on this sole objective, the model strikes a balance between different prior
+preferences (motivations for the secondary task and vehicle control), and visual
+sampling of the road ahead is driven by the epistemic value of resolving uncertainty
+about the current vehicle state (here primarily lateral position). It was also shown that
+the model explains and reproduces well established effects of visual time sharing on
+vehicle control in the driver behavior literature. In the following simulations, we further
+explore how the model accounts for effects of driving task demand and prior preferences
+on visual time sharing.
+Simulation 2b: Effects of driving demand and prior preferences As reviewed
+above, empirical studies has established a strong relationship between demand
+(difficulty) of the vehicle control task and visual sampling of the forward roadway. In
+particular, Senders et al. [18] found that increasing driving demand by increasing the set
+speed led drivers to choose shorter voluntary occlusion intervals (i.e., increased viewing
+of the road ahead). Similarly, Victor et al. [21] found a significantly shorter mean
+off-road glance duration when driving in curves compared to straight road sections, as
+well as a trend for more frequent off-road glances in curves.
+To explore if our model was able to reproduce and explain these effects, we
+manipulated driving demand in terms of lane width. It is well established that (all other
+things being equal) reducing lane width leads to a reduction in speed [57,58].
+As shown in Figure 11, reducing the lane width from 3 to 2.5 m in our simulation
+leads to a reduction in speed as well as shorter and more frequent off-road glances
+compared to the wider road, in line with the empirical results from human drivers. This
+is also accompanied by a reduction in lane keeping variation (SDLP), and less frequent
+large steering reversals which can be interpreted as a response to the need for tighter
+lateral control on the narrower road.
+In terms of our model, the speed reduction can be explained as an attempt to limit
+the loss of expected pragmatic value during off-road glances, due to the increased risk of
+exiting the lane, by slowing down the dispersion of beliefs about future lane position.
+The reduced duration and increased frequency of off-road glances reflects a need for the
+model to sample the road more often on the narrower road as driven by epistemic value.
+Figure 12 further explores the dynamics of the model’s visual behavior and vehicle
+control and plots the glance behavior along with the overall epistemic and pragmatic
+value of the optimal (selected) policy at each time step (where the optimal policy is that
+which minimizes the expected free energy, i.e., maximizes the pragmatic plus epistemic
+value) during the 4 s planning horizon. The plot zooms in on the last 15 seconds of the
+simulation segment. It can be seen that, for the wider lane (left panel), each on-road
+glance is preceded by the selection of policies with increasing epistemic value.
+Eventually, due to the build-up of uncertainty in lateral position and the corresponding
+increasing epistemic value of an off-road glance, a policy involving an on-road glance
+scores the maximum total value and is selected (based on the mechanism illustrated in
+Figure 10). The uncertainty (and the epistemic value) is then reset as the result of the
+on road glance, leading to the model performing a new off-road glance at the next time
+step (to maximize pragmatic value in the temporary absence of uncertainty).
+For the narrow road (left panel), the pragmatic value is generally lower than on the
+wider road and is also intermittently reduced during the off-road glances due to the
+increased proportion of lane exit risk in the selected policies (the large dips in pragmatic
+value). Thus, less epistemic value is needed to trigger the selection of an on-road glance
+policy, leading to shorter and more frequent on-road glances (highlighted by the red
+points in the top charts).
+Figure 13 explores the tradeoff between speed preference and glance preference by
+November 14, 2023 22/33
+Speed SDLP Steering reversals
+0.20
+7.5
+20
+0.15
+5.0
+0.10
+10
+2.5
+0.05
+0.0 0.00 0
+Mean glance Total glance
+Number of glances
+duration duration
+16
+12
+2 20
+8
+1 10
+4
+0 0 0
+Narrow Wide Narrow Wide Narrow Wide
+Lane width
+Fig 11. Effects of lane width on vehicle control and glance metrics (wide = 3 m,
+narrow = 2.5 m).
+systematically varying on-road glance and speed preference precision on the wide (3 m)
+lane. Reducing the on-road glance preference (increasing the off-road glance preference)
+leads to reduced speed but only if the speed preference precision is sufficiently low to
+allow for speed compensation. This also leads to longer mean off-road single glance
+durations where, again, the effect is stronger when the speed preference precision is low.
+Thus, as long as the model is not strongly motivated to keep up the speed, the model
+adopts a strategy of slowing down to allow for longer off-road glances. By contrast, if
+the speed keeping cannot be sacrificed due to a high precision of the speed preference
+prior, the model only looks away briefly before having to look back to the road again.
+This shows how the visual time sharing strategies adopted by the model depend on the
+relative motivations for performing the driving and secondary tasks and, more generally,
+how such strategies emerge naturally from the single mandate of minimizing expected
+free energy.
+Discussion
+Adaptive driving behavior has been extensively studied for the past sixty years and
+there exists an influential tradition of (mostly) conceptual models offering explanations
+for the key underlying mechanisms (e.g., [14–16,18]). This has been followed by some
+computational models addressing specific adaptive driving behavior
+phenomena [20,22,24]. However, so far a unifying computational framework for
+modeling and explaining the mechanisms underlying these diverse phenomena is lacking.
+The present paper presented a potential such framework based on active
+November 14, 2023 23/33
+Narrow lane (2.5m) Wide lane (3m)
+Gaze
+Pragmatic
+value
+Epistemic
+value
+Total
+value
+1.00
+0.75
+0.50
+0.25
+0.00
+0
+−200
+−400
+−600
+−800
+−860
+−880
+−900
+−920
+−940
+−1000
+−1200
+−1400
+−1600
+15 20 25 30 15 20 25 30
+Time
+Fig 12. Dynamics of expected free energy minimization during visual time sharing.
+Large dips in pragmatic value due to lane exits are truncated by setting the lane exit
+log preference probability to -100, similar to 10. The red points in the gaze plot indicate
+on-road glances.
+inference [26,36] which was demonstrated by a concrete model implementation.
+A common theme in existing models of adaptive driving behavior is that drivers
+manage the progress versus caution tradeoff by balancing the motivation to achieve
+goals against the control of uncertainty. Our active-inference-based model implements
+motivations (preferences) as prior distributions over observations that the driver seeks
+to realize through behavior (yielding pragmatic value) and the control of uncertainty as
+information-seeking behavior (yielding epistemic value). Adaptive driving behavior,
+November 14, 2023 24/33
+Mean glance duration (s) Mean speed (kph)
+−1 0.44 0.38 0.38 0.38 0.38 9.97 10.05 10.16 10.28 10.38
+−3 0.69 1.33 1.47 1.58 1.69 9.93 9.73 9.59 9.41 9.34
+−5 0.93 1.54 2.17 2.35 2.77 9.9 9.6 9.08 8.75 8.34
+−7 1.1 1.82 2.7 3.4 5.01 9.88 9.44 8.54 7.78 6.86
+−10 1.21 2.05 4.18 13.98 19.05 9.87 9.25 7.28 4.54 3.72
+0.1 0.5 1.0 1.5 2.0 0.1 0.5 1.0 1.5 2.0
+Speed preference st. dev.
+ecnereferp
+daoR
+Fig 13. Interaction of on-road glance preference and speed preference on mean speed
+and mean off-road single glance duration.
+finding an optimal (given the agent’s beliefs and preferences) balance between progress
+and caution, then simply emerges by selecting policies and actions that minimize the
+expected free energy, which can be computed as the (negative) sum of the pragmatic
+and epistemic value expected in the future.
+Pragmatic value can be seen as corresponding to the notion of reward in standard
+reinforcement learning [37]. However, pragmatic value in the active inference context is
+conceptually different from the classical notion of (externally imposed) reward in that it
+is internal to the agent and rests on the idea of self-evidencing and emphasizes the key
+role of agency: In order to maintain their existence, organisms need to seek evidence for
+their own generative model of the world [59], where the preferred outcomes, defined as
+prior beliefs over observations, are those expected to be realized through action. This
+aspect of active inference makes close contact with classical cybernetics models [60] and,
+in particular, Perceptual Control Theory (PCT), which suggests that behavior can be
+explained as the control of sensory input signals relative to a reference, or goal,
+value [61] (see Stephan et al., [62] for a discussion about the similarities between PCT
+and active inference). The self evidencing concept in active inference also makes close
+contact with ecological psychology [63] and embodied and enactive approaches to
+cognitive science (e.g., [28–30,64]).
+A key feature in our model is that the strength of the preferences is controlled by the
+precision (inverse variance) of the preference priors. Thus, when a preference is tuned to
+high precision, only a narrow range of observations yield high pragmatic value and the
+model will tend to select policies that do not deviate from this range. This offers a
+mechanism for protecting a given preference (e.g., keeping the speed near the speed
+limit) against other conflicting goals (e.g., looking away from the road), and the current
+model demonstrates how these factors interact in producing different tradeoffs in
+adaptive behavior (Figure 13). This can be seen as a potential mechanism underlying
+cognitive control, that is, the ability to adaptively prioritize and focus behavior on the
+currently most relevant goals and protect against distractions [65,66].
+Another key aspect of our model is the resolution of uncertainty in beliefs through
+November 14, 2023 25/33
+epistemic actions. This leads to actions seeking novel, newsworthy, information yielding
+epistemic value. In the model simulations described above, such epistemic actions
+included taking a wider turn to get a better view behind an occluding object to resolve
+uncertainty about conflicts with a potentially hidden pedestrian (Scenario 1), and
+looking back to the road to resolve uncertainty about one’s position in the lane which
+had accumulated during the off-road glance (Scenario 2). As shown in this paper, these
+apparently disparate behaviors both emerge from the same expected free energy
+minimizing objective.
+Epistemic actions may unlock more efficient realization of the preferred observations
+(pragmatic value), in our case, being able to safely speed up past the occluding object
+earlier (Scenario 1) and enabling a new off-road glance after the uncertainty about the
+lane position has been reset (Scenario 2). This seamless interplay between pragmatic
+and epistemic value can be seen as the core feature of our model (and the active
+inference framework in general). In active inference, this is enabled by casting the two
+quantities in the common currency of expected free energy (1). By selecting policies
+that minimize expected (future) free energy, uncertainty can be resolved “on the fly” as
+an integral part of the generated behavior. As we demonstrate in this paper, a single
+action often carries both pragmatic and epistemic value, for example, in Simulation 1a
+where the ego vehicle was moving forward towards the goal (yielding pragmatic value)
+which also brought about a better view of the area behind the occluding object
+(epistemic value).
+Epistemic value has also been explored in machine learning where it is typically
+referred to as artificial curiosity and intrinsic motivation [10–12]. In this context, the
+purpose of curiosity and intrinsic motivation is generally to facilitate model learning by
+promoting a wider exploration of the state space. By contrast, the focus of the present
+paper is on the role of epistemic action in resolving uncertainty during inference.
+However, active inference also extends to learning, which can also be cast in terms of
+expected free energy minimization and facilitated by epistemic action [35]. While
+classical machine learning approaches to exploration often involve ad-hoc features
+and/or separate mechanisms for exploitation and exploration, active inference has the
+advantage of offering a more principled approach for both inference and learning solely
+based on expected free minimization.
+Minimizing expected free energy “automatically” yields an optimal combination of
+epistemic and pragmatic action, but the ensuing behavior is only optimal given the
+agent’s subjective preferences and beliefs. This allows for conceptualizing and modeling
+situations where a driver’s understanding of the situation is incorrect, that is, the
+driver’s generative model does not match the actual state of affairs (the generative
+process) but the behavior is still optimal given the agent’s subjective beliefs and
+preferences. In this paper, we demonstrated how an overly certain (high precision) belief
+may expose the driver to an increased risk for collision. In our Simulations 1b and 1d,
+the model falsely believed with full certainty that no pedestrian could be hidden behind
+the occluding object, in which case it did not slow down or moved left to get a better
+view. Based on the model’s own beliefs and preferences, this represented the optimal
+behavior in this situation but the model’s beliefs were not well calibrated to the
+situation, representing the general phenomenon of optimal inference with sub optimal
+models studied in computational psychiatry [45]. It is widely believed that failures to
+properly adapt behavior to the traffic situation due to false beliefs is a leading factor
+behind road crashes [2,67].
+In Scenario 2, we demonstrated that our model was able to reproduce and explain
+the underlying mechanisms behind key human behavioral patterns in the literature on
+visual sampling and visual time sharing in driving. Specifically, the model explains how
+visual time sharing emerges as a result of pragmatic value motivating off road glances to
+November 14, 2023 26/33
+perform a secondary task, counteracted by the epistemic value of resolving uncertainty
+about one’s position in the lane, all governed by selecting policies that minimize
+expected free energy. At the high level, our model shares many of the key concepts
+behind the existing computational visual sampling models by Senders et al. [18],
+Pekkanen et al. [20] and Johnson et al., [22]), in particular regarding the explicit
+modeling of uncertainty and the key role of visual sampling in resolving uncertainty.
+However, whereas the existing models are specifically applicable to visual sampling, our
+model is, in principle, applicable to any form of adaptive driving behavior. While the
+current relatively simple scenarios were chosen to illustrate the key principles of the
+model, we believe that our model, thanks to its generality, can in principle be applied to
+any traffic scenario. Even though the specific implementation details may differ, the
+current framework suggests that all that is needed to model certain behavior is to define
+the preference distribution, belief distribution, the observation and action variables (as
+probability distributions), and the generative model for how they evolve. Adaptive
+driving behavior will then fall out “automatically” by selecting policies that minimize
+expected free energy.
+While the current implementation of the model is based on active inference
+principles (specifically expected free energy minimization), it does not represent a “pure”
+implementation of the type typically found in the active inference literature (e.g., [36]).
+Rather the model makes use of standard engineering methods such as particle filtering
+(for representing beliefs about future states) and the cross entropy method for policy
+selection. A related approach is presented in Fountas et al. [68] which used Monte Carlo
+Tree Search to generate policies evaluated through expected free energy minimization.
+This yields a modular architecture where the different components can be substituted
+for other models and methods. For example, in order to represent more sophisticated
+probabilistic beliefs (e.g., about the future behavior of other road users), the particle
+filter in the current model could be replaced by a more advanced machine-learned
+behavior prediction model (e.g., [69]), while still retaining the key principles of active
+inference discussed above.
+Whereas, in the current model, the parameter values were set by hand, the model
+naturally lends itself to learning the parameters from data (see [32,34] for our earlier
+work in this direction). The design space for incorporating techniques from
+contemporary generative AI in active inference models is large and the exploration of
+these possibilities has only begun (see e.g. [68,70–73]). However, regardless of the
+implementation, behavioral models developed based on the active inference principles
+outlined above are fundamentally explainable and interpretable which is one of their key
+potential advantages compared to existing black-box approaches for agent modeling [74].
+The modeling framework outlined in this paper has many potential applications in
+road traffic research beyond driver agent modeling. For example, it can be used as the
+basis for defining and modeling human road user failure modes behind road crashes, and
+for designing effective countermeasures. As discussed above, one such mechanism is how
+too high precision (false certainty) in one’s belief in how a situation will play out leads
+to overly assertive behavior (e.g., not accounting for potential occlusions, and increased
+crash risk). While such crash causation mechanisms have been previously outlined
+conceptually [31], the current model offers a precise computational formulation of these
+principles. The model can also be used to derive reference trajectories for the evaluation
+of autonomous vehicles which are optimal given preferences that reflect the societal
+norms in the community where the AI is deployed and reasonably foreseeable
+(assumptions (beliefs) about the behavior of other road users (as currently formalized
+in [75]).
+The model presented in this paper has a number of specific limitations related to the
+simplifying assumptions of the current implementation described above (e.g., assuming
+November 14, 2023 27/33
+only a single pedestrian in Scenario 1, ignoring peripheral vision in Scenario 2 etc.). In
+general we don’t think these simplifying assumptions imply any fundamental limitations
+for the proposed behavior modeling framework. However, there are certain aspects of
+the current model set-up that warrants further consideration. For example, the current
+model assumes that some variables (vehicle x and y position and heading) are not
+observable when looking off-road, and that this also applies during the counterfactual
+evaluation of policies. During these counterfactual off-road glances, the pragmatic value
+related to vehicle x and y position and heading cannot be evaluated. This is a
+consequence of pragmatic value being defined over observations and necessitated the
+addition of the lane exit variable which is assumed to be always observable. Clearly, this
+is somewhat arbitrary and an alternative approach would be to define pragmatic value
+during counterfactual reasoning over states instead of observations, in which case only
+the lane position variable would be needed (and the lane exit variable would be
+redundant). Such alternative model variants can be explored in further work.
+More broadly, there are many ways in which the current model can be further
+developed. First, as already mentioned, using more advanced generative models for
+representing beliefs and learning parameters from data will likely be needed to scale up
+to more realistic scenarios. Second, it would be interesting to explore further the extent
+to which the model can generalize across different types of traffic scenarios. Of
+particular interest is to model collision avoidance behaviors in critical traffic conflicts.
+Such behaviors are difficult to learn solely from data (due to the sparsity of such
+long-tail events in human data), while the present model could be better suited for such
+scenarios thanks to the possibility to explicitly specify the behavioral mechanisms. This
+would require a detailed model of the belief updating process to model response timing,
+a feature which is lacking in the current model (see [7]). Another very interesting
+avenue of future model development is in the context of road user interactions, for
+example at a crosswalk [6]. In such scenarios, active inference models can represent the
+situation understanding shared between interacting road users in terms of shared
+generative models (see [35,73]) and, conversely, failing interactions can be understood in
+terms of mismatching generative models.
+Another interesting question not addressed in the present paper concerns how to
+model the difference between explicit planning and more automatized habitual
+behavioral selection. The current model is based on sampling and rolling out a large
+number of policies (plans) where the optimal plan is identified based on expected free
+energy minimization. However, human action selection in everyday situations is at least
+partly governed by habits. In skilled performance, humans do not evaluate all possible
+policies but rather learn to “see” the best policy given the information currently
+available (e.g., in terms of Gibsonian affordances; [63]). This is particularly true in the
+context of driving which is often to a large extent automatized for experienced drivers.
+In current ML-based active inference models, such habit formation has been modeled in
+terms of “habit networks” which are able to learn successful policies through
+amortization (e.g., [71]) and this is an interesting topic for future development of the
+present framework.
+References
+1. Dinparastdjadid A, Supeene I, Engstrom J. Measuring Surprise in the Wild.
+arXiv preprint arXiv:230507733. 2023;.
+2. Summala H. Accident risk and driver behaviour. Safety Science.
+1996;22(1-3):103–117.
+November 14, 2023 28/33
+3. Treiber M, Kesting A. Microscopic calibration and validation of car-following
+models–a systematic approach. Procedia-Social and Behavioral Sciences.
+2013;80:922–939.
+4. Suo S, Regalado S, Casas S, Urtasun R. Trafficsim: Learning to simulate realistic
+multi-agent behaviors. In: Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition; 2021. p. 10400–10409.
+5. Igl M, Zintgraf L, Le TA, Wood F, Whiteson S. Deep variational reinforcement
+learning for POMDPs. In: International Conference on Machine Learning.
+PMLR; 2018. p. 2117–2126.
+6. Markkula G, Lin YS, Srinivasan AR, Billington J, Leonetti M, Kalantari AH,
+et al. Explaining human interactions on the road by large-scale integration of
+computational psychological theory. PNAS nexus. 2023;2(6):pgad163.
+7. Engstro¨m J, Liu SY, Dinparastdjadid A, Simoiu C. Modeling road user response
+timing in naturalistic settings: a surprise-based framework. arXiv preprint
+arXiv:220808651. 2022;.
+8. Sadigh D, Landolfi N, Sastry SS, Seshia SA, Dragan AD. Planning for cars that
+coordinate with people: leveraging effects on human actions for planning and
+active information gathering over human internal state. Autonomous Robots.
+2018;42:1405–1426.
+9. Igl M, Kim D, Kuefler A, Mougin P, Shah P, Shiarlis K, et al. Symphony:
+Learning realistic and diverse agents for autonomous driving simulation. In: 2022
+International Conference on Robotics and Automation (ICRA). IEEE; 2022. p.
+2445–2451.
+10. Schmidhuber J. Curious model-building control systems. In: Proc. international
+joint conference on neural networks; 1991. p. 1458–1463.
+11. Sun Y, Gomez F, Schmidhuber J. Planning to be surprised: Optimal bayesian
+exploration in dynamic environments. In: Artificial General Intelligence: 4th
+International Conference, AGI 2011, Mountain View, CA, USA, August 3-6, 2011.
+Proceedings 4. Springer; 2011. p. 41–51.
+12. Hester T, Stone P. Intrinsically motivated model learning for a developing
+curious agent. In: 2012 IEEE international conference on development and
+learning and epigenetic robotics (ICDL). IEEE; 2012. p. 1–6.
+13. Wilde GJ. The theory of risk homeostasis: implications for safety and health.
+Risk analysis. 1982;2(4):209–225.
+14. Na¨a¨ta¨nen R, Summala H. Road-user behaviour and traffic accidents. Publication
+of: North-Holland Publishing Company. 1976;.
+15. Summala H. Risk control is not risk adjustment: The zero-risk theory of driver
+behaviour and its implications. Ergonomics. 1988;31(4):491–506.
+16. Fuller R. Towards a general theory of driver behaviour. Accident analysis &
+prevention. 2005;37(3):461–472.
+17. Lewis-Evans B. Testing models of driver behaviour. University Library
+Groningen][Host]; 2012.
+November 14, 2023 29/33
+18. Senders J. On the distribution of attention in a dynamic environment. Acta
+psychologica. 1967;27:349–354.
+19. Pekkanen J, Lappi O, Itkonen TH, Summala H. Task-difficulty homeostasis in
+car following models: experimental validation using self-paced visual occlusion.
+PLoS one. 2017;12(1):e0169704.
+20. Pekkanen J, Lappi O, Rinkkala P, Tuhkanen S, Frantsi R, Summala H. A
+computational model for driver’s cognitive state, visual perception and
+intermittent attention in a distracted car following task. Royal Society open
+science. 2018;5(9):180194.
+21. Victor TW, Harbluk JL, Engstro¨m JA. Sensitivity of eye-movement measures to
+in-vehicle task difficulty. Transportation Research Part F: Traffic Psychology and
+Behaviour. 2005;8(2):167–190.
+22. Johnson L, Sullivan B, Hayhoe M, Ballard D. Predicting human visuomotor
+behaviour in a driving task. Philosophical Transactions of the Royal Society B:
+Biological Sciences. 2014;369(1636):20130044.
+23. Sprague N, Ballard D. Eye movements for reward maximization. Advances in
+neural information processing systems. 2003;16.
+24. Kolekar S, de Winter J, Abbink D. Human-like driving behaviour emerges from a
+risk-based driver model. Nature communications. 2020;11(1):4850.
+25. Gibson JJ, Crooks LE. A theoretical field-analysis of automobile-driving. The
+American journal of psychology. 1938;51(3):453–471.
+26. Friston K, FitzGerald T, Rigoli F, Schwartenbeck P, Pezzulo G. Active inference:
+a process theory. Neural computation. 2017;29(1):1–49.
+27. Parr T, Friston KJ. Uncertainty, epistemics and active inference. Journal of the
+Royal Society Interface. 2017;14(136):20170376.
+28. Clark A. Surfing uncertainty: Prediction, action, and the embodied mind. Oxford
+University Press; 2015.
+29. Clark A. Whatever next? Predictive brains, situated agents, and the future of
+cognitive science. Behavioral and brain sciences. 2013;36(3):181–204.
+30. Clark A. The experience machine: how our minds predict and shape reality.
+Pantheon Books; 2023.
+31. Engstr¨om J, B¨argman J, Nilsson D, Seppelt B, Markkula G, Piccinini GB, et al.
+Great expectations: a predictive processing account of automobile driving.
+Theoretical issues in ergonomics science. 2018;19(2):156–194.
+32. Wei R, McDonald AD, Garcia A, Alambeigi H. Modeling driver responses to
+automation failures with active inference. IEEE Transactions on Intelligent
+Transportation Systems. 2022;23(10):18064–18075.
+33. Wei R, Garcia A, McDonald A, Markkula G, Engstro¨m J, Supeene I, et al. World
+model learning from demonstrations with active inference: application to driving
+behavior. In: Active Inference: Third International Workshop, IWAI 2022,
+Grenoble, France, September 19, 2022, Revised Selected Papers. Springer; 2023. p.
+130–142.
+November 14, 2023 30/33
+34. Wei R, McDonald AD, Garcia A, Markkula G, Engstrom J, O’Kelly M. An
+active inference model of car following: Advantages and applications. arXiv
+preprint arXiv:230315201. 2023;.
+35. Friston K, Rigoli F, Ognibene D, Mathys C, Fitzgerald T, Pezzulo G. Active
+inference and epistemic value. Cognitive neuroscience. 2015;6(4):187–214.
+36. Parr T, Pezzulo G, Friston KJ. Active inference: the free energy principle in
+mind, brain, and behavior. MIT Press; 2022.
+37. Sutton RS, Barto AG. Reinforcement learning: An introduction. MIT press;
+2018.
+38. Itti L, Baldi P. Bayesian surprise attracts human attention. Vision research.
+2009;49(10):1295–1306.
+39. Murphy KP. Machine learning: a probabilistic perspective. MIT press; 2012.
+40. Kaelbling LP, Littman ML, Cassandra AR. Planning and acting in partially
+observable stochastic domains. Artificial intelligence. 1998;101(1-2):99–134.
+41. Da Costa L, Parr T, Sajid N, Veselic S, Neacsu V, Friston K. Active inference on
+discrete state-spaces: A synthesis. Journal of Mathematical Psychology.
+2020;99:102447.
+42. Fischer J, Tas O¨S. Information particle filter tree: An online algorithm for
+pomdps with belief-based rewards on continuous domains. In: International
+Conference on Machine Learning. PMLR; 2020. p. 3177–3187.
+43. De Boer PT, Kroese DP, Mannor S, Rubinstein RY. A tutorial on the
+cross-entropy method. Annals of operations research. 2005;134:19–67.
+44. Peters J, Mulling K, Altun Y. Relative entropy policy search. In: Proceedings of
+the AAAI Conference on Artificial Intelligence. vol. 24; 2010. p. 1607–1612.
+45. Schwartenbeck P, FitzGerald T, Mathys C, Dolan R, Wurst F, Kronbichler M,
+et al. Optimal inference with suboptimal models: addiction and active Bayesian
+inference. Med Hypotheses. 2016;84:109–117.
+46. Polack P, Altch´e F, d’Andr´ea Novel B, de La Fortelle A. The kinematic bicycle
+model: A consistent model for planning feasible trajectories for autonomous
+vehicles? In: 2017 IEEE intelligent vehicles symposium (IV). IEEE; 2017. p.
+812–818.
+47. Zwahlen H, Adams C, DeBald D. Vision in Vehicles II. Amstredam: Elsevier.
+1988; p. 335–344.
+48. Greenberg J, Tijerina L, Curry R, Artz B, Cathey L, Kochhar D, et al. Driver
+distraction: Evaluation with event detection paradigm. Transportation Research
+Record. 2003;1843(1):1–9.
+49. O¨stlund J, Nilsson L, Carsten O, Merat N, Jamson H, Jamson S, et al. HASTE
+deliverable 2: HMI and safety-related driver performance. European Commission
+EC; 2004.
+50. Horrey WJ, Wickens CD, Consalus KP. Modeling drivers’ visual attention
+allocation while interacting with in-vehicle technologies. Journal of Experimental
+Psychology: Applied. 2006;12(2):67.
+November 14, 2023 31/33
+51. Merat N, Jamson AH. The effect of stimulus modality on signal detection:
+Implications for assessing the safety of in-vehicle technology. Human factors.
+2008;50(1):145–158.
+52. Engstro¨m J, Johansson E, O¨stlund J. Effects of visual and cognitive load in real
+and simulated motorway driving. Transportation research part F: traffic
+psychology and behaviour. 2005;8(2):97–120.
+53. McDonald AD, Ferris TK, Wiener TA. Classification of driver distraction: A
+comprehensive analysis of feature generation, machine learning, and input
+measures. Human factors. 2020;62(6):1019–1035.
+54. Markkula G, Engstr¨om J. A steering wheel reversal rate metric for assessing
+effects of visual and cognitive secondary task load. In: Proceedings of the 13th
+ITS World Congress. Leeds; 2006. p. 1–12.
+55. Macdonald WA, Hoffmann ER. Review of relationships between steering wheel
+reversal rate and driving task demand. Human Factors. 1980;22(6):733–739.
+56. Antin JF, Dingus TA, Hulse MC, Wierwille WW. An evaluation of the
+effectiveness and efficiency of an automobile moving-map navigational display.
+International Journal of Man-Machine Studies. 1990;33(5):581–594.
+doi:https://doi.org/10.1016/S0020-7373(05)80054-9.
+57. Yagar S, Van Aerde M. Geometric and environmental effects on speeds of 2-lane
+highways. Transportation Research Part A: General. 1983;17(4):315–325.
+58. Fitzpatrick K, Carlson P, Brewer M, Wooldridge M. Design factors that affect
+driver speed on suburban streets. Transportation Research Record.
+2001;1751(1):18–25.
+59. Friston K, Adams R, Montague R. What is value—accumulated reward or
+evidence? Frontiers in neurorobotics. 2012;6:11.
+60. Wallace AF. Plans and the Structure of Behavior; 1960.
+61. Powers WT. Feedback: Beyond Behaviorism: Stimulus-response laws are wholly
+predictable within a control-system model of behavioral organization. Science.
+1973;179(4071):351–356.
+62. Stephan KE, Manjaly ZM, Mathys CD, Weber LA, Paliwal S, Gard T, et al.
+Allostatic self-efficacy: A metacognitive theory of dyshomeostasis-induced fatigue
+and depression. Frontiers in human neuroscience. 2016;10:550.
+63. Gibson JJ. The ecological approach to visual perception: classic edition.
+Psychology press; 2014.
+64. Kiverstein J, Kirchhoff MD, Froese T. The problem of meaning: The free energy
+principle and artificial agency. Frontiers in Neurorobotics. 2022;16:844773.
+65. Miller EK, Cohen JD. An integrative theory of prefrontal cortex function.
+Annual review of neuroscience. 2001;24(1):167–202.
+66. Engstro¨m J, Markkula G, Victor T, Merat N. Effects of cognitive load on driving
+performance: The cognitive control hypothesis. Human factors.
+2017;59(5):734–764.
+November 14, 2023 32/33
+67. Summala H. Towards understanding motivational and emotional factors in driver
+behaviour: Comfort through satisficing. Modelling driver behaviour in
+automotive environments: Critical issues in driver interactions with intelligent
+transport systems. 2007; p. 189–207.
+68. Fountas Z, Sajid N, Mediano P, Friston K. Deep active inference agents using
+Monte-Carlo methods. Advances in neural information processing systems.
+2020;33:11662–11675.
+69. Chai Y, Sapp B, Bansal M, Anguelov D. Multipath: Multiple probabilistic
+anchor trajectory hypotheses for behavior prediction. arXiv preprint
+arXiv:191005449. 2019;.
+70. Tschantz A, Baltieri M, Seth AK, Buckley CL. Scaling active inference. In: 2020
+international joint conference on neural networks (ijcnn). IEEE; 2020. p. 1–8.
+71. Mazzaglia P, Verbelen T, C¸atal O, Dhoedt B. The free energy principle for
+perception and action: A deep learning perspective. Entropy. 2022;24(2):301.
+72. Lanillos P, Meo C, Pezzato C, Meera AA, Baioumy M, Ohata W, et al. Active
+inference in robotics and artificial agents: Survey and challenges. arXiv preprint
+arXiv:211201871. 2021;.
+73. Friston KJ, Ramstead MJ, Kiefer AB, Tschantz A, Buckley CL, Albarracin M,
+et al. Designing ecosystems of intelligence from first principles. arXiv preprint
+arXiv:221201354. 2022;.
+74. Albarracin M, Hip´olito I, Tremblay SE, Fox JG, Ren´e G, Friston K, et al.
+Designing explainable artificial intelligence with active inference: A framework for
+transparent introspection and decision-making. arXiv preprint arXiv:230604025.
+2023;.
+75. IEEE. Standard for Assumptions in Safety-Related Models for Automated
+Driving Systems: IEEE P2846™/D87. 1. IEEE; 2022.
+November 14, 2023 33/33

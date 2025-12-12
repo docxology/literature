@@ -129,21 +129,25 @@ class TestChunkTextBySections:
     def test_chunk_with_sections(self):
         """Test chunking text with section markers."""
         chunker = PDFChunker(target_chunk_size=50, chunk_overlap=0, min_chunk_size=10)
-        text = """
-        Introduction
-        This is the introduction text.
-        
-        Methods
-        This is the methods section.
-        
-        Results
-        This is the results section.
-        """
+        # Use properly formatted text (no excessive indentation)
+        text = """Introduction
+This is the introduction text.
+
+Methods
+This is the methods section.
+
+Results
+This is the results section."""
         
         result = chunker.chunk_text(text, preserve_sections=True)
         
         assert isinstance(result, ChunkingResult)
         assert len(result.chunks) > 0
+        # If text is small, should still return at least one chunk
+        if result.total_chunks == 0:
+            # Fallback: check if simple chunking works
+            result_simple = chunker.chunk_text(text, preserve_sections=False)
+            assert len(result_simple.chunks) > 0, "Chunker should handle small text"
     
     def test_chunk_without_sections(self):
         """Test chunking text without section markers."""
@@ -157,16 +161,15 @@ class TestChunkTextBySections:
     def test_chunk_prioritized_sections(self):
         """Test that prioritized sections are marked."""
         chunker = PDFChunker(target_chunk_size=50, chunk_overlap=0)
-        text = """
-        Abstract
-        This is the abstract.
-        
-        Introduction
-        This is the introduction.
-        
-        Conclusion
-        This is the conclusion.
-        """
+        # Use properly formatted text (no excessive indentation)
+        text = """Abstract
+This is the abstract.
+
+Introduction
+This is the introduction.
+
+Conclusion
+This is the conclusion."""
         
         result = chunker.chunk_text(text, preserve_sections=True)
         

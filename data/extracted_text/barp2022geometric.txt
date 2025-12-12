@@ -1,0 +1,2296 @@
+Geometric Methods for Sampling, Optimisation,
+Inference and Adaptive Agents
+Alessandro Barp1,2,†, Lancelot Da Costa3,4,†, Guilherme França5,†, Karl Friston4,
+Mark Girolami1,2, Michael I. Jordan5,6, and Grigorios A. Pavliotis3
+1Department of Engineering, University of Cambridge, Cambridge, UK
+2The Alan Turing Institute, The British Library, London, UK
+3Department of Mathematics, Imperial College London, London, UK
+4Wellcome Centre for Human Neuroimaging, University College London, London, UK
+5Computer Science Division, University of California, Berkeley, USA
+6Department of Statistics, University of California, Berkeley, USA
+†Equal contribution
+Abstract
+In this chapter, we identify fundamental geometric structures that underlie the problems of
+sampling, optimisation, inference and adaptive decision-making. Based on this identification,
+we derive algorithms that exploit these geometric structures to solve these problems efficiently.
+We show that a wide range of geometric theories emerge naturally in these fields, ranging
+from measure-preserving processes, information divergences, Poisson geometry, and geometric
+integration. Specifically, we explain how (i) leveraging the symplectic geometry of Hamiltonian
+systemsenableustoconstruct(accelerated)samplingandoptimisationmethods,(ii) thetheory
+of Hilbertian subspaces and Stein operators provides a general methodology to obtain robust
+estimators, (iii) preserving the information geometry of decision-making yields adaptive agents
+that perform active inference. Throughout, we emphasise the rich connections between these
+fields;e.g.,inferencedrawsonsamplingandoptimisation,andadaptivedecision-makingassesses
+decisions by inferring their counterfactual consequences. Our exposition provides a conceptual
+overview of underlying ideas, rather than a technical discussion, which can be found in the
+references herein.
+Keywords: information geometry; Hamiltonian Monte Carlo; Stein’s method; reproducing kernel;
+variationalinference; acceleratedoptimisation; dissipativesystems; decisiontheory; activeinference.
+2202
+luJ
+52
+]LM.tats[
+3v29501.3022:viXra
+Contents
+1 Introduction 2
+2 Accelerated optimisation 4
+2.1 Principle of geometric integration . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+2.2 Conservative flows and symplectic integrators . . . . . . . . . . . . . . . . . . . . . . 5
+2.3 Rate-matching integrators for smooth optimisation . . . . . . . . . . . . . . . . . . . 7
+2.4 Manifold and constrained optimisation . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+2.5 Gradient flow as a high friction limit . . . . . . . . . . . . . . . . . . . . . . . . . . . 11
+2.6 Optimisation on the space of probability measures . . . . . . . . . . . . . . . . . . . 12
+3 Hamiltonian-based accelerated sampling 13
+3.1 Optimising diffusion processes for sampling . . . . . . . . . . . . . . . . . . . . . . . 14
+3.2 Hamiltonian Monte Carlo . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+4 Statistical inference with kernel-based discrepancies 19
+4.1 Topological methods for MMDs . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20
+4.2 Smooth measures and KSDs . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21
+4.2.1 The canonical Stein operator and Poincaré duality . . . . . . . . . . . . . . . 21
+4.2.2 Kernel Stein discrepancies and score matching . . . . . . . . . . . . . . . . . . 23
+4.3 Information geometry of MMDs and natural gradient descent . . . . . . . . . . . . . 24
+4.3.1 Minimum Stein discrepancy estimators . . . . . . . . . . . . . . . . . . . . . . 24
+4.3.2 Likelihood-free inference with generative models. . . . . . . . . . . . . . . . . 25
+5 Adaptive agents through active inference 25
+5.1 Modelling adaptive decision-making. . . . . . . . . . . . . . . . . . . . . . . . . . . . 26
+5.1.1 Behaviour, agents and environments . . . . . . . . . . . . . . . . . . . . . . . 26
+5.1.2 Decision-making in precise agents . . . . . . . . . . . . . . . . . . . . . . . . . 26
+5.1.3 The information geometry of decision-making . . . . . . . . . . . . . . . . . . 27
+5.2 Realising adaptive agents . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 29
+5.2.1 The basic active inference algorithm . . . . . . . . . . . . . . . . . . . . . . . 29
+5.2.2 Sequential decision-making under uncertainty . . . . . . . . . . . . . . . . . . 30
+5.2.3 World model learning as inference . . . . . . . . . . . . . . . . . . . . . . . . 30
+5.2.4 Scaling active inference . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+1 Introduction
+Differential geometry plays a fundamental role in applied mathematics, statistics, and computer
+science, including numerical integration [1–5], optimisation [6–11], sampling [12–16], statistics on
+spaces with deep learning [17,18], medical imaging and shape methods [19,20], interpolation [21],
+and the study of random maps [22], to name a few. Of particular relevance to this chapter is
+information geometry, i.e., the differential geometric treatment of smooth statistical manifolds,
+whose origin stems from a seminal article by Rao [23] who introduced the Fisher metric tensor on
+parametrisedstatisticalmodels, andthusanaturalRiemanniangeometrythatwaslaterobservedto
+correspond to an infinitesimal distance with respect to the Kullback–Leibler (KL) divergence [24].
+The geometric study of statistical models has had many successes [25–27], ranging from statistical
+inference, where it was used to prove the optimality of the maximum likelihood estimator [28], to
+2
+theconstructionofthecategoryofmathematicalstatistics,generatedbyMarkovmorphisms[29,30].
+Our goal in this chapter is to discuss the emergence of natural geometries within a few important
+areas of statistics and applied mathematics, namely optimisation, sampling, inference, and adaptive
+agents. We provide a conceptual introduction to the underlying ideas rather than a technical
+discussion, highlighting connections with various fields of mathematics and physics.
+The vast majority of statistics and machine learning applications involve solving optimisation
+problems. Accelerated gradient-based methods [31,32], and several variations thereof, have became
+workhorses in these fields. Recently, there has been great interest in studying such methods from
+a continuous-time limiting perspective; see, e.g., [33–40] and references therein. Such methods can
+be seen as 1st order integrators to a classical Hamiltonian system with dissipation. This raises the
+question on how to discretise the system such that important properties are preserved, assuming
+the system has fast convergence to critical points and desirable stability properties. It has been
+known for a long time that the class of symplectic integrators is the preferred choice for simulating
+physical systems [1,2,41–48]. These discretisation techniques, designed to preserve the underlying
+(symplectic) geometry of Hamiltonian systems, also form the basis of Hamiltonian Monte Carlo
+(HMC) (or hybrid Monte Carlo) methods [13,49]. Originally, such a theory of geometric integration
+was developed with conservative systems in mind while, in optimisation, the associated system is
+naturallyadissipativeone. Nevertheless, symplecticintegratorswereexploitedinthiscontext[6–8].
+More recently, it has been proved that a generalisation of symplectic integrators to dissipative
+Hamiltonian systems is indeed able to preserve rates of convergence and stability [9], which are the
+main properties of interest for optimisation. Followup work [10] extended this approach, enabling
+optimisation on manifolds and problems with constraints. There is also a tight connection between
+optimisation on the space of measures and sampling which dates back to [50,51]; we will revisit
+these ideas in relation to dissipative Hamiltonian systems.
+Sampling methods are critical to the efficient implementation of many methodologies. Most
+modern samplers are based on Markov Chain Monte Carlo methods, which include slice sam-
+plers [52,53], piecewise-deterministic Markov chains, such as bouncy particle and zig-zag sam-
+plers [54–59], Langevin algorithms [60–62], interacting particle systems [63] and the class of HMC
+methods [12–14,49,64,65]. The original HMC algorithm was introduced in physics to sample dis-
+tributions on gauge groups for lattice quantum chromodynamics [13]. It combined two approaches
+that emerged in previous decades, namely the Metropolis-Hastings algorithm and the Hamiltonian
+formulation of molecular dynamics [66–68]. Modern HMC relies heavily on symplectic integrators
+to simulate a deterministic dynamic, responsible for generating distant moves between samples and
+thus reduce their correlation, while at the same time preserving important geometric properties.
+This deterministic step is then usually combined with a corrective step (originally a Metropolis-
+Hastingsacceptancestep)toensurepreservationofthecorrecttarget,andwithastochasticprocess,
+employed to speed up convergence to the target distribution. We will first focus on the geometry
+of measure-preserving diffusions, which emerges from ideas formulated by Poincaré and Volterra,
+and form the building block of many samplers. In particular, we will discuss ways to “acceler-
+ate” sampling using irreversibility and hypoellipticity. We will then introduce HMC focusing on
+its underlying Poisson geometry, the important role played by symmetries, and its connection to
+geometric integration.
+We then discuss the problem of statistical inference, whose practical implementation usually
+relies upon sampling and optimisation. Given observations from a target distribution, many esti-
+mators belong to the family of the so-called M and Z estimators [69], which are obtained by finding
+the parameters that maximises (or are zeros of) a parametrised set of functions. These include
+the maximum likelihood and minimum Hyvärinen score matching estimators [70,71], which are
+also particular instances of the minimum score estimators induced by scoring rules that quantify
+3
+the discrepancy between a sample and a distribution [72]. The Monge–Kantorovich transportation
+problem [73] motivates another important class of estimators, namely the minimum Kantorovich
+and p-Wasserstein estimators, whose implementation use the Sinkhorn discrepancy [74–76]. Our
+discussion of inference builds upon the theory of Hilbertian subspaces and, in particular, reproduc-
+ing kernels. These inference schemes rely on the continuity of linear functionals, such as probability
+and Schwartz distributions, over a class of functions to geometrise the analysis of integral probabil-
+ity metrics which measure the worse case integration error. We shall explain how maximum mean,
+kernelised, and score matching discrepancies arise naturally from topological considerations.
+Models of adaptive agents are the basis of algorithmic-decision-making under uncertainty. This
+is a difficult problem that spans multiple disciplines such as statistical decision theory [77], game
+theory [78], control theory [79], reinforcement learning [80], and active inference [81]. To illustrate a
+generic use case for the previous methodologies we consider active inference, a unifying formulation
+of behaviour—subsuming perception, planning and learning—as a process of inference [81–84]. We
+describedecision-makingunderactiveinferenceusinginformationgeometry,revealingseveralspecial
+casesthatareestablishednotionsinstatistics, cognitivescienceandengineering. Wethenshowhow
+preserving this information geometry in algorithms enables adaptive algorithmic decision-making,
+endowing robots and artificial agents with useful capabilities, including robustness, generalisation
+and context-sensitivity [85,86]. Active inference is an interesting use case because it has yet to be
+scaled—to tackle high dimensional problems—to the same extent as established approaches, such
+as reinforcement learning [87]; however, numerical analyses generally show that active inference
+performs at least as well in simple environments [88–94], and better in environments featuring
+volatility, ambiguity and context switches [91,92].
+2 Accelerated optimisation
+We shall be concerned with the problem of optimisation of a function V : M → R, i.e., finding
+a point that maximises V(q), or minimises −V(q), over a smooth manifold M. We will assume
+this function is differentiable to construct algorithms that rely on the flows of smooth vector fields
+guided by the derivatives of V(q).
+Many algorithms in optimisation are given as a sequence of finite differences, represented by
+iterations of a mapping Ψ : M → M, where δt > 0 is a step size. The analysis of such finite
+δt
+difference iterations is usually challenging, relying on painstaking algebra to obtain theoretical gua-
+rantees; suchasconvergencetoacriticalpoint, stability, andratesofconvergencetoacriticalpoint.
+Even when these algorithms are seen as discretisations of a continuum system, whose behaviour is
+presumably understood, it is well-known that most discretisations break important properties of
+the system.
+2.1 Principle of geometric integration
+Fortunately, here comes into play one of the most fundamental ideas of geometric integration: many
+numerical integrators are very close—exponentially in the step size—to a smooth dynamics gener-
+ated by a shadow vector field (a perturbation of the original vector field). This allows us to analyse
+the discrete trajectory implemented by the algorithm using powerful tools from dynamical systems
+and differential geometry, which are a priori reserved to smooth systems. Crucially, while numer-
+ical integrators typically diverge significantly from the dynamics they aim to simulate, geometric
+integrators respect the main properties of the system. In the context of optimisation this means re-
+specting stability and rates of convergence. This was first demonstrated in [9] and further extended
+in [10]; our following discussion will be based on these works.
+4
+The simplest way to construct numerical methods to simulate the flow of a vector field X arises
+when it is given by a sum, X = Y + Z, and the flows of the individual vector fields Y and Z
+are—analytically or numerically—tractable. In such a case, we can approximate the exact flow
+ΦX = eδtX, for step size δt > 0, by composing the individual flows ΦY = eδtY and ΦZ = eδtZ. The
+δt δt δt
+simplest composition is given by ΨX ≡ ΦY ◦ΦZ. The Baker–Campbell–Hausdorff (BCH) formula
+δt δt δt
+then yields
+1 1
+eδtY ◦eδtZ = eδtX˜ , X˜ = (Y +Z)+ [Y,Z]δt+ ([Y,[Y,Z]]−[Z,[Y,Z]])δt2+··· , (1)
+2 12
+where [Y,Z] = YZ −ZY is the commutator between Y and Z. Thus, the numerical method itself
+can be seen as a smooth dynamical system with flow map ΨX = eδtX˜ . The goal of geometric
+δt
+integration is to construct numerical methods for which X˜ shares with X the critical properties of
+interest; this is usually done by requiring preservation of some geometric structure.
+(cid:12) (cid:12)
+Recall that a numerical map ΨX is said to be of order r ≥ 1 if (cid:12)ΨX−ΦX (cid:12) = O(δtr+1); we abuse
+δt δt δt
+notation slightly and let | · | denote a well-defined distance over manifolds (see [95] for details).
+(cid:12) (cid:12)
+Thus, the expansion (1) also shows that the error in the approximation is (cid:12)ΨX−ΦX (cid:12) = O(δt2), i.e.,
+δt δt
+we have an integrator of order r = 1. One can also consider more elaborate compositions, such as
+ΨX ≡ ΦY ◦ΦZ ◦ΦY , (2)
+δt δt/2 δt δt/2
+which is more accurate since the first term in (1) cancels out, yielding an integrator of order r = 2.1
+2.2 Conservative flows and symplectic integrators
+As a stepping stone, we first discuss the construction of suitable conservative flows, namely flows
+along which some function f : X → R is constant, where X is the phase space manifold of the
+system, i.e., the space in which the dynamics evolves. Such flows, which are amongst the most
+well-studied due to their importance in physics, will enable us to obtain our desired “rate-matching”
+optimisation methods and will also be central in our construction of geometric samplers.
+To construct vector fields along the derivative of f we shall need brackets. Geometrically, these
+are morphisms X∗ → X, also known as contravariant tensors of rank 2 in physics, where X∗ is the
+dual space of X. Note that on Riemannian manifolds (e.g., X = Rn) both spaces are isomorphic. In
+Euclidean space, x ∈ X = Rn, we define such B-vector fields in terms of a state-dependent matrix
+B = B(x) as2
+XB(x) ≡ Bij(x)∂ f(x)∂ . (3)
+f i j
+Anyvectorfieldthatdependslinearlyandlocallyonf maybewritteninthismanner. Noticethata
+decomposition f = (cid:80) f induces a decomposition XB = (cid:80) XB that is amenable to the splitting
+a a f a fa
+integrators previously mentioned. Importantly, vector fields that preserve f correspond to bracket
+vector fields in which B is antisymmetric [96]. Constructing conservative flows is thus straightfor-
+ward. Unfortunately, it is a rather more challenging task to construct efficient discretisations that
+retain this property; most well-known procedures, namely discrete-gradient and projection meth-
+ods, only give rise to integrators that require solving implicit equations at every step, and they may
+break other important properties of the system.
+1Higher-ordermethodsareconstructedbylookingforappropriatecompositionsthatcancelfirsttermsintheBCH
+formula [43]. However, methods for r>2 tend to be expensive numerically, with not so many benefits (if any) over
+methods of order r=2.
+2We denote by xi the ith component of x and ∂ ≡ ∂/∂ . We also use Einstein’s summation convention, i.e.,
+i xi
+repeated upper and lower indices are summed over.
+5
+For a particular class of conservative flows, it is possible to construct splitting integrators that—
+exactly—preserve another function f˜ that remains close to f. Indeed, going back to the BCH
+formula (1), we see that if we were to approximate a conservative flow of XB = XB + XB by
+f f1 f2
+composing the flows of XB and XB, and, crucially, if we had a bracket for which the commutators
+f1 f2
+can be written as
+(cid:2) XB,XB(cid:3) = XB,
+f1 f2 f3
+for some function f , and so on for all commutators in (1), then the right-hand side of the BCH
+3
+formula would itself be an expansion in terms of a vector field XB for some shadow function f˜=
+f˜
+f+f δt+f δt2+···. In particular, f˜would inherit all the properties of f, i.e., properties common
+3 4
+to B-vector fields. This is precisely the case for Poisson brackets, written B ≡ Π, which are
+antisymmetric brackets for which the Jacobi identity holds:
+(cid:2) XΠ,XΠ(cid:3) = XΠ , {f,g} ≡ ∂ fΠij∂ g, (4)
+f g {f,g} i j
+where {f,g} is the Poisson bracket between functions f and g. The BCH formula then implies
+1 1
+f˜= (f +f )+ {f ,f }δt+ ({f ,{f ,f }}+{f ,{f ,f }})δt2+··· . (5)
+1 2 1 2 1 1 2 2 2 1
+2 12
+Such an integrator can thus be seen as a Poisson system itself, generated by the above asymptotic
+shadow f˜, which is exactly preserved.
+Poisson brackets and their dynamics are the most important class of conservative dynamical
+systems, describing many physical systems, including all of fluid and classical mechanics. The
+two main classes of Poisson brackets are constant antisymmetric matrices on Euclidean space,
+and symplectic brackets for which Πij(x) is invertible at every point x. Its inverse is denoted
+by Ω =
+(cid:0) Π−1(cid:1)
+and called a symplectic form. In this case, the function f is called a Hamiltonian,
+ij ij
+denoted f = H. The invertibility of the Poisson tensor Πij implies that such a bracket exists only
+on even-dimensional spaces. Darboux theorem then ensures the existence of local coordinates x ≡
+(q1,...,qd,p ,...,p )inwhichthesymplecticformcanberepresentedasΩ = (cid:0) 0 I(cid:1) . Dynamically,
+1 d −I 0
+this corresponds to the fact that these are 2nd order differential equations, requiring not only a
+position q ∈ M but also a momentum p ∈ T∗M.3 Note that if H = p then X = ∂/∂ ,
+q i H qi
+and conversely if H = qi then X = −∂/∂ . Thus, a change in coordinate qi is generated by
+H pi
+its conjugate momentum p , and vice-versa. Thus, the only way to generate dynamics on M in
+i
+this case is by introducing a Hamiltonian depending on both position and momentum. From a
+numerical viewpoint, the extended phase space introduces extra degrees of freedom that allow us to
+incorporate “symmetries” in the Hamiltonian, which facilitate integration. Indeed, in practice, the
+Hamiltonian usually decomposes into a potential energy, associated to position and independent of
+momentum, and a kinetic energy, associated to momentum and invariant under position changes,
+both generating tractable flows. Thanks to this decomposition, we are able to construct numerical
+methods through splitting the vector field. Note also that, for symplectic brackets, the existence of
+a shadow Hamiltonian can be guaranteed beyond the case of splitting methods, e.g., for variational
+integrators—whichuseadiscreteversionofHamilton’sprincipleofleastaction—andmoregenerally
+for most symplectic integrators in which the symplectic bracket is preserved up to topological
+considerations described by the 1st de Rham cohomology of phase space.
+3Moreprecisely,thedynamicsevolveonthecotangentbundleX =T∗M,withcoordinatesx=(q,p);momentum
+p∈T∗M and velocity v =dq/dt∈T M are equivalent on the Riemannian manifolds that are used in practice. M
+q q
+is called the configuration manifold with coordinates q.
+6
+2.3 Rate-matching integrators for smooth optimisation
+Having obtained a vast family of smooth dynamics and integrators that closely preserve f, we can
+now apply these ideas to optimisation. Vector fields for which a Hamiltonian function f = H
+dissipates can be written as a bracket vector field XB for some negative semi-definite matrix B [96].
+H
+LetusconsideraconcreteexampleinX = R2d intheformofa(generalised)conformal Hamiltonian
+system [8,9,97]. Consider thus the Hamiltonian
+1
+H(q,p) = p gijp +V(q), (6)
+i j
+2
+where g is a constant symmetric positive definite matrix with inverse gij. The associated vector
+ij
+field is XB = gijp ∂ − (cid:2) ∂ V +γ(t)p (cid:3) ∂ , with γ(t) > 0 being a “damping coefficient.” This is
+H j qi qi i pi
+associated to the negative definite matrix
+(cid:18) (cid:19) (cid:18) (cid:19)
+0 −I 0 0
+B ≡ −γ(t) . (7)
+I 0 0 I
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+conservative dissipative
+The equations of motion are
+dqi dp ∂V
+= gijp , i = − −γ(t)p , (8)
+dt j dt ∂qi i
+and obey
+dH
+= −γ(t)p gijp ≤ 0, (9)
+i j
+dt
+so the system is dissipative. Suppose V(q) has a minimizer q(cid:63) ≡ argmin V(q) in some region of
+q
+interest and, without loss of generality, has value V(cid:63) ≡ V(q(cid:63)) ≡ 0. Then H > 0 and dH/dt < 0
+outside such a critical point, implying that H is also a (strict) Lyapunov function; the existence of
+such a Lyapunov function implies that trajectories starting in the neighborhood of q(cid:63) will converge
+to q(cid:63). In other words, the above system provably solves the optimisation problem
+minV(q). (10)
+q∈Rd
+Two common choices for the damping are the constant case, γ(t) = γ, and the asymptotic
+vanishing case, γ(t) = r/t for some constant r ≥ 3 (other choices are also possible). When V(q) is
+a convex function (resp. strongly convex function with parameter µ > 0) it is possible to show the
+following convergence rates [37]:
+convex µ-strongly convex damping
+O
+(cid:0) t−1(cid:1)
+O
+(cid:0)
+exp
+(cid:8)
+−
+(cid:112)
+µ/λ2(g)t
+(cid:9)(cid:1)
+γ(t) = const.
+(11)
+V(q(t))−V(cid:63) 1
+O
+(cid:0) λ2(g)t−2(cid:1)
+O
+(cid:0) t−2r/3(cid:1)
+γ(t) = r/t
+1
+where λ (g) is the largest eigenvalue of the metric g. The convergence rates of this system are
+1
+thereforeknownundersuchconvexityassumptions. Ideally,wewanttodesignoptimisationmethods
+that preserve these rates, i.e., are “rate-matching”, and are also numerically stable. As we will see,
+such geometric integrators can be constructed by leveraging the shadow Hamiltonian property of
+7
+symplectic methods on higher-dimensional conservative Hamiltonian systems [9] (see also [98,99]).
+This holds not only on R2d but on general settings, namely on arbitrary smooth manifolds [9,10].
+IntheconformalHamiltoniancase, thedissipationappearsexplicitlyintheequationsofmotion.
+It is however theoretically convenient to consider an equivalent explicit time-dependent Hamiltonian
+formulation. Consider the following coordinate transformation into system (8):
+(cid:90)
+p (cid:55)→ e−η(t)p, H(q,p) (cid:55)→ eη(t)H (cid:0) q,e−η(t)p (cid:1) , η(t) ≡ γ(t)dt. (12)
+It is easy to see that (8) is equivalent to standard Hamilton’s equations,
+dqi ∂H dp ∂H
+i
+= , = − ,
+dt ∂p dt ∂qi
+i
+with the explicit time-dependent Hamiltonian
+1
+H(t,q,p) = e−η(t)p gijp +eη(t)V(q). (13)
+i j
+2
+The rate of change of H along the flow now satisfies
+dH ∂H
+= (cid:54)= 0, (14)
+dt ∂t
+so the system is nonconservative; this equation is equivalent to (9).
+Going one step further, let us now promote t to a new coordinate and introduce its (conjugate)
+momentum u. Consider thus the higher-dimensional Hamiltonian
+1
+K(t,q,u,p) ≡ e−η(t)p gijp +eη(t)V(q)+u. (15)
+i j
+2
+Note that t and u are two arbitrary canonical coordinates. Denoting the time parameter of this
+system by s, Hamilton’s equations read
+dt du ∂K dqi dp ∂V
+= 1, = − , = e−η(t)gijp , i = −eη(t) . (16)
+ds ds ∂t ds j ds ∂qi
+This system is conservative since dK/ds = 0. Now, if we fix coordinates as
+t = s, u(s) = −H(s,q(s),p(s)), (17)
+the conservative system (16) reduces precisely the original dissipative system (13); the 2nd equation
+in (16) reproduces (14), and the remaining equations are equivalent to the equations of motion
+associated to (13), which in turn are equivalent to (8) as previously noted. Formally, what we have
+done is to embed the original dissipative system with phase space R2d into a higher-dimensional
+conservative system with phase space R2d+2. The dissipative dynamics thus lies on a hypersurface
+of constant energy, K = 0, in high dimensions; see [9] for details. The reason for doing this
+procedure, called symplectification, is purely theoretical: since the theory of symplectic integrators
+only accounts for conservative systems, we can now extend this theory to dissipative settings by
+applyingasymplecticintegratorto(13)andthenfixingtherelevantcoordinates(17)intheresulting
+method. Geometrically, this corresponds to integrating the time flow exactly [9,98]. In [9] such a
+procedure was defined under the name of presymplectic integrators, and these connections hold not
+only for the specific example above but also for general non-conservative Hamiltonian systems.
+8
+We are now ready to explain why this approach is suitable to construct practical optimisation
+methods. Let Ψ : R2d+2 → R2d+2 be a symplectic integrator of order r ≥ 1 applied to system
+δs
+(15). Denote by (t ,q ,u ,p ) the numerical state, obtained by k = 0,1,... iterations of Ψ . Time
+k k k k δs
+is simulated over the grid s = (δs)k, with step size δt > 0. Because a symplectic integrator has a
+k
+shadow Hamiltonian we have
+K˜(t ,q ,u ,p ) = K(t(s ),q(s ),u(s ),p(s ))+O (cid:0) δsr(cid:1) .
+k k k k k k k k
+Enforcing (17), the coordinate t becomes simply the time discretization s , which is exact, and so
+k k
+is u = u(t ) since it is a function of time alone; importantly, u does not couple to any of the other
+k k
+degrees of freedom so it is irrelevant whether we have access to u(s) or not. Replacing (15) into the
+above equation we conclude:
+H˜(t ,q ,p ) = H(t ,q(t ),p(t ))+O(δtr), (18)
+k k k k k k
+where we now denote t = (δt)k, for k = 0,1,.... Hence, the time-dependent Hamiltonian also has
+k
+a shadow, thanks to the cancellation of the variable u. In particular, if we replace the explicit form
+of the Hamiltonian (13) we obtain4
+V(q )−V(cid:63) = V(q(t ))−V(cid:63)+O (cid:0) e−η(t k )δtr(cid:1) . (19)
+k k
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+numericalrate continuumrate smallerror
+Therefore,theknownrates(11)forthecontinuumsystemarenearlypreserved—andsowouldbeany
+ratesofmoregeneraltime-dependent(dissipative)Hamiltoniansystems. Moreover,asaconsequence
+of (18), the original time-independent Hamiltonian (6) of the conformal formulation is also closely
+preserved, i.e., within the same bounded error in δt—recall transformation (12). However, this
+is also a Lyapunov function, hence the numerical method respects the stability properties of the
+original system as well.5
+In short, as a consequence of having a shadow Hamiltonian, such geometric integrators are able
+to reproduce all the relevant properties of the continuum system. These arguments are completely
+general; namely, they ultimately rely on the BCH formula, the existence of bracket vector fields
+and the symplectification procedure. Under these basic principles, no discrete-time analyses were
+necessarytoobtainguaranteesforthenumericalmethod;whichmaynotbeparticularlyenlightening
+from a dynamical systems viewpoint and are only applicable on a (painful) case-by-case basis.
+Let us now present an explict algorithm to solve the optimisation problem (10). Consider a
+generic(conservative)HamiltonianH(q,p), evolvingintimes. Thewell-knownleapfrog orStörmer-
+Verlet method, the most used symplectic integrator in the literature, is based on the composition
+(2) and reads [2]
+p = p −(δs/2)∂ H(q ,p ),
+k+1/2 k q k k+1/2
+(cid:2) (cid:3)
+q = q −(δs/2) ∂ H(q ,p )+∂ H(q ,p ) ,
+k+1 k p k k+1/2 p k+1 k+1/2
+p = p −(δs/2)∂ H(q ,p ).
+k+1 k+1/2 q k+1 k+1/2
+4The kinetic part only contributes to the small error since g is positive definite and |p −p(t )|=O(δtr). There
+k k
+are several technical details we are omitting, such as Lipschitz conditions on the Hamiltonian and on the numerical
+method, which we refer to [9] for details.
+5Naturally, all these results hold for suitable choices of step size, which can be determined by a linear stability
+analysis of the particular numerical method under consideration.
+9
+According to our prescription, replacing the higher-dimensional Hamiltonian (15), imposing the
+gauge fixing conditions (17), and recalling that u cancels out, we obtain the following method:6
+p = p −(δt/2)eη(t k )∂ V(q ),
+k+1/2 k q k
+q = q −(δt/2) (cid:2) e−η(t k )+e−η(t k+1 )(cid:3) g−1p , (20)
+k+1 k k+1/2
+p = p −(δt/2)eη(t k+1 )∂ V(q ),
+k+1 k+1/2 q k+1
+where we recall that δt > 0 is the step size and t = (δt)k, for iterations k = 0,1,.... This
+k
+method, which is a dissipative generalisation of the leapfrog, was proposed in [9] and has very good
+performance when solving unconstrained problems (10). In a similar fashion, one can extend any
+(known) symplectic integrator to a dissipative setting; the above method is just one such example.
+2.4 Manifold and constrained optimisation
+Following [10], we briefly mention how the previous approach can be extended in great generality,
+i.e., to an optimisation problem
+minV(q), (21)
+q∈M
+whereMisanarbitraryRiemannianmanifold. Thereareessentiallytwowaystosolvethisproblem
+through a (dissipative) Hamiltonian approach. One is to is to simulate a Hamiltonian dynamics
+on T∗M by incorporating the metric of M in the kinetic part of the Hamiltonian. Another is to
+consider a Hamiltonian dynamics on Rn and embed M into Rn by imposing several constraints,7
+ψ (q) = 0, a = 1,...,m. (22)
+a
+This constrained case turns out to be particularly useful since we typically are unable to compute
+the geodesic flow on M, but are able to construct robust constrained symplectic integrators for it.
+As an example of the first approach, consider M = G being a Lie group, with Lie algebra g and
+generators {T }. The analogous of Hamiltonian (13) is given by H = − 1 e−η(t)Tr(P2)+eη(t)V(Q),
+i 4g
+where g > 0 is a constant, Q ∈ G and P ∈ g (they can be seen as matrices). The method (20) can
+be adapted to this setting, resulting in the following algorithm [10] (recall footnote 6):
+P = e−∆η k{P −(δt/2)Tr[∂ V(Q )·Q ·P ]P },
+k+1/2 k Q k k k k
+Q = Q exp (cid:2) δtcosh(∆η )g−1P (cid:3) , (23)
+k+1 k k k+1/2
+P = e−∆η kP −(δt/2)Tr (cid:2) ∂ V(Q )·Q ·P (cid:3) P ,
+k+1 k+1/2 Q k+1 k+1 k+1/2 k
+6 In a practical implementation, it is convenient to make the change of variables p
+k
+(cid:55)→ eη(tk)p
+k
+into (20); recall
+the transformations (12). In this case the method reads
+p =e−∆ηk[p −(δt/2)∂ V(q )],
+k+1/2 k q k
+q =q −δtcosh(∆η )g−1p ,
+k+1 k k k+1/2
+p =e−∆ηkp −(δt/2)∂ V(q ),
+k+1 k+1/2 q k+1
+where∆η ≡η(t )−η(t )= (cid:82)tk+1/2γ(t)dt. Notethatonlyahalf-stepdifferenceofη(t)appearsintheseupdates.
+Thealgor
+k
+ithmis
+k
+t
++
+h
+1
+u
+/
+s
+2
+writte
+k
+ninth
+tkesamevariablesastheconformalrepresentation(8).
+Theadvantageisthatwedo
+nothavelargeorsmallexponentials,whichcanbeproblematicnumerically. Furthermore,whensolvingoptimisation
+problems,itisconvenienttosetthematrixg=(δt)I;thiswasnotedin[8]butcanalsobeunderstoodfromtherates
+(11) since then the step size δt disappears from some of these formulas.
+7Theoretically,thereisnolossofgeneralitysinceNashorWhitneyembeddingtheoremstellsusthatanysmooth
+manifold M can be embedded into Rn for sufficiently large n.
+10
+(cid:0) (cid:1)
+where ∂ V(Q) = ∂V/∂Q is a matrix.
+Q ij ji
+As an example of the second approach, one can constrain the integrator on Rn to define a
+symplectic integrator on M via the discrete constrained variational approach [5] by introducing
+Lagrange multipliers, i.e., by considering the Hamiltonian H + eη(t)(cid:80) λaψ (q), where H is the
+a a
+Hamiltonian (13). In particular, the method (20) can be constrained to yield [10]
+p = e−∆η kΛ (q )[p −(δt/2)∂ V(q )],
+k+1/2 g k k q k
+p¯ = p −(δt/2)e−∆η k[∂ ψ(q )](cid:62)λ,
+k+1/2 k+1/2 q k
+q = q −δtcosh(∆η )g−1p¯ , (24)
+k+1 k k k+1/2
+0 = ψ (q ) (a = 1,...,m),
+a k+1
+p = Λ (q ) (cid:2) e−∆η kp¯ −(δt/2)∂ V(q ) (cid:3) ,
+k+1 g k+1 k+1/2 q k+1
+where we have the projector Λ (q) ≡ I −R−1(q)∂ ψ(q)g−1 with R (q) ≡ ∂ ψ(q)g−1∂ ψ(q)(cid:62), and
+g g q g q q
+(∂ ψ) ≡ ∂ψ /∂qj is the Jacobian matrix of the constraints; λ = (λ ,...,λ )(cid:62) is the vector of
+q ij i 1 m
+(cid:82)t
+Lagrange multipliers and ∆η ≡ k+1/2γ(t)dt accounts for the damping. In practice, the Lagrange
+k t
+k
+multipliers are determined by solving the (nonlinear) algebraic equations for the constraints, i.e.,
+the 2nd to 4th updates above are solved simultaneously. The above method consists in a dissipative
+generalisation of the well-known RATTLE integrator from molecular dynamics [100–103].
+It is possible to generalise any other (conservative) symplectic method to this (dissipative)
+optimisation setting on manifolds. In this general setting, there still exists a shadow Hamiltonian
+so that convergence rates and stability are closely preserved numerically [10] (similarly to (18) and
+(19)). In particular, one can also consider different types of kinetic energy, beyond the quadratic
+case discussed above, which may perform better in specific problems [8]. This approach therefore
+allows one to adapt existing symplectic integrators to solve optimisation problems on Lie groups
+and other manifolds commonly appearing in machine learning, such as Stiefel, Grassmanians, or to
+solve constrained optimisation problems on Rn.
+2.5 Gradient flow as a high friction limit
+Let us provide some intuition why simulating 2nd order systems is expected to yield faster algo-
+rithms. It has been shown that several other accelerated optimisation methods8 are also discretisa-
+tions of system (8) [38]. Moreover, in the large friction limit, γ → ∞, this system reduces to the 1st
+order gradient flow, dq/dt = −∂ V(q) (assuming g ∝ I), which is the continuum limit of standard,
+q
+i.e., nonaccelerated methods [38]. The same happens in more general settings; when the damping
+is too strong, the second derivative becomes negligible and the dynamics is approximately 1st order.
+As an illustration, consider Figure 1 (left) where a particle immersed in a fluid falls under the
+influence of a potential force −∂ V(q), that plays the role of “gravity”, and is constrained to move
+q
+on a surface. In the underdamped case, the particle is under water, which is not so viscous, so
+it has acceleration and moves fast (even oscillate). In the overdamped case, the particle is in a
+highly viscous fluid, such as honey, and the drag force −γp is comparable or stronger to −∂ V(q),
+q
+thus the particle moves slowly since it cannot accelerate; during the same elapsed time δt, an
+acceleratedparticlewouldtravelalongerdistance. Wecanindeedverifythisbehaviournumerically.
+InFigure1(right)werunalgorithm(23)intheunderdampedandoverdampedregimeswhensolving
+8Besides accelerated gradient based methods, accelerated extensions of important proximal-based methods such
+asproximalpoint,proximal-gradient,alternatingdirectionmethodofmultipliers(ADMM),Douglas-Rachford,Tseng
+splitting, etc., are implicit discretizations of (8); see [38] for details.
+11
+10
+1
+0.100
+0.010
+0.001 RiemannianGradientDescent
+LieGroup(overdamped)
+10-4
+LieGroup(underdamped)
+10-5
+0 20 40 60 80 100
+k
+*V-V
+γ → ∞ γ = O(1)
+−γp
+(cid:120)
+δt 
+
+ δt 
+(cid:121)
+−∂ V
+q
+overdamped (honey) underdamped (water)
+1st order 2nd order
+Figure 1: Why simulating 2nd order systems yields accelerated methods. Left: Constrained particle falling
+in fluids of different viscosity. When the drag force is strong the particle cannot accelerate and has a 1st
+order dynamics (see text). Right: Simulation of algorithm (23) where V(Q) is the energy of a spherical spin
+glass (Lie group SO(n), with n = 500) [10]. In the overdamped regime the method is close to Riemannian
+gradient descent [104], which is a 1st order dynamics; (23) is much faster in the underdamped regime.
+an optimisation problem on the n-sphere, i.e., on the Lie group SO(n).9 We can see that, in the
+overdamped regime, this method has essentially the same dynamics as the Riemannian gradient
+descent [104], which is nonaccelerated and corresponds to a 1st order dynamics; all methods use the
+same step size, only the damping coefficient is changed.
+2.6 Optimisation on the space of probability measures
+Thereisatightconnectionbetweensamplingandoptimisationonthespaceofprobabilitymeasures
+which goes back to [50,51]. Let P (Rn) be the space of probability measures on Rn with finite
+2
+second moments, endowed with a Wasserstein-2 metric W . The gradient flow of a functional F[µ]
+2
+on the space of probability measures is the solution to the partial differential equation ∂ µ(q,t) =
+t
+−∇ F[µ(q,t)], which, under sufficient regularity conditions, is equivalent to [50,51,105]
+W2
+(cid:18) (cid:19)
+δF[µ]
+∂ µ = ∂ · µ∂ , (25)
+t
+δµ
+where ∂ ≡ ∂ and ∂· are the derivative and the divergence operators on Rn, respectively. The
+q
+evolution of this system solves the optimisation problem
+ρ ≡ argmin F[µ], (26)
+µ∈P2(Rn)
+i.e., µ(q,t) → ρ(q) as t → ∞ in the sense of distributions. We can consider the analogous situation
+with a dissipative flow induced by the conformal Hamiltonian tensor (7) on the space of probability
+measures; we set g = I and γ(t) = γ = const. for simplicity. Thus, instead of (25), we have a
+conformal Hamiltonian system in Wasserstein space given by the continuity equation
+(cid:18) (cid:19)
+δF[µ]
+∂ µ = ∂ · µB∂ , (27)
+t
+δµ
+9Thedetailsarenotimportanthere,butthisproblemminimisestheHamiltonianofasphericalspinglass(see[10]
+for details). The same behaviour is seen with the constrained method (24) as well.
+12
+where now ∂ ≡ (∂ ,∂ ) and µ is a measure over P (R2d). Let F be the free energy defined as
+q p 2
+F[µ] ≡ U[µ]−β−1S[µ], U[µ] ≡ E [H], S[µ] ≡ E [−logµ], (28)
+µ µ
+where U is the (internal) energy, H is the Hamiltonian (6), S is the Shannon entropy, and β is the
+inverse temperature. The functional derivative of the free energy equals
+δF 1
+= H +β−1logµ = (cid:107)p(cid:107)2+V(q)+β−1logµ. (29)
+δµ 2
+In particular, the minimiser of F is the stationary density
+ρ(q,p) = Z−1e−βH(q,p), Z ≡ E (cid:2) e−βH(q,p)(cid:3) . (30)
+β β µ
+Note also that the free energy (28) is nothing but the KL divergence (up to a constant which is the
+partition function):
+KL[µ | ρ] ≡ E [log(µ/ρ)] = βF[µ]−logZ .
+µ β
+Therefore, the evolution of µ as given by the conformal Hamiltonian system (27) minimises the
+divergence from the the stationary density (30). Replacing (29) into (27) we obtain
+∂ µ = −∂ ·[µp]+∂ ·[µ∂ V(q)+γµp]+γβ−1∂2µ,
+t q p q p
+which is nothing but the Fokker-Planck equation associated to the underdamped Langevin diffusion
+(cid:112)
+dq = p dt, dp = −∂ V(q )dt−γp dt+ 2γβ−1dw , (31)
+t t t q t t t
+wherew isastandardWienerprocess. Thus, theunderdampedLangevincanbeseenasperforming
+t
+accelerated optimisation on the space of probability measures. A quantitative study of its speed of
+convergence is given by the theory of hypocoercivity [106–108].
+The above results provide a tight connection between sampling and optimisation. Interestingly,
+by the same argument as used in section 2.5 (see Figure 1), the high friction limit, γ → ∞, of the
+underdamped Langevin diffusion (31) yields the overdamped Langevin diffusion [38,107]
+(cid:112)
+dq = −∇V(q )dt+ 2β−1dw , (32)
+t t t
+which corresponds precisely to the gradient flow (25) on the free energy functional F[µ] [51,105],
+where now µ = µ(q,t) ∈ P (Rd). Thus, in the same manner that a 2nd order damped Hamiltonian
+2
+system may achieve accelerated optimisation compared to a 1st order gradient flow, the under-
+damped Langevin diffusion (31) may achieve accelerated sampling compared to the overdamped
+Langevin diffusion (32). Such an acceleration has indeed been demonstrated [109] in continuous-
+time and for a particular discretisation.
+3 Hamiltonian-based accelerated sampling
+The purpose of sampling methods is to efficiently draw samples from a given target distribution ρ
+or, more commonly, to calculate expectations with respect to ρ:
+(cid:90) n−1
+1 (cid:88)
+f dρ ≈ f(x ). (33)
+k
+n
+X
+k=0
+13
+However, generating i.i.d. samples {x } is usually practically infeasible, even for finite sample
+k
+spaces, as in high dimensions probability mass tends to concentrate in small regions of the sample
+space, while regions of high probability mass tend to be separated by large regions of negligible
+probability. Moreover, ρ is usually only known up to a normalisation constant [110]. To circumvent
+this issue, MCMC methods rely on constructing ergodic Markov chains {x } that preserve
+n n∈N
+the target distribution ρ. If we run the chain long enough (n → ∞), Birkhoff’s ergodic theorem
+guarantees that the estimator on the right-hand side of (33) converges to our target integral on
+the left-hand side almost surely [111]. An efficient sampling scheme is one that minimises the
+variance of the MCMC estimator. In other words, fewer samples will be needed to obtain a good
+estimate. Intuitively, good samplers are Markov chains that converge as fast as possible to the
+target distribution.
+3.1 Optimising diffusion processes for sampling
+As many MCMC methods are based on discretising continuous-time stochastic processes, the anal-
+ysis of continuous-time processes is informative of the properties of efficient samplers.
+Diffusion processes possess a rich geometric theory, extending that of vector fields, and have
+been widely studied in the context of sampling. They are Markov processes featuring almost surely
+continuous sample paths (i.e., no jumps) and correspond to the solutions of stochastic differential
+equations (SDEs). While a deterministic flow is given by a first order differential operator—namely,
+a vector field X as used in §2—diffusions require specifying a set of vector fields X,Y ,...,Y ,
+1 N
+where X represents the (deterministic) drift and Y the directions of the (random) Wiener processes
+i
+wi, and are characterised by a second order differential operator of the form L ≡ X+Y ◦Y , known
+t i i
+as the generator of the process. Equivalently, diffusions can be written as Stratonovich SDEs:
+dx = X(x )dt+Y (x )◦dwi.
+t t i t t
+For a smooth positive target measure ρ, the complete family of ρ-preserving diffusions is given
+by (up to a topological obstruction contribution) [112]
+1
+dx = curl (A)dt+ div (Y )Y dt+Y ◦dwi, (34)
+t ρ 2 ρ i i i t
+for a choice of antisymmetric bracket A. Here curl is a differential operator on multi-vector fields,
+ρ
+generalisingthedivergenceonvectorfieldsdiv ofρ,andisinducedviaanisomorphismρ(cid:93) definedby
+ρ
+ρ which allows to transfer the calculus of twisted differential forms to a measure-informed calculus
+on multi-vector fields [112]. The ergodicity of (34) is essentially characterised by Hörmander’s
+hypoellipticity condition; i.e., whether the Lie algebra of vector fields generated by {Y ,[X,Y ]}N
+i i i=1
+spans the tangent spaces at every point [107,113,114]. On Euclidean space the above complete class
+of measure preserving diffusions can be given succinctly by Itô SDEs [115]:
+(cid:112)
+dx = −(A+S)(x )∂V (x )dt+∂ ·(A+S)(x )dt+ 2S(x )dw , (35)
+t t t t t t
+where S,A reduce to symmetric and antisymmetric matrix fields and V is the negative Lebesgue
+log-density of ρ.
+There are two well-studied criteria describing sampling efficiency in Markov processes: 1) the
+worst-case asymptotic variance of the MCMC estimator (33) over functions in L2(ρ), and 2) the
+spectral gap. The spectral gap is the lowest non-zero eigenvalue of the (negative) generator −L
+on L2(ρ). When it exists, it is an exponential convergence rate of the density of the process to
+the target density [107,116,117]. Together, these criteria yield confidence intervals on the non-
+asymptotic variance of the MCMC estimator, which determines sampling performance [118].
+14
+A fundamental criterion for efficient sampling is non-reversibility [116,119,120]. A process is
+non-reversibleifitisstatisticallydistinguishablefromitstime-reversalwheninitialisedatthetarget
+distribution [107]. Measure-preserving diffusions are non-reversible precisely when A (cid:54)≡ 0 [121]. In-
+tuitively, non-reversible processes backtrack less often and thus furnish more diverse samples [122].
+Furthermore, non-reversibility leads to mixing, which accelerates convergence to the target mea-
+sure. It is well known that removing non-reversibility worsens the spectral gap and the asymptotic
+variance of the MCMC estimator [116,119,120]. In diffusions with linear coefficients, one can con-
+struct the optimal non-reversible matrix A to optimise the spectral gap [123,124] or the asymptotic
+variance [120]. However, there are no generic guidelines on how to optimise non-reversibility in
+arbitrary diffusions. This suggests a two-step strategy to construct efficient samplers: 1) optimise
+reversible diffusions, and 2) add a non-reversible perturbation A (cid:54)≡ 0 [125].
+DiffusionsonmanifoldsarereversiblewhenA ≡ 0,andthushavetheformdx = 1div (Y )Y dt+
+t ρ i i
+2
+Y ◦dwi, which on Euclidean space reads
+i t
+(cid:112)
+dx = −S(x )∂V (x )dt+∂ ·S(x )dt+ 2S(x )dw . (36)
+t t t t t t
+The spectral gap and the asymptotic variance of the MCMC estimator are the same optimality
+criteria in reversible Markov processes [126]. When S is positive definite everywhere, it defines a
+Riemannian metric g on the state space. The generator is then the elliptic differential operator
+L = ∇ +∆ , (37)
+g g
+where∇ istheRiemanniangradientand∆ istheLaplace-Beltramioperator, i.e., theRiemannian
+g g
+counterpart of the Laplace operator. Thus, reversible (elliptic) diffusions (37) are the natural gen-
+eralisation of the overdamped Langevin dynamics (32) to Riemannian manifolds [127]. Optimising
+S to improve sampling amounts to endowing the state space with a suitable Riemannian geometry
+that exploits the structure of the target density. For example, sampling is improved by directing
+noise along vector fields that preserve the target density [128]. When the potential V is strongly
+convex, the optimal Riemannian geometry is given by g ≡ ∂2V [129,130]. Sampling can also be
+improved in hypoelliptic diffusions with degenerate noise (i.e., when S is not positive definite). In-
+tuitively, the absence of noise in some directions of space leads the process to backtrack less often
+and thus yield more diverse samples. For instance, in the linear case, the optimal spectral gap is
+attainedforanirreversiblediffusionwithdegeneratenoise[131]. However, degeneratediffusionscan
+be very slow to start with, as the absence of noise in some directions of space make it more difficult
+for the process to explore the state space [131].
+Underdamped Langevin dynamics (31) combines all the desirable properties of an efficient sam-
+pler: it is irreversible, has degenerate noise, and achieves accelerated convergence to the target
+density [132]. We can optimise the reversible part of the dynamics (i.e., the friction γ) to improve
+the asymptotic variance of the MCMC estimator [133]. Lastly, we can significantly improve under-
+damped Langevin dynamics by adding additional non-reversible perturbations to the drift [134].
+One way to obtain MCMC algorithms is to numerically integrate diffusion processes. As vir-
+tually all non-linear diffusion processes cannot be simulated exactly, we ultimately need to study
+the performance of discrete algorithms instead of their continuous counterparts. Alarmingly, many
+properties of diffusions can be lost in numerical integration. For example, numerical integration
+can affect ergodicity [135]. An irreversible diffusion may sample more poorly than its reversible
+counterpart after integration [136]. This may be because numerical discretisation can introduce, or
+otherwise change, the amount of non-reversibility [136]. The invariant measure of the diffusion and
+its numerical integration may differ, a feature known as bias. We may observe very large bias even
+in the simplest schemes, such as the Euler-Maruyama integration of overdamped Langevin [60].
+15
+Luckily, there are schemes whose bias can be controlled by the integration step size [137]; yet, this
+precludes using large step sizes. Alternatively, one can remove bias by supplementing the integra-
+tion step with a Metropolis-Hastings corrective step; however, this makes the resulting algorithm
+reversible. In conclusion, designing efficient sampling algorithms with strong theoretical guarantees
+is a non-trivial problem that needs to be addressed in its own right.
+3.2 Hamiltonian Monte Carlo
+Constructing measure-preserving processes, in particular diffusions, is relatively straightforward.
+A much more challenging task consists of constructing efficient sampling algorithms with strong
+theoretical guarantees. We now discuss an important family of well-studied methods, known as
+Hamiltonian Monte Carlo (HMC), which can be implemented on any manifold, for any smooth
+fully supported target measure that is known up to a normalising constant. Some of these methods
+can be seen as an appropriate geometric integration of the underdamped Langevin diffusion, but it
+is in general simpler to view them as combining a geometrically integrated deterministic dynamics
+with a simple stochastic process that ensures ergodicity.
+The conservative Hamiltonian systems previously discussed provide a natural candidate for the
+deterministic dynamics. Indeed, given a target measure ρ ∝ e−Vµ , with µ a Riemannian
+M M
+measure (such as the Lebesgue measure dq on M = Rd), if we interpret the negative log-density
+V(q)asapotentialenergy,i.e.,afunctiondependingonposition q,onecanthenpluginthepotential
+within Newton’s equation to obtain a deterministic proposal that is well-defined on any manifold,
+as soon as the acceleration and derivative operators have been replaced by their curved analogues
+acceleration directionof
+(cid:122)(cid:125)(cid:124)(cid:123) greatestdecrease
+∇q˙ (cid:122) (cid:125)(cid:124) (cid:123)
+mq¨= −∂V(q) −→ = −∇V(q) , (38)
+dt
+(cid:124) (cid:123)(cid:122) (cid:125)
+flatNewton (cid:124) (cid:123)(cid:122) (cid:125)
+RiemannianNewton
+with given initial conditions for the position q and velocity v = dq/dt. This is a 2nd order system
+which evolves in the tangent bundle, (q,v) ∈ TM, which is TM = Rd × Rd when M = Rd.
+The resulting flow is conservative since it corresponds to a Hamiltonian system as discussed in
+section §2.2, with Hamiltonian H(q,v) ≡ 1(cid:107)v(cid:107)2 + V(q), where (cid:107)v(cid:107)2 is the Riemannian squared-
+2 q q
+norm,whichisvTg(q)vwhenM = Rdandg(q)istheRiemannianmetric;thisisthemanifoldversion
+of the Hamiltonian (6). This system preserves the symplectic measure µ (q,v) = detg(q)dqdv, and
+Ω
+thus also the canonical distribution µ ∝ e−H(q,v)µ , which is the product of the target distribution
+Ω
+overpositionwiththeGaussianmeasuresonvelocity(withcovarianceg). Forinstance,onM = Rd,
+µ(q,v) ∝ ρ(q)×N (cid:0) 0,g−1(q) (cid:1) (v) ∝ e−V(q) (cid:112) detg(q)dq× (cid:112) detg(q)e− 2 1vTg(q)vdv.
+Moreover, the pushforward under the projection Proj : (q,v) (cid:55)→ q is precisely the target measure:
+Proj µ = ρ. Concretely, thesamples generatedbymovingaccording toNewton’s law, after ignoring
+∗
+their velocity component, have ρ as their law. The main critical features and advantages in using
+Hamiltonian systems arises from their numerical implementation. Indeed, the flow of (38) is only
+tractable for the simplest target measures, namely those possessing a high degree of symmetry. In
+order to proceed, we must devise suitable numerical approximations which, unfortunately, not only
+break such symmetries but may lose key properties of the dynamics such as stationarity (typically
+notretainedbydiscretisations). However,aswesawinsection§2.2,mostsymplecticintegrators have
+a shadow Hamiltonian and thus generate discrete trajectories that are close to the associated bona
+fide (shadow) Hamiltonian dynamics, that in particular preserve the shadow canonical distribution.
+16
+Most integrators used in sampling, such as the leapfrog, are geodesic integrators. These are
+splittingmethods (seesection§2.1)obtainedbysplittingtheHamiltonianH(q,v) = H (q,v)+H (q),
+1 2
+where H (q,v) = 1(cid:107)v(cid:107)2 and H (q) = V(q) are to be treated as independent Hamiltonians in their
+1 2 q 2
+own right. Both of these Hamiltonians generate dynamics that might be tractable: the Riemannian
+component H , associated to the Riemannian reference measure, induces the geodesic flow, while
+1
+thetargetdensitycomponentH givesrisetoaverticalgradientflow, whereinthevelocityisshifted
+2
+bythedirectionofmaximaldensitychange, i.e., (q,v) (cid:55)→ (q,v−δt∇ V(q)). TheJacobiidentityand
+q
+the BCH formula imply these integrators do possess a shadow Hamiltonian H˜, and reproduce its
+dynamics. Such a shadow can in fact be explicitly obtained from (5) by computing iterated Poisson
+brackets; e.g., on M = Rd and for H(q,v) = (1/2)vTgv+V(q), the three-stage geodesic integrator
+ΦH1 ◦ΦH2 ◦ΦH1 ◦ΦH2 ◦ΦH1 ◦ΦH2 ◦ΦH1, with parameters a,b ∈ R, yields [138]
+bδt aδt (1−1b)δt (1−2a)δt (1−1b)δt aδt bδt
+2 2
+H˜(q,v) = H(q,v)+δt2(cid:2) c ∂V(q)Tg−1∂V(q)+c vT∂2V(q)v (cid:3) +O(δt4),
+1 2
+for some constants c and c . As an immediate consequence, these symplectic integrators preserve
+1 2
+the reference symplectic measure µ and can be used as a (deterministic) Markov proposal, which
+Ω
+when combined with the Metropolis-Hastings acceptance step that depends only on the target den-
+sity, gives rise to a measure-preserving process. Moreover, the existence of the shadow Hamiltonian
+ensures that the acceptance rate will remain high for distant proposals, allowing small correlations.
+However,sinceHamiltonianflowsareconservative,theyremainstuckwithinenergylevelsets,which
+prevents ergodicity. It is thus necessary to introduce another measure-preserving process, known
+as the heat bath or thermostat, that explores different energy levels; the simplest such process cor-
+responds to sampling a velocity from a Gaussian distribution. Bringing these ingredients together,
+we thus have the following HMC algorithm: given zn = (q,v), compute zn+1 according to
+1. Heat bath: sample a velocity according to a Gaussian, v† ∼ N(0,g−1(q)).
+2. Shadow Hamiltonian dynamics: move along the Hamiltonian flow generated by the geodesic
+integrator, z∗ = Ψ (z†), where z† = (q,v†).
+δt
+3. Metropolis correction: acceptz∗ withprobabilitymin (cid:8) 1,e−∆H(cid:9) ,where∆H = H(z(cid:63))−H(z†).
+If accepted then set zn+1 = z∗, otherwise set zn+1 = (q,−v†).
+The above rudimentary HMC method (originally known as Hybrid Monte Carlo) was proposed for
+simulations in lattice quantum chromodynamics with M being the special unitary group, SU(n),
+and used a Hamiltonian dynamics ingeniously constructed from the Maurer-Cartan frame to com-
+pute the partition function of discretised gauge theories [13]. This method has later been applied
+in molecular dynamics and statistics [12,49,64,139,140].
+While the above discussion provides a justification for the use of Hamiltonian mechanics, a more
+constructiveargumentfromfirstprinciplescanalsobegiven. Fromthefamilyofmeasure-preserving
+dynamics, which as we have seen can be written as curl (A) (recall (34)), we want to identify those
+µ
+suited to practical implementations (here µ could be any distribution on some space F having the
+target ρ has a marginal). Only for the simplest distributions µ we can hope to find brackets A for
+which the flow of curl (A) is tractable. Instead, the standard approach to geometrically integrate
+µ
+this flow relies as before on splitting methods, which effectively decompose µ ∝
+e−(cid:80)H
+(cid:96)µ
+F
+into
+simpler components by decomposing the reference measure from the density and taking advantage
+of any product structure of the density, so that curl (A) = curl (A)+ (cid:80) XA .
+µ µF (cid:96) H
+(cid:96)
+There are three critical properties underpinning the success of HMC in practice. The first two
+are the preservation of the reference measure and the existence of a conserved shadow Hamiltonian
+17
+for the numerical method. These imply that we remain close to preserving µ along the flow, and
+in particular leads to Jacobian-free Metropolis corrections with good acceptance rates for distant
+proposals (see [141] for examples of schemes with Jacobian corrections). Achieving these properties
+yield strong constraints on the choice of A [142]; the shadow property is essentially exclusive to
+Poisson systems, for which the conservation of a common reference measure is equivalent to the
+triviality of the modular class in the first Poisson cohomology group [143]. In particular, Poisson
+brackets that admit such an invariant measure have been carefully analysed and are known as
+unimodular; the only unimodular Poisson bracket that can be constructed on general manifolds
+seems to be precisely the symplectic one.
+Thethirdcriticalpropertyistheexistenceofsplittingsmethodsforwhichallthecomposingflows
+areeithertractableorhaveadequateapproximations,namelythegeodesicintegrators. Indeed,aswe
+haveseen,theflowΦH2—inducedbythepotentialH
+2
+(q) = V(q)—isalwaystractable,independently
+ofthecomplexityofthetargetdensity;thisispossiblemainlyduetotheextra“symmetries” resulting
+from implementing the flow on a higher-dimensional space TM rather than M. On the other hand,
+one key consideration for the tractability of the the geodesic flow ΦH1—induced by the kinetic
+δt
+energy H (q,v)—is the choice of Riemannian metric; for most cases, it is numerically hard to
+1
+implement ΦH1 since several implicit equations need to be solved. In general, it is desirable to use
+δt
+a Riemannian metric that reflects the intrinsic symmetries of the sample space, mathematically
+described by a Lie group action. Indeed, by using an invariant Riemannian metric, one greatly
+simplifiestheequationsofmotionofthegeodesicflow,reducingtheusual2ndorderEuler-Langrange
+equations to the 1st order Euler-Arnold equations [144–146], with tractable solutions in many cases
+of interest, e.g., for naturally reductive homogeneous spaces; including Rd, the space of positive
+definite matrices, Stiefel manifolds, Grassmannian manifolds, and many Lie groups. In such cases,
+it is possible to find a Riemannian metric whose geodesic flow is known and given by the Lie group
+exponential [16,147,148]. For the other main class of spaces, namely those given by constraints,
+if one chooses the restriction of the Euclidean metric, then the RATTLE scheme discussed in
+optimisation (see section §2.4) is a suitable symplectic integrator [103,149–152] (perhaps up to a
+reversiblity check). Occasionally, it may be suitable to use a Riemannian metric associated to the
+target distribution rather than the sample space; e.g., when it belongs to a statistical manifold. In
+that case, any choice of (information) divergence gives rise to an information tensor that may be
+used in the HMC algorithm. Notably, this is the case in Bayesian statistics, wherein attempting
+to find a Riemannian metric that locally matches the Hessian of the posterior motivates the use of
+the Fisher information tensor summed with the Hessian of the prior, giving rise to the Riemannian
+HMC [127,153]. When a Riemannian metric whose geodesic flow is unknown is chosen, one can
+use the trick of increasing the dimension of the phase space to add symmetries to derive explicit
+symplectic integrators [154,155].
+Once we have an integrator for the geodesic flow, another important consideration is the con-
+struction and tuning of the overall integrator, i.e., the specific composition of ΦH1 and ΦH2. Tradi-
+δt δt
+tionalnumericalintegratorsaretunedtoprovidehighlyaccurateapproximationsforthetrajectories
+inthelimitδt → 0; forinstance, aforthorderRunge-Kuttamethod. However, samplersaimtohave
+the largest possible step size δt in order to reduce correlations. One approach consists in tuning the
+integrator to obtain good density preservation in the Gaussian case. Another approach consists in
+tuning the integrator to ensure the shadow Hamiltonian H˜ agrees with H up to the desired order;
+see [156–161]. We note that when the target density contains two components, one computationally
+expensive and the other computationally cheap, it may be desirable to further split the potential
+H (q) = V(q) to obtain higher acceptance rates [162–164]. In order to achieve ergodicity in HMC
+2
+methods, itisusuallysufficienttorandomisethetrajectorylengthoftheintegrator[165–167]. How-
+ever, deriving guarantees on the rate of convergence of HMC is difficult, though recent work have
+18
+established sufficient conditions for geometric ergodicity [15,168].
+Let us also briefly mention some useful upgrades that have been proposed in recent years. First,
+whenever the Metropolis step rejects the proposed sample, the (expensive) computation of the
+numerical trajectory is wasted, and several modifications have been proposed to address this issue,
+for example by granting the method extra integration steps when the proposal is rejected [169,170],
+or using a dynamic integration with a termination criterion that aims to ensure the motion is long
+enough to avoid random walks, but short enough that we do not waste computational effort, such
+as the No-U-Turn sampler [171].
+Second, the Metropolis algorithm gives rise to a reversible method which, as discussed above,
+usually has slower convergence properties. Modern HMC methods bypass this issue by replacing
+the heat bath by an Ornstein-Uhlenbeck process, which ensures the overall algorithm is irreversible.
+In this case, the overall HMC method can be viewed as a geometric integration of the underdamped
+Langevin diffusion [106,172,173]. The connection between HMC and Langevin diffusion originates
+from the desire to replace the Gaussian heat bath with a partial momentum refreshment, yielding
+a more accurate simulation of dynamical properties and higher acceptance rates [174].
+Third, manymodificationsoftherudimentaryHMCalgorithmonlyprovideimprovementswhen
+the acceptance rate is sufficiently high. A third class of upgrades improves the acceptance rate
+by using the fact that the shadow Hamiltonian is exactly preserved by the integrator. These
+shadow HMC methods sample from a biased target distribution, defined by the (truncated) shadow
+Hamiltonian, and correct the bias in the samples via an importance sampler [138,175,176].
+Finally, the Metropolis step can be replaced with a multinomial correction that uses the entire
+numericaltrajectory,acceptingagivenpointalongitaccordingtothedegreebywhichitdistortsthe
+target measure [64]. Some methods entirely skip the accept/reject step, in particular those relying
+on appproximate gradients and surrogates [177,178], such as the stochastic HMC methods; such
+methods approximate the potential V(q) and its derivative when they are given by a sum over data
+(cid:80)
+points, V(q) = V (q), by a cheaper sum over a uniformly sampled minibatches [179] (these are
+i i
+commonly called stochastic gradients in machine learning). However, this may break the shadow
+property and reduce the scalable and robust properties of HMC methods [180].
+4 Statistical inference with kernel-based discrepancies
+The problem of parameter inference consists of estimating an element θ∗ ∈ Θ using a sequence
+of random functions (or estimators) θˆ : Ω → Θ, with θˆ determined by a set of measurements
+n n
+{q ,...,q } representing the available experimental data. In the statistical context, we search for
+1 n
+the optimal approximation µ of the target measure ρ within a statistical model {µ : θ ∈ Θ}, with
+θ∗ θ
+respect to a discrepancy D : P ×P → [0,∞] over the set of probability measures P. A common
+choice of discrepancy is the KL-divergence, and the resulting inference problem can be implemented
+via the asymptotically optimal maximum likelihood estimators [69]. As in many applications we are
+interested in computing expectations, a particularly suitable notion of discrepancies are the integral
+probability pseudometrics (IPM) [181], which quantify the worse-case integration error with respect
+to a family of functions F
+(cid:12)(cid:90) (cid:90) (cid:12)
+(cid:12) (cid:12)
+d
+F
+(ρ,µ) ≡ sup(cid:12) fdρ− fdµ(cid:12).
+(cid:12) (cid:12)
+f∈F
+An apparent difficulty arises with IPMs in that we need to compute a supremum, which will be
+intractable for most choices of F. Observe, however, that if F were the unit ball of a normed vector
+space H, and integration with respect to ρ and µ was a continuous linear functional on H, then
+d (ρ,µ) would correspond to the distance between ρ and µ in the dual norm over the dual H∗,
+F
+19
+i.e., d (ρ,µ) = (cid:107)ρ−µ(cid:107) . Conveniently, reproducing kernel Hilbert spaces (RKHS) are precisely
+F ∗
+Hilbert spaces over which the Dirac distributions δ : f (cid:55)→ f(x) act continuously [182–184], and,
+x
+more generally, the probability distributions that act continuously by integration on a RKHS H
+are exactly those for which all elements of H are integrable [185]. Denoting by P the set of such
+H
+probability measures, so that by definition δ ∈ P , we can define the Maximum Mean Discrepancy
+x H
+(MMD) as
+MMD : P ×P → [0,∞), MMD[ρ | µ] = (cid:107)ρ−µ(cid:107),
+H H
+where we further used the Riesz representation isomorphism to view ρ,µ ∈ P ⊂ H∗ ∼ = H as
+H
+elements of H. The map P → H is usually referred to as the mean embedding [186,187]. The
+H
+anglesbetweenthemeanembeddingofDiracdistributionsplayacentralroleinthestudyofRKHS,
+and indeed characterise them. They define the reproducing kernel
+k : M×M → R, k(x,y) ≡ (cid:104)δ ,δ (cid:105),
+x y
+with (cid:104)·,·(cid:105) denoting the inner product on H, from which we can obtain a practical expression for the
+squared MMD:
+(cid:90)(cid:90)
+MMD2[ρ | µ] = k(x,y)(ρ−µ)(dy)(ρ−µ)(dx).
+4.1 Topological methods for MMDs
+A key feature of RKHS, as identified by Laurent Schwartz, is the fact they are Hilbertian subspaces,
+i.e., Hilbert spaces continuously embedded within a topological vector space T, denoted H (cid:44)→
+T [188]. In this context, by composing the transpose of the inclusion H (cid:44)→ T with the Riesz
+isomorphism, we can define a (generalised) mean embedding as the weakly-continuous positive map
+φ : T∗ (cid:44)→ H∗ → H.
+This mapping allows us to transfer structures between H and T∗, an example of which is the MMD,
+which is nothing else than the pullback of the Hilbert space metric from H to T∗. Some important
+examples of T are C , C∞ and RM (with their canonical topologies), whose duals are the spaces of
+0 c
+finite Radon measures, Schwartz distributions, and measures with finite support, respectively [189].
+In particular a RKHS, as defined above, is any Hilbert space satisfying H (cid:44)→ RM. More generally,
+when T is continuously embedded in the space of Rn-valued functions on M—as in the examples
+above, which have n = 1—then H inherits (and can be characterised in terms of) a reproducing
+kernel K : M×M → Rn×n, defined ∀v,u ∈ Rn by
+v(cid:62)K(x,y)u = δv(cid:2) φ(δu) (cid:3) ,
+x y
+where δu : h (cid:55)→ u·h(x); but this need not be the case in general, and we will employ Hilbertian
+x
+subspaces with no reproducing kernel to construct the score-matching discrepancy.
+This geometric description of RKHS and MMD allows us to swiftly apply topological methods
+in their analysis. For example, in order for MMD2 to be a valid notion of statistical divergence, it
+should accurately discriminate distinct distributions, in the sense that MMD[ρ | µ] = 0 iff ρ = µ.
+By construction, MMD will be characteristic to a subset of T∗, that is be able to distinguish its
+elements, iff φ is injective. The Hahn–Banach theorem further shows that this is equivalent to
+the denseness of H in T, reducing the matter to a topological question [186,189,190]. In many
+applications, we typically would like T∗ to be the set of probability measures, but the latter is
+not even a vector space. Instead, just as is commonly done to define (statistical) manifolds, it is
+20
+desirable to embed P within a more structured space, such as the space of finite Radon measures
+C∗. Characteristicness to C∗ is also known as universality in learning theory, since such RKHS are
+0 0
+dense in L2(µ) for any µ ∈ P, which enables the method to learn the target function independently
+of the data-generating distribution [191]. However, in many important cases, we are interested in
+analysing the denseness of H in a space other than C . For instance, in the case of unbounded
+0
+reproducing kernels, we cannot aim to separate all finite distributions, since the RKHS will contain
+unbounded functions and the MMD will only be defined on a subset of P. In the particular case
+of the KSDs discussed below, which are given by transforming a base RKHS into a Stein RKHS
+via a differential operator, the characteristiness of the Stein RKHS to a set of probability measures
+is equivalent to the characteristiness of the base RKHS to more general spaces T∗ of Schwartz
+distributions [185].
+Moreover, the ability of MMD to discriminate distributions is also useful to ensure it further
+metrises,oratleastcontrols,weakconvergence,andthusprovideasuitablequantificationofthedis-
+crepancy between unequal distributions. Indeed, on non-compact locally compact Hausdorff spaces
+such as Rd, when H (cid:44)→ C , then MMD will metrise weak convergence (of probability measures) iff
+0
+the kernel k is continuous and H is characteristic to the space of finite Radon measures [192]. The
+fact that the RKHS must separate all finite measures in order to metrise weak convergence results
+from the fact that otherwise MMD cannot in general prevent positive measures from degenerating
+into the null measure on non-compact spaces, beyond the family of translation-invariant kernels,
+for which characteristicness to the sets of probability measures or that of finite measures are in fact
+equivalent [189]. It is also possible to prevent probability mass from escaping to infinity—when the
+topology of the sequence of distributions is relatively compact with respect to the weak topology
+on the space of distributions—since, in that case, standard topological arguments relate MMD and
+weak convergence via characteristicness to P [193]. For example, by Prokhorov’s theorem we may
+use the tightness of a sequence of distributions to ensure characteristic MMDs detect any loss of
+mass, and thus control weak convergence [194].
+4.2 Smooth measures and KSDs
+MMD have a computationally tractable expression whenever ρ,µ are discrete measures, or at least
+tractable U-statistics when their samples are readily available. Many applications involve distribu-
+tions that are smooth and fully supported, but hard to sample from. Recalling the definition of
+d (ρ,µ), it would be useful to construct a MMD for which the set F consists of functions whose
+F
+integral under µ is tractable, for example equal to zero; the MMD would then reduce to a double
+integration with respect to ρ. To achieve this, we will leverage ideas from Stein’s method [195,196],
+and apply Stein operators to a given RKHS so as to construct a Stein RKHS whose elements have
+vanishing expectation under a distribution of interest.
+4.2.1 The canonical Stein operator and Poincaré duality
+To gain intuition on Stein operators, we begin by considering the integral with respect to µ as a
+linear operator on test functions, µ : C∞(M) → R, with µf ≡ (cid:82) fdµ, and we are interested in
+c
+generating test functions in the kernel of this operator (i.e., with vanishing expectations). There
+are two fundamental theorems that help us understand the integral-differential geometry of the
+manifold: deRham’stheoremandPoincaréduality. Theformerrelatesthetopologyofthemanifold
+to information on the solutions of differential equations defined over the manifold [197]. The latter
+(whichcontainsthefundamentaltheoremofcalculus)describesthepropertiesoftheintegralpairing
+(cid:82)
+(α,β) (cid:55)→ α ∧ β of differential forms, which include the pairing of test functions with smooth
+21
+(cid:82)
+measures (f,µ) (cid:55)→ fdµ. While these results are canonical statements about the manifold, we can
+turn them into measure-theoretic statements by means of the isomorphism µ(cid:93). In particular, when
+M is connected, there is an isomorphism between the top compactly supported twisted de Rham
+cohomology group Hn(M) (which depends on the topology of M) and R given by integration,
+c
+ω (cid:55)→ (cid:82) ω. Applying the transformation µ(cid:93) to this isomorphism yields the isomorphism of vector
+M
+spaces
+µ : C∞(M)/Im(div | ) → R,
+c µ c
+where div | : X (M) → C∞(M) is the divergence operator restricted to the set of compactly
+µ c c c
+supported vector fields X (M). Hence, if h,f ∈ C∞(M), then
+c c
+(cid:90) (cid:90)
+fdµ = hdµ ⇐⇒ f = h+div (X) for some X ∈ X (M).
+µ c
+Consequently,
+µ−1({0}) = {div (X) : X ∈ X (M)}.
+µ c
+Thus, the test functions that integrate to zero are precisely those that can be written as the diver-
+genceofcompactlysupportedvectorfields. Inparticular,oncompactmanifolds,thereisacanonical
+Stein operator, div , which turns vector fields into functions with vanishing expectations. For other
+µ
+types of manifolds, one can obtain similar dualities by using other classes of differential forms, such
+as the square-integrable ones, or by allowing boundaries. For our purposes, the above is sufficient
+to motivate calling
+S ≡ div | : X → C∞(M)
+µ µ Xµ µ
+the canonical Stein operator, whose domain X , called the Stein class, is any set of vector fields
+µ
+satisfying the desired property that E [S (X)] ≡ (cid:82) S (X)dµ = 0, for all X ∈ X .
+µ µ µ µ
+If we have a bracket B on M, we can turn the canonical Stein operator on vector fields into a
+2nd order differential operator acting on functions, the B-Stein operator on the Stein class
+C∞ ≡ {f ∈ C∞(M) : XB ∈ X },
+µ f µ
+by
+SB : C∞ → C∞(M), SBf ≡ div (XB).
+µ µ µ µ f
+If µ = e−Hµ then we have the following useful decomposition:
+M
+div (XB) = div (XB)−XB(H).
+e−HµM f µM f f
+Let us give some important examples of bracket Stein operators. When B ≡ A is antisymmetric,
+the A-Stein operator is simply a 1st order differential operator, namely the µ-preserving curl vector
+field SA = curl (A). When B is Riemannian, and µ is the Riemannian measure, then
+µ µ M
+Sg(f) = ∇·Xg −(cid:104)∇f,∇H(cid:105) = ∆f −(cid:104)∇f,∇H(cid:105) = ∆f +(cid:104)∇f,∇logdµ/dµ (cid:105),
+µ f M
+where ∇,∆,∇·,(cid:104)·,·(cid:105) are the Riemannian gradient, Laplacian, divergence, and metric, respectively;
+theg−1-SteinoperatorbecomestheRiemannianSteinoperator[21,198,199]. Hence,theRiemannian
+Stein operator is the restriction of the canonical Stein operator to gradient vector fields. In general,
+decomposing the bracket into its symmetric and antisymmetric parts, B ≡ S +A, we obtain the
+following useful decomposition of the B-Stein operator:
+SS+A(f) = div (XS)+curl (A)(f). (39)
+µ µ f µ
+22
+In particular, if we restrict ourselves to a symmetric positive semi-definite B, associated to a set
+of vector fields {Y }, XB ≡ Y (f)Y for any function f, then (39) corresponds to the generator of
+i f i i
+a µ-preserving diffusion. A suitable Stein class is then the domain of the generator, since for any
+function in that domain E (cid:2) SS+Af (cid:3) vanishes by the Fokker-Planck equation. The construction
+µ µ
+of Stein operators via measure-preserving diffusions is known as the Barbour approach [200]. In
+fact, the brackets allow us to define a more general notion of Stein operator acting on 1-forms
+{α : XB ∈ X }, and, on flat Euclidean space, SB(α) ≡ div (XB) recovers the “diffusion” Stein
+α µ µ µ α
+operator [201].
+4.2.2 Kernel Stein discrepancies and score matching
+Once we have a Stein operator, we need to construct a Stein class for it, i.e., a set V of vector fields
+(or more general tensor fields) whose image F under the operator has mean zero under µ. The
+resulting IPM is then known as a Stein Discrepancy:
+(cid:12)(cid:90) (cid:12)
+(cid:12) (cid:12)
+d Sµ(V) (µ,ρ) =
+X
+su
+∈
+p
+V
+(cid:12)
+(cid:12)
+S µ (X)dρ(cid:12)
+(cid:12)
+.
+(cid:82)
+The expression S (X)dρ is precisely the rate of change of the KL divergence along measures
+µ
+satisfying the continuity equation; an observation that leads to Stein variational gradient descent
+(SVGD) methods to approximate distributions [198,202]. Specifically, in SVGD the target measure
+(cid:80)
+is approximated using a finite distribution δ , where the location of the particles {x } is
+(cid:96) x (cid:96) (cid:96) (cid:96)
+updated by moving along the direction that maximises the rate of change of KL within a space of
+vector fields isomorphic to a RKHS (e.g., the space of gradients of functions in a RKHS).
+When S is the canonical Stein operator, there is a canonical Stein class, provided by Stokes’
+µ
+theorem, which essentially only depends on the manifold: for a connected manifold M, viewing
+(cid:82) (cid:82)
+integration as an operator on smooth µ-integrable functions, then fdµ = 0 ⇐⇒ dα = 0, where
+f = div (µ(cid:93)(α)). Unfortunately, Stokes’ theorem usually does not provide a practical description
+µ
+(cid:82)
+of the differential forms that satisfy dα = 0, aside from the compactly supported case. There
+are, however, several choices of Stein class constructed from Hilbertian subspaces that lead to
+computationally tractable Stein discrepancies. One route consists in constructing a RKHS of mean-
+zero functions as the image of another RKHS under a Stein operator. In this case, we can use S
+µ
+to map a given RKHS of Rd-valued functions H, with (matrix-valued) reproducing kernel K, into
+a Stein RKHS of R-valued functions S (H) associated to a Stein reproducing kernel k , given by
+µ µ
+(here q is the Lebesgue density of µ)
+1
+k (x,y) = ∂ ·∂ ·(q(x)K(x,y)q(y)).
+µ y x
+q(x)q(y)
+The resulting Stein discrepancy can be thought of as an MMD that depends only on ρ and is known
+as kernel Stein discrepancy [203]:
+(cid:90) (cid:90)
+1
+KSD[ρ]2 ≡ MMD[ρ | µ]2 = ∂ ·∂ ·(q(x)K(x,y)q(y))dρ(y)dρ(x).
+y x
+q(x)q(y)
+Another class of discrepancies relies on a choice of bracket B together with a corollary from Stokes’
+theorem: (cid:82) SB(α)dρ = (cid:82) α(XB∗ )dρ, where e−H and e−K are the densities of ρ and µ with respect
+µ H−K
+to a common smooth measure (below the Riemannian one), while B∗ is the dual bracket (the
+transpose of B). We can thus re-write the Stein discrepancy as
+(cid:12)(cid:90) (cid:12)
+sup
+(cid:12)
+(cid:12)
+α(XB∗
+)dρ
+(cid:12)
+(cid:12) (40)
+H−K
+α∈A (cid:12) (cid:12)
+23
+over some family of 1-forms A. As we did previously, we can “remove” the supremum by re-
+writing the above as a supremum over some unit ball of a continuous linear functional. This can
+be achieved once we have a Riemannian metric (cid:104)·,·(cid:105), which induces a natural inner product that is
+central to the theory of Harmonic forms, namely (α,β) ≡ (cid:82) (cid:104)α,β(cid:105)dµ. In particular, taking as A
+µ
+thesmoothcompactlysupported1-formsintheunitballofL2(T∗M,µ)—theHilbertspaceofsquare
+µ-integrable 1-forms—the Stein discrepancy recovers a generalisation of the score matching [71]:
+(cid:90) (cid:104) (cid:105)
+SM [ρ | µ] = (cid:107)XB∗ (cid:107)2dρ = E (cid:107)XB∗ (cid:107)2 . (41)
+B H−K ρ H−K
+It is worth noting that, while L2(T∗M,µ) is not a RKHS, and does not have a reproducing kernel,
+it remains a Hilbertian subspace of the space of de Rham currents. When B is Riemannian we
+recover the Riemannian score matching [21]
+(cid:90)
+SM [ρ | µ] = (cid:107)∇H −∇K(cid:107)2dρ,
+G
+while in Euclidean space (41) yields the diffusion score matching [204].
+4.3 Information geometry of MMDs and natural gradient descent
+MMDs and Stein discrepancies have proved to be important tools in a wide range of contexts, from
+hypothesis testing and training generative neural networks to measuring sample quality [128,205–
+209]. In the context of statistical inference, once we have chosen a suitable discrepancy, D, and a
+statistical model, {µ }, our aim is to find the best approximation of the target distribution within
+Θ
+the model; this corresponds to solving the optimisation problem θ∗ ∈ argmin D[ρ | µ ]. As
+θ∈Θ θ
+mentioned previously, computing the value of the discrepancy D[ρ | µ ] is computationally chal-
+θ
+lenging. Fortunately, we can often obtain robust Stein discrepancy estimators for smooth statistical
+models, whose distributions have a smooth positive Lebesgue density, as well as MMD estimators
+for generative model that are easy to sample from but have intractable model densities.
+Ineithercase, oncewehaveanestimatorDˆ basedonmsamplesfromthetarget, wemustsolve
+m
+theapproximateoptimisationproblemθ∗ ∈ argmin Dˆ [ρ | µ ]. WhenthefunctionDˆ [ρ | µ ]is
+m θ∈Θ m θ m θ
+smooth, this may be done via the accelerated Hamiltonian-based optimisation methods previously
+discussed (section §2). If D is a divergence function, one can also usually improve the speed of
+convergence by following the natural gradient descent, associated with the information Riemannian
+metric g induced by D [210–213]. In practice, this leads to implementing the update
+θ
+θˆ = θˆ −γ gˆ−1∂ Dˆ [ρ | µ ],
+t+1 t t θt θt m θ
+where {γ } is an appropriate sequence of step sizes, and gˆ−1 is the inverse of a regularised estimate
+t θ
+of the information tensor [214]. Finally, note that there is a deep connection between divergences
+and the geometric mechanics discussed in sampling and optimisation, as any divergence may be
+interpretedasadiscreteLagrangian,andhencegeneratesasymplecticstructureandintegrator[215].
+4.3.1 Minimum Stein discrepancy estimators
+When the model {µ } consists of smooth measures with positive densities {q }, and we have access
+θ θ
+to samples {x } from the target, the Stein discrepancies offer a flexible family of inference methods.
+(cid:96)
+For SM we can use the estimator
+m
+SˆM [ρ | µ ] = 1 (cid:88)(cid:0) (cid:107)BT∂ logq (cid:107)2+2∂ ·(BBT∂ logq ) (cid:1) (x )
+m θ m x θ 2 x x θ (cid:96)
+(cid:96)=1
+24
+combined with the following expression for the information tensor:
+(cid:90)
+(g ) = BT∂ ∂ logq ·BT∂ ∂ logq dµ .
+θ ij x θi θ x θj θ θ
+For KSD it is convenient to choose a family of matrix kernels K (x,y) = B (x)k(x,y)B (y)T, for
+θ θ θ
+some scalar kernel k, and parameter-dependent matrix function B . Denoting the associated Stein
+θ
+reproducing kernel by k , we have the unbiased estimator
+µ ,θ
+θ
+m
+1 (cid:88)
+KSˆD [ρ] = k (x ,x ),
+m µ ,θ i j
+m(m−1) θ
+i(cid:54)=j
+and information tensor
+(cid:90)(cid:90)
+(g ) = (∂ ∂ logq )T B (x)k(x,y)BT(y)∂ ∂ logq dµ (x)dµ (y).
+θ ij x θj θ θ θ x θi θ θ θ
+The parameters B and k, and the choice of statistical model, can often be adjusted to achieve char-
+acteristiness, consistency, bias-robustness, and obtain central limit theorems; see [204] for details,
+and for numerical experiments showing an acceleration induced by the information Riemannian
+metric.
+4.3.2 Likelihood-free inference with generative models
+For many applications of interests, the densities of the model, {µ }, cannot be evaluated or differ-
+θ
+entiated. We thus need density-free inference methods. This is the case, for instance, in the context
+of generative models wherein µ is the pushforward of a distribution µ, from which we can sample
+θ
+efficiently,withrespecttoageneratorfunctionT . Then,theminimumSteindiscrepancyestimators
+θ
+based on KSD and SM, or other discrepancies that rely on the scores, are intractable. The MMDs
+are suited to this case since they depend on the target and model only through integration, which
+can be straightforwardly estimated using the samples. The associated information tensor is
+(cid:90)(cid:90)
+(g ) = ∂ T (u)T∂ ∂ k(x,y)| ∂ T (v)dµ(u)dµ(v).
+θ ij θ θ x y (T (u),T (v)) θ θ
+θ θ
+Under appropriate choices of kernels and models one can derive theoretical guarantees, such as
+concentration/generalisation bounds, consistency, asymptotic normality, and robustness; see, e.g.,
+[209,216,217]. Moreover, many approaches to kernel selection in a wide range of contexts have been
+studied, which include the median heuristic or maximising the power of hypothesis tests, and in
+practice mixtures of Gaussian kernels are often employed [209,216,218–221].
+5 Adaptive agents through active inference
+The previous sections have established some of the mathematical fundaments of optimisation, sam-
+pling and inference. In this final section, we close with a generic use case called active inference.
+Active inference is a general framework for describing and designing adaptive agents that unifies
+many aspects of behaviour—including perception, planning and learning—as processes of inference.
+Activeinferenceemergedinthelate2000sasaunifyingtheoryofhumanbrainfunction [82–84,222],
+and has since been applied to simulate a wide range of behaviours in neuroscience [81,223], ma-
+chine learning [88,94,224], and robotics [85,86]. In what follows, we derive the objective functional
+25
+overarching decision-making in active inference and describe its information geometric structure,
+revealing several special cases that are established notions in statistics, cognitive science and engi-
+neering. Finally, we exploit this geometric structure in a generic framework for designing adaptive
+agents.
+5.1 Modelling adaptive decision-making
+5.1.1 Behaviour, agents and environments
+We define behaviour as the interaction between an agent and its environment. Together the agent
+and its environment form a system that evolves over time according to a stochastic process x. This
+definition entails a notion of time T, which may be discrete or continuous, and a state space X,
+which should be a measure space (e.g., discrete space, manifold, etc.). A stochastic process x is a
+time-indexed collection of random variables x on the state space. More concisely, it is a random
+t
+variable over trajectories on the state space T → X:
+x : Ω → (T → X), ω (cid:55)→ x(ω) ⇐⇒ x : Ω → X, ω (cid:55)→ x(ω)(t) ∀t ∈ T.
+t
+We denote by P the probability density of x on the space of paths T → X with respect to a
+pre-specified base measure.
+Typically, systems comprising an agent and its environment have three sets of states: external
+states are unknown to the agent and constitute the environment; the observable states are those
+agent’s states that the agent sees but cannot directly control; finally, the autonomous states are
+those agent’s states that the agent sees and can directly control. This produces a partition of
+the state space X into states external to the agent S and states belonging to the agent Π, which
+themselves comprise observable O and autonomous states A. As a consequence, the system x can
+be decomposed into external s, observable o, and autonomous a processes:
+X ≡ S ×Π ≡ S ×O×A =⇒ x ≡ (s,π) ≡ (s,o,a),
+here written as random interacting trajectories on their respective spaces (see Figure 2 for an
+illustration).
+5.1.2 Decision-making in precise agents
+The description of behaviour adopted so far could, in principle, describe particles interacting with a
+heatbath[107]aswellashumansinteractingwiththeirenvironment(seeFigure2). Wewouldlikea
+description that accounts for purposeful behaviour [81,225–229]. So what distinguishes people from
+small particles? An obvious distinction is that human behaviour is subject to classical as opposed
+to statistical mechanics. In other words, people are precise agents, with conservative dynamics.
+Definition 5.1 (Preciseagent). Anagentisprecisewhenitevolvesdeterministicallyina(possibly)
+stochastic environment, i.e., when P(π | s) is a Dirac measure for any s. For example,
+ds = f(s ,π )dt+dw , dπ = g(s ,π )dt.
+t t t t t t t
+At any moment in time t, the agent has access, at most, to its past trajectory π , and has
+≤t
+agency over its future autonomous trajectory a . We define a decision to be a choice of au-
+>t
+tonomous trajectory in the future given available knowledge a | π . We interpret P(s,o | π )
+>t ≤t ≤t
+as expressing the agent’s preferences over external and observable trajectories given available data,
+and P(s,o | a ,π ) as expressing the agent’s predictions over external and observable paths given
+>t ≤t
+26
+Figure 2: Partitions and agents. This figure illustrates a human (agent π) interacting with its environment
+(external process s), and the resulting partition into external s, observable o, and autonomous a processes.
+Theexternalstatesaretheenvironment,whichtheagentdoesnothavedirectaccessto,butwhichissampled
+through the observable states. These could include states of the sensory epithelia (e.g., eyes and skin). The
+autonomousstatesconstitutethemusclesandnervoussystemthatfactoravailableinformationintodecisions.
+In the example of human behaviour, the environment causes observations (i.e., sensations), which informs a
+nervousandmuscularresponse,whichinturninfluencestheenvironment. Ingeneral,autonomousresponses
+may be informed by all past agent states π =(o ,a ) (the information available to the agent at time t),
+≤t ≤t ≤t
+which means that the systems we are describing are typically non-Markovian.
+a decision. Crucially, decision-making in (precise) agents is a functional of the agent’s predictions
+and preferences10
+−logP(a | π ) = E [−logP(a | π )] = E[logP(s,o | a ,π )−logP(s,o,a | π )]
+>t ≤t P(s,o|a>t,π
+≤t
+) >t ≤t >t ≤t >t ≤t
+= E[logP(s | a ,π )−logP(s,o | π )+logP(o | s,a ,π )−logP(a | s,o,π )]
+>t ≤t ≤t >t ≤t >t ≤t
+(cid:124) (cid:123)(cid:122) (cid:125)
+=0
+⇒ −logP(a | π ) = E [logP(s | a ,π )−logP(s,o | π )]. (EFE)
+>t ≤t P(s,o|a>t,π
+≤t
+) >t ≤t ≤t
+This functional is known as an expected free energy (EFE) [81,84,231] because it resembles the
+expectation of the free energy functional (a.k.a. evidence lower bound [232]) used in approximate
+Bayesian inference [84,226]. We define active inference as Hamilton’s principle of least action on
+expected free energy11 that expresses the most likely decision a , where
+>t
+a ≡ argmin−logP(a | π ). (AIF)
+>t >t ≤t
+a>t
+5.1.3 The information geometry of decision-making
+Interestingly, active inference (AIF) looks like it describes agents that engage in purposeful be-
+haviour. Indeed, we can rearrange the expected free energy (EFE) in several ways, each of which
+reveals a fundamental trade-off that underwrites decision-making. This allows us to relate active
+inference to information theoretic formulations of decision-making that predominate in statistics,
+10Under the precise agent assumption (Definition 5.1) it is straightforward to show that E [logP(o |
+P(s,o|a>t,π≤t)
+s,a ,π )−logP(a | s,o,π )] = 0 when the path space T → X is countable [230]. Presumably, this equality
+>t ≤t >t ≤t
+can be extended to more general path spaces by a limiting argument.
+11As a negative log density over paths, the expected free energy is an action in the physical sense of the word.
+27
+Figure3: Decision-makingunderactiveinference. Thisfigureillustratesvariousimperativesthatunderwrite
+decision-makingunderactiveinferenceintermsofseveralconstructsthatpredominateinstatistics,cognitive
+science and engineering. These formulations are disclosed when one removes certain sources of uncertainty.
+For example, if we remove ambiguity, decision-making minimises risk, which corresponds to aligning pre-
+dictions with preferences about the external course of events. This aligns with prospect theory of human
+choice behaviour in economics [233] and underwrites modern approaches to control as inference [234–236],
+variously known as Kalman duality [237,238], KL control [239] and maximum entropy reinforcement learn-
+ing [240]. If we further remove preferences, decision-making maximises the entropy of external trajectories.
+This maximum entropy principle [241,242] allows one to least commit to a pre-specified external trajectory
+and therefore keep options open. If we reintroduce ambiguity, but ignore preferences, decision-making max-
+imisesintrinsicvalueorexpectedinformationgain[243]. ThisunderwritesBayesianexperimentaldesign[244]
+and active learning in statistics [245], intrinsic motivation and artificial curiosity in machine learning and
+robotics [246–250]. This is mathematically equivalent to optimising expected Bayesian surprise and mutual
+information,whichunderwritesvisualsearch[251,252]andtheorganisationofourvisualapparatus[253–255].
+Lastly, if we remove intrinsic value, we are left with maximising extrinsic value or expected utility. This
+underwrites expected utility theory [78], game theory, optimal control [256,257] and reinforcement learn-
+ing[80]. BayesianformulationsofmaximisingexpectedutilityunderuncertaintyarealsoknownasBayesian
+decision theory [77]. To ease notation, we omitted to condition every distribution in the figure by π .
+≤t
+cognitive science and engineering (see Figure 3). For example, decision-making minimises both risk
+and ambiguity:
+predictedpaths preferredpaths
+−logP(a | π ) = KL (cid:2) P (cid:122) (s | a (cid:125)(cid:124) ,π (cid:123) ) | (cid:122) P(s (cid:125) | (cid:124) π (cid:123) ) (cid:3) +E (cid:2) −logP(o | s,π ) (cid:3) .
+>t ≤t >t ≤t ≤t P(s,o|a>t,π
+≤t
+) ≤t
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+risk ambiguity
+(42)
+Risk refers to the KL divergence between the predicted and preferred external course of events.
+Minimising risk entails making predicted (external) trajectories fulfil preferred external trajectories.
+In a nutshell, ambiguity refers to the expected entropy of future observations, given future external
+trajectories. An external trajectory that can lead to various distinct observation trajectories is
+highly ambiguous—and vice-versa. Thus, minimising ambiguity leads to sampling observations
+28
+that enable to recognise the external course of events. This leads to a type of observational bias
+commonlyknownasthestreetlighteffect[258]: whenapersonlosestheirkeysatnight,theyinitially
+search for them under the streetlight because the resulting observations (“I see my keys under the
+streetlight” or “I do not see my keys under the streetlight”) accurately disambiguate external states
+of affairs.
+Similarly, decision-making maximises extrinsic and intrinsic value [259]:
+−logP(a | π ) = E (cid:2) KL[P (s | o,a ,π ) | P (s | o,π )] (cid:3)
+>t ≤t P(o|a>t,π
+≤t
+)
+(cid:124)
+>t
+(cid:123)(cid:122)
+≤t ≤t
+(cid:125)
+preferredpaths ≥0
+−E (cid:2) log (cid:122) P (o (cid:125) | (cid:124) π (cid:123) ) (cid:3) −E (cid:2) KL[P (s | o,a ,π ) | P (s | a ,π )] (cid:3) .
+P(o|a>t,π
+≤t
+) ≤t P(o|a>t,π
+≤t
+) >t ≤t >t ≤t
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+extrinsicvalue intrinsicvalue
+Extrinsic value refers to the (log) likelihood of observations under the model of preferences. This
+corresponds to an expected utility or expected reward in behavioural economics, control theory and
+reinforcement learning [78,80]. In short, maximising extrinsic value leads to sampling observations
+that are likely under the model of preferences. Intrinsic value refers to the amount of information
+gained about external courses of events. This measures the expected degree of belief updating
+about external trajectories under a decision, with versus without future observations. Making de-
+cisions to maximise information gain leads to a goal-directed form of exploration [231], driven to
+answer “What would happen if I did that?” [247]. Interestingly, this decision-making procedure
+underwrites Bayesian experimental design in statistics [244], which describes optimal experiments
+as those that maximise expected information gain. In summary, decision-making weighs the im-
+peratives of maximising utility and information gain, which suggests a principled solution to the
+exploration-exploitation dilemma [260].
+5.2 Realising adaptive agents
+We now show how active inference affords a generic recipe to generate adaptive agents.
+5.2.1 The basic active inference algorithm
+Active inference specifies an agent by a prediction model P(s,o | a), expressing the distribution of
+external and observable paths given autonomous paths, and a preference model P(s,o), expressing
+the preferred external and observable trajectories. To aid intuition, we will refer to autonomous
+states as actions. At any time t, the agent knows past observations and actions π = (o ,a ),
+≤t ≤t ≤t
+and must make a decision a . In discrete time, active inference proceeds by assessing the expected
+>t
+free energy of each possible decision and then executing the best one:
+1. Preferential inference: infer preferences about external and observable trajectories, i.e.,
+Approximate P(s,o | π ) by Q(s,o). (43)
+≤t
+2. For each possible sequence of future actions a :
+>t
+(a) Perceptual inference: infer external and observable paths under the action sequence, i.e.,
+Approximate P(s,o | a ,π ) by Q(s,o | a ). (44)
+>t ≤t >t
+29
+(b) Planning as inference: assess the action sequence by evaluating its expected free en-
+ergy (EFE), i.e.,
+−logQ(a ) ≡ E (cid:2) logQ(s | a )−logQ(s,o) (cid:3) . (45)
+>t Q(s,o|a>t) >t
+3. Decision-making: execute the most likely decision a according to
+t+1
+(cid:88)
+a = argmaxQ(a ), Q(a ) = Q(a | a )Q(a ).
+t+1 t+1 t+1 t+1 >t >t (46)
+a>t
+5.2.2 Sequential decision-making under uncertainty
+A common model of sequential decision-making under uncertainty is a partially observable Markov
+decision process (POMDP). A POMDP is a discrete time model of how actions influence external
+and observable states. In a POMDP, 1) each external state depends only on the current action
+and previous external state P(s | s ,a ), and 2) each observation depends only on the current
+t t−1 t
+external state P(o | s ). One can additionally specify 3) a distribution of preferences over external
+t t
+trajectories P(s). Together, 1) & 2) forms the agent’s (POMDP) prediction model, and 2) & 3)
+forms the agent’s (hidden Markov) preference model, which defines an active inference agent. A
+simple simulation of active inference on a POMDP is provided in Figure 4; implementation details
+on generic POMDPs are available in [81,91,261,262]. For more complex simulations of sequential
+decision-making (e.g., involving hierarchical POMDPs), please see [88,91,223,224,263–265].
+5.2.3 World model learning as inference
+Due to a lack of domain knowledge, it may be challenging to specify an agent’s prediction and
+preference model. For example, how do external states map to observations? Should external states
+be represented in a discrete or continuous state space?
+In active inference, generative models are learned by inferring their parameters [81,91,268] and
+structure[81,263,269–271]. Supposethereisanunknownparameter(orstructurevariable)minthe
+prediction model, the preference model or both. By definition, each alternative parameterisation
+m entails different predictions P(o,s | a,m) and preferences P(o,s | m). Since unknowns are
+simply external states, we treat the parameter as an additional external state. We equip the space
+of parameters with a prior distribution P(m), and define the agent with an augmented prediction
+(resp. preference)modelthatcombinesthedifferentalternativesP(o,s,m | a) ≡ P(o,s | a,m)P(m)
+(resp. P(o,s,m) ≡ P(o,s | m)P(m)). Theparametercanthenbeinferredalongwithotherexternal
+states during preferential (43) or perceptual (44) inference [81,91,268]. Better yet, having specified
+priors over parameters that are independent of actions, we can infer them separately, for example,
+after fixed-length sequences of decisions to reduce computational cost [81,268].
+AllthissaysthatapriorP(m)andsomedataπ leadstoapproximateposteriorbeliefsQ(m) ≈
+≤t
+P(m | π )aboutmodelparameters. Butwhataretherightpriors? Onewaytoanswerthisquestion
+≤t
+lies in optimising a free energy functional F (a.k.a. an evidence lower bound [232]):
+F ≡ E (cid:2) −logP(m,π ) (cid:3) −S (cid:2) Q(m) (cid:3)
+Q(m) ≤t
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+energy entropy
+= KL (cid:2) Q(m) | P(m) (cid:3) −E (cid:2) logP(π | m) (cid:3) .
+Q(m) ≤t
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+complexity accuracy
+Choosing priors that minimise free energy leads to parsimonious models that explain the data
+at hand [272]. This follows since maximising accuracy increases the likelihood of the data under
+30
+Figure 4: Sequential decision-making in a T-Maze environment. Left: The agent’s prediction model is a
+partially observed Markov decision process (see text) represented here as a Bayesian network [266]. The
+colour scheme illustrates the problem at t = 2: the agent must make a decision (in red) based on previous
+actions and observations (in grey), which are informative about external states and future observations (in
+white). Right: s : TheT-Mazehasfourpossiblespatiallocations: middle,top-left,top-right,bottom. Oneof
+t
+the top locations contains a reward (in red), while the other contains a punishment (in black). The reward’s
+location determines the context. The bottom arm contains a cue whose colour (blue or green) discloses the
+context. Together, location and context determine the external state. o : The agent observes its spatial
+t
+location. In addition, when it is at the top of the Maze, it observes the reward or the punishment; when it
+is at the bottom, it observes the colour of the cue. a : Each action corresponds to visiting one of the four
+t
+spatial locations. P(s ): The agent prefers being at the reward’s location (−logP(s )=+3) and avoid the
+t t
+punishment’s location (−logP(s ) = −3). All other states have a neutral preference (−logP(s ) = 0). o :
+t t 0
+The agent is in the middle of the Maze and is unaware of the context. a : Visiting the bottom or top arms
+1
+have a lower ambiguity than staying, as they yield observations that disclose the context. However, staying
+orvisitingthebottomarmaresaferoptions, asvisitingatoparmrisksreceivingthepunishment. Byacting
+to minimise both risk and ambiguity (42) the agent goes to the bottom. o : The agent observes the colour
+1
+of the cue and hence determines the context. a : All actions have equal ambiguity as the context is known.
+2
+Collectingtherewardhasalowerriskthanstayingorvisitingthemiddle,whichthemselveshavealowerrisk
+than collecting the punishment. Thus, the agent visits the arm with the reward. See [267] for more details.
+the posterior model, while minimising complexity decreases the movement from prior to posterior,
+which can be seen as a proxy for computational cost. Maximising accuracy usually results in gener-
+ative models involving universal function approximators [88,224,264], while minimising complexity
+results in organising representations in sparse, compartmentalised and hierarchical generative mod-
+els [263,270,271], where higher levels of the hierarchy encode more abstract representations and
+vice-versa [265]. A computationally efficient method to compare priors by their free energy is
+Bayesian model reduction [81,273]. In conclusion, free energy unifies inference and model selection
+under a single objective function.
+31
+5.2.4 Scaling active inference
+We conclude by identifying promising scaling methods for active inference that enable computa-
+tionally tractable implementations in a variety of applications.
+Planning for all possible courses of action is computationally expensive as the number of action
+sequences is exponential in the length of the sequence. One way to finesse this is by planning only
+for intelligently chosen subsets of action sequences, using sampling algorithms such as Monte-Carlo
+tree search [87,224,274–276]. Monte-Carlo sampling can be also be used to finesse the expectations
+inherent in assessing action sequences (45) [224]. A complementary approach is to assess actions,
+instead of action sequences, by conditioning future actions to be optimal in the sense that they
+minimise the expected free energy [228,277]. This idea leads to a backward form of planning,
+where the agent plans for the best action at the last time-step, followed by the best action at the
+penultimate time-step, and so on, until the present. Crucially, it leads to smarter agents [228,277]
+whosecomputationalcomplexityscaleslinearly(asopposedtoexponentially)inthelengthofaction
+sequences [278].
+Scalable inference methods [279] can be used to make active inference more efficient [280]. For
+example, we can train neural networks to predict the various posterior distributions, including
+the posterior over actions [88,224,281]. While training, the output of the neural network can be
+used as an initial conditions for variational inference [282], resulting in accurate inferences whose
+computational cost decrease as the network learns. Additionally, optimising free energy reduces to
+efficient message passing schemes, when one imposes certain simplifying restrictions to the family
+of candidate distributions [283–287].
+A much cheaper implementation of active inference exists for continuous states evolving in
+continuous time. The method frames perception and decision-making as variational inference, by
+simulatingagradientflowonfreeenergyinanextendedstatespace[82,226]. Furthermore, itcanbe
+combinedwithdiscreteactiveinferencetooperateefficientlyingenerativemodelscombiningdiscrete
+andcontinuousstates[288]. Asanexample,high-dimensionalobservationsinthecontinuousdomain
+(e.g., speech) processed through continuous active inference are converted into discrete, abstract
+representations (e.g., semantics) [281]. Based on these representations, the agent makes high-level,
+categorical decisions (e.g., “I want to move over there”), which contextualise low-level, continuous
+actions (e.g., the continuous motion of a limb towards the goal location) [289].
+Acknowledgements
+The authors thank Noor Sajid, Samuel Tenka, Zafeiros Fountas and Panagiotis Tigas for helpful
+discussions on adaptive agents. LD is supported by the Fonds National de la Recherche, Lux-
+embourg (Project code: 13568875). KF is supported by funding for the Wellcome Centre for
+Human Neuroimaging (Ref: 205103/Z/16/Z) and a Canada-UK Artificial Intelligence Initiative
+(Ref: ES/T01279X/1). GAP was partially supported by JPMorgan Chase & Co under J.P. Morgan
+A.I. Research Awards in 2019 and 2021 and by the EPSRC, grant number EP/P031587/1. This
+publication is based on work partially supported by the EPSRC Centre for Doctoral Training in
+Mathematics of Random Systems: Analysis, Modelling and Simulation (EP/S023925/1). AB, GF,
+MG and MIJ thank the support of the Army Research Office (ARO) under contract W911NF-17-
+1-0304 as part of the collaboration between US DOD, UK MOD and UK Engineering and Physical
+Research Council (EPSRC) under the Multidisciplinary University Research Initiative (MURI).
+References
+[1] R. I. McLachlan and G. R. W. Quispel. Splitting methods. Acta Numer., 11:341, 2002.
+32
+[2] E. Hairer, C. Lubich, and G. Wanner. Geometric Numerical Integration: Structure-Preserving Algorithms for
+Ordinary Differential Equations. Springer, 2010.
+[3] B. Leimkuhler and S. Reich. Simulating Hamiltonian Dynamics. Cambridge University Press, 2004.
+[4] E.Celledoni,H.Marthinsen,andB.Owren.AnintroductiontoLiegroupintegrators: basics,newdevelopments
+and applications. J. Comput. Phys., 257:1040–1061, 2014.
+[5] J. E. Marsden and M. West. Discrete mechanics and variational integrators. Acta Numer., 10:357–514, 2001.
+[6] M. Betancourt, M. I. Jordan, and A. Wilson. On symplectic optimization. 2018. arXiv:1802.03653 [stat.CO].
+[7] A. Bravetti, M. L.Daza-Torres, H.Flores-Arguedas, andM. Betancourt. Optimizationalgorithmsinspiredby
+the geometry of dissipative systems. 2019. arXiv:1912.02928 [math.OC].
+[8] G. França, J. Sulam, D. P. Robinson, and R. Vidal. Conformal symplectic and relativistic optimization. J.
+Stat. Mech., 2020(12):124008, 2020.
+[9] G.França,M.I.Jordan,andR.Vidal.Ondissipativesymplecticintegrationwithapplicationstogradient-based
+optimization. J. Stat. Mech., 2021(4):043402, 2021.
+[10] G.França,A.Barp,M.Girolami,andM.I.Jordan. Optimizationonmanifolds: Asymplecticapproach. 2021.
+arXiv:2107.11231 [cond-mat.stat-mech].
+[11] F. Alimisis, A. Orvieto, G. Becigneul, and A. Lucchi. Momentum improves optimization on Riemannian
+manifolds. Int. Conf. Artificial Intelligence and Stats., 130:1351–1359, 2021.
+[12] M. Rousset, G. Stoltz, and T. Lelievre. Free Energy Computations: A Mathematical Perspective. World
+Scientific, 2010.
+[13] S.Duane,A.D.Kennedy,B.J.Pendleton,andD.Roweth. HybridMonteCarlo. Phys.Lett.B,195(2):216–222,
+1987.
+[14] M. Betancourt, S. Byrne, S. Livingstone, and M. Girolami. The geometric foundations of Hamiltonian Monte
+Carlo. Bernoulli, 23(4A):2257–2298, 2017.
+[15] S.Livingstone,M.Betancourt,S.Byrne,andM.Girolami. OnthegeometricergodicityofHamiltonianMonte
+Carlo. Bernoulli, 25(4A):3109–3138, 2019.
+[16] A. Barp, A. Kennedy, and M. Girolami. Hamiltonian Monte Carlo on symmetric and homogeneous spaces via
+symplectic reduction. 2019.
+[17] E.Celledoni,M.J.Ehrhardt,C.Etmann,R.I.McLachlan,B.Owren,C.B.Schonlieb,andF.Sherry.Structure-
+preserving deep learning. Eur. J. Applied Math., 32(5):888–936, 2021.
+[18] M. M. Bronstein, J. Bruna, T. Cohen, and P. Velickovic. Geometric deep learning: Grids, groups, graphs,
+geodesics, and gauges, 2021. arXiv:2104.13478 [cs.LG].
+[19] M. Vaillant and J. Glaunes. Surface matching via currents. In Biennial Int. Conf. Information Processing in
+Medical Imaging, pages 381–392. Springer, 2005.
+[20] S.Durrleman,X.Pennec,A.Trouvé,andN.Ayache. Statisticalmodelsofsetsofcurvesandsurfacesbasedon
+currents. Medical Image Analysis, 13(5):793–808, 2009.
+[21] A.Barp,ChrisJ.Oates,E.Porcu,andM.Girolami. ARiemann-SteinKernelMethod. 2020. arXiv:1810.04946
+[math, stat].
+[22] P. Harms, P. W. Michor, X. Pennec, and S. Sommer. Geometry of sample spaces. 2020. arXiv:2010.08039.
+[23] C.R.Rao.Informationandtheaccuracyattainableintheestimationofstatisticalparameters.InBreakthroughs
+in Statistics, pages 235–247. Springer, 1992.
+[24] H.Jeffreys. Aninvariantformforthepriorprobabilityinestimationproblems. Proc.RoyalSoc.London.Series
+A. Math. and Phys. Sci., 186(1007):453–461, 1946.
+[25] S. Amari. Information geometry and its applications, volume 194. Springer, 2016.
+[26] N. Ay, J. Jost, H. Vân Lê, and L. Schwachhöfer. Information geometry, volume 64. Springer, 2017.
+[27] F. Nielsen. An elementary introduction to information geometry. Entropy, 22(10):1100, 2020.
+[28] S. Amari. Differential-geometrical methods in statistics, volume 28. Springer Science & Business Media, 2012.
+[29] N. N. Chentsov. Categories of mathematical statistics. Uspekhi Matematicheskikh Nauk, 20(4):194–195, 1965.
+[30] J. Jost, H. V. Lê, and T. D. Tran. Probabilistic morphisms and bayesian nonparametrics. Eur. Phys. J. Plus,
+136(4):1–29, 2021.
+[31] B. T. Polyak. Some methods of speeding up the convergence of iteration methods. USSR Comp. Math. and
+Math. Phys., 4(5):1–17, 1964.
+[32] Y.Nesterov. AmethodofsolvingaconvexprogrammingproblemwithconvergencerateO(1/k2). SovietMath.
+Doklady, 27(2):372–376, 1983.
+[33] W.Su,S.Boyd,andE.J.Candès. AdifferentialequationformodelingNesterov’sacceleratedgradientmethod:
+Theory and insights. J. Mach. Learn. Res., 17(153):1–43, 2016.
+[34] A.Wibisono,A.C.Wilson,andM.I.Jordan.Avariationalperspectiveonacceleratedmethodsinoptimization.
+Proc. Nat. Acad. Sci., 113(47):E7351–E7358, 2016.
+[35] A.Wilson,B.Recht,andM.I.Jordan. ALyapunovanalysisofacceleratedmethodsinoptimization. J. Mach.
+Learn. Res., 22:1–34, 2021.
+33
+[36] G. Franca, D. Robinson, and R. Vidal. ADMM and accelerated ADMM as continuous dynamical systems.
+80:1559–1567, 2018.
+[37] G.França,D.P.Robinson,andR.Vidal.Anonsmoothdynamicalsystemsperspectiveonacceleratedextensions
+of ADMM. 2018. arXiv:1808.04048 [math.OC].
+[38] G. França, D. P. Robinson, and R. Vidal. Gradient flows and proximal splitting methods: A unified view on
+accelerated and stochastic optimization. Phys. Rev. E, 103:053304, 2021.
+[39] M.MuehlebachandM.I.Jordan. Optimizationwithmomentum: Dynamical,control-theoretic,andsymplectic
+perspectives. J. Mach. Learn. Res., 22(73):1–50, 2021.
+[40] M.MuehlebachandM.I.Jordan.Onconstraintsinfirst-orderoptimization: Aviewfromnon-smoothdynamical
+systems. 2021. arXiv:2107.08225, [math.OC].
+[41] M. Takahashi and M. Imada. Monte Carlo calculation of quantum systems. II. Higher order correction. J.
+Phys. Soc. Jpn., 53:3765—-3769, 1984.
+[42] M.Suzuki. Fractaldecompositionofexponentialoperatorswithapplicationstomany-bodytheoriesandMonte
+Carlo simulations. Phys. Lett. A, 146:319–323, 1990.
+[43] H. Yoshida. Construction of higher order symplectic integrators. Phys. Lett. A, 150(5):262–268, 1990.
+[44] J. M. Sanz-Serna. Symplectic integrators for Hamiltonian problems: An overview. Acta Numerica, 1:243–286,
+1992.
+[45] G. Benettin and A. Giorgilli. On the Hamiltonian interpolation of near-to-the-identity symplectic mappings
+with application to symplectic integration algorithms. J. Stat. Phys., 74:1117–1143, 1994.
+[46] R.I.McLachlanandG.R.W.Quispel.GeometricintegratorsforODEs.J.Phys.A:Math.Gen.,39:5251–5285,
+2006.
+[47] E. Forest. Geometric integration for particle accelerators. J. Phys. A: Math. Gen., 39:5321––5377, 2006.
+[48] A. D. Kennedy, P. J. Silva, and M. A. Clark. Shadow Hamiltonians, Poisson brackets, and gauge theories.
+Phys. Rev. D, 87:034511, 2013.
+[49] R. M. Neal. MCMC using Hamiltonian dynamics. In Handbook of Markov Chain Monte Carlo. Chapman and
+Hall/CRC, 2011.
+[50] F. Otto. The geometry of dissipative evolution equations: the porous medium equation. Comm. Partial
+Differential Equations, 26:101–174, 2001.
+[51] R. Jordan, D. Kinderlehrer, and F. Otto. The variational formulation of the Fokker-Planck equation. SIAM
+J. Math. Anal., 29(1):1–17, 1998.
+[52] R. M. Neal. Slice sampling. The annals of statistics, 31(3):705–767, 2003.
+[53] I.Murray,R.Adams,andD.MacKay. Ellipticalslicesampling. InInt. Conf. Artificial Intelligence and Stats.,
+pages 541–548. JMLR Workshop and Conference Proceedings, 2010.
+[54] MarkHADavis. Piecewise-deterministicmarkovprocesses: Ageneralclassofnon-diffusionstochasticmodels.
+Journal of the Royal Statistical Society: Series B (Methodological), 46(3):353–376, 1984.
+[55] A. Bouchard-Côté, S. J. Vollmer, and A. Doucet. The bouncy particle sampler: A nonreversible rejection-free
+markov chain monte carlo method. J. Amer. Stats. Assoc., 113(522):855–867, 2018.
+[56] P. Vanetti, A. Bouchard-Côté, G. Deligiannidis, and A. Doucet. Piecewise-deterministic Markov Chain Monte
+Carlo. 2017. arXiv:1707.05296.
+[57] J. Bierkens, P. Fearnhead, and G. Roberts. The zig-zag process and super-efficient sampling for Bayesian
+analysis of big data. Ann. Stats., 47(3):1288–1320, 2019.
+[58] J. Bierkens and G. Roberts. A piecewise deterministic scaling limit of lifted metropolis–hastings in the curie–
+weiss model. Ann. App. Prob., 27(2):846–882, 2017.
+[59] E. A. J. F. Peters and G. de With. Rejection-free monte carlo sampling for general potentials. Phys. Rev. E,
+85(2):026703, 2012.
+[60] G. O. Roberts and R. L. Tweedie. Exponential convergence of Langevin distributions and their discrete ap-
+proximations. Bernoulli, pages 341–363, 1996.
+[61] A.DurmusandE.Moulines. NonasymptoticconvergenceanalysisfortheunadjustedLangevinalgorithm. Ann.
+App. Prob., 27(3):1551–1587, 2017.
+[62] A. Durmus, E. Moulines, and M. Pereyra. Efficient bayesian computation by proximal markov chain monte
+carlo: when langevin meets moreau. SIAM J. on Imaging Sci., 11(1):473–506, 2018.
+[63] A. Garbuno-Inigo, F. Hoffmann, W. Li, and A. M. Stuart. Interacting Langevin diffusions: gradient structure
+And ensemble Kalman sampler. 2019. arXiv:1903.08866 [math].
+[64] M. Betancourt. A conceptual introduction to hamiltonian monte carlo. 2017. arXiv:1701.02434.
+[65] A. Barp, F-X. Briol, A. D. Kennedy, and M. Girolami. Geometry and dynamics for Markov Chain Monte
+Carlo. Annual Rev. Stats. and its App., 5:451–471, 2018.
+[66] N.R.Metropolis,A.W.Rosenbluth,M.N.Rosenbluth,A.H.Teller,andE.Teller. Equationofstatecalcula-
+tions by fast computing machines. J. Chem. Phys., 21(6):1087–1092, 1953.
+34
+[67] W.K.Hastings. Monte Carlo Sampling Methods Using Markov Chains and their Applications. OxfordUniver-
+sity Press, 1970.
+[68] B. J. Alder and T. E. Wainwright. Studies in molecular dynamics. I. general method. J. Chem. Phys.,
+31(2):459–466, 1959.
+[69] A. W. Van der Vaart. Asymptotic Statistics, volume 3. Cambridge university press, 2000.
+[70] V. Vapnik. The Nature of Statistical Learning Theory. Springer Science & Business Media, 1999.
+[71] A. Hyvärinen and P. Dayan. Estimation of non-normalized statistical models by score matching. J. Mach.
+Learn. Res., 6(4), 2005.
+[72] M. Parry, A. P. Dawid, and S. Lauritzen. Proper local scoring rules. Ann. Stats., 40(1):561–592, 2012.
+[73] C. Villani. Optimal Transport: Old and New. Springer, 2009.
+[74] F. Bassetti, A. Bodini, and E. Regazzini. On minimum Kantorovich distance estimators. Stats. & Prob. Lett.,
+76(12):1298–1302, 2006.
+[75] G.Peyré,M.Cuturi,etal. Computationaloptimaltransport: Withapplicationstodatascience. Found.Trends
+Mach. Learn., 11(5-6):355–607, 2019.
+[76] M. Cuturi. Sinkhorn distances: Lightspeed computation of optimal transport. NeurIPS, 26:2292–2300, 2013.
+[77] J.O.Berger. Statistical Decision Theory and Bayesian Analysis. SpringerSeriesinStatistics.Springer-Verlag,
+New York, second edition, 1985.
+[78] J.VonNeumannandO.Morgenstern. Theory of Games and Economic Behavior. PrincetonUniversityPress,
+1944.
+[79] R. E. Bellman and S. E. Dreyfus. Applied Dynamic Programming. Princeton University Press, 2015.
+[80] A. Barto and R. Sutton. Reinforcement Learning: An Introduction. A Bradford Book, 1992.
+[81] L.DaCosta,T.Parr,N.Sajid,S.Veselic,V.Neacsu,andK.Friston. Activeinferenceondiscretestate-spaces:
+A synthesis. J. Math. Psychology, 99:102447, 2020.
+[82] K. J. Friston, J. Daunizeau, J. Kilner, and S. J. Kiebel. Action and behavior: A free-energy formulation.
+Biological Cybernetics, 102(3):227–260, 2010.
+[83] K. Friston. The free-energy principle: A unified brain theory? Nature Reviews Neuroscience, 11(2):127–138,
+2010.
+[84] KarlFriston,FrancescoRigoli,DimitriOgnibene,ChristophMathys,ThomasFitzgerald,andGiovanniPezzulo.
+Active inference and epistemic value. Cognitive Neuroscience, 6(4):187–214, October 2015.
+[85] PabloLanillos,CristianMeo,CorradoPezzato,AjithAnilMeera,MohamedBaioumy,WataruOhata,Alexan-
+der Tschantz, Beren Millidge, Martijn Wisse, Christopher L. Buckley, and Jun Tani. Active Inference in
+Robotics and Artificial Agents: Survey and Challenges. arXiv:2112.01871 [cs], December 2021.
+[86] Lancelot Da Costa, Pablo Lanillos, Noor Sajid, Karl Friston, and Shujhat Khan. How Active Inference Could
+Help Revolutionise Robotics. Entropy, 24(3):361, March 2022.
+[87] David Silver, Aja Huang, Chris J. Maddison, Arthur Guez, Laurent Sifre, George van den Driessche, Julian
+Schrittwieser, Ioannis Antonoglou, Veda Panneershelvam, Marc Lanctot, Sander Dieleman, Dominik Grewe,
+JohnNham,NalKalchbrenner,IlyaSutskever,TimothyLillicrap,MadeleineLeach,KorayKavukcuoglu,Thore
+Graepel, and Demis Hassabis. Mastering the game of Go with deep neural networks and tree search. Nature,
+529(7587):484–489, 2016.
+[88] B. Millidge. Deep active inference as variational policy gradients. J. Math. Psychology, 96:102348, 2020.
+[89] O.vanderHimstandP.Lanillos.DeepActiveInferenceforPartiallyObservableMDPs.2020.arXiv:2009.03622
+[cs, stat].
+[90] MaellCullen,BenDavey,KarlJ.Friston,andRosalynJ.Moran.ActiveInferenceinOpenAIGym: AParadigm
+for Computational Investigations Into Psychiatric Illness. Biological Psychiatry: Cognitive Neuroscience and
+Neuroimaging, 3(9):809–818, September 2018.
+[91] Noor Sajid, Philip J. Ball, Thomas Parr, and Karl J. Friston. Active Inference: Demystified and Compared.
+Neural Computation, 33(3):674–712, January 2021.
+[92] Dimitrije Marković, Hrvoje Stojić, Sarah Schwöbel, and Stefan J. Kiebel. An empirical evaluation of active
+inference in multi-armed bandits. Neural Networks, 144:229–246, December 2021.
+[93] Aswin Paul, Noor Sajid, Manoj Gopalkrishnan, and Adeel Razi. Active Inference for Stochastic Control.
+arXiv:2108.12245 [cs], August 2021.
+[94] Pietro Mazzaglia, Tim Verbelen, and Bart Dhoedt. Contrastive Active Inference. In Advances in Neural
+Information Processing Systems, May 2021.
+[95] A.C.Hansen. Atheoreticalframeworkforbackwarderroranalysisonmanifolds. J.Geom.Mech.,3(1):81–111,
+2011.
+[96] R.I.McLachlan,GR.W.Quispel,andN.Robidoux.Geometricintegrationusingdiscretegradients.Philosoph-
+ical Transactions of the Royal Society of London. Series A: Mathematical, Physical and Engineering Sciences,
+357(1754):1021–1045, 1999.
+[97] R. McLachlan and M. Perlmutter. Conformal Hamiltonian systems. J. Geom. and Phys., 39:276–300, 2001.
+35
+[98] H.MarthinsenandB.Owren. Geometricintegrationofnon-autonomousHamiltonianproblems. Adv.Comput.
+Math., 42:313–332, 2016.
+[99] M.Asorey,J.F.Carinena,andL.A.Ibort. Generalizedcanonicaltransformationsfortime-dependentsystems.
+J. Math. Phys., 24(12):2745–2750, 1983.
+[100] H. C. Andersen. Rattle: A “velocity” version of the shake algorithm for molecular dynamics calculations. J.
+Comput. Phys., 52(1):24–34, 1983.
+[101] B. J. Leimkuhler and R. D. Skeel. Symplectic numerical integrators in constrained Hamiltonian systems. J.
+Comput. Phys., 112:117–125, 1994.
+[102] R. I. McLachlan, K. Modin, O. Verdier, and M. Wilkins. Geometric generalizations of SHAKE and RATTLE.
+Found. Comput. Math., (14):339–370, 2014.
+[103] B. Leimkuhler and C. Matthews. Efficient molecular dynamics using geodesic integration and solvent-solute
+splitting. Proc. Royal Soc. A: Math., Phys. and Eng. Sci., 472(2189):20160138, 2016.
+[104] H.ZhangandS.Sra. First-ordermethodsforgeodesicallyconvexoptimization. Conf. Learning Theory, pages
+1617–1638, 2016.
+[105] Luigi Ambrosio, Nicola Gigli, and Giuseppe Savare. Gradient Flows: In Metric Spaces and in the Space of
+Probability Measures. Springer Science & Business Media, January 2005.
+[106] MichelaOttobre. MarkovChainMonteCarloandIrreversibility. ReportsonMathematicalPhysics,77:267–292,
+June 2016.
+[107] Grigorios A. Pavliotis. Stochastic Processes and Applications: Diffusion Processes, the Fokker-Planck and
+Langevin Equations. Number volume 60 in Texts in Applied Mathematics. Springer, New York, 2014.
+[108] Cédric Villani. Hypocoercivity, volume 202 of Memoirs of the American Mathematical Society. American
+Mathematical Society, November 2009.
+[109] Yi-An Ma, Niladri Chatterji, Xiang Cheng, Nicolas Flammarion, Peter Bartlett, and Michael I. Jordan. Is
+there an analog of nesterov acceleration for mcmc?, 2019.
+[110] D. J. C. MacKay. Information theory, inference and learning algorithms. Cambridge university press, 2003.
+[111] Martin Hairer. Ergodic Properties of Markov Processes. 2018.
+[112] Alessandro Barp, So Takao, Michael Betancourt, Alexis Arnaudon, and Mark Girolami. A Unifying and
+Canonical Description of Measure-Preserving Diffusions. arXiv:2105.02845 [math, stat], May 2021.
+[113] Lars Hörmander. Hypoelliptic second order differential equations. Acta Mathematica, 119:147–171, 1967.
+[114] J.M. Bismut. Martingales, the malliavin calculus and hypoellipticity under general hörmander’s conditions.
+Zeitschrift für Wahrscheinlichkeitstheorie und verwandte Gebiete, 56(4):469–505, 1981.
+[115] Yi-An Ma, Tianqi Chen, and Emily B. Fox. A Complete Recipe for Stochastic Gradient MCMC.
+arXiv:1506.04696 [math, stat], October 2015.
+[116] Chii-Ruey Hwang, Shu-Yin Hwang-Ma, and Shuenn-Jyi Sheu. Accelerating diffusions. The Annals of Applied
+Probability, 15(2):1433–1444, May 2005.
+[117] Djalil Chafaï. Entropies, convexity, and functional inequalities, On $\Phi $-entropies and $\Phi $-Sobolev
+inequalities. Journal of Mathematics of Kyoto University, 44(2):325–363, January 2004.
+[118] AldéricJoulinandYannOllivier. Curvature,concentrationanderrorestimatesforMarkovchainMonteCarlo.
+The Annals of Probability, 38(6):2418–2442, November 2010.
+[119] Luc Rey-Bellet and Kostantinos Spiliopoulos. Irreversible Langevin samplers and variance reduction: A large
+deviation approach. Nonlinearity, 28(7):2081–2103, July 2015.
+[120] A. B. Duncan, T. Lelièvre, and G. A. Pavliotis. Variance Reduction Using Nonreversible Langevin Samplers.
+Journal of Statistical Physics, 163(3):457–491, May 2016.
+[121] U.G.HaussmannandE.Pardoux.TimeReversalofDiffusions.AnnalsofProbability,14(4):1188–1205,October
+1986.
+[122] Radford M. Neal. Improving Asymptotic Variance of MCMC Estimators: Non-reversible Chains are Better.
+arXiv:math/0407281, July 2004.
+[123] TonyLelièvre,FrancisNier,andGrigoriosA.Pavliotis. Optimalnon-reversiblelineardriftfortheconvergence
+to equilibrium of a diffusion. Journal of Statistical Physics, 152(2):237–274, July 2013.
+[124] Sheng-JhihWu,Chii-RueyHwang,andMoodyT.Chu.AttainingtheOptimalGaussianDiffusionAcceleration.
+Journal of Statistical Physics, 155:571–590, May 2014.
+[125] Benjamin J. Zhang, Youssef M. Marzouk, and Konstantinos Spiliopoulos. Geometry-informed irreversible
+perturbations for accelerated convergence of Langevin dynamics. arXiv:2108.08247 [math, stat], August 2021.
+[126] AntoniettaMira. OrderingandImprovingthePerformanceofMonteCarloMarkovChains. StatisticalScience,
+16(4):340–350, November 2001.
+[127] M. Girolami and B. Calderhead. Riemann manifold langevin and hamiltonian monte carlo methods. Journal
+of the Royal Statistical Society: Series B (Statistical Methodology), 73(2):123–214, 2011.
+36
+[128] AssyrAbdulle,GrigoriosA.Pavliotis,andGillesVilmart. Acceleratedconvergencetoequilibriumandreduced
+asymptoticvarianceforLangevindynamicsusingStratonovichperturbations. Comptes Rendus Mathematique,
+357(4):349–354, April 2019.
+[129] Bernard Helffer. Remarks on Decay of Correlations and Witten Laplacians Brascamp–Lieb Inequalities and
+Semiclassical Limit. Journal of Functional Analysis, 155(2):571–586, June 1998.
+[130] Adrien Saumard and Jon A. Wellner. Log-concavity and strong log-concavity: A review. Statistics Surveys,
+8(none):45–114, January 2014.
+[131] Arnaud Guillin and Pierre Monmarché. Optimal linear drift for the speed of convergence of an hypoelliptic
+diffusion. arXiv:1604.07295 [math], October 2021.
+[132] Yi-An Ma, Niladri Chatterji, Xiang Cheng, Nicolas Flammarion, Peter Bartlett, and Michael I. Jordan. Is
+There an Analog of Nesterov Acceleration for MCMC? arXiv:1902.00996 [cs, math, stat], October 2019.
+[133] Martin Chak, Nikolas Kantas, Tony Lelièvre, and Grigorios A Pavliotis. Optimal friction matrix for under-
+damped Langevin sampling. November 2021.
+[134] A.B.Duncan,N.Nüsken,andG.A.Pavliotis.UsingPerturbedUnderdampedLangevinDynamicstoEfficiently
+Sample from Probability Distributions. Journal of Statistical Physics, 169(6):1098–1131, December 2017.
+[135] J. C. Mattingly, A. M. Stuart, and D. J. Higham. Ergodicity for SDEs and approximations: Locally Lipschitz
+vector fields and degenerate noise. Stochastic Processes and their Applications, 101(2):185–232, October 2002.
+[136] MarkosKatsoulakis,YannisPantazis,andLucRey-Bellet. MeasuringtheIrreversibilityofNumericalSchemes
+for Reversible Stochastic Differential Equations. ESAIM: Mathematical Modelling and Numerical Analysis -
+Modélisation Mathématique et Analyse Numérique, 48(5):1351–1379, 2014.
+[137] Jonathan C. Mattingly, Andrew M. Stuart, and M. V. Tretyakov. Convergence of Numerical Time-Averaging
+andStationaryMeasuresviaPoissonEquations. SIAMJournalonNumericalAnalysis,48(2):552–577,January
+2010.
+[138] T.Radivojević,M.Fernández-Pendás,J.M.Sanz-Serna,andE.Akhmatskaya.Multi-stagesplittingintegrators
+forsamplingwithmodifiedhamiltonianmontecarlomethods. JournalofComputationalPhysics,373:900–916,
+2018.
+[139] R. M. Neal. Bayesian training of backpropagation networks by the hybrid monte carlo method. Technical
+report, Citeseer, 1992.
+[140] Eric Cances, Frédéric Legoll, and Gabriel Stoltz. Theoretical and numerical comparison of some sampling
+methods for molecular dynamics. ESAIM: Mathematical Modelling and Numerical Analysis, 41(2):351–389,
+2007.
+[141] YouhanFang,Jesus-MariaSanz-Serna,andRobertDSkeel. Compressiblegeneralizedhybridmontecarlo. The
+Journal of chemical physics, 140(17):174108, 2014.
+[142] A. Barp. The bracket geometry of statistics. 2020.
+[143] A. Weinstein. The modular automorphism group of a poisson manifold. Journal of Geometry and Physics,
+23(3-4):379–394, 1997.
+[144] D. D. Holm, J. E. Marsden, and T. S. Ratiu. The euler–poincaré equations and semidirect products with
+applications to continuum theories. Advances in Mathematics, 137(1):1–81, 1998.
+[145] K. Modin, M. Perlmutter, S. Marsland, and R. McLachlan. Geodesics on lie groups: Euler equations and
+totally geodesic subgroup. 2010.
+[146] A. Barp. Hamiltonian monte carlo on lie groups and constrained mechanics on homogeneous manifolds. In
+International Conference on Geometric Science of Information, pages 665–675. Springer, 2019.
+[147] A.Holbrook,S.Lan,A.Vandenberg-Rodes,andB.Shahbaba. Geodesiclagrangianmontecarlooverthespace
+of positive definite matrices: with application to bayesian spectral density estimation. Journal of statistical
+computation and simulation, 88(5):982–1002, 2018.
+[148] A. Holbrook, A. Vandenberg-Rodes, and B. Shahbaba. Bayesian inference on matrix manifolds for linear
+dimensionality reduction. arXiv preprint arXiv:1606.04478, 2016.
+[149] T. Lelièvre, M. Rousset, and G. Stoltz. Hybrid Monte Carlo methods for sampling probability measures on
+submanifolds. Numerische Mathematik, 143(2):379–421, 2019.
+[150] T. Lelièvre, G. Stoltz, and W. Zhang. Multiple projection mcmc algorithms on submanifolds. arXiv preprint
+arXiv:2003.09402, 2020.
+[151] M.M.Graham,A.H.Thiery,andA.Beskos.Manifoldmarkovchainmontecarlomethodsforbayesianinference
+in a wide class of diffusion models. arXiv preprint arXiv:1912.02982, 2019.
+[152] K. X. Au, M. M. Graham, and A. H. Thiery. Manifold lifting: scaling mcmc to the vanishing noise regime.
+arXiv preprint arXiv:2003.03950, 2020.
+[153] S. Livingstone and M. Girolami. Information-geometric markov chain monte carlo methods using diffusions.
+Entropy, 16(6):3074–3102, 2014.
+[154] M. Tao. Explicit symplectic approximation of nonseparable hamiltonians: Algorithm and long time perfor-
+mance. Physical Review E, 94(4):043303, 2016.
+37
+[155] .D.Cobb,A.G.Baydin,A.Markham,andS.J.Roberts.Introducinganexplicitsymplecticintegrationscheme
+for riemannian manifold hamiltonian monte carlo. arXiv preprint arXiv:1910.06243, 2019.
+[156] C. Predescu, R. A. Lippert, M. P. Eastwood, D. Ierardi, H. Xu, M. Jensen, K. J. Bowers, J. Gullingsrud,
+C. A. Rendleman, R. O. Dror, et al. Computationally efficient molecular dynamics integrators with improved
+sampling accuracy. Molecular Physics, 110(9-10):967–983, 2012.
+[157] S. Blanes, F. Casas, and J. M. Sanz-Serna. Numerical integrators for the hybrid monte carlo method. SIAM
+Journal on Scientific Computing, 36(4):A1556–A1580, 2014.
+[158] M. Fernández-Pendás, E. Akhmatskaya, and J. M. Sanz-Serna. Adaptive multi-stage integrators for optimal
+energy conservation in molecular simulations. Journal of Computational Physics, 327:434–449, 2016.
+[159] C. M. Campos and J. M. Sanz-Serna. Palindromic 3-stage splitting integrators, a roadmap. Journal of Com-
+putational Physics, 346:340–355, 2017.
+[160] N. Bou-Rabee and J. M. Sanz-Serna. Geometric integrators and the hamiltonian monte carlo method. Acta
+Numerica, 27:113–206, 2018.
+[161] M. A. Clark, B. Joó, A. D. Kennedy, and P. J. Silva. Improving dynamical lattice qcd simulations through
+integratortuningusingpoissonbracketsandaforce-gradientintegrator.PhysicalReviewD,84(7):071502,2011.
+[162] M.B.B.J.M. Tuckerman, B. J. Berne, and G. J. Martyna. Reversible multiple time scale molecular dynamics.
+The Journal of chemical physics, 97(3):1990–2001, 1992.
+[163] J.C.SextonandD.H.Weingarten.Hamiltonianevolutionforthehybridmontecarloalgorithm.NuclearPhysics
+B, 380(3):665–677, 1992.
+[164] B.Shahbaba,S.Lan,W.O.Johnson,andR.M.Neal.Splithamiltonianmontecarlo.StatisticsandComputing,
+24(3):339–349, 2014.
+[165] P. B. Mackenze. An improved hybrid monte carlo method. Physics Letters B, 226(3-4):369–371, 1989.
+[166] M. Betancourt. Identifying the optimal integration time in hamiltonian monte carlo. arXiv preprint
+arXiv:1601.00225, 2016.
+[167] Z. Wang, S. Mohamed, and N. Freitas. Adaptive hamiltonian and riemann manifold monte carlo. In Interna-
+tional conference on machine learning, pages 1462–1470. PMLR, 2013.
+[168] A. Durmus, E. Moulines, and E. Saksman. On the convergence of hamiltonian monte carlo. arXiv preprint
+arXiv:1705.00166, 2017.
+[169] C.M.CamposandJ.M.Sanz-Serna. Extrachancegeneralizedhybridmontecarlo. Journal of Computational
+Physics, 281:365–374, 2015.
+[170] J.Sohl-Dickstein,M.Mudigonda,andM.DeWeese. Hamiltonianmontecarlowithoutdetailedbalance. Inter-
+national Conference on Machine Learning, pages 719–726, 2014.
+[171] M. D. Hoffman, A. Gelman, et al. The no-u-turn sampler: adaptively setting path lengths in hamiltonian
+monte carlo. J. Mach. Learn. Res., 15(1):1593–1623, 2014.
+[172] M. Ottobre, N. S. Pillai, F. J. Pinski, and A. M. Stuart. A function space hmc algorithm with second order
+langevin diffusion limit. Bernoulli, 22(1):60–106, 2016.
+[173] F. Heber, Z. Trst’anová, and B. Leimkuhler. Posterior sampling strategies based on discretized stochastic
+differential equations for machine learning applications. Journal of Machine Learning Research, 21(228):1–33,
+2020.
+[174] A. M. Horowitz. A generalized guided monte carlo algorithm. Physics Letters B, 268(2):247–252, 1991.
+[175] J. A. Izaguirre and S. S. Hampton. Shadow hybrid monte carlo: an efficient propagator in phase space of
+macromolecules. Journal of Computational Physics, 200(2):581–604, 2004.
+[176] T. Radivojević and E. Akhmatskaya. Modified hamiltonian monte carlo for bayesian inference. Statistics and
+Computing, 30(2):377–404, 2020.
+[177] H. Strathmann, D. Sejdinovic, S. Livingstone, Z. Szabo, and A. Gretton. Gradient-free hamiltonian monte
+carlo with efficient kernel exponential families. arXiv preprint arXiv:1506.02564, 2015.
+[178] C. Zhang, B. Shahbaba, and H. Zhao. Hamiltonian monte carlo acceleration using surrogate functions with
+random bases. Statistics and computing, 27(6):1473–1490, 2017.
+[179] T. Chen, E. Fox, and C. Guestrin. Stochastic gradient hamiltonian monte carlo. In International conference
+on machine learning, pages 1683–1691. PMLR, 2014.
+[180] M. Betancourt. The fundamental incompatibility of scalable hamiltonian monte carlo and naive data subsam-
+pling. In International Conference on Machine Learning, pages 533–540. PMLR, 2015.
+[181] A.Müller.Integralprobabilitymetricsandtheirgeneratingclassesoffunctions.AdvancesinAppliedProbability,
+29(2):429–443, 1997.
+[182] N. Aronszajn. Theory of reproducing kernels. Transactions of the American mathematical society, 68(3):337–
+404, 1950.
+[183] A. Berlinet and C. Thomas-Agnan. Reproducing kernel Hilbert spaces in probability and statistics. Springer
+Science & Business Media, 2011.
+[184] I. Steinwart and A. Christmann. Support vector machines. Springer Science & Business Media, 2008.
+38
+[185] A.Barp,C.J.Simon-Gabriel,andL.Mackey. Targetedconvergencecharacteristicsofmaximummeandiscrep-
+ancies and kernel Stein discrepancies. In preparation.
+[186] B.K.Sriperumbudur,A.Gretton,K.Fukumizu,B.Schölkopf,andG.R.G.Lanckriet.Hilbertspaceembeddings
+and metrics on probability measures. The Journal of Machine Learning Research, 11:1517–1561, 2010.
+[187] K. Muandet, K. Fukumizu, B. Sriperumbudur, and B. Schölkopf. Kernel mean embedding of distributions: A
+review and beyond. arXiv preprint arXiv:1605.09522, 2016.
+[188] L. Schwartz. Sous-espaces hilbertiens d’espaces vectoriels topologiques et noyaux associés (noyaux repro-
+duisants). Journal d’analyse mathématique, 13(1):115–256, 1964.
+[189] Carl-JohannSimon-GabrielandBernhardSchölkopf. Kerneldistributionembeddings: Universalkernels,char-
+acteristic kernels and kernel metrics on distributions. The Journal of Machine Learning Research, 19(1):1708–
+1736, 2018.
+[190] B. K. Sriperumbudur, K. Fukumizu, and G. R.G. Lanckriet. Universality, characteristic kernels and rkhs
+embedding of measures. Journal of Machine Learning Research, 12(7), 2011.
+[191] C. Carmeli, E. De Vito, A. Toigo, and V. Umanitá. Vector valued reproducing kernel hilbert spaces and
+universality. Analysis and Applications, 8(01):19–61, 2010.
+[192] C.J. Simon-Gabriel, A. Barp, B. Schölkopf, and L. Mackey. Metrizing weak convergence with maximum mean
+discrepancies. arXiv preprint arXiv:2006.09268, 2020.
+[193] StewartNEthierandThomasGKurtz. Markovprocesses: characterizationandconvergence,volume282. John
+Wiley & Sons, 2009.
+[194] Jackson Gorham and Lester Mackey. Measuring sample quality with kernels. In International Conference on
+Machine Learning, pages 1292–1301. PMLR, 2017.
+[195] C.Stein. Aboundfortheerrorinthenormalapproximationtothedistributionofasumofdependentrandom
+variables. InProceedings of the sixth Berkeley symposium on mathematical statistics and probability, volume 2:
+Probability theory, volume 6, pages 583–603. University of California Press, 1972.
+[196] A. Anastasiou, A. Barp, F. Briol, B. Ebner, R. E. Gaunt, F. Ghaderinezhad, J. Gorham, A. Gretton, C. Ley,
+Q. Liu, et al. Stein’s method meets statistics: A review of some recent developments. arXiv preprint
+arXiv:2105.03481, 2021.
+[197] J. M. Lee. Smooth manifolds. In Introduction to Smooth Manifolds, pages 1–31. Springer, 2013.
+[198] C. Liu and J. Zhu. Riemannian stein variational gradient descent for bayesian inference. In Proceedings of the
+AAAI Conference on Artificial Intelligence, volume 32, 2018.
+[199] L. Hodgkinson, R. Salomone, and F. Roosta. The reproducing stein kernel approach for post-hoc corrected
+sampling. arXiv preprint arXiv:2001.09266, 2020.
+[200] A.D.Barbour. Stein’smethodandpoissonprocessconvergence. JournalofAppliedProbability,25(A):175–184,
+1988.
+[201] J.Gorham,A.B.Duncan,S.JVollmer,andL.Mackey. Measuringsamplequalitywithdiffusions. TheAnnals
+of Applied Probability, 29(5):2884–2928, 2019.
+[202] Q. Liu and D. Wang. Stein variational gradient descent: A general purpose bayesian inference algorithm.
+Advances in neural information processing systems, 29, 2016.
+[203] C.J.Oates,M.Girolami,andN.Chopin. Controlfunctionalsformontecarlointegration. JournaloftheRoyal
+Statistical Society: Series B (Statistical Methodology), 79(3):695–718, 2017.
+[204] A.Barp,F.Briol,.Duncan,M.Girolami,andL.Mackey.Minimumsteindiscrepancyestimators.InH.Wallach,
+H.Larochelle,A.Beygelzimer,F.d'Alché-Buc,E.Fox,andR.Garnett,editors,AdvancesinNeuralInformation
+Processing Systems, volume 32. Curran Associates, Inc., 2019.
+[205] W. Y. Chen, A. Barp, F. Briol, J. Gorham, M. Girolami, L Mackey, and C. Oates. Stein point markov chain
+monte carlo. In International Conference on Machine Learning, pages 1011–1021. PMLR, 2019.
+[206] K.Chwialkowski,H.Strathmann,andA.Gretton. Akerneltestofgoodnessoffit. InInternational conference
+on machine learning, pages 2606–2615. PMLR, 2016.
+[207] Q. Liu, J. Lee, and M. Jordan. A kernelized stein discrepancy for goodness-of-fit tests. In International
+conference on machine learning, pages 276–284. PMLR, 2016.
+[208] A.Gretton,K.M.Borgwardt,M.J.Rasch,B.Schölkopf,andA.Smola. Akerneltwo-sampletest. TheJournal
+of Machine Learning Research, 13(1):723–773, 2012.
+[209] G. K. Dziugaite, D. M. Roy, and Z. Ghahramani. Training generative neural networks via maximum mean
+discrepancy optimization. arXiv preprint arXiv:1505.03906, 2015.
+[210] H. Park, S. Amari, and K. Fukumizu. Adaptive natural gradient learning algorithms for various stochastic
+models. Neural Networks, 13(7):755–764, 2000.
+[211] Y. Chen and W. Li. Natural gradient in wasserstein statistical manifold. arXiv preprint arXiv:1805.08380,
+2018.
+[212] R.Karakida,M.Okada,andS.Amari. Adaptivenaturalgradientlearningalgorithmsforunnormalizedstatis-
+tical models. In International Conference on Artificial Neural Networks, pages 427–434. Springer, 2016.
+39
+[213] S. M. Kakade. A natural policy gradient. Advances in neural information processing systems, 14, 2001.
+[214] S.Bonnabel. Stochasticgradientdescentonriemannianmanifolds. IEEE Transactions on Automatic Control,
+58(9):2217–2229, 2013.
+[215] M.LeokandJ.Zhang. Connectinginformationgeometryandgeometricmechanics. Entropy,19(10):518,2017.
+[216] F. Briol, A. Barp, A. B. Duncan, and M. Girolami. Statistical inference for generative models with maximum
+mean discrepancy. 2019. arXiv:1906.05944.
+[217] A. Gretton, K. Fukumizu, Z. Harchaoui, and B. K. Sriperumbudur. A fast, consistent kernel two-sample test.
+In NIPS, volume 23, pages 673–681, 2009.
+[218] DamienGarreau,WittawatJitkrittum,andMotonobuKanagawa. Largesampleanalysisofthemedianheuris-
+tic. arXiv preprint arXiv:1707.07269, 2017.
+[219] Danica J Sutherland, Hsiao-Yu Tung, Heiko Strathmann, Soumyajit De, Aaditya Ramdas, Alex Smola, and
+Arthur Gretton. Generative models and model criticism via optimized maximum mean discrepancy. arXiv
+preprint arXiv:1611.04488, 2016.
+[220] Aaditya Ramdas, Sashank J Reddi, Barnabas Poczos, Aarti Singh, and Larry Wasserman. Adaptivity and
+computation-statistics tradeoffs for kernel and distance based high dimensional two sample testing. arXiv
+preprint arXiv:1508.00655, 2015.
+[221] Chun-LiangLi,Wei-ChengChang,YuCheng,YimingYang,andBarnabásPóczos. Mmdgan: Towardsdeeper
+understanding of moment matching network. arXiv preprint arXiv:1705.08584, 2017.
+[222] K.Friston,J.Kilner,andL.Harrison.Afreeenergyprincipleforthebrain.J.Physiology-Paris,100(1-3):70–87,
+2006.
+[223] ThomasParr. TheComputationalNeurologyofActiveVision. PhDthesis,UniversityCollegeLondon,London,
+2019.
+[224] Zafeirios Fountas, Noor Sajid, Pedro A. M. Mediano, and Karl Friston. Deep active inference agents using
+Monte-Carlo methods. arXiv:2006.04176 [cs, q-bio, stat], June 2020.
+[225] Karl Friston, Conor Heins, Kai Ueltzhöffer, Lancelot Da Costa, and Thomas Parr. Stochastic Chaos and
+Markov Blankets. Entropy, 23(9):1220, September 2021.
+[226] KarlFriston,LancelotDaCosta,NoorSajid,ConorHeins,KaiUeltzhöffer,GrigoriosA.Pavliotis,andThomas
+Parr. The free energy principle made simpler but not too simple. arXiv:2201.06387 [cond-mat, physics:nlin,
+physics:physics, q-bio], January 2022.
+[227] Lancelot Da Costa, Karl Friston, Conor Heins, and Grigorios A. Pavliotis. Bayesian mechanics for sta-
+tionary processes. Proceedings of the Royal Society A: Mathematical, Physical and Engineering Sciences,
+477(2256):20210518, December 2021.
+[228] Karl Friston, Lancelot Da Costa, Danijar Hafner, Casper Hesp, and Thomas Parr. Sophisticated Inference.
+Neural Computation, 33(3):713–763, February 2021.
+[229] Thomas Parr, Lancelot Da Costa, Conor Heins, Maxwell James D. Ramstead, and Karl J. Friston. Memory
+and Markov Blankets. Entropy, 23(9):1105, September 2021.
+[230] Samuel Tenka. personal communication.
+[231] Philipp Schwartenbeck, Johannes Passecker, Tobias U Hauser, Thomas HB FitzGerald, Martin Kronbichler,
+andKarlJFriston. Computationalmechanismsofcuriosityandgoal-directedexploration. eLife,page45,2019.
+[232] David M. Blei, Alp Kucukelbir, and Jon D. McAuliffe. Variational Inference: A Review for Statisticians.
+Journal of the American Statistical Association, 112(518):859–877, April 2017.
+[233] Daniel Kahneman and Amos Tversky. Prospect Theory: An Analysis of Decision under Risk. Econometrica,
+47(2):263–291, 1979.
+[234] Sergey Levine. Reinforcement Learning and Control as Probabilistic Inference: Tutorial and Review.
+arXiv:1805.00909 [cs, stat], May 2018.
+[235] Konrad Rawlik, Marc Toussaint, and Sethu Vijayakumar. On Stochastic Optimal Control and Reinforcement
+LearningbyApproximateInference. InTwenty-ThirdInternationalJointConferenceonArtificialIntelligence,
+June 2013.
+[236] MarcToussaint. Robottrajectoryoptimizationusingapproximateinference. InProceedingsofthe26thAnnual
+International Conference on Machine Learning,ICML’09,pages1049–1056,Montreal,Quebec,Canada,June
+2009. Association for Computing Machinery.
+[237] R. E. Kalman. A New Approach to Linear Filtering and Prediction Problems. Journal of Basic Engineering,
+82(1):35–45, March 1960.
+[238] EmanuelTodorov. Generaldualitybetweenoptimalcontrolandestimation. In2008 47th IEEE Conference on
+Decision and Control, pages 4286–4292, December 2008.
+[239] HilbertJ.Kappen,VicençGómez,andManfredOpper.Optimalcontrolasagraphicalmodelinferenceproblem.
+Machine Learning, 87(2):159–182, May 2012.
+[240] B. Ziebart. Modeling Purposeful Adaptive Behavior with the Principle of Maximum Causal Entropy. PhD
+thesis, Carnegie Mellon University, Pittsburgh, 2010.
+40
+[241] E. T. Jaynes. Information Theory and Statistical Mechanics. Physical Review, 106(4):620–630, May 1957.
+[242] AndrzejLasotaandMichaelC.MacKey.Chaos,Fractals,andNoise: StochasticAspectsofDynamics.Springer-
+Verlag, 1994.
+[243] David J. C. MacKay. Information Theory, Inference and Learning Algorithms. Cambridge University Press,
+Cambridge, UK ; New York, sixth printing 2007 edition edition, September 2003.
+[244] D. V. Lindley. On a Measure of the Information Provided by an Experiment. The Annals of Mathematical
+Statistics, 27(4):986–1005, 1956.
+[245] David J. C. MacKay. Information-Based Objective Functions for Active Data Selection. Neural Computation,
+4(4):590–604, July 1992.
+[246] Pierre-Yves Oudeyer and Frederic Kaplan. What is Intrinsic Motivation? A Typology of Computational
+Approaches. Frontiers in Neurorobotics, 1:6, November 2007.
+[247] Jürgen Schmidhuber. Formal Theory of Creativity, Fun, and Intrinsic Motivation (1990–2010). IEEE Trans-
+actions on Autonomous Mental Development, 2(3):230–247, September 2010.
+[248] A. Barto, M. Mirolli, and G. Baldassarre. Novelty or Surprise? Frontiers in Psychology, 4, 2013.
+[249] YiSun,FaustinoGomez,andJuergenSchmidhuber. PlanningtoBeSurprised: OptimalBayesianExploration
+in Dynamic Environments. arXiv:1103.5708 [cs, stat], March 2011.
+[250] Edward Deci and Richard M. Ryan. Intrinsic Motivation and Self-Determination in Human Behavior. Per-
+spectives in Social Psychology. Springer US, New York, 1985.
+[251] LaurentIttiand PierreBaldi. Bayesiansurprise attractshuman attention. Vision research, 49(10):1295–1306,
+May 2009.
+[252] Thomas Parr, Noor Sajid, Lancelot Da Costa, M. Berk Mirza, and Karl J. Friston. Generative Models for
+Active Vision. Frontiers in Neurorobotics, 15, 2021.
+[253] H.B.Barlow. Possible Principles Underlying the Transformations of Sensory Messages. TheMITPress,1961.
+[254] R Linsker. Perceptual Neural Organization: Some Approaches Based on Network Models and Information
+Theory. Annual Review of Neuroscience, 13(1):257–281, 1990.
+[255] L.M.OpticanandB.J.Richmond. Temporalencodingoftwo-dimensionalpatternsbysingleunitsinprimate
+inferiortemporalcortex.III.Informationtheoreticanalysis.JournalofNeurophysiology,57(1):162–178,January
+1987.
+[256] Richard E. Bellman. Dynamic Programming. Princeton University Press, Princeton, NJ, US, 1957.
+[257] K.JÅström. OptimalcontrolofMarkovprocesseswithincompletestateinformation. JournalofMathematical
+Analysis and Applications, 10(1):174–205, February 1965.
+[258] Abraham Kaplan. The Conduct of Inquiry. Transaction Publishers, 1973.
+[259] Noor Sajid, Lancelot Da Costa, Thomas Parr, and Karl Friston. Active inference, Bayesian optimal design,
+and expected utility. arXiv:2110.04074 [cs, math, stat], September 2021.
+[260] Oded Berger-Tal, Jonathan Nathan, Ehud Meron, and David Saltz. The Exploration-Exploitation Dilemma:
+A Multidisciplinary Framework. PLOS ONE, 9(4):e95693, April 2014.
+[261] Conor Heins, Beren Millidge, Daphne Demekas, Brennan Klein, Karl Friston, Iain Couzin, and Alexander
+Tschantz. Pymdp: A Python library for active inference in discrete state spaces. arXiv:2201.03904 [cs, q-bio],
+January 2022.
+[262] Ryan Smith, Karl J. Friston, and Christopher J. Whyte. A step-by-step tutorial on active inference and its
+application to empirical data. Journal of Mathematical Psychology, 107:102632, April 2022.
+[263] Karl J. Friston, Marco Lin, Christopher D. Frith, Giovanni Pezzulo, J. Allan Hobson, and Sasha Ondobaka.
+Active Inference, Curiosity and Insight. Neural Computation, 29(10):2633–2683, October 2017.
+[264] Ozan Çatal, Tim Verbelen, Toon Van de Maele, Bart Dhoedt, and Adam Safron. Robot navigation as hierar-
+chical active inference. Neural Networks, 142:192–204, October 2021.
+[265] Karl J. Friston, Richard Rosch, Thomas Parr, Cathy Price, and Howard Bowman. Deep temporal models and
+active inference. Neuroscience & Biobehavioral Reviews, 90:486–501, July 2018.
+[266] Christopher M. Bishop. Pattern Recognition and Machine Learning. Information Science and Statistics.
+Springer, New York, 2006.
+[267] Karl Friston, Thomas FitzGerald, Francesco Rigoli, Philipp Schwartenbeck, and Giovanni Pezzulo. Active
+Inference: A Process Theory. Neural Computation, 29(1):1–49, January 2017.
+[268] Karl Friston, Thomas FitzGerald, Francesco Rigoli, Philipp Schwartenbeck, John O’Doherty, and Giovanni
+Pezzulo. Active inference and learning. Neuroscience & Biobehavioral Reviews, 68:862–879, September 2016.
+[269] Ryan Smith, Philipp Schwartenbeck, Thomas Parr, and Karl J. Friston. An Active Inference Approach to
+ModelingStructureLearning: ConceptLearningasanExampleCase.FrontiersinComputationalNeuroscience,
+14, May 2020.
+[270] KarlFriston,RosalynJ.Moran,YukieNagai,TadahiroTaniguchi,HiroakiGomi,andJoshTenenbaum. World
+model learning and inference. Neural Networks, 144:573–590, December 2021.
+41
+[271] Samuel T Wauthier, Ozan Çatal, Tim Verbelen, and Bart Dhoedt. Sleep: Model Reduction in Deep Active
+Inference. page 13, 2020.
+[272] AlexanderTschantz,AnilK.Seth,andChristopherL.Buckley. Learningaction-orientedmodelsthroughactive
+inference. PLOS Computational Biology, 16(4):e1007805, April 2020.
+[273] Karl Friston, Thomas Parr, and Peter Zeidman. Bayesian model reduction. arXiv:1805.07092 [stat], October
+2019.
+[274] ThéophileChampion,HowardBowman,andMarekGrześ. BranchingTimeActiveInference: Empiricalstudy
+and complexity class analysis. arXiv:2111.11276 [cs], November 2021.
+[275] Théophile Champion, Lancelot Da Costa, Howard Bowman, and Marek Grześ. Branching Time Active Infer-
+ence: The theory and its generality. arXiv:2111.11107 [cs], November 2021.
+[276] Domenico Maisto, Francesco Gregoretti, Karl Friston, and Giovanni Pezzulo. Active Tree Search in Large
+POMDPs. arXiv:2103.13860 [cs, math, q-bio], March 2021.
+[277] Lancelot Da Costa, Noor Sajid, Thomas Parr, Karl Friston, and Ryan Smith. The relationship between
+dynamic programming and active inference: The discrete, finite-horizon case. arXiv:2009.08111 [cs, math,
+q-bio], September 2020.
+[278] Aswin Paul, Lancelot Da Costa, Manoj Gopalkrishnan, and Adeel Razi. Active Inference for Stochastic and
+Adaptive Control in a Partially Observable Environment.
+[279] Cheng Zhang, Judith Butepage, Hedvig Kjellstrom, and Stephan Mandt. Advances in Variational Inference.
+arXiv:1711.05597 [cs, stat], November 2017.
+[280] ThijsW.vandeLaarandBertdeVries. SimulatingActiveInferenceProcessesbyMessagePassing. Frontiers
+in Robotics and AI, 6, 2019.
+[281] Noor Sajid, Emma Holmes, Lancelot Da Costa, Cathy Price, and Karl Friston. A mixed generative model of
+auditory word repetition, January 2022.
+[282] Alexander Tschantz, Beren Millidge, Anil K. Seth, and Christopher L. Buckley. Control as Hybrid Inference.
+arXiv:2007.05838 [cs, stat], July 2020.
+[283] John Winn and Christopher M Bishop. Variational Message Passing. Journal of Machine Learning Research,
+page 34, 2005.
+[284] M.J.WainwrightandM.I.Jordan. GraphicalModels,ExponentialFamilies,andVariationalInference. Found.
+Trends in Mach. Learn., 1(1–2):1–305, 2007.
+[285] Thomas Parr, Dimitrije Markovic, Stefan J. Kiebel, and Karl J. Friston. Neuronal message passing using
+Mean-field, Bethe, and Marginal approximations. Scientific Reports, 9(1):1889, December 2019.
+[286] Sarah Schwöbel, Stefan Kiebel, and Dimitrije Marković. Active Inference, Belief Propagation, and the Bethe
+Approximation. Neural Computation, 30(9):2530–2567, September 2018.
+[287] Théophile Champion, Marek Grześ, and Howard Bowman. Realizing Active Inference in Variational Message
+Passing: The Outcome-Blind Certainty Seeker. Neural Computation, 33(10):2762–2826, September 2021.
+[288] KarlJ.Friston,ThomasParr,andBertdeVries. Thegraphicalbrain: Beliefpropagationandactiveinference.
+Network Neuroscience, 1(4):381–414, December 2017.
+[289] Thomas Parr, Jakub Limanowski, Vishal Rawji, and Karl Friston. The computational neurology of movement
+under active inference. Brain, March 2021.
+42

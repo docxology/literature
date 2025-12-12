@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
 
 from infrastructure.core.logging_utils import get_logger
-from infrastructure.core.exceptions import LLMConnectionError, FileOperationError
+from infrastructure.core.exceptions import LLMConnectionError, FileOperationError, ContextLimitError
 from infrastructure.literature.sources import SearchResult
 from infrastructure.validation.pdf_validator import extract_text_from_pdf, PDFValidationError
 
@@ -448,6 +448,81 @@ class SummarizationEngine:
                         generation_time=time.time() - start_time,
                         attempts=attempts,
                         error=f"LLM connection error after {attempts} attempts: {e}"
+                    )
+            except ContextLimitError as e:
+                # Context limit error - try to retry with two-stage mode if available
+                logger.warning(
+                    f"[{citation_key}] Context limit error on attempt {attempts}: {e}\n"
+                    f"Context: {getattr(e, 'context', {})}, "
+                    f"elapsed={time.time() - generation_start_time:.2f}s"
+                )
+                
+                # Check if two-stage mode is available and enabled
+                two_stage_enabled = getattr(self.multi_stage_summarizer, 'two_stage_enabled', False)
+                auto_two_stage = getattr(self.multi_stage_summarizer, 'auto_two_stage_fallback', True)
+                
+                if two_stage_enabled and auto_two_stage and attempt == 1:
+                    # First attempt failed with context error - retry with two-stage mode
+                    logger.info(
+                        f"[{citation_key}] Context limit exceeded. Retrying with two-stage mode "
+                        f"(attempt {attempts + 1}/{max_retries + 1})..."
+                    )
+                    # Force two-stage mode by modifying context temporarily
+                    # The multi_stage_summarizer should handle this automatically, but we'll
+                    # ensure it's triggered by clearing context and retrying
+                    try:
+                        self.llm_client.context.clear()
+                        # Retry - the generate_draft method should detect size and use two-stage
+                        summary, validation_result, total_attempts = self.multi_stage_summarizer.summarize_with_refinement(
+                            context=context,
+                            pdf_text=pdf_text,
+                            metadata=metadata,
+                            citation_key=citation_key,
+                            progress_callback=progress_callback
+                        )
+                        
+                        if summary and summary.strip():
+                            generation_time = time.time() - generation_start_time
+                            summary_words = len(summary.split())
+                            logger.info(
+                                f"[{citation_key}] Summary generation completed in {generation_time:.2f}s "
+                                f"using two-stage mode ({total_attempts} total attempts, {summary_words} words, "
+                                f"quality score: {validation_result.score:.2f})"
+                            )
+                            break
+                    except Exception as retry_error:
+                        logger.warning(
+                            f"[{citation_key}] Two-stage retry also failed: {retry_error}. "
+                            f"Continuing with normal retry logic..."
+                        )
+                        if attempt < max_retries:
+                            logger.info(f"[{citation_key}] Will retry with exponential backoff (attempt {attempts + 1}/{max_retries + 1})...")
+                            continue
+                        else:
+                            return SummarizationResult(
+                                citation_key=citation_key,
+                                success=False,
+                                input_chars=input_chars,
+                                input_words=input_words,
+                                generation_time=time.time() - start_time,
+                                attempts=attempts,
+                                error=f"Context limit error after {attempts} attempts (including two-stage retry): {e}"
+                            )
+                elif attempt < max_retries:
+                    logger.info(f"[{citation_key}] Will retry with exponential backoff (attempt {attempts + 1}/{max_retries + 1})...")
+                    continue
+                else:
+                    logger.error(f"[{citation_key}] Context limit error after {attempts} attempts")
+                    return SummarizationResult(
+                        citation_key=citation_key,
+                        success=False,
+                        input_chars=input_chars,
+                        input_words=input_words,
+                        generation_time=time.time() - start_time,
+                        attempts=attempts,
+                        error=f"Context limit error after {attempts} attempts: {e}. "
+                              f"Consider enabling two-stage mode (LITERATURE_TWO_STAGE_ENABLED=true) "
+                              f"or using a model with larger context window."
                     )
             except ValueError as e:
                 # Empty response or validation error

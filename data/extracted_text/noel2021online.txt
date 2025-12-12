@@ -1,0 +1,773 @@
+Online reinforcement learning with sparse rewards
+through an active inference capsule
+AlejandroDanielNoel CharelvanHoof
+DepartmentofCognitiveRobotics DepartmentofCognitiveRobotics
+DelftUniversityofTechnology DelftUniversityofTechnology
+adanielnoel@gmail.com charel.van.hoof@gmail.com
+BerenMillidge
+MRCBrainNetworkDynamicsUnit
+UniversityofOxford
+beren@millidge.name
+Abstract
+Intelligentagentsmustpursuetheirgoalsincomplexenvironmentswithpartial
+information and often limited computational capacity. Reinforcement learning
+methodshaveachievedgreatsuccessbycreatingagentsthatoptimizeengineered
+rewardfunctions,butwhichoftenstruggletolearninsparse-rewardenvironments,
+generallyrequiremanyenvironmentalinteractionstoperformwell,andaretypi-
+callycomputationallyveryexpensive. Activeinferenceisamodel-basedapproach
+thatdirectsagentstoexploreuncertainstateswhileadheringtoapriormodelof
+theirgoalbehaviour. Thispaperintroducesanactiveinferenceagentwhichmini-
+mizesthenovelfreeenergyoftheexpectedfuture. Ourmodeliscapableofsolving
+sparse-reward problems with a very high sample efficiency due to its objective
+function, which encourages directed exploration of uncertain states. Moreover,
+ourmodeliscomputationallyverylightandcanoperateinafullyonlinemanner
+whileachievingcomparableperformancetoofflineRLmethods. Weshowcase
+the capabilities of our model by solving the mountain car problem, where we
+demonstrateitssuperiorexplorationpropertiesanditsrobustnesstoobservation
+noise, which in fact improves performance. We also introduce a novel method
+forapproximatingthepriormodelfromtherewardfunction,whichsimplifiesthe
+expressionofcomplexobjectivesandimprovesperformanceoverpreviousactive
+inferenceapproaches.
+1 Introduction
+ThefieldofReinforcementLearning(RL)hasachievedgreatsuccessindesigningartificialagents
+thatcanlearntonavigateandsolveunknownenvironments,andhashadsignificantapplicationsin
+robotics[Koberetal.,2013,PolydorosandNalpantidis,2017],gameplaying[Mnihetal.,2015,Silver
+etal.,2017,Shaoetal.,2019],andmanyotherdynamicallyvaryingenvironmentswithnontrivial
+solutions[Padakandla,2020]. However,environmentswithsparserewardsignalsarestillanopen
+challengeinRLbecauseoptimizingpoliciesoverHeavisideordeceptiverewardfunctionssuchas
+thatinthemountaincarproblemrequiressubstantialexplorationtoexperienceenoughrewardto
+learn.
+Recently, Bayesian RL approaches [Ghavamzadeh et al., 2015] and the inclusion of novelty in
+objective functions [Stadie et al., 2015, Burda et al., 2018, Shyam et al., 2019] have begun to
+explicitlyaddresstheinherentexploration-exploitationtrade-offinsuchsparserewardproblems. In
+Preprint.Underreview.
+1202
+nuJ
+4
+]GL.sc[
+1v09320.6012:viXra
+paralleltothesedevelopments,activeinference(AIF)hasemergedfromthecognitivesciencesasa
+principledframeworkforintelligentandself-organisingbehaviourwhichnaturallyoftenconverges
+withstateoftheartparadigmsinRL(e.g.,Fristonetal.[2009,2015],KaplanandFriston[2018],
+Tschantzetal.[2020]). AIFagentsminimizethedivergencebetweenanunbiasedgenerativemodel
+oftheworldandabiasedgenerativemodeloftheirpreferences(shortly,theprior). Thisobjective
+assignsanepistemicvaluetouncertainstates,whichenablesdirectedexploration. Becauseofits
+principledfoundationsandbecauserewardfunctionscanbeseenasanindirectwayofdefiningprior
+models(cf.rewardshaping[Ngetal.,1999]),activeinferenceisoftenpresentedasageneralizationof
+RL,withKL-controlandcontrol-as-inferenceascloseontologicalrelatives[Millidgeetal.,2020b].
+1.1 Relatedwork
+Untilrecently,activeinferenceimplementationshavebeenconstrainedtotoyproblemsintheoretical
+expositions[Fristonetal.,2015,2017a,b]. BasedontheworkbyKingmaandWelling[2014]on
+amortizedvariationalinference,Ueltzhöffer[2018]proposedthefirstscalableimplementationof
+AIFusingdeepneuralnetworkstoencodetheunbiasedgenerativemodelandevolutionstrategiesto
+estimatepolicygradientsfrommultipleparallelsimulationsonaGPU.Laterpublicationsproposed
+moreefficientpolicyoptimizationschemes, suchasamortizedpolicyinference[Millidge,2019]
+andapplyingthecross-entropymethod[Tschantzetal.,2019,2020]. Thislatterworkalsousesan
+improvedextensionofthemodelfreeenergytofuturestates,namely,thefreeenergyoftheexpected
+future[Millidgeetal.,2020a](cf. divergenceminimization[Hafneretal.,2020]). Inthesepapers,
+activeinferenceisshowntodeliverbetterperformancethancurrentstateoftheartRLalgorithms
+onsparse-rewardenvironments,althoughtheyusethegoalstatesashard-codedpriors. Weimprove
+uponthemodelofTschantzetal.[2020]bydemonstratingfullyonlinelearningonasingleCPUcore,
+bymodelingthetransitionmodelwithgatedrecurrentunitsthatcancaptureenvironmentdynamics
+overlongerperiods,andbylearningthepriormodelfromthe(sparse)rewardfunctionthrougha
+novelrewardshapingalgorithm.
+2 Activeinference
+Theobjectiveofanactiveinference(AIF1)agentistominimizesurprise,definedasthenegative
+log-likelihoodofanobservation, lnp(y). However,itisoftenintractabletocomputethisquantity
+−
+directly. Instead,weapplyvariationalinferenceandminimizeatractableupperboundforsurprisal,
+namely,thevariationalfreeenergy(VFE)ofalatentmodeloftheworld. Theagentpossessesan
+approximateposteriordistributionq(x y),wherexisthelatentstatethatisoptimizedtominimize
+|
+thevariationalfreeenergy. Theparametersofthisapproximateposteriorcanbethoughtofasthe
+agent’s‘beliefs’aboutitsenvironment. Thevariationalfreeenergycanbewrittenas:
+VFE=E [ lnp(y x )]+D [q(x y ) p(x )] (1)
+q(xt|yt)
+−
+t
+|
+t KL t
+|
+t
+(cid:107)
+t
+which is equivalent to the negative of the expectation lower bound (ELBO) used in variational
+inference(e.g.,[Attias,1999,KingmaandWelling,2014]).
+ActiveinferenceagentsselectactionsthatareexpectedtominimizethepathintegraloftheVFEfor
+futurestates[Friston,2012]. TherearetwocommonextensionsoftheVFEtoaccountforfuture
+states,theexpectedfreeenergy[Fristonetal.,2015]andthefreeenergyoftheexpectedfuture(FEEF)
+[Tschantzetal.,2020],whichweuseinthiswork. Millidgeetal.[2020a]arguesthattheFEEFis
+theonlyoneconsistentwithEquation1whenevaluatedatthecurrenttimeandadditionallyconsiders
+theexpectedentropyinthelikelihoodp(y x )whenselectingapolicy.
+t t
+|
+2.1 Freeenergyoftheexpectedfuture
+The FEEF is a scalar quantity that measures the KL-divergence between unbiased beliefs about
+future states and observations and an agent’s preferences over those states. The preferences are
+expressedasabiasedgenerativemodeloftheagentp˜(y,x),alsoknownastheprior. AsinRL,the
+agent’sworldismodelledasapartiallyobservedMarkovdecisionprocess(POMDP)[Kaelbling
+etal.,1998,SuttonandBarto,1998,Murphy,2000],wheretisthecurrenttime,τ issometimestep
+inthefutureandT isthepredictionorplanninghorizonsothatt τ T. Apolicyisasequence
+≤ ≤
+1ItiscommontoabbreviateactiveinferenceasAIFtoavoidconfusionwithartificialintelligence.
+2
+ofactions[a ,...a ,...a ]sampledfromaGaussianpolicyπ thatisconditionallyindependent
+t τ T
+acrosstimesteps(i.e.,hasdiagonalcovariancematrix). Weusethenotationπ π forarandom
+∼
+policysampleanditscorrespondingGaussianpolicy,respectively. TheFEEFcanbeseparatedinto
+anextrinsic(objective-seeking)termandanintrinsic(information-seeking)termwhenassumingthe
+factorizationp˜(y ,x ) q(x y )p˜(y ):
+τ τ τ τ τ
+≈ |
+FEEF(π) =E D [q(y ,x π) p˜(y ,x )]
+τ q(yτ,xτ|π) KL τ τ
+| (cid:107)
+τ τ
+E D [q(y x ) p˜(y )] E D [q(x y ) q(x π)] (2)
+≈
+q(xτ|π) KL τ
+|
+τ
+(cid:107)
+τ
+−
+q(yτ|xτ,π) KL τ
+|
+τ
+(cid:107)
+τ
+|
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+Extrinsicvalue Intrinsicvalue
+where the difference between the likelihoods q(y x ) and p(y x ) in Equation 1 is simply
+τ τ τ τ
+| |
+notational.
+Minimizingtheextrinsictermbiasesagentstowardspoliciesthatyieldpredictionsclosetotheirprior
+(i.e. theirdesiredfuture). Maximizingtheintrinsictermgivesagentsapreferenceforstateswhich
+willleadtoalargeinformationgain–i.e.,theagenttriestovisitthestateswhereitwilllearnthemost.
+Thecombinationofextrinsicandintrinsicvaluetogetherinasingleobjectiveleadstogoal-directed
+exploration,wheretheagentisdriventoexplore,butonlyinregionswhicharefruitfulintermsof
+achievingitsgoals. ThereisanadditionalexploratoryfactorimplicitintheuseofaKL-divergencein
+theextrinsicterm,whichpushestheagenttowardsobservationswherethegenerativemodelisnotas
+certainaboutthelikelyoutcome[Millidgeetal.,2020a]duetotheobservationentropyterminthe
+KL-divergence.
+TheoptimalGaussianpolicyπ∗isfoundthroughtheoptimization
+T
+(cid:88)
+π∗ =argmin FEEF(π) (3)
+τ
+π
+τ=t
+bymeansofamaximumlikelihoodapproach. AlthoughtheFEEFisnotalikelihood,Whittle[1991]
+shows that treating a path integral of a cost as a negative log-likelihood to minimize is formally
+equivalenttoleastsquaresoptimizationmethods,butmoredirecttocompute.
+3 TheActiveinferencecapsule
+Theactiveinferencecapsuleconsistsofavariationalautoencoder(VAE)whichmapstheagent’snoisy
+observationstoalatentrepresentation,agatedrecurrentunit(GRU)[Choetal.,2014]whichpredicts
+futuTrelhateents taatescfrtomivtheecu rirenntflaetenrtsetatne,acndeap oclicayopptimsizuatiolneschemethatminimizesthe
+FEEFoveratrajectory. TheVAEandGRUlearnanunbiasedlatentdynamicalmodelinasimilar
+fashionasworldmodelsbyHaandSchmidhuber[2018]. Additionally,weproposeanextension
+wherethepriormodelisalsolearnedbytheagentfromtherewardsignal. Ablock-diagramofthe
+capsuleisshowninFigure1.
+p˜(y t:T) r 0:t
+If prior is If prior model is
+Veridical model (VAE + latent GRU) given learned from rewards
+y 0:t q(x 0:t∣y 0:t) x 0:t q(x t:T∣x 0:t,π) q(y t:T∣x t:T) 1−U(y t:T)
+DKLex
+q(x t,T∣y t:T) DKLin − + FEEFt:T
+π*
+AIF Capsule
+Policy optimization (CEM)
+π t* :T=argm
+πt
+i
+:T
+n ∑FEEFt:T
+t:T
+Figure1:Block-diagramoftheactiveinferencecapsule.Theinputsaretime-seriesoftheobservations
+plusthebiasedpriorsonfuturestatesifgivenorelsetherewardstolearnfrom. Thedifferences
+betweeneithersourceofpriorsareindicatedwithdistinctivecolors. Theoutputisatime-seriesof
+optimizedbeliefsoveractions(i.e.,aGaussianpolicy)uptotheplanninghorizon. Continuouslines
+carryprobabilitydistributionswhereasdiscontinuouslinescarryrealnumbers(randomsamples).
+15
+3
+Perceptionandplanning Bothperceptionandplanningaretreatedasinferenceprocesses(see
+Figure 2). During perception, the capsule performs inference on the observations y through the
+unbiasedvariationalposteriorandtransitionmodels. Thisupdatesthebeliefonthelatentstatesx,
+therecurrentstateshoftheGRU,whichintegratetemporalrelationsbetweenlatentstates,andthe
+parametersofthesemodelsthroughalearningstep. Duringplanning,ontheotherhand,thecurrent
+recurrentstatesareusedasinitialconditionsforthetransitionmodeltoprojectfuturetrajectoriesand
+evaluatetheFEEFforpolicyoptimization.
+Perception (inference from y to y) Planning (inference from y to y )
+0 t t+1 T
+y y y y y
+t−2 t−1 t t+1 t+2
+x x x x x
+t−2 t−1 t t+1 t+2
+h h h h h h
+t−2 t−1 t t t+1 t+2
+a a a a
+t−2 t−1 t t+1
+Figure2: Graphicalmodelsoftheinferenceduringperceptionandplanning. Thefuturelatentsare
+inferredagainfromthepredictedobservations,whichcapturestheuncertaintyfromthevariational
+posteriorintotheFEEF.
+Gaussianvariationalautoencoder Thevariationalautoencoder(VAE)consistsofthevariational
+posteriorq(x y )(encoder)andthelikelihoodq(y x )(decoder),bothGaussianandapproxi-
+t t t t
+| |
+matedthroughamortizedinferencewithneuralnetworks[KingmaandWelling,2014]. Aspointed
+outbyMatteiandFrellsen[2018],theoptimizationofVAEsforcontinuousoutputsisill-posed. To
+circumventtheissue,wefixthevarianceofthedecodertoadefaultvalueortothenoiselevelofthe
+inputifgiven(seethehyperparametersinAppendixA). Theresultsareonlymildlysensitivetothis
+parameterbecausetheminimaoftheextrinsicterminEquation2withrespecttothepolicyonlyde-
+pendsonthemodeofthelikelihood,whichisultimatelyunaffectedbythenoise. Itdoes,nonetheless,
+affectthespreadofthelikelihoodandthereforethegradientoftheoptimizationlandscape.
+Recurrenttransitionmodel Thetransitionmodelisfactorizedintotwoterms:
+q(x x ,π) q(x h )q(h h ,x ,π) (4)
+t+1 t t+1 t t t−1 t
+| ≡ | |
+Theright termis implementedby aGRUwhich processesthe temporalinformation ofthe input
+througharecurrenthiddenstateh. Thelefttermisimplementedbyafully-connected(FC)network
+whichpredictsboththeupdateonthelatentstateandtheexpectedvariance. Becausetherecurrent
+statesaredeterministic,thevarianceofthepredictedlatentdistributionsdoesnotincludeprediction
+errors,whichcouldbeanimprovementforfuturework. OurdiagraminFigure3differsfromHaand
+Schmidhuber[2018]inthatitpredictsanupdateonthelatentstateratherthanthelatentstateitself,
+asdonebyTschantzetal.[2020]. Learningisachievedviastochasticgradientdescentwheretheloss
+istheKL-divergencebetweenthepredictedlatentdistributionandthevariationalposteriorafterthe
+observation,sothatq(x π) q(x y ).
+t+1 t+1 t+1
+| ≈ |
+E[q(x t∣y t)]
+++ E[q(x t+1∣y t+1)]
+π h t FC E[Δx t+1] q(x t+1∣π)
+GRU
+h t−1 ⟲ delay FC Var[q(x t+1∣y t+1)]
+Figure3: Block-diagramofthetransitionmodel.
+Modelfreeenergy Incontrasttovariationalautoencoders,whichonlyconsiderpresentobserva-
+tions,inanAIFcapsulethelatentstatesarealsoinferredfrompastsensorydata. Weproposethe
+followingmodificationofEquation1thataccountsforthetransitionmodelbyusingitinplaceofthe
+variationalposteriorandinsteadusingthevariationalposteriorofthecurrentobservationaspriorfor
+thepredictedlatentstates:
+VFE =E [ lnp(y x )]+D [q(x x ,π) q(x y )] (5)
+capsule q(xt|xt−1,π)
+−
+t
+|
+t KL t
+|
+t−1
+(cid:107)
+t
+|
+t
+Thisexpressionisusedforevaluatingthelearningprogressofthetruegenerativemodel.
+4
+3.1 Definingtheprior
+TheAIFcapsulesupportsusingbothapre-setpriororelselearningonefromtherewardfunction. A
+priorinthiscontextissimplyadistributionovergoalstates. Underactiveinference,theagentuses
+itsownunbiasedworldmodeltogeneratetrajectoriesthatmaximizethelikelihoodoftheprior(i.e.,
+reachingthegoal). Importantly,whenlearningthepriortheagentcanalsostoreinformationabout
+theoptimalsolutioninatrajectory-independentwaybymodellingintermediategoalstates. Moreover,
+learningthepriorenablestheuseofactiveinferenceagentsinsituationswheremanuallydefininga
+priorisunfeasible.Weproposeanovelapproachforlearningthepriordirectlybasedonrewardsusing
+Bellman’soptimalityprinciple,thereforemakingalinkwithmodel-basedreinforcementlearning.
+3.1.1 Methodforlearningthepriormodelfromrewards
+Thissectionpresentsanovelmethodforoptimalrewardshaping[Ngetal.,1999]throughacontinuous
+potential function that preserves the optimal policy and is compatible with the extrinsic value in
+Equation2. LetU(y)beamodeloftheutilityofastatey toatrajectorypassingthroughit. The
+utilityisascaledsumofpotentialfuturerewards. Wedefinearewardr asarealnumberinthe
+t
+range[ 1,1]associatedwithanobservationy ,where 1ismaximallyundesirableand1maximally
+t
+− −
+desirable. Weusethesamerangeanddefinitionsfortheutility. Wesuggestasimilaritybetweenthe
+utilitymodelandtheextrinsicvalueoftheFEEF,whichinsteadisareal-valuedintherange[0, )
+∞
+where0correspondstopreferencesbeingperfectlyfulfilledand toabsolutelyunpreferredstates.
+∞
+Assumingtheagentisnottoofarfromitsgenerativemodelweapproximatetherelationas
+1 U(y ) E D [q(y x ) p˜(y )] (6)
+−
+t
+∝∼
+q(xt|π) KL t
+|
+t
+(cid:107)
+t
+Inotherwords,bothtermshaveapproximatelythesamelandscape. Becausetheoptimalpolicydoes
+notdependontheabsolutevaluesoftheFEEFbutonlyonitsminima,wecanuse1 U(y )during
+t
+−
+policyoptimizationasasurrogatefortheextrinsictermwhichimplicitlycontainstheprior.
+We model U as a multi-layered neural network with tanh activation on the outputs. At every
+observation,informationfromtherewardsignalisinfusedintotheutilitymodelthroughastochastic
+gradientdescend(SGD)step. Thelossisthemeansquarederrorbetweenthepredictedutilityand
+the utility by applying Bellman’s equation over a trajectory. In the latter, the discount factor is
+exponentiallydecreasedforpastobservations, whichpushestheagenttomorequicklyreachthe
+rewardingstates. Moreover,thelearningrateintheSGDstepisscaledwiththeabsolutevalueofthe
+reward,whichregularizesthemagnitudeofthemodelupdatewiththeintensityofthestimulus. We
+alsoiteratemultipletimestheprocesstoallowinformationtopropagatebackintimemoreeffectively.
+Seealgorithm1forpseudo-codeofourdynamicprogrammingapproachoflearningtheutilitymodel.
+Algorithm1:Learningtheutilitymodelfromrewards
+Input: Observationsy —rewardsr —utilitymodelU—discountfactorβ —learning
+t0:t t0:t
+rateα—iterationsL
+forIterationi=1...Ldo
+Initializeemptylistofexpectedutilitiesuˆ
+forτ =t ...tdo
+0
+ifτ =tthen
+uˆ r (inanonlinesetting,futureobservationsareunavailable)
+t τ
+←
+else
+uˆ r +βt−τU(y )(Bellman’sequation)
+τ τ τ+1
+←
+end
+end
+MSE(U(y ),uˆ )(Computeloss)
+L←
+t0:t t0:t
+∂WU Backpropagate(U, )(Computeweightgradients)
+∂L ← L
+W U ← W U − α | r t | ∂ ∂ W L U (Updateweights)
+end
+5
+3.1.2 Policyoptimization
+Policiesareoptimizedusingthecross-entropymethod(CEM)[Rubinstein,1997].Sincethealgorithm
+isconstrainedtooutputGaussianpolicies,theexactshapeoftheFEEFisnotcapturedbuttheresulting
+policiesdotrackitsminima[Tschantzetal.,2020]. Thepseudocodefortheoptimizationisprovided
+inalgorithm2.
+Algorithm2:Cross-entropymethodforpolicyoptimization
+Input: PlanninghorizonT —OptimizationiterationsI —#policysamplesN —#candidate
+policiesK —Transitionmodelq(x h ),q(h h ,x ,π)—encoderp(x y )—
+t+1 t t t−1 t t t
+| | |
+decoderp(y x )—currentstates x ,h —priorp˜(y )
+t t t t−1 t
+InitializeaGaussianp | olicyπ (0,I { ) }
+H×H
+←N
+foriterationi=1...I do
+forsamplepolicyj =1...N do
+π(j) π
+FEEF
+∼(j)
+=0
+forτ =t...T 1do
+−
+h E[q(h h ,π(j),x )]
+τ τ τ−1 τ τ
+← |
+q(x π(j)) q(x h )
+τ+1 τ+1 τ
+q(y
+|
+x )
+←E |
+[q(y x )]
+τ+1
+|
+τ+1
+←
+q(xτ+1|π(j)) τ+1
+|
+τ+1
+q(x y ) E [q(x y )]
+τ+1
+|
+τ+1
+←
+q(yτ+1|π(j)) τ+1
+|
+τ+1
+FEEF(j) E D [q(y x ) p˜(y )]
+τ+1 ← q(xτ+1|π(j)) KL τ+1 | τ+1 (cid:107) τ+1
+E D [q(x y ) q(x π(j))]
+−
+q(yτ+1|π(j)) KL τ+1
+|
+τ+1
+(cid:107)
+τ+1
+|
+FEEF(j) FEEF(j)+FEEF(j)
+← τ+1
+x E[q(x π(j))]
+τ+1 τ+1
+← |
+end
+end
+SelectbestK policiesRefitGaussianpolicyπ refit(πˆ)
+←
+end
+returnπ
+4 Experimentsonthemountaincarproblem
+In this section, we study the performance of the active inference capsule using the continuous
+mountain car problem from the open-source code library OpenAI Gym [Brockman et al., 2016].
+Thisisachallengingproblemforreinforcementlearningalgorithmsbecauseitrequiresasubstantial
+amountofexplorationtoovercomethesparserewardfunction(negativeforeveryadditionalaction,
+positiveonlyatthegoal). Moreover,thetaskrequirestheagenttomoveawayfromthegoalatfirst
+in order to succeed. The objective is to reach the goal in less than 200 simulation steps. In our
+experiments,theagenttime-stepsizeis6simulationstepsandtheplanningwindowH =T tis
+−
+definedintheagent’stime-scale(seesubsection4.1fordetails).
+Onlinelearning Foralltasks,weinitializealltheagentswithrandomweightsandlearnonline
+only. Traininganagentfor150epochstakesabout3minutesonasingleCPUcore(IntelI7-4870HQ).
+Incontrast, previousapproachesusingactiveinference[Ueltzhöffer,2018,Tschantzetal.,2019,
+2020]andpolicygradientmethods(e.g.,[Liuetal.,2017])use(offline)policyreplayandtypically
+needhoursofGPU-acceleratedcomputewhileachievingsimilarconvergence. Toourknowledge,
+thisisthefirstmodel-basedRLmethodtolearnonlineusingneuralnetworkrepresentations. Thisis
+affordedbythehighsampleefficiencyoftheFEEF,whichdirectsexplorationtowardsstatesthatare
+uncertainforboththeencoderandtransitionmodels.
+Given priors versus learned priors Figure 4 shows that agents with a given prior (a Gaussian
+distributionaroundthegoalstate)dependontheirplanningwindowtofindmoreoptimalpolicies,
+Codeandresultsathttps://github.com/adanielnoel/Active-Inference-Capsule
+6
+whereasagentsthatlearnthepriorconvergetooptimalpolicieswithmuchshorterplanningwindows
+andwithoutsuchdependency.Figure5showsthatthegivenpriormisleadsagentswithshortforesight
+to swing forward first, whereas the learned prior integrates information about the better strategy
+andcanbefollowedwithoutafullpreviewofthetrajectorytothegoal. Theseresultshighlightthe
+importanceofthepriorformodelexploitation. Theunbiasedpredictorisanegocentricmodelofthe
+world,whereasthepriormodelisanallocentricrepresentationoftheagent’sintendedbehaviour. The
+activeinferencecapsuleeffectivelycombinesbothduringpolicyoptimization,thereforedefininga
+priorbasedonlyonthefinalgoalblurstheobjectiveforshorterplanningwindows. Thisexperiment
+showsthattherewardfunctionisasimplemeansofindirectlymodellingacomplexprior.
+1000
+800
+600
+400
+200
+70
+0
+0 25 50 75 100 125 150
+Episodes
+laoglitnuspetS
+Givenvs.learnedpriors(episodelength)
+Randomagent
+Givenprior,H=15
+Givenprior,H=10
+Learnedprior,H=10
+Learnedprior,H=5
+Figure4: Trainingcurvesfordifferenttypesofagents. Whengiventheprior,agentswithaplanning
+windowof90simulationsteps(H=15)canreachthegoalwithinthe200-steplimit,whereasagents
+withonlya60-step(H=10)foresightfail. Theshortestpossibletimetothegoalisabout70simulation
+steps. Agentsthatlearnthepriorconvergetotheoptimalsolutioneveniftheplanninghorizonis
+significantlyearlierthan70stepsahead,showingthatthelearnedprioralsocapturesinformation
+about the optimal trajectories and not just the goal. Despite starting from a randomly initialized
+model,AIFagentscandirectexplorationalreadyfromthefirstepisode,evidencedbythebetterinitial
+performancecomparedtoagentswithpurelyrandomactions.
+1.0
+0.5
+0.0
+0.5 −
+1.0
+− 1 0 1
+−
+Horizontalposition
+yticoleV
+Givenprior,H=10 Givenprior,H=15 Learnedprior,H=5
+1.0 1.0 2.0
+2.0 2.0
+0.5 0.5 1.5
+1.5 1.5
+0.0 0.0 1.0
+1.0 1.0
+0.5 − 0.5 0.5 − 0.5 0.5
+tgoal =149 tgoal =89 tgoal =74
+0.0 1.0 0.0 1.0 0.0
+− 1 0 1 − 1 0 1
+− −
+Horizontalposition Horizontalposition
+.rtxeLK
+Figure5: Phaseportraitsofatrainedagentofeachtype. Thecontourmapsaretheextrinsicvalues
+oftheFEEF,revealingtheGaussianpriorsandthelearnedprior,whichalsocapturesinformation
+abouttheoptimaltrajectory(highercostinbeingclosertothegoalbuthavingtoswingback). The
+reddotsaretheinitialpositions(randomizedacrosstrials),thethickcontinuouslinesarethetrue
+observations,thethickdiscontinuouslinesarereconstructionsbytheVAE,andthethinlinesarethe
+predictionsprojectedontotheobservationspacethroughthedecodermodel.
+Explorationproperties Figure4alsorevealsthat, despitestartingwithoutanobjective, agents
+thatlearntheprioronaveragefindthesolutioninthefirstepisodefasterthanagentsthattakerandom
+actionsandevenagentswithagivenprior. Thisisanexampleoftheinformation-seekingobjective
+oftheFEEF. Itresultsinarapidanddirectedexplorationofthestate-space,whichacceleratesthe
+solutiontothissparserewardRLproblem.
+7
+Effectofobservationnoise WeexploretheeffectofaddingGaussiannoisetotheobservations.
+Figure6showsthat,despiteabriefinitialdisadvantage,theagentswithnoisyobservationsmatchthe
+performanceofthosewithcleansensorydataandevenconvergetowardstheoptimalsolution. We
+thinkthatthisrobustnesstoobservationnoiseissupportedbytheKL-divergenceintheextrinsicterm,
+aspointedoutbyHafneretal.[2020]inthedivergenceminimizationframework. Infact,ratherthan
+impairingthecapsule,observationnoiseactuallyimproveslearningoftheunbiasedmodel,evidenced
+by the much faster convergence of the model free energy (VFE ). [An, 1996] showed that
+capsule
+additionalinputnoiseinducesaregularizingeffectonthebackpropagatederrorsthatcanimprove
+parameterexplorationandpreventoverfitting.
+1000
+800
+600
+400
+200
+70
+0
+0 25 50 75 100 125 150
+Episodes
+laoglitnuspetS
+Effectofnoiseonepisodelength
+3000
+Learnedprior,H=5
+Learnedprior,H=5,withnoise 2000
+1000
+0
+0 25 50 75 100 125 150
+Episodes
+ygreneeerfevitalumuC
+Effectofnoiseonmodelfreeenergy
+Learnedprior,H=5
+Learnedprior,H=5,withnoise
+Figure6: (Left)Trainingcurvesforagentsthatlearntheirownprior,withandwithoutobservation
+noise. Both have very similar convergence, showing that the model is robust to noise. (Right)
+Cumulativefreeenergyofeachepisode. Themodelfreeenergyforagentswithobservationnoise
+convergesmuchfaster,possiblyduetotheadditionalregularizingeffectagainstlocaloptima.
+Ablationstudy Weexplorethecontributionsoftheintrinsicandtheextrinsictermsinthebehaviour
+oftheagents.Figure7showsthattheintrinsictermalonedrivesconvergentbehaviourinthemountain
+carproblem. Thisisbecausethegoalstatesarealsotherarest(atmostoncepertrial)andtherefore
+directedexplorationisbothnecessaryandsufficienttosolvethetask. Instead, theextrinsicterm
+alonealmostneverfindsthegoalstate. Theextrinsictermpromotesexplorationoftheobservation
+spacebutnotofthelatentspace(seesubsection2.1),whichresultsinalowersampleefficiencyfor
+modelexploration. However,ifwehot-starttheagentforafewstepsbeforedisablingtheintrinsic
+termthebehaviourbecomesbimodal: thepriormodelcansometimesgatherenoughexperiencefor
+theextrinsictermtomaintainaconvergentbehaviour. Theseresultsshowthat,whiletheextrinsic
+termisresponsiblefortheconvergencetooptimalsolutions,theintrinsictermiskeyformakingthis
+behaviourrobustbecauseitpromotespolicieswithahighentropy,whichpreventsconvergenceto
+localminima,aswellasgeneratessufficientexplorationofthestate-spacetoobtainthesparsereward
+necessaryforlearning.
+1000
+800
+600
+400
+200
+70
+0
+0 25 50 75 100 125 150
+Episodes
+laoglitnuspetS
+Ablationstudy,learnedprior,H=5
+Fullmodel
+Onlyintrinsicterm
+Onlyextrinsicterm
+Onlyextrinsicterm,25-trialhotstart
+Figure7: TrainingcurvesbyselectivelydisablingthetermsoftheFEEF. Theintrinsictermalone
+(directedexploration)isenoughtosolvethemountaincarproblem. Theextrinsictermaloneisnot
+enoughunlesshot-startedwithsomeinitialepisodeswiththefullmodel. Theniteitherovercomes
+thesparserewardsandconvergesoritfailstolearnagoodpriormodelduetoinsufficientexploration
+(theplotisbimodal). Thefullmodelcombinestheconvergentbutunstablebehaviouroftheextrinsic
+termwiththerobustnessfurnishedbythehighsampleefficiencyoftheintrinsicterm.
+8
+4.1 Implementationdetails
+Weupdatetheagentevery6simulationstepsandapplythesameactionduringthatperiod. This
+simpleaction-repeatmethodreducescomputationcost,canincreasethepredictionperformancedue
+tohigherfeaturegradientsandlowervarianceoffuturechoices,andisobservedinhumansubjects
+too[Mnihetal.,2015,Sharmaetal.,2017]. Followingthesameidea,theagentalsocommitsto
+executingthefirsttwoactionsofthechosenpolicy. Effectively,theagentrevisesitspolicyevery12
+simulationsteps. Foreachexperiment,wetrain30agentsofeachtypeandplottheirmeanandthe
+regionofonestandarddeviation,clippedtotheminimumormaximumperepisodeifexceeded. See
+AppendixAforspecificdetailsoftheneuralnetworksandhyperparameters.
+5 Discussion
+WeintroducedanactiveinferencecapsulethatcansolveRLproblemswithsparserewardsonline
+andwithamuchsmallercomputationalfootprintthanotherapproaches. Thisisachievedthrough
+minimizingthenovelfreeenergyoftheexpectedfutureobjectivewithneuralnetworks,whichenables
+a natural exploration-exploitation balance, a very high sample efficiency and robustness to input
+noise.
+Moreover,thecapsulecaneitherdirectlyfollowagivenprior(i.e.,thegoalstates)orlearnonefrom
+therewardsignalusinganovelalgorithmbasedonBellman’sequation. Wecomparebothapproaches
+andshowthatagentswithlearnedpriorsconvergetooptimaltrajectorieswithmuchshorterplanning
+horizons. Thisisbecauselearnedpriorsapproximateadensitymapoftherewardingtrajectories,
+whereasgivenpriorstypicallyonlyprovideinformationofthefinalgoals.
+OurresultsshowthattheFEEFinducesentropyregularizationonthepoliciesthroughuncertainty
+sampling,whichpreventslocalconvergenceandaccelerateslearning. Moreover,ouralgorithmlearns
+priorsthatpushtheagenttoachieveitsgoalsasearlyaspossiblewithintheconstraintsoftheproblem.
+Thecombinationofthesetwocharacteristicsresultsinafastandconsistentconvergencetowardsthe
+optimalsolutioninthemountain-carproblem,whichisachallengeforstateoftheartRLmethods.
+Despitethesuccessofthemethodinthemountaincarproblem,itremainsunclearifthegoal-directed
+explorationpropertieswillscaletohigh-dimensionalinputsormuchmorecomplexdynamics. Itis
+alsounclearwhereasthemethodweintroducedforlearningthepriormodelfromtherewardsignalis
+generallyapplicabletoanyproblem. Whenworkingwithimagesasinputs,itmaybenecessaryto
+pre-traintheVAEofflineonalargedatasetandtouseaGPUforacceleratingcomputations.
+Finally,webelievethattheAIFcapsulecouldbecomeabuildingblockforhierarchicalRL,where
+lowerlayersabstractactionandperceptionintoincreasinglyexpressivespatiotemporalcommands
+andhigherlayersoutputpriorsforthelowerlayers. Inthissetup,scalabilityandgeneralitywouldbe
+achievedbydesigningwideranddeepernetworksofAIFcapsules,ratherthanusingalargesingle
+capsule.
+BroaderImpact
+Active inference and the underlying free energy principle describe the self-organising behaviour
+ofbiologicalsystemsatdifferentspatiotemporalscales,rangingfrommicroscales(e.g.,cells),to
+intermediate scales (e.g., learning processes), to macroscales (e.g., societal organization and the
+emergenceofnewspecies)[Hespetal.,2019]. Itisarelativelynewsciencewithbroad-ranging
+applicationsinanytechnologythathastointeractwiththerealworld. Butbecauseofitscomplexity
+andlackofefficientimplementations,activeinferencehasmostlyremainedanexplanatorydevice
+with limited applicability outside of the scientific scope. Developments like the active inference
+capsulepresentedheremaysoonunlockthebenefitsofthisnewtechnologyfornanobiology,robotics,
+artificialintelligence,financialtechnologies,andotherhigh-techmarkets.
+Weacknowledgethatthedevelopmentofthistechnologymayraisesafetyandethicalconcernsin
+the future, although the scope of the present work is still only methodological. Nonetheless, the
+model-basednatureofactiveinferencerendersitsdecisionspartiallyexplainableinasmuchaswe
+understanditspriors,whicharetypicallyeasytointerpretsincetheyareexpressedintheobservation
+space(e.g.,Figure5). Thiscanbeagreatadvantageovermodel-freeRLmethods,whichinsteadare
+veryhardtointerpretandtovalidateforsafety-criticalapplications.
+9
+References
+GuozhongAn. TheEffectsofAddingNoiseduringBackpropagationTrainingonaGeneralization
+Performance. NeuralComputation,8(3):643–674,1996. ISSN08997667. doi: 10.1162/neco.1996.
+8.3.643.
+HagaiAttias. InferringParametersandStructureofLatentVariableModelsbyVariationalBayes.
+In Fifteenth conference on Uncertainty in artificial intelligence, pages 21–30, jan 1999. URL
+http://arxiv.org/abs/1301.6676.
+GregBrockman,VickiCheung,LudwigPettersson,JonasSchneider,JohnSchulman,JieTang,and
+WojciechZaremba. OpenAIGym,2016. URLhttp://arxiv.org/abs/1606.01540.
+YuriBurda,HarrisonEdwards,AmosStorkey,andOlegKlimov. Explorationbyrandomnetwork
+distillation. arXivpreprint,pages1–17,2018. ISSN23318422.
+KyunghyunCho,BartvanMerrienboer,CaglarGulcehre,DzmitryBahdanau,FethiBougares,Holger
+Schwenk,andYoshuaBengio. LearningPhraseRepresentationsusingRNNEncoder–Decoderfor
+StatisticalMachineTranslation. InProceedingsofthe2014ConferenceonEmpiricalMethods
+inNaturalLanguageProcessing(EMNLP),pages1724–1734,Stroudsburg,PA,USA,jun2014.
+AssociationforComputationalLinguistics. doi: 10.3115/v1/D14-1179. URLhttp://arxiv.
+org/abs/1406.1078http://aclweb.org/anthology/D14-1179.
+Stefan Elfwing, Eiji Uchibe, and Kenji Doya. Sigmoid-weighted linear units for neural network
+functionapproximationinreinforcementlearning. NeuralNetworks,107(2015):3–11,2018. ISSN
+18792782. doi: 10.1016/j.neunet.2017.12.012.
+Karl Friston, Francesco Rigoli, Dimitri Ognibene, Christoph Mathys, Thomas Fitzgerald, and
+GiovanniPezzulo. Activeinferenceandepistemicvalue. CognitiveNeuroscience,6(4):187–214,
+oct2015. ISSN1758-8928. doi: 10.1080/17588928.2015.1020053.
+KarlFriston,ThomasFitzGerald,FrancescoRigoli,PhilippSchwartenbeck,andGiovanniPezzulo.
+ActiveInference: AProcessTheory. NeuralComputation,29(1):1–49,jan2017a. ISSN0899-
+7667. doi: 10.1162/NECO_a_00912. URL http://arxiv.org/abs/1803.01446https://
+www.mitpressjournals.org/doi/abs/10.1162/NECO_a_00912.
+KarlJ.Friston. Afreeenergyprincipleforbiologicalsystems. Entropy,14(11):2100–2121,2012.
+ISSN10994300. doi: 10.3390/e14112100.
+KarlJ.Friston,JeanDaunizeau,andStefanJ.Kiebel. ReinforcementLearningorActiveInference?
+PLoSONE,4(7):e6421,jul2009. ISSN1932-6203. doi: 10.1371/journal.pone.0006421.
+Karl J. Friston, Marco Lin, Christopher D. Frith, Giovanni Pezzulo, J. Allan Hobson, and Sasha
+Ondobaka. ActiveInference,CuriosityandInsight. NeuralComputation,29(10):2633–2683,oct
+2017b. ISSN0899-7667. doi: 10.1162/neco_a_00999. URLhttp://arxiv.org/abs/1803.
+01446https://direct.mit.edu/neco/article/29/10/2633-2683/8300.
+MohammedGhavamzadeh,ShieMannor,JoellePineau,andAvivTamar. BayesianReinforcement
+Learning:ASurvey. FoundationsandTrends®inMachineLearning,8(5-6):359–483,2015. ISSN
+1935-8237. doi: 10.1561/2200000049.
+DavidHaandJurgenSchmidhuber. Worldmodels. arXivpreprint, 2018. ISSN23318422. doi:
+10.1016/b978-0-12-295180-0.50030-6.
+DanijarHafner,PedroA.Ortega,JimmyBa,ThomasParr,KarlJ.Friston,andNicolasHeess. Action
+andPerceptionasDivergenceMinimization, sep2020. URLhttp://arxiv.org/abs/2009.
+01791.
+CasperHesp,MaxwellJ.D.Ramstead,AxelConstant,PaulBadcock,MichaelKirchhoff,andKarlJ.
+Friston. AMulti-scaleViewoftheEmergentComplexityofLife: AFree-EnergyProposal. In
+Evolution,DevelompentandComplexity,pages195–227.SpringerInternationalPublishing,2019.
+doi: 10.1007/978-3-030-00075-2_7.
+10
+Leslie Pack Kaelbling, Michael L. Littman, and Anthony R. Cassandra. Planning and acting in
+partiallyobservablestochasticdomains. ArtificialIntelligence,101(1-2):99–134,may1998. doi:
+10.1016/S0004-3702(98)00023-X. URL https://linkinghub.elsevier.com/retrieve/
+pii/S000437029800023X.
+Raphael Kaplan and Karl J. Friston. Planning and navigation as active inference. Biological
+Cybernetics,112(4):323–343,2018. ISSN14320770. doi: 10.1007/s00422-018-0753-2. URL
+https://doi.org/10.1007/s00422-018-0753-2.
+DiederikP.KingmaandMaxWelling.Auto-EncodingVariationalBayes.InInternationalConference
+onLearningRepresentations(ICLR),2014. URLhttp://arxiv.org/abs/1312.6114.
+Jens Kober, J. Andrew Bagnell, and Jan Peters. Reinforcement learning in robotics: A survey.
+International Journal of Robotics Research, 32(11):1238–1274, 2013. ISSN 02783649. doi:
+10.1177/0278364913495721.
+YangLiu,PrajitRamachandran,andJianPeng. Steinvariationalpolicygradient. arXivpreprint,
+2017. ISSN23318422.
+PierreAlexandreMatteiandJesFrellsen. Leveragingtheexactlikelihoodofdeeplatentvariable
+models. InProceedingsofthe32ndInternationalConferenceonNeuralInformationProcessing
+Systems,pages3859–3870,2018.
+Beren Millidge. Deep active inference as variational policy gradients. Journal of Mathematical
+Psychology,96:102348,2019. ISSN10960880. doi: 10.1016/j.jmp.2020.102348.
+BerenMillidge,AlexanderTschantz,andChristopherL.Buckley.WhencetheExpectedFreeEnergy?
+arXivpreprint,2020a. ISSN23318422. doi: 10.1162/neco_a_01354.
+BerenMillidge,AlexanderTschantz,AnilKSeth,andChristopherLBuckley. OntheRelationship
+BetweenActiveInferenceandControlasInference. InInternationalWorkshoponActiveInference,
+pages3–11,2020b. doi: 10.1007/978-3-030-64919-7_1. URLhttp://link.springer.com/
+10.1007/978-3-030-64919-7_1.
+VolodymyrMnih,KorayKavukcuoglu,DavidSilver,AndreiA.Rusu,JoelVeness,MarcG.Belle-
+mare, Alex Graves, Martin Riedmiller, Andreas K. Fidjeland, Georg Ostrovski, Stig Petersen,
+CharlesBeattie,AmirSadik,IoannisAntonoglou,HelenKing,DharshanKumaran,DaanWier-
+stra,ShaneLegg,andDemisHassabis. Human-levelcontrolthroughdeepreinforcementlearn-
+ing. Nature, 518(7540):529–533, 2015. ISSN 14764687. doi: 10.1038/nature14236. URL
+http://dx.doi.org/10.1038/nature14236.
+KPMurphy. AsurveyofPOMDPsolutiontechniques. Technicalreport,2000.
+AndrewY.Ng,DaishiHarada,andStuartRussell. Policyinvarianceunderrewardtransformations
+: Theory and application to reward shaping. Sixteenth International Conference on Machine
+Learning,3:278–287,1999. ISSN1098-6596.
+Sindhu Padakandla. A Survey of Reinforcement Learning Algorithms for Dynamically Varying
+Environments. arXivpreprint,pages1–15,2020. ISSN23318422.
+AthanasiosS.PolydorosandLazarosNalpantidis. SurveyofModel-BasedReinforcementLearning:
+ApplicationsonRobotics. JournalofIntelligentandRoboticSystems: TheoryandApplications,
+86(2):153–173,2017. ISSN15730409. doi: 10.1007/s10846-017-0468-y.
+ReuvenY.Rubinstein. Optimizationofcomputersimulationmodelswithrareevents. EuropeanJour-
+nalofOperationalResearch,99(1):89–112,1997. ISSN03772217. doi: 10.1016/S0377-2217(96)
+00385-2.
+Kun Shao, Zhentao Tang, Yuanheng Zhu, Nannan Li, and Dongbin Zhao. A Survey of Deep
+ReinforcementLearninginVideoGames. arXivpreprint,2019.
+Sahil Sharma, Aravind Srinivas, and Balaraman Ravindran. Learning to Repeat: Fine Grained
+ActionRepetitionforDeepReinforcementLearning. Iclr,pages34–47,feb2017. URLhttp:
+//arxiv.org/abs/1702.06054.
+11
+PranavShyam,WojciechJaskowski,andFaustinoGomez. Model-basedactiveexploration. 36th
+InternationalConferenceonMachineLearning,ICML2019,2019-June:10136–10152,2019.
+DavidSilver,JulianSchrittwieser,KarenSimonyan,IoannisAntonoglou,AjaHuang,ArthurGuez,
+ThomasHubert,LucasBaker,MatthewLai,AdrianBolton,YutianChen,TimothyLillicrap,Fan
+Hui,LaurentSifre,GeorgeVanDenDriessche,ThoreGraepel,andDemisHassabis. Mastering
+thegameofGowithouthumanknowledge. Nature,550(7676):354–359,2017. ISSN14764687.
+doi: 10.1038/nature24270. URLhttp://dx.doi.org/10.1038/nature24270.
+BradlyC.Stadie,SergeyLevine,andPieterAbbeel. IncentivizingExplorationInReinforcement
+LearningWithDeepPredictiveModels. ArXivpreprint,pages1–11,2015. URLhttp://arxiv.
+org/abs/1507.00814.
+Richard S. Sutton and Andrew G. Barto. Reinforcement Learning: an Introduction. MIT Press,
+Cambridge,MA,1edition,1998.
+Alexander Tschantz, Manuel Baltieri, Anil K. Seth, and Christopher L. Buckley. Scaling active
+inference. arXivpreprint,pages1–13,nov2019.
+Alexander Tschantz, Beren Millidge, Anil K. Seth, and Christopher L. Buckley. Reinforcement
+LearningthroughActiveInference. arXivpreprint,feb2020.
+Kai Ueltzhöffer. Deep active inference. Biological Cybernetics, 112(6):547–573, 2018. ISSN
+14320770. doi: 10.1007/s00422-018-0785-7.
+P.Whittle. LikelihoodandCostasPathIntegrals. JournaloftheRoyalStatisticalSociety: Series
+B(Methodological),53(3):505–529,jul1991. ISSN00359246. doi: 10.1111/j.2517-6161.1991.
+tb01842.x. URLhttp://doi.wiley.com/10.1111/j.2517-6161.1991.tb01842.x.
+12
+A Implementationdetailsandhyperparameters
+ThevariationalposteriormodelhasahiddenlayerwithSiLUactivations,whicharetypicallybetter
+thanReLUactivationsinRLsettings[Elfwingetal.,2018], andtwooutputlayersformeanand
+standarddeviation. Thelikelihoodmodelhasthesamestructurebutoutputsafixedstandarddeviation
+(0.05bydefault,0.1inthecaseofnoisyinputs). TheGRUofthetransitionmodelhasinputsize
+dim(x)+dim(a)andhiddensizedim(z)parametrizedby2H dim(x),whereH istheplanning
+·
+windowintheagent’stime-scale. TheFClayersmapfromdim(z)todim(x). Theobservationsare
+thepositionandvelocity(dim(y)=2)andtheactionsarethehorizontalforce(dim(a)=1). The
+learnedpriormodelconsistsofasinglehiddenlayerwithSiLUactivationsandTanhactivationon
+theoutputs. ThefulllistofhyperparametersisshowninTable1.
+Table1: Agenthyperparameters
+Generalhyperparameters
+Latentdimensionsdim(x) 2
+VAEhiddenlayersize 20
+Observationnoisestd. 0or0.1
+Timeratiosimulation/agent 6
+VAElearningrate(ADAM) 0.001
+Transitionmodellearningrate(ADAM) 0.001
+Policyhyperparameters
+PlanningwindowH 6,10or15
+Actionsbeforereplanning 2
+PolicysamplesN (CEM) 700forH 6,10
+∈{ }
+1500forH =15
+CandidatepoliciesK (CEM) 70
+OptimizationiterationsI (CEM) 2
+Hyperparametersforlearnedpriors
+Hiddenlayersize(learnedpriors) 40
+Learningrate(SGD) 0.1
+SGDstepsperreward 15
+Discountfactorβ 0.995
+13

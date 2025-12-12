@@ -1,0 +1,1292 @@
+DynamicEmbedding: Extending TensorFlow for
+Colossal-Scale Applications
+YunZeng SiqiZuo DongcaiShen
+Google Google Google
+xzeng@google.com siqiz@google.com dongcai@google.com
+Abstract
+Oneofthelimitationsofdeeplearningmodelswithsparsefeaturestodaystems
+fromthepredefinednatureoftheirinput,whichrequiresadictionarybedefined
+prior to the training. With this paper we propose both a theory and a working
+systemdesignwhichremovethislimitation,andshowthattheresultingmodelsare
+abletoperformbetterandefficientlyrunatamuchlargerscale. Specifically,we
+achievethisbydecouplingamodel’scontentfromitsformtotacklearchitecture
+evolutionandmemorygrowthseparately. Toefficientlyhandlemodelgrowth,we
+proposeanewneuronmodel,calledDynamicCell,drawinginspirationfromfrom
+the free energy principle [15] to introduce the concept of reaction to discharge
+non-digestiveenergy,whichalsosubsumesgradientdescentbasedapproachesas
+itsspecialcases. WeimplementDynamicCellbyintroducinganewserverinto
+TensorFlowtotakeovermostoftheworkinvolvingmodelgrowth.Consequently,it
+enablesanyexistingdeeplearningmodelstoefficientlyhandlearbitrarynumberof
+distinctsparsefeatures(e.g.,searchqueries),andgrowincessantlywithoutredefin-
+ingthemodel. Mostnotably,oneofourmodels,whichhasbeenreliablyrunning
+inproductionforoverayear,iscapableofsuggestinghighqualitykeywordsforad-
+vertisersofGoogleSmartCampaigns[37]andachievedsignificantaccuracygains
+basedonachallengingmetric–evidencethatdata-driven,self-evolvingsystems
+canpotentiallyexceedtheperformanceoftraditionalrule-basedapproaches.
+1 Introduction
+“Andwhilegrowthisasomewhatvaguewordforaverycomplexmatter,...itdeservestobestudiedinrelationto
+form:whetheritproceedbysimpleincreaseofsizewithoutobviousalterationofform,orwhetheritsoproceed
+astobringaboutagradualchangeofformandtheslowdevelopmentofamoreorlesscomplicatedstructure.”
+—D’ArcyWentworthThompsoninOnGrowthandForm
+1.1 Motivation
+Big data applications are facing an increasingly large and diverseset of potential inputs for their machine
+learningmodels.Existinglibrariesfordeeplearning(e.g.,[1,5,22,31])mostlyfocusonminimizingcertainloss
+functionsdefinedbystaticmodels,leadingtochallengesofimplementingmodelsthatcangrowandself-evolve
+(e.g., [34]).Whilethereisincreasingpopularityoftheautomaticprocessofsearchingforoptimalneuralnetwork
+architectures[48]ormodelevolutions[38],theprocessforamodeltogrowisusuallyignored.Inthispaper,
+weintroduceasystemcalledDynamicEmbeddingthatiscapableofgrowingitselfbylearningfrompotentially
+unlimitednovelinput,whichcouldbeusefulinscenarioswherefocusingonthemostfrequentlyoccurringdata
+maystilldiscardtoomuchusefulinformation.
+Tounderstandafundamentallimitationamongexistingdesignsofdeeplearninglibraries,letusconsiderasimple
+exampleoftrainingaskip-grammodel[27](a.k.a.,Word2Vec)basedonnewarticlesthatemergeeverydayfrom
+PreliminaryWhitePaper.Workinprogress.
+0202
+rpA
+71
+]IA.sc[
+1v66380.4002:viXra
+onlinenewspapers. Thetraininginstanceshereforthemodelaretuplesofwordsthatarenexttoeachother
+(cooccurrences),andthedesiredoutcomeisamappingfromeachwordtoavectorspace(orembedding)in
+whichsemanticallysimilarwordsareclosetoeachother.Acommonpre-processingstepforimplementingthe
+Word2Vecalgorithmistodefineadictionaryofvariablesthatcontainsallthewordswhoseembeddingsshould
+belearned.Therequirementofadictionarybeforetrainingiswhatlimitsthemodeltogrow,eitherintohandling
+neverseenwordsorintoincreasingthedimensionalityoftheembedding.
+1.2 Coreclaims
+Inanattempttosearchforaframeworkthatbetteraccommodatesmodelgrowth,westartfromarecentwork[47]
+thattreatsinput/outputofaneuralnetworklayerassufficientstatistics(embeddings)ofcertaindistribution,
+andfurtherconnectittothefreeenergyprinciple[15]byproposinganewneuronmodelcalledDynamicCell.
+Intuitively,itallowsaneuralnetworklayertominimizeitsfreeenergybybothregulatinginternalstateand
+takingactions.Inaddition,whentheinputcontainsnon-digestiveenergy,italsodischargesitthroughreaction,
+inordertomaintainastableinternalstate. Weshowthatthisslightmodificationtothefree-energyprinciple
+allowsustoconnectittotraditionalgradientdescentbasedapproaches.Asaresult,aninputsignaltoalayer
+canbeprocessedeithercontinuously,orcombinatorially.Forexample,whenanovelinputfeature(e.g.,anew
+word)isseenfromtheinput,alayercoulddynamicallyallocateanembeddingforitandsendittoupstream
+layersforfurtherprocessing.
+Toimplementtheaboveideas, somemajorchangestoTensorFlow[1]areneeded. Specifically, anewset
+of operations are added to TensorFlow’s Python API to directly take symbolic strings as input, as well as
+to “intercept” the forward (upstream) and backward (downstream) signals when running a model. These
+operationsthentalktoanewservercalledDynamicEmbeddingService(DES)toprocessthecontentpartofa
+model.Duringaforwardexecutionofamodel,theseoperationsretrievetheunderlyingfloatingpointvalues
+(embeddings)fortheirlayerinputfromDES,andpassthemtothelayeroutput. Similarlyduringbackward
+execution,thecomputedgradientsoranyotherinformation,arepassedintoDESforupdatinginternalstates
+basedonalgorithmscustomizablebyourusers.
+Infact,DESplaysakeyroleinexpandingthecapacityofTensorFlow,reflectedinthefollowingaspects:
+• Virtually unlimited capacity for embedding data: by collaborating with external storage systems
+suchasBigtable[10]orSpanner[11],itpushesamodel’scapacitytothelimitofstorage1.Infact,
+oursystemisdesignedtobemodulartoworkwithanystoragesystemthatsupportskey/valuedata
+lookup/update.
+• Flexible gradient descent update: DES can keep global information about a layer, such as word
+frequenciesoraveragegradientchanges,tohelpitdecidewhentoupdateanembedding. Gradient
+descentupdateisnolongerahomogeneousprocessforeveryvariable,andeachlayercanmaintain
+theirown“homeostasis”[35]bytakingproperactions2.Meanwhileitisalsoguaranteedthatournew
+systemisbackwardcompatiblewithanygradientdescentoptimizers(e.g.,SGD[33],AdaGrad[14],
+Momentum[3]).
+• Efficiency:Computational/memoryloadonDESisautomaticallydistributedintoitsworkermachines
+inthecloud.TrainingspeedisproportionaltothenumberofTensorflowworkers,andmodelcapacity
+isdecidedbythenumberofDynamicEmbeddingworkers.
+• Reliability:WithDES,aTensorFlowmodelbecomesverysmallasmostdataaresavedtoexternal
+storagelikeBigtable.Thereforetrainingalargemodelbecomesresilienttomachinefailuresthatare
+duetoexceededresources(memoryorCPU).
+• Inherentsupportfortransferormultitasklearning:BytakingtheembeddingdataoutofTensorFlow,
+multiple models can share the same layer, simply by using the same operation name and DES
+configuration.Therefore,modelsharingbecomesanormratherthananoption3.
+OurDynamicEmbeddingsystemhasbeenproventobeparticularlyimportantinlarge-scaledeeplearning
+systems,andhasbeenrobustlyrunninginmultipleapplicationsformorethanoneyear. Itsimplementation
+guaranteesthataTensorFlowmodelwithDynamicEmbeddingrunsatleastasfastaswithoutit(assuming
+sufficientreliabilityintheremotestoragesystem), withadditionalbenefitslikemuchbiggercapacity, less
+codetowrite,andmuchlessdatapre-processingwork. Themajoroverheadforourengineerstoswitchto
+1AmongourinternalcommunicationswithmultipleteamsinsideGoogle,whatmostengineersareexcited
+aboutoursystemisitsflexibilityintrainingamodeldirectlyonBigtable,oranyotherexternalstorage.
+2Accordingtothefree-energyprinciple[15],homeostasisisabiologicalsystem’sresistancetodisorder,
+carriedoutbyanactiveinferenceprocesstominimizesurprises.Oursystemsallowseachlayer(neuron)totake
+itsownactionstomaintainits“homeostasis”.
+3NotethatTensorFlow’sTFHubcomponentcanalsoachievesimilargoal.
+2
+DynamicEmbedding Service
+TensorFlow API DynamicEmbedding Master
+DynamicEmbedding Worker
+- dynamic_embedding lookup() - Lookup(), Update()
+Gradient Update
+- compute_sampled_logits() - Sample()
+- save(), restore() - Export(), Import() Candidate Sampling
+. . . . . .
+Embedding Store
+Figure1: DynamicEmbeddingsystemoverview.ItextendsthecapacityofTensorFlowbyintroducingafew
+newAPIstoprocessid-to-denseordense-to-idoperationsdirectlywithoutrequiringadictionary.TheseAPIs
+talktoDynamicEmbeddingMasterduringforwardandbackwardexecutionsofaTensorFlowcomputation
+graph,whichinturndividetheworkanddistributethemintodifferentDynamicEmbeddingWorkers.
+DynamicEmbeddingisthenewAPIstolearnandconfigurationdetailsforexternalstorageslikeBigtableor
+Spanner,whichwearetryingtosimplifyasmuchaspossible.
+Inthepasttwoyearssinceoursystemwaslaunched,wehavemigratedmanypopularmodels,especiallythose
+involvingsparsefeaturesbeforetraining,toenjoythebenefitofcontinualgrowthfrominput. Forexample,
+withupgradedGoogleInceptionmodelforimageannotation[39],itcanlearnfromlabelsobtainedfromthe
+enormoussearchqueries;withupgradedGoogleNeuralMachineTranslation(GNMT)modelfortranslation[46],
+ithasbeenappliedfortranslatingsentencesintoaddescriptions,inmultiplelanguages;ourupgradedWord2Vec
+modelnowkeepsmappinganevergrowingrepositoryofsearchqueriesintotheirembeddingspace,allowingus
+toquicklyfindsemanticallysimilarqueriestoanyrootquery,inanylanguage.
+ByadoptingDynamicEmbedding,wefindtrainingasinglemodelwithoutmuchdatapre-processingissufficient
+toachievesatisfactoryperformance. Inparticular,oneofoursparsefeaturemodelsforsuggestingkeywords
+fromwebsitecontent(inanylanguages)achievedhighlyaccurateresultscomparedtootherrule-basedsystems–
+anevidencethatbyallowingasystemtoself-evolvedrivenbydata,itispossibletoquicklyoutperformthose
+thatareevolvedbyhumantunings.
+Systemoverview Fig.1illustratesanoverviewofourextendedcomponentsaddedtoTensorFlow. The
+overallgoalistoletexistingTensorFlowAPIsonlyhandlethestatic(form)partofamodel: definingnodes,
+theirconnectionsandpassingdatabetweenthem,andhandthetaskoftrainablevariablelookup/update/sample
+toourDynamicEmbeddingService(DES)toallowthembeconstructedandgrowdynamically.Besides,wealso
+needtodefineanewsetofPythonAPIsthatdirectlytakestringTensorsasinputandoutputtheirembeddings,
+orviceversa4.TheseTensorFlowAPIsdirectlytalktoacomponentcalledDynamicEmbeddingMaster(DEM),
+whichinturndistributestheactualjobintoDynamicEmbeddingWorkers(DEWs). DEWsareresponsible
+forembeddinglookup/update/sample,communicatingtoexternalcloudstoragesuchasBigtableorSpanner,
+updatingembeddingvaluesbasedonvariousgradientdescentalgorithmstobebackwardcompatible,etc.
+Paperorganization Therestofthispaperisorganizedasfollows:wefirstintroduceournewneuralnetwork
+modelinSec.2;ThedesignandimplementationdetailsofDynamicEmbeddingarediscussednext,includingits
+TensorFlowAPIs(Sec.3.1)andvariouscomponentsofDynamicEmbeddingService(Sec.3.2);Resultsfrom
+real-worldapplicationsaredemonstratedinSec.4;Finally,weconcludeourworkinSec.5.
+2 MathematicalFormulation
+Abasicideainthefreeenergyprinciplestipulatesthatabiologicalsystemtendstominimize“surprise”thatis
+definedaslog 1 ,wheresiscurrentinternalandexternalstateofasystemandmisaninternalmodelthat
+P(s|m)
+explainss.Wecanconnectsuchanideatoneuralnetworks,byredefining“surprise”asthedifference(measured
+byKL-divergence)betweenasystem’sstatedistributionwithandwithoutitscontextualinput,denotedasP(w|c)
+andP(w),respectively5. Comparedtotheoriginalformulationmentionedabove,ournewtreatmentcanbe
+implementedatacelllevel,andeliminatestheneedforaninternal,predictivemodelmtoexplainstates,which
+itselfcanbeacomplexprocess.Wewillshowthattheback-propagationalgorithmbelongstoageneralprocess
+offree-energyminimizationintheembeddingspace,whichbringsanewoutlooktotheartificialneuralnetwork
+4Previouslythisneedstobedonebyfirstdefiningfloatingvariablesforthesestringinput/output.
+5Forexample,ifcdenotesverylowtemperaturefeltfromtheenvironmentbyadog,itsinternalstatewould
+changedramaticallytoprotectitselffromfreezing(adeaththreat).AbigdifferencebetweenP(w)andP(w|c)
+wouldcauseabiologicalsystemeitheradjustitselftoadapttotheenvironment(e.g.,bygrowingmorefur),or
+takeactionstochangethesensoryinput(e.g.,bymigratingtoawarmerplace).
+3
+(ANN)asweknowit:anANNisagroupofinter-connectedneuronsminimizingitownfreeenergy6.Intherest
+ofthissection,wewillexplainindetailsournewtreatmentofneuralnetworksandstartingfromnextsection,we
+willshowthepracticalimpactbroughtbyit,i.e.,anewsystemdesignandimprovedperformanceinreal-world
+applications.
+2.1 Exponentialfamily,embeddingandartificialneuralnetworks
+Theideaofusingneuralnetworkstorepresenttheembeddingsofsparsefeatureshasbeenwidelyexploredin
+languagerelatedmodels[4,27].Inessence,alayerinaneuralnetworkisnothingbutarepresentationofthe
+sufficientstatisticsofitsvariablesforacertaindistributionP(w ,...,w |c ,...,c ).[47]furthergeneralizes
+1 n 1 m
+suchanideatoconnectwithmanyexistingdeepneuralnetworkmodelsbyconsideringtheirprobabilisticforms,
+andderivedanewequationintheembeddingspacethattakesintoaccounttherelevanceofcontextualinput
+totheoutput.Forexample,alayerinaneuralnetworkcanberegardedasarepresentationofthedistribution
+P(w|c)intheembeddingspace,wherecisthecontextualinputtothelayerandwistheoutput. Byfurther
+assumingP(w|c)∝exp((cid:104)w(cid:126),(cid:126)c(cid:105))7,wherew(cid:126) and(cid:126)crepresenttheembeddingsofwandc,respectively,thena
+layersimplycomputesw(cid:126) basedon(cid:126)c.
+Thischallengestheconventionalwisdomthatneuronscommunicatewitheachotherbasedonsingleaction
+potentials,representedas1Dfunctions(eitherbinaryorcontinuous). Instead,itfavorsamorerealisticview
+that neurons actually communicate by their firing patterns [9, 20], such that a single neuron does not just
+communicateonesinglebit.[47]employsprobabilityasauniversallanguagefordescribingthedistributionsof
+thefiringpatterns,andusesembeddings(sufficientstatistics)torepresenttheirapproximateforms.
+Oneobviousadvantageofthisalternativeviewofdeepneuralnetworksismodelingpower,asalreadydemon-
+stratedin[47]. Nevertheless,ifwenarrowlyconfineAItodefiningcompositionsofactivationfunctions,no
+matterhowmuchmeaningwegivetothem,theyalwaysfallintosolvingproblemswithverysimilarforms:
+(cid:88) (cid:88)
+min L(x,θ)≡ f (f (...f (x,θ ),...;θ ),...;θ ),n∈N, (1)
+1 2 n n 2 1
+θ={θ1,...,θn}
+x∈D x∈D
+whereDdenotesthewholeoramini-batchoftrainingdata.ThegradientsofEq.1canbecomputedbyapplying
+thechainruletothelearnableparametersetθ foreachf ,i=1,...,n:
+i i
+∂L(x,θ) ∂L(x,θ)∂f ∂L(x,θ)∂f ∂f ∂f
+= i = 1 ... i−1 i (2)
+∂θ ∂f ∂θ ∂f ∂f ∂f ∂θ
+i i i 1 2 i i
+Thealgorithmforcomputingthegradientsvaluesof ∂L(x,θ) and ∂L(x,θ) recursivelyfromf downtof is
+∂fi ∂θi 1 n
+calledback-propagation.Definingalossfunctionthensolvingitbytheback-propagationalgorithmisnowade
+factoapproachinartificialneuralnetworks.
+Fromtheaboveprocess,onecanseethatnothingpreventsusfromchangingthedimensionsofxorθ ,i ∈
+i
+{1,2,...,n}iftheback-propagationalgorithmisrunononebatchatatime.However,thedesignsofexisting
+deeplearninglibrarieshavenotconsideredthisasanessentialfeature.Intherestofthissection,weproposea
+newframeworkthataccountsformodelgrowth.
+2.2 Needforgrowth
+Abasicrequirementforanintelligentsystem(biologicalorartificial)istheabilitytoprocessnovelinformation
+from sensory input. When handling a novel input in a neural network, it is necessary to convert it into a
+representationthatcanbeprocessedbyalossfunctionlikeEq.1withx ∈ Rm. Inparticular, iftheinput
+involvesdiscreteobjectssuchaswords, itisnecessarytomapthemtoanembeddingspacefirst. Anaive
+explanationforthisnecessityisfromaneuralnetworkpointofview:adiscreteinputccanberepresentedas
+acharacteristic(one-hot)vector(cid:126)c = [0,...,1,...,0]T,andthroughalinearactivationlayeritbecomes
+0/1
+W(cid:126)c =W ,whereW representstheithcolumnoftherealmatrixW,orequivalently,c’sembedding.Such
+0/1 i i
+aninterpretationcanexplainwhatlimitstheimplementationsofdeepneuralnetworkswithsparseinputvalues
+andwhyadictionaryisalwaysneeded(i.e.,adictionaryessentiallydefinesW).
+Inpractice,thedimensionofthecharacteristicvector(cid:126)c (i.e.,numberofcolumnsinW)cangrowtobe
+0/1
+arbitrarilylargeandtheembeddingdimension(i.e.,numberofrowsinW)shouldalsogrowaccordingly.Tosee
+whytheembeddingdimensionshouldgrow,weresorttothesufficientstatisticspointofviewforneuralnetwork
+layers[47]andabasicfactthatthevalueforeachdimensionofanembeddingmustbebounded8. Thissaid,
+6Tosomeextent,thishintswhyalife’sformcanrangefromprokaryotes(single-celledorganism)tocomplex
+oneslikesapiens–anynumberofself-interested,surprisingminimizingcellscanformalifeiftheycanimprove
+theoverallsurvivalrate.Therefore,acorporatelikeGoogle,isalsoaformoflife,assuggestedin[17].
+7FromthemostgeneralformP(w|c) ∝ exp(E(w(cid:126),(cid:126)c))andtheTaylor’stheoremformultivariablefunc-
+tions[2],onecanalwaysapproximateP(w|c)byexp((cid:104)w(cid:126),(cid:126)c(cid:105))/Z((cid:126)c)wherew(cid:126) mayalsodependon(cid:126)c.
+8Thisistrueforbothmachines,whosefloatingpointrepresentationisboundedbynumberofbits(e.g.,64),
+andbiologicalsystems,whosevoltageorfiringfrequencyofsignalscannotexceedcertainbound(E =mc2).
+4
+Downstream Internal Upstream
+c w
+Input Internal State Change Action
+Upstream Action Change
+c Downstream Reaction w
+Reaction Feedback
+Embedding Growth
+Figure2: InourDynamicCellmodel,webuildabasicunitoflife(cell)byintroducingreactionintothefree
+energyprinciple.Abasicactivityoflifeisstilltomaintainitshomeostasis.Inaddition,itshouldalso“react”to
+unexpectedinputasawaytodischargetheexcessiveenergythatcannotbeprocessedbychanginginternalstates
+oractions.Forexample,laughingandcryingaremeanstodischargegoodandbadsurprises,respectively,which
+bythemselvesdonotcontributetosurvival.Inotherwords,lifereacts.
+letusassumealayerofneuralnetworkrepresentthedistributionP(w|c)∝exp((cid:104)w(cid:126),(cid:126)c(cid:105)).Thentwoinputsc
+1
+andc areconsidereddifferent,iftheircorrespondingdistributionsaresufficientlyapartfromeachother.Let
+2
+P (w)≡P(w|c )andP (w)≡P(w|c ),thiscanberepresentedas
+c1 1 c2 2
+(cid:90) logP(w|c )
+D (P ||P )≡ P(w|c ) 1 >δ, (3)
+KL c1 c2 1 logP(w|c )
+w 2
+whereD (P|Q)denotestheKL-divergencebetweentwodistributionsP andQ,andδ>0isathreshold.By
+KL
+substitutingtheembeddingformofP(w|c),i.e.,P(w|c)∝exp((cid:104)w(cid:126),(cid:126)c(cid:105)),intotheaboveequation,weobtain:
+(cid:90)
+D (P ||P )∝ P(w|c )(cid:104)w(cid:126),(cid:126)c −(cid:126)c (cid:105). (4)
+KL c1 c2 1 1 2
+w
+Geometrically,itcomputesanaveragelengthofthevectorw(cid:126) alongthedirection(cid:126)c −(cid:126)c .Sincethelengthof(cid:126)c
+1 2
+isbounded,theonlywaytoalwayssatisfytheinequalityofEq.3whenthenumberofdistinctcincreasesis
+toincreasethedimensionsof(cid:126)candw(cid:126).Intuitively,itsimplysaysthatinordertofitmoreobjectsinabounded
+spacesuchthattheyaresufficientfarapartfromeachother,onewouldhavetoexpandtohigherdimensions.
+2.3 Anewneuronmodel: DynamicCell
+NowthatwehaveaddressedwhyanAIsystemshouldgrow,anotherimperativequestionishow: howcome
+agroupofneurons,connectedtoeachotheronlythroughinput/outputsignals,worktogethertoachievean
+overallstateofsurvival? Anidealneuronmodelshouldnotjustexplainhowasinglecellworks,butalsobe
+generalizabletogroupsofcells(organisms),oreventogroupsoforganisms.Evenbetter,itshouldalsoexplain
+thesuccessofexistingapproacheswidelyusedindeeplearning,e.g.,theback-propagationalgorithm.
+2.3.1 Motivationsfromfreeenergyprinciple
+Thefreeenergyprinciple[15]developedforunderstandingtheinnerworkingsofthebrainprovidesuswith
+somecluesonhowtobuildamoreunifiedmodelforneuralnetworklearning.Inessence,itassumesabiological
+systemisenclosedbyaMarkovblanketthatseparatestheinternalstatefromtheexternalenvironment,and
+communicationsonlyoccurthroughthesensoryinputandactions.Theoverallgoalofthebiologicalsystemis
+tomaintainastablestate(homeostasis),bothinternallyandexternally,ormathematically,tominimizethefree
+energy(surprises)frominsideandoutside.
+However,ifanorganism,enclosedbyaMarkovblanket,canonlyminimizethefreeenergythroughchanging
+internalstatesand/orinteractingwiththeenvironment,whatifbothmeansfailed?Forexample,whenaperson
+heardaboutatragicnewsandthereisnoactioncanbetaken, changinginternalstatecanonlydisruptthe
+homeostasisofabody. Alsofromphysicspointofview,ifinformationandenergyareinterchangeable[41]
+andthetotalenergyisconserved,thedischargeofexcessive,non-digestiveenergyisalsoanessentialwayof
+maintaininghomeostasis.
+Hence,wecansimplyimprovetheideaoffreeenergyprinciplebyincludingreactionintothepicture(Fig.2),
+whichisessentialaccordingtothelawofconservationofenergyinphysics. Inournewmodel,eachcellor
+agroupofthem(organism)canactaccordingtothesameprinciple:minimizethefreeenergy(surprisefrom
+input(cid:126)c)throughchangeofinternalstatesand/oractions,andtheexcessivenon-digestiveenergythatcannotbe
+minimizedisdischargedviareaction. Heretheactionsignalw(cid:126) isreceivedbyotherupstreamcellsinsidethe
+sameMarkovblanket,andcanonlyaffectupstreamfeedbackw (cid:0).Notethattheactionsignalw(cid:126) hereisdifferent
+fromphysicalactionstakenbyanorganismtointeractwiththeenvironment.Underourmodel,physicalactions
+canbeactivatedeitherbyupstreamsignalw(cid:126) (e.g.,tomotorneurons)todousefulwork(e.g.,runningawayfrom
+threats),orbydownstreamsignal(cid:0) c todischargeextrasurprises(e.g.,vialaughingorcrying).
+5
+2.3.2 Formulation
+Toformulatetheaboveideasinamathematicalform,weresortto[47]againasastartingpointforbuildinga
+newneuronmodel. Overall,aneuronrepresentsthedistributionP(w|c)andaccordingto[47],itsinputand
+outputsignalscanbeapproximatelyrepresentedbytheirembeddings,e.g.,P(w|c)= 1 exp((cid:104)w(cid:126),(cid:126)c(cid:105))where
+Z((cid:126)c)
+(cid:80)
+w(cid:126) maydependon(cid:126)c,andZ((cid:126)c)= exp((cid:104)w(cid:126),(cid:126)c(cid:105)).Giventhisassumption,wecanrepresenttheminimization
+w(cid:126)
+offreeenergy,orsurprise,intotwoparts:internalandexternal.
+Internalstatehomeostasis Thestabilityofacell’sinternalstateisreflectedintheactionstatew(cid:126) inFig.2.
+Thelong-termbehaviorofacellshouldbeindependentofitscontextc(context-free)andthereforecanbe
+representedasthedistributionP ≡P(w). Hencethefreeenergy,orsurprise,ontheinternalstateofacell
+w(cid:126)
+fromagiveninputccanbesimplyrepresentedas
+D (P ||P )= (cid:88) P (x)log P w(cid:126) (x) , (5)
+KL w(cid:126) c w(cid:126) P(x|c)
+x
+andsurpriseminimizationmeansadjustinginternalparametersofP(w|c)suchthatP(w|c)≈P(w).Tosee
+howsurpriseminimizationcanbeimplementedintheembeddingspace,letusapplythesufficientstatistics
+representationofP(w|c)andrearrangeEq.5asfollows:
+(cid:88)
+D (P ||P )=− P (x)(cid:104)w(cid:126),(cid:126)c(cid:105)+logZ((cid:126)c)−H(P ) (6)
+KL w(cid:126) c w(cid:126) w(cid:126)
+x
+whereH(·)denotestheentropyofthegivendistributionandshouldberelativelystable.TominimizeEq.6,a
+cellneedstoreachastatewherethegradientofD (P ||P )withrespecttoinputciszero:
+KL w(cid:126) c
+∂D KL (P w(cid:126) ||P c ) =0⇔− (cid:88) P (x) ∂(cid:104)w(cid:126),(cid:126)c(cid:105) + ∂logZ((cid:126)c) ≈0
+∂(cid:126)c w(cid:126) ∂(cid:126)c ∂(cid:126)c
+x
+⇔(cid:104)w(cid:126)(cid:105) ≈(cid:104)w(cid:126)(cid:105) (7)
+Pc Pw(cid:126)
+whereweassume∂(cid:104)w(cid:126),(cid:126)c(cid:105)/∂(cid:126)c≈w(cid:126).Notethatthisissimilarinformasthecontrastivedivergencealgorithm[19],
+thoughtheyarederivedbasedoncompletelydifferentassumptions([19]assumesaneuronoutputs0/1action
+potentialswhereasinourcaseaneuronoutputstheembeddingthatrepresentsthedistributionofitsfiring
+patterns).
+Upstreamstatehomeostasis Thedifferencebetweenupstreamanddownstreamisthatthestateofthe
+formerisexpectedtobestable9.Tomeasurethestabilityofupstreamstates,onecantreatthewholecomplex
+processofinformationprocessingintheupstreamasablackboxandsimplymeasureitsdeviationfromusual
+distribution,namely:
+(cid:88) P (x)
+D
+KL
+(P
+(cid:0)w
+||P
+w(cid:126)
+)= P
+(cid:0)w
+(x)log
+P(
+(cid:0)w
+x|w)
+, (8)
+x
+w
+th
+h
+e
+e
+c
+r
+o
+e
+n
+P d(cid:0)w
+iti
+r
+o
+e
+n
+pr
+f
+e
+o
+s
+r
+e
+s
+n
+t
+t
+a
+s
+b
+t
+l
+h
+e
+e
+u
+d
+p
+i
+s
+s
+t
+t
+r
+r
+e
+ib
+am
+uti
+s
+o
+t
+n
+at
+o
+e
+f
+a
+t
+s
+h
+:
+eupstreamfeedbacksignalw (cid:0) (Fig.2).SimilartoEq.7,wecanobtain
+∂D (P ||P )
+KL ∂w(cid:126) (cid:0)w w(cid:126) =0⇔(cid:104)w (cid:0) (cid:105) Pw(cid:126) ≈(cid:104)w (cid:0) (cid:105) P (cid:0)w . (9)
+HencebychanginginternalstateofP(w|c),acellcanoptimizebothEq.6andEq.8tominimizeitsoverall
+surprise.Anequilibriumisabalancebetweeninternalstateandactions.
+Reaction Fromtheaboveanalysis,thefreeenergyisminimizedwhenbothEq.7and9aresatisfied.However,
+itisanaturaltendencyfortheentropyoftheoverallstateofasystemtoincrease, soanenclosedorganic
+systemshouldexpectconstantupcomingsurprisesfromtheinput.Whenthesesurprisescannotbeminimizedby
+changinginternalstates(Eq.7)ortakingactions(Eq.9),theymustbedischargedoutofthesysteminsomeway,
+i.e.,throughreaction(cid:0) c.Forexample,onechoiceofthetotaladditionalenergycanberepresentedas
+(cid:0) c ≈(|(cid:104)w (cid:0) (cid:105) P
+(cid:0)w
+−(cid:104)w (cid:0) (cid:105) Pw(cid:126) |2+|(cid:104)w(cid:126)(cid:105) Pw(cid:126) −(cid:104)w(cid:126)(cid:105) Pc |2)/2≥((cid:104)w (cid:0) (cid:105) P
+(cid:0)w
+−(cid:104)w (cid:0) (cid:105) Pw(cid:126) )◦((cid:104)w(cid:126)(cid:105) Pw(cid:126) −(cid:104)w(cid:126)(cid:105) Pc ), (10)
+where|·|2 representstheelement-wisesquareand◦isalsoanelement-wiseproduct. Inthefollowing,we
+willseethatthisformischosenpurelyfortheconvenienceofconnectingittogradientdescentupdateforloss
+functions.Thereexistsmanyotherpossibilitiesindefiningreaction,whichisnotamajorfocusofthispaper.
+9Fromthepointofviewofbehavioralpsychology,thisisconsistentwithanorganism’snaturaltendencyto
+distinguish“us”from“them”[36].
+6
+Connectiontogradientdescentupdate Finally,letustakealookathowtheaboveprocesssubsumes
+conventionallossminimizationusinggradientdescentasitsspecialcase.Toseethis,wecansimplywirethe
+actionsignalw(cid:126) toalossfunctionL(w(cid:126))andletw
+(cid:0)
+returntheevaluationoftheloss(i.e.,w
+(cid:0)
+=L(w(cid:126))).Fromthe
+aboverelationsandbytakingthefinitedifferencesteptobe1ingradientapproximation,weobtain
+∂D (P ||P ) ∂w(cid:126)
+KL w(cid:126) c ≈(cid:104)w(cid:126)(cid:105) −(cid:104)w(cid:126)(cid:105) ≈ (11)
+∂(cid:126)c Pw(cid:126) Pc ∂(cid:126)c
+∂D KL ∂ (P w(cid:126) (cid:0)w ||P w(cid:126) ) ≈(cid:104)w (cid:0) (cid:105) P (cid:0)w −(cid:104)w (cid:0) (cid:105) Pw(cid:126) ≈(cid:104)L(w(cid:126))(cid:105) P (cid:0)w −(cid:104)L(w(cid:126))(cid:105) Pw(cid:126) ≈ ∂L ∂ ( w(cid:126) w(cid:126)) (12)
+Finally,fromEq.10,wearriveatthefamiliarformofgradient:
+∂L(w(cid:126)) ∂w(cid:126) ∂L
+(cid:0) c ≈ ∂w(cid:126) · ∂(cid:126)c = ∂(cid:126)c (13)
+This is consistent with progresses in cognitive science that real brains actually do some form of back-
+propagations[44].
+3 SystemDesign
+3.1 TensorflowAPIDesign
+Recallthatnoweachlayer/neuroninaneuralnetworkisconsideredtorepresentcertaindistributionP(w|c)in
+theembeddingspacewithcastheinputandwtheoutput.Forintermediatelayersbetweeninputandoutput,c
+isalreadyrepresentedasanembedding(cid:126)candoneonlyneedstodefineafunctionthatcomputesw(cid:126).Insucha
+case,wecanjustusethesamecomputationalgraphinTensorFlowforforward(InputandActioninFig.2)and
+backward(FeedbackandReactioninFig.2)executions,andnon-gradientsbasedupdatecanbeachievedvia
+slightchangestothefunctiontf.gradients.Forexample,atypicalDynamicCellnodecanbedefinedas
+1 def my_cell_forward(c):
+2 """Returns action w"""
+3
+4 @ops. RegisterGradient("MyCellForward")
+5 def my_cell_backward(op, w_feedback):
+6 """Returns reaction c_feedback"""
+However,specialcaresareneededwhenoneofwandcinvolvessparsefeatures(e.g.,words),asitmayhappenat
+theinputoroutputlayer(e.g.,asoftmaxoutputlayerthatpredictsaword).ExistingTensorFlowimplementation
+alwaysrequiresadictionaryandstring-to-indexconversions(e.g.,viatf.nn.embedding_lookuportf.math.top_k),
+which is incompatible with our philosophy that the users only need to define the form of P(w|c) without
+worryingaboutitscontent.Infact,theseinput/outputoperationsarethekeytoenablingTensorflowtohandle
+ever-growingdistinctinput/outputvaluesbytransferringthejobofcontentprocessingtoDynamicEmbedding
+service(DES).Inaddition,toletTensorflowseamlesslyworkwithDES,weuseasingleprotocolbufferto
+encodealltheconfigurations,whichisrepresentedastheinputargumentde_configinourTensorflowAPIs.
+3.1.1 Sparseinput
+Asmentionedabove,allowingTensorFlowtodirectlytakeanystringasinputcanbeverybeneficial.Herewe
+calltheprocesstoconvertanystringinputintoitsembeddingdynamicembedding,withitsTensorFlowAPI
+definedas
+1 def dynamic_embedding_lookup(keys , de_config , name):
+2 """Returns the embeddings of given keys."""
+wherekeysisastringtensorofanyshape,andde_configcontainsthenecessaryinformationabouttheembedding,
+includingthedesiredembeddingdimension,initializationmethod(whenthekeyisfirstseen),andstorageofthe
+embedding,etc.Alsothenameandtheconfigcanuniquelyidentifytheembeddingtofacilitatedatasharing.
+3.1.2 Sparseoutput
+Whenaneuralnetworkoutputssparsefeatures,itisusuallyusedinaninferenceproblem:argmax P(w|c),
+w
+wherecisinputfrompreviouslayer,representedas(cid:126)cinaneuralnetwork.AccordingtoSec.2.1,ifweassume
+P(w|c)∝exp((cid:104)w(cid:126),(cid:126)c(cid:105))wherew(cid:126) istheembeddingofw,thenargmax P(w|c)=argmax (cid:104)w(cid:126),(cid:126)c(cid:105),whichis
+w w
+simplytheclosestpoint(measuredbythedotproduct)totheinputquery(cid:126)camongtheembeddingsofallthe
+valuesofw. Infact,thesoftmaxfunctionthatiscommonlyusedinneuralnetworkiscloselyrelatedtoour
+7
+formulation.Toseethis,letusassumethesetofallpossiblevaluesofwtobeW,and∀a∈W,thesoftmax
+probabilitycanberepresentedas
+(cid:20) (cid:21) (cid:20) (cid:21)
+(cid:126)c w(cid:126)
+exp((cid:104) , a (cid:105))
+P(w=a|c)= (cid:80) k∈ ex W p( e (cid:126)c x T p w ( (cid:126) (cid:126)c a T + w(cid:126) k b a + ) b k ) = (cid:80) exp 1 ((cid:104) (cid:20) (cid:126)c (cid:21) b a , (cid:20) w(cid:126) k (cid:21) (cid:105)) , (14)
+k∈W 1 b
+k
+whichfallsintoourspecialcaseifweletdim(w(cid:126)) = dim((cid:126)c)+1wheredim(·)denotesthedimensionofa
+vector.
+However,whenthenumberofelementsinW isverylarge,itisinefficienttocomputethecrossentropyloss
+forsoftmaxoutputasitrequiresthecomputationofEq.14forallvaluesofw.Fortunately,efficientnegative
+samplingmethodhasalreadybeenwellstudied[21].AllwehavetodoistosupportitinDES.
+Candidate negative sampling Toallowpotentiallyunlimitednumberofoutputvalues, wefollowthe
+implementationoftf.nn.sampled_softmax_losstodefineaninternalfunctionthatreturnsthelogitvalues((cid:126)cTw(cid:126) +
+k
+b ,w ∈W )ofnegativesamplesfromgivenactivationpositivekeysand(cid:126)c.TheAPIcanbedefinedas
+k k sampled
+1 def _compute_sampled_logits(pos_keys , c, num_sampled, de_config , name):
+2 """Returns sampled logits and keys from given positive labels ."""
+Herenum_sampledisapositivenumberandthesamplingstrategyisdefinedinde_config.
+TopKretrieval Whereascandidatenegativesamplingisneededduringtraining,duringinference,wewould
+liketocomputeargmax P(w|c)=argmax (cid:104)w(cid:126),(cid:126)c(cid:105)asmentionedabove,andinpracticeitismorecommon
+w w
+toretrievethetop-knearestpointstogiveninput(e.g.,forbeamsearchinlanguageinference).Theinterfacefor
+TopKretrievalisdefinedas
+1 def top_k(c, k, de_config , name):
+2 """Returns top k closest labels to given activation c."""
+Behindthescene,thefunctionshouldcalltheDynamicEmbeddingservertofindthekeyswhoseembeddingsare
+(cid:20) (cid:21)
+(cid:126)c
+closestto .
+1
+3.1.3 Saving/restoringmodels
+Finally,duringmodeltraining,amodelneedstobeperiodicallysaved.Sincewehavemovedmostofmodeldata
+outofTensorFlow’sgraph,itisimportanttomaintaintheconsistencybetweenthecheckpointssavedbyboth
+TensorFlowandDynamicEmbedding.OntheAPIside,eachtimeaDynamicEmbeddingrelatedAPIiscalled,
+thecorrespondingembeddingdatainformation,uniquelyidentifiableby(name,de_config)shouldbestored
+inaglobalvariable.Checkpointsaving/loadingforDynamicEmbeddingwouldbeverysimilartoTensorFlow,
+namely,
+1 save_path = save(path , ckpt)
+2 restore(save_path)
+IftheuserusestheautomatictrainingframeworkinTensorFlow,suchastf.estimator,saving/loadingthemodel
+isautomaticallyhandledbyourhigh-levelAPIs.Butiftheywanttodoitinalowlevelfashion,theywillneed
+tocalltheabovefunctionsalongwithTensorFlow’scorrespondingI/Ofunctions.
+3.1.4 AWord2VecmodelwithDynamicEmbedding
+Insummary,theTensorFlowAPIchangetosupportDynamicEmbeddingisverystraightforward,andthejobfor
+modelconstructionisalsosimplified.Asanexample,aWord2Vecmodelcanbedefinedwithonlyafewlinesof
+code:
+1 tokens = tf . placeholder(tf . string , [None, 1])
+2 labels = tf . placeholder(tf . string , [None, 1])
+3 emb_in = dynamic_embedding_lookup(tokens , de_config , ’emb_in’)
+4 logits , labels = _compute_sampled_logits(labels , emb_in, 10000,
+de_config , ’emb_out’)
+5 cross_ent = tf .nn.softmax_cross_entropy_with_logits_v2(labels , logits)
+6 loss = tf .reduce_sum(cross_ent)
+Notethattheneedforadictionaryiscompletelyremoved.
+8
+3.2 DynamicEmbeddingServiceDesign
+AsshowninFig.1,ourDynamicEmbeddingService(DES)involvestwoparts:DynamicEmbeddingMaster
+(DEM)andDynamicEmbeddingWorkers(DEWs).TheTensorFlowAPIsdefinedintheprevioussectiononly
+communicatewithDEM,whichinturndistributestherealworkintodifferentDEWs.Toachievebothefficiency
+andevergrowingmodel,eachworkerinDEWsshouldbalancebetweenlocalcachingandremotestorage.In
+thissection,wediscussdifferentaspectsofDESinitscurrentform.
+3.2.1 Embeddingstorage
+AsdiscussedinSec.2,communicationsamongneuronsarerepresentedassufficientstatisticsoftheirfiring
+patterns(embeddings),whicharesimplyvectorsoffloatingvalues.Thesefiringpatternsarediscreteinnature
+andcanberepresentedbystringids.Hencethestorageoftheseembeddingdataonlyinvolves(key,value)pairs,
+andnotsurprisingly,weuseprotocolbuffertofacilitatedatatransferandkeepadditionalinformationforeach
+embeddinglikestringid,frequency,etc.
+WhencertaindataispassedintoanodedefinedbyourTensorFlowAPI,itwouldtalktoDEStodotheactual
+job.Forexample,duringtheforwardpassofrunningthedynamic_embedding_lookop(Sec.3.1.1),abatchof
+stringsarepassedintoanodeinthecomputationgraphofTensorFlow,anditinturnasksDEMtoprocessthe
+actuallookupjob.Duringthebackwardpass,thefeedbacksignal(e.g.,gradientswithrespecttoitsoutput)is
+passedintotheregisteredbackwardnodeanditalsoneedstotalktoDEMfordataupdate.
+Toallowforscalableembeddinglookup/update,wedesignacomponentcalledEmbeddingStorethatisdedicated
+to communicating with multiple storage systems available inside Google. Each supported storage system
+implementsthesameinterfacewithbasicoperationslikeLookup(),Update(),Sample(),Import(),Export().
+Forexample,anInProtoEmbeddingimplementstheEmbeddingStoreinterfacebysavingthewholedatainto
+aprotocolbufferformat,whichcanbeusedforlocaltestsandtrainingsmalldataset.AnSSTableEmbedding
+loadsthedataintothememoriesofDEWsduringtrainingandsavesthemtoimmutablebutpotentiallyvery
+largefilesinGoogleFileSystem(GFS)[16].ABigtableEmbeddingallowsthedatatobestoredbothinlocal
+cacheandremote,mutableandhighlyscalableBigtables[10]. thereforeenablingfastrecoveryfromworker
+failureasitdoesnotneedtowaituntilallthepreviousdataareloadedbeforeacceptingnewrequests.
+3.2.2 Embeddingupdate
+Inourframework,embeddingupdatesmayhappenduringbothforwardandbackwardpasses(Fig.2).Forthe
+backpropagationalgorithm,updatesonlyoccurwhenbackwardfeedbackwiththeinformation∂L/∂warrives.
+Toguaranteethatoursystemiscompletelycompatiblewithanyexistinggradientdescentalgorithms(e.g.,
+tf.train.GradientDescentOptimizerortf.train.AdagradOptimizer),weneedtoimplementeachoftheminside
+DEWs.Fortunately,wecansimplyreusethesamecodeimplementedinTensorFlowtoguaranteeconsistency.
+Onecaveatisthatmanygradientdescentalgorithms,suchasAdagrad[14],keepsglobalinformationabouteach
+valuethatshouldbeconsistentbetweengradientupdates.Inourcase,thismeansweneedadditionalinformation
+storedintheembedding.
+Long-shorttermmemory Whenalearningsystemiscapableofprocessingdatathatspansalongperiod
+(e.g.,monthsoryears),itisimportanttoaddressthetopicoflong-shorttermmemorysinceifcertainfeatures
+onlyshowupmomentarilyorhavenotbeenupdatedforalongtime,itmaynothelpwithinferenceaccuracy.
+Ontheotherhand,somemomentaryinputmaycontainsvaluableinformationthatneedsspecialtreatment,an
+unbiasedlearningsystemshouldbeabletoprocessthoselowfrequencydata.Inthefollowing,weproposetwo
+basictechniquesformanagingthelifetimeoftheembeddingdata.
+• Frequencycutoff:Eachtimeanembeddingisupdated,acounterisincrementedtorecorditsupdate
+frequency.Thereforewecandecideifthisembeddingshouldbesavedtoapermanentstorage(e.g.
+Bigtable)basedonacutoffvalueonitsfrequency.Fortrainingthatinvolvesmultipleepoches,itis
+TensorFlow’sjobtotellifanexampleisseenforthefirsttime.
+• Bloomfilter: Anotherpopularapproachthatachievessimilareffectofpruningofflowfrequency
+data,onlymorememoryefficient,istousebloomfilter[7].Weimplementedthisfeaturealsoforthe
+purposeofcompatibilitywithexistinglinearsystemsthatcanalreadyhandlelargeamountofdata,but
+withmuchlesscomplexmodelsthandeepnetworks.
+3.2.3 Top-ksampling
+Duringmodelinference,itisimportanttoefficientlyretrievethetopkclosestembeddingsfromgiveninput
+activation,wherethedistanceismeasuredbydotproductasshowninSec.3.1.2.Thiscanbeefficientlydoneboth
+accuratelyandapproximatelyforverylargenumberofinput(e.g.[45]).Weemployexistingimplementations
+availableinsideGoogletoleteachworkerinDEWsreturnsitsowntopkembeddingstoDEM.Assumingthere
+9
+arenDEWs,thenDEMwouldselectthetop-kclosestpointsamongthen×kcandidatevectors. Thisway,
+bothaccuracyandefficiencyareguaranteedifk(cid:28)mwheremisthetotalnumberofkeys.
+3.2.4 Candidatesampling
+SamplingcanbetrickyiftheyarestoredinremotestoragesuchasBigtable. Thisiswhyweneedmetadata
+tostorethenecessaryinformationforustoefficientlysamplecandidates.Attheveryleastweshouldsupport
+samplingstrategiesusedbytwoexistingTensorflowops: tf.nn.sampled_softmax_loss(basedonapartition
+strategy)andtf.contrib.text.skip_gram_sample(basedonfrequency).Ifwewanttoachieveevenbetterword
+embedding,higherorderinformationsuchasPMI(probabilityofmutualinformation)orcountofcooccurrence
+shouldalsobecomputedorsampledaccordingly([30]).Therefore,thesebookkeepinginformationneedstobe
+processedduringembeddinglookupforefficientsampling.
+Herewedecidetore-implementcandidatesamplinginDESduetothefollowingconcerns:(i)Itisnoteasyto
+reuseTensorFlowcodeastheyassumeeveryembeddinghasauniqueindexinanintegerarray.(ii)Theoriginal
+implementationdoesnotconsidermultiplelabeloutput,duetothefactitseparatestruelabelsandsampledlabels
+(Tomeettheconstraintthatallvariablesmustbedefinedbeforetraining,itrequiresnumberoftruelabelsfrom
+theinputsuchthateachinputmusthaveexactlythesametruelabels.Thisisanoverlystrictrequirementfor
+manyrealistic,multiple-labeltraining).
+Inournewdesign,tostillmeettherequirementthatthegraphshouldbefixedwhileallowingvaryingnumberof
+true_labelsfromeachinput,wesimplymergepositiveandnegativeexamplesandlettheuserdecidethevalueof
+num_samples.Ourinterfacebecomes:
+1 class CandidateSampler {
+2 public:
+3 struct SampledResult {
+4 string id;
+5 bool is_positive ;
+6 float prob;
+7 };
+8 std :: vector<SampledResult> Sample(
+9 const std :: vector<string>& positive_ids , const int num_sampled,
+10 const int range) const;
+11 };
+Therefore,ournewcandidatesamplingalsoaddressesalimitationinTensorFlow’simplementation,leadingto
+betterhandlingofmulti-labellearning.
+3.2.5 Distributedcomputation
+Distributionisstraightforwardgiventhateachembeddingdatarequiresauniquestringidasitslookupkey
+(Sec.3.2.1).EachtimetheDEMreceivesarequestfromtheTensorFlowAPIitpartitionsthedatabasedontheir
+idsanddistributetheworkintodifferentDEWs(lookup,update,sample,etc).Hereeachworkerisresponsible
+forauniquesubsetofthetotaluniverseofkeys, andafterrecoveredfrommachinefailures, itshouldstill
+beabletoidentifythesubsetofkeysitisresponsiblefor. ThisispossiblewithGoogle’sBorgsystem[43]
+aseachworkerinsideaservercanuniquelyidentifyitsownshardnumber. Forexample,whentherearen
+workers,theithworker(i=0,1,...,n−1)wouldberesponsibleforthoseembeddingswithkeyssatisfying
+mod(hash(key),n)=i.Forefficientcandidatesampling,DEMshouldbookkeepmetadataabouteachworker
+anddecidethenumberofsamplesneededfromeachworker.
+3.2.6 Servingwithscale
+ServingaTensorFlowmodelwithDynamicEmbeddingneedssomespecialcaresincetheembeddingdataneed
+toberetrievedefficientlyforlargesize(>100G).Itisnolongerfeasibletofittheminlocalmachines.Therefore,
+besidesthemoststraightforwardservingbyDynamicEmbeddingservice,weshouldalsosupportmorerobust
+designtohandlelargeembeddingdata. Towardsrobustmodelserving,thefollowingtwooptimizationsare
+considered.
+Sandboxmode Duringmodelserving,alltheembeddingdatasourcesareknownandtheexternalstorageis
+notupdated.Therefore,itisreasonablethatweprovidesomeprotectiontopreventtheserverfromservingother
+requestsandaccidentallyupdatethestorage.Alsoourtrainingisusuallydonestagebystagetoguaranteedata
+qualitybyversioncontrol.ThesolutionistoprovideasandboxmodeforDynamicEmbeddingserver,usinga
+fewflagstocontrolthesourceofdata.Thisway,noothertrainingjobisabletocalltheDynamicEmbedding
+server.
+10
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.1
+0
+0 2 4 68 10
+Training Steps 105
+ssoL
+0.7
+TensorFlow GrowMind 0.6
+0.5
+0.4
+0.3
+0.2
+0.1
+0
+0 2 4 68 10
+Training Steps 105
+ssoL
+0.7
+TensorFlow 0.6 GrowMind
+0.5
+0.4
+0.3
+0.2
+0.1
+0
+0 2 4 68 10
+Training Steps 105
+ssoL
+TensorFlow GrowMind
+(a)SGD[33] (b)AdaGrad[14] (c)Momentum[3]
+Figure3: (Bestviewedincolor)ComparisonbetweenTensorFlowandDynamicEmbeddinginsolvingthe
+sameWord2Vecmodelonthesametrainingdatasetusingdifferentgradientdescentalgorithms,whichverifies
+DynamicEmbeddingisbackwardcompatible.
+Remotestoragelookupwithlocalcache Ifthetrainingjobhasalreadysavedtheembeddingdataintoa
+remotestoragesystem,thisschemeallowsservingwithoutstartinganyserversfromDynamicEmbedding,i.e.,
+itbecomesastandaloneTensorFlowmodel. Specifically,alocalprocesscanplaytheroleofDEMandeach
+embeddinglookupdirectlytalkstoremotestoragesystem. Alsotheembeddingdataisstoredinlocalcache,
+whosesizedependsontheavailablememoryforTensorFlowjobs.Tofurtherreducelatency,itisimportantthat
+wegroupabatchofkeysintoonesinglelookupcall.
+4 ExperimentalResults
+OurDynamicEmbeddingsystemisevaluatedonafewaspects:(i)BackwardcompatibilitywithTensorFlowfor
+gradientdescentbasedmodels(Sec.4.1);(ii)Modelaccuracycomparedwithmodelswithlimiteddictionary
+size(Ses.4.2);and(iii)Systemperformanceintermsofmemoryusageandtrainingspeed(Sec.4.3).Intheend,
+wewillpresentacolossal-scalemodelforkeywordtargetinginSec.4.4.
+4.1 BackwardcompatibilitywithTensorFlowforgradientupdates
+First of all, we would like to verify the correctness of our implementation by showing that our system is
+completelybackwardcompatiblewithTensorFlowamonggradientdescentbasedtasks.RecallthatDynamicEm-
+beddingnotonlytakescareoftheembeddinglookupofeachlayer,butisalsoresponsiblefortheembedding
+update,whichincludesgradientdescentasitsspecialcase.Fromalibraryuser’sperspective,thisshouldnot
+bringanydifferencebetweenTensorFlowwithandwithoutDynamicEmbedding,intermsoftrainingresults.
+WeverifythatthisisindeedthecasefortheWord2Vecmodel[27]withthreedifferentgradientdescentalgorithms:
+SGD[33],Adagrad[14],andMomentum[3].ToguaranteethatbothTensorFlowandDynamicEmbeddingrun
+exactlythesamemodel,weletDynamicEmbeddingManagertakethesamedictionaryusedbytheTF-Word2Vec
+asitsinputfilterandonlyprocessthoseinputfromthegivendictionary. Forallotherinput,theywouldbe
+mappedtoaspecialinput,i.e.,“oov”(out-of-vocab)–usingthesametrickasexistingdictionarybasedmodels.
+Wealsoguaranteethatallotherhyper-parameters,suchaslearningrate,batchsize,areexactlythesamebetween
+them.
+Fig.3illustratesthecomparisonsinaccuracyamongthreedifferentgradientdescentalgorithms.Becausethe
+embeddingsareinitializedrandomly,wecannotexpecttheiraccuracybematchedperfectly.Nevertheless,forthe
+first1Mtrainingsteps,bothTensorFlowandDynamicEmbeddingyieldverycloseresultsforallthreegradient
+descentalgorithms.
+4.2 Modelbenchmarks
+EversinceDynamicEmbeddingwasfirstdevelopedaroundearly2018,wehaveupgradedanumberofpopular
+modelstoenjoyevergrowingfeaturesize.Thefollowingisapartiallistofmodelswehavebuilt.
+DE-Word2Vec Theskip-grammodel[27]isupgradedbyreplacingitsinputwithourdynamicembedding
+layer(Sec.3.1.1)anditsoutputwithoursampledlogitslayer(Sec.3.1.2).Itisthereforecapableofmappingany
+word(n-grams),regardlessoflanguage,intothesamehigh-dimensionalvectorspace.Thismodelcanmapany
+11
+searchqueryintoanembeddingtoupgradeGoogleSearch’srelatedsearch10featurebasedonsemanticrather
+thansyntacticsimilarity.
+DE-Seq2Seq Aseq2seqmodelpredictsasentencefromanotherinputsentence(e.g.,intranslation).Here
+wehaveupgradedtheGoogleNeuralMachineTranslation(GNMT)model[46]withattentionmechanismto
+takeasequenceofwordsasinput(implementedbyourdynamicembeddinglayer)andoutputasequenceof
+words(theoutputlayerisimplementedbyoursampledlogitslayer).ThismodelallowsustoimproveGoogle
+Translatebyincludingamuchlargervocabularythanpreviouslyused.
+DE-Sparse2Seq ThisisinessencesimilartotheGoogleTransformermodel[42],whichconsidersinputas
+abagofwordsandtheoutputisgeneratedbyarecurrentneuralnetworkwithattentionmechanism.Similarto
+thetwomodelsmentionabove,wereplacebothinputandoutputoftheoriginalmodelwithourcorresponding
+newDynamicEmbeddingcomponents.Weappliedthismodeltosuggestadheadlinesanddescriptions11from
+sparsefeaturesonawebsiteanditcancoveralllanguagesusingasinglemodel.
+DE-Image2Label Theinputtothemodelisanimageandtheoutputisalabel(e.g.aphraseoradescription).
+Inournewmodel, wefirstleteachimagegothroughtheInceptionmodel[39]andconnectitsoutput(an
+embeddingoftheimage)tooursampledlogitslayer(Sec.3.1.2).Thisway,ourmodelcanbetrainedonarbitrary
+(image,label)pairs. Wehaveappliedthismodeltosuggestaverylargesetofimagelabelsavailablefrom
+GoogleImageSearch,whosedistinctlabelsetisintheorderofhundredsofmillions.
+DE-Sparse2Label Animageisahighlystructuredinputasitcanalwaysbenormalizedintoafixedsize.
+However,thereisaplethoraofunstructureddataintheworldthatcontainsmultiplepossibleinputsources.
+Forexample,awebpagemaycontaintexts,tables,imagesorganizedinahierarchicalwayandtherearemany
+potentiallabelingforitscontent.OurDE-Sparse2Labelmodelmapseachofthesourcelabels(maycontainan
+unknownnumberofsparsevalues)intoanembeddingusingtheCA-SEMmodel[47]andletitgothroughafew
+ResNet-likelayers(i.e.,CA-RESmodel[47])forfurtherprocessing,thenoutputasparselabel(e.g.,aquery
+thatleadstothiswebpage).HereboththeinputandoutputuseourDynamicEmbeddingcomponentstoachieve
+ever-growingsparsefeaturesize.Thismodelhasbeensuccessfullyappliedinouradkeywordsuggestionsystem
+anditsdetailisdiscussedinSec.4.4.
+DE-BERT ThisistheDynamicEmbeddingcounterpartoftheBERTmodel[13]fornaturallanguageprocess-
+ing(NLP),whichnolongerrequiresapredefinedmaximalinputlength(e.g.,512or1024)orpreprocessingthe
+inputintowordpieces[46].Ourmodelisabletolearnfromanycontinuouslygrowingtextcorpus(e.g.online
+articles)andaccordinglyanever-growingembeddingrepositoryismaintainedforvariousdownstreamNLP
+applications.
+4.2.1 Modelaccuracy
+NowletusturntoanotherimportantaspectofDynamicEmbedding:modelaccuracy,andaddressthefollowing
+question:Canamodelwithsufficientlylargecapacitybringbetteraccuracy?
+Theoretically, theanswerisaffirmativeasmoredatasimplymeansmoreexperienceandthereforeamajor
+concerninmachinelearning,i.e.generalization,wouldbeeliminatedifthetrainingdatacanalreadycovermost
+cases.However,thisisbasedontheassumptionthatthemodelispowerfulenoughto“memorize”12anynumber
+ofinputdata,whichisexactlywhatDynamicEmbeddingpromisestooffer.
+Practically,theaboveargumentactuallyhasbeenconfirmedthatareducednumberof“oov”(out-of-vocab)
+tokenswithasufficientlargedatasetcanindeedimprovetheaccuracysignificantly(e.g., [32]).Inthissubsection,
+weevaluateDynamicEmbedding’sabilitytoprocessmoreinput/outputfeatures,aswellastomakemoreaccurate
+predictions,thanitsTensorFlowcounterparts.
+Given that DynamicEmbedding is completely backward compatible with TensorFlow in terms of system
+performanceandmodelaccuracy,itistimetofocusontheadditionalvalueitoffers.Needlesstosay,amodel
+withever-growingcapacitycandirectlyhelpwithrecallinmodelprediction:asystemthatcanpredict100M
+possibleoutputsisobviouslymoredesirablethanonethatcanonlypredict1M.However,itisalsopossible
+thatasystemwithlargercapacityalsomakeslessaccuratepredictions.Inthissubsection,weshowthatlarger
+capacityoftenguaranteesmoreaccurateresults.
+Theoreticallyspeaking,usingasingle“oov”,“missing”or“unk”tokentotakecareofthoseout-of-vocabfeatures
+wouldunavoidablyleadtodegradeinmodelaccuracy.Theabsenceofwordsinasentencemaydramatically
+10https://support.google.com/trends/answer/4355000?hl=en
+11https://support.google.com/google-ads/answer/1704389?hl=en
+12Thismaybeapoorchoiceofwordasaneuralnetworkmodelalwaysprocessesthedataasadistribution,
+basedonoursufficientstatisticspointofview.
+12
+1
+0.8
+0.6
+0.4
+0.2
+0
+0 2 4 68 10
+Training Steps 105
+ycaruccA
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+size = 9988 0.3
+size = 30739 0.2 size = 566796
+size = unlimited 0.1
+0
+0 1 2 34
+Training Steps 106
+ycaruccA
+001-poT
+size = 21833 size = 111565
+size = 221209
+(a)Word2Vec (c)Sparse2Seq
+Figure4: (Bestviewedincolor)Theeffectofdictionarysizeonpredictionaccuracyfortwodifferentmodels.
+changeitsmeaning,anditiscompletelypossiblethatdifferentsentencesaretreatedasequalinalanguagerelated
+model(e.g.,theSeq2Seqmodel).Alsoadictionaryisoftenchosenbasedonfrequencyratherthanimportance,
+anditisknownthathighfrequencywordsareoftenlessinformative,whichiswhythetermfrequency-inverse
+documentfrequency(TF-IDF)wasinventedininformationretrieval[25]13.Besides,oursystemalsoprovides
+long-short-termmemorycomponentstohandlenoisyoruninformativeinputs.Therefore,itissafetoabandon
+theconceptofdictionaryalltogetherwhenusingDynamicEmbedding.
+Fig. 4 (a) illustrates the comparison in prediction accuracy between Word2Vec models with and without
+restrictionsindictionary.Hereweusethesametrainingandtestdatasetsforbothmodels(totalfilesize∼300M),
+andonlychangetheinputdictionarysize.Asexpected,largerdictionarysizeconsistentlyleadtobetteraccuracy.
+We also tested the impact of dictionary size on the WMT 2016 dataset (total file size ∼1.6G) using our
+Sparse2SeqmodelasshowinFig.4(b).Thetop-100accuracyforthetestingdataduringtrainingisusedforthe
+comparison.Again,dictionarysizeisproventobeanimportantfactorforachievingbetteraccuracy,although
+theimprovementseemstobemarginalafterthesizeisaboveacertainthreshold.
+4.3 Systembenchmarks
+Twometricsthatareconsideredimportantforalearningsystemareoveralltrainingspeed,measuredbyglobal
+stepspersecond(GSS)andresourceusage,measuredbymemoryusageandCPUrates,etc. AlargeGSSis
+criticalfortrainingonbigdatasetandfastiterationformodeldevelopment;asmallusageofmemory/cpucan
+guaranteetrainingstability(e.g.,lessmachinefailuresduetoexceededresources).
+OurfirstbenchmarkdatasetconsistsofcooccurringsearchquerydatafortheWord2Vecmodel[27].Toallow
+TensorFlowandDynamicEmbeddingbecomparedsidebyside,wecreatedadictionaryofsize727Kbasedon
+queries’frequencyforaconventionalWord2Vecmodel. ForournewDynamicEmbeddingbasedmodel,we
+simplyfeedthedatawithoutanydictionary.Fig.5(a)andFig.6(a)illustratecomparisonsonmemoryusageand
+GSSbetweenthetwomodels,respectively,whichshareexactlythesamehyperparameters(e.g.,batchsizeis64,
+learningrateis0.01andembeddingdimensionis100)exceptthatDE-Word2Vecdoesnothaveadictionary.
+ItcanbeenseenthatthememoryrequirementforTensorFlowismarvelouslyreducedto1%−10%andthe
+memoryforDynamicEmbeddingworkersremainsstableregardlessoftheworkernumber(closetothetotal
+embeddingdatasize,i.e.,∼20G).AlsoGSSonlydependsonthenumberofTensorFlowworkers.Notethatthe
+trainingdatasetisquitechallengingformemoryaseachbatchmaycontain30Mto50Membeddingkeysdueto
+largecooccurrencesize(manyqueriesmayleadstothesamewebsite).
+Fig. 5(b) and Fig. 6(b) show another benchmark on the Google Inception model [39] trained with GPU
+acceleration.Ourmodelistrainedwithupto16machinesequippedwithNVIDIATeslaP100GPU.Inthiscase,
+onlytheoutputsoftmaxlayerinvolvespotentiallyunlimitednumberoflabels.Fig.5(b)andFig.6(b)arethe
+performancecomparisonsbetweenTensorFlowandDynamicEmbeddingwithdifferentworkersizes.Weseethe
+sametrendasabovethatGSSonlydependsonthenumberofTensorFlowworkers,andDynamicEmbedding
+isrunningabitfasterthanitsTensorFlowcounterpart,asitscandidatesamplingisdistributedintodifferent
+DynamicEmbeddingworkers.
+Asamorecomplexexample,were-implementedthefullGNMTmodel[46]usingDynamicEmbedding’sAPIs.
+GNMTisarecurrentneuralnetworkmodelthatinvolvessparsefeatures(words)onbothinputandoutput,and
+thenumberoffeaturescanrangefromonetohundreds. Fig.5(c)andFig.6(c)illustratetheperformances
+13This is consistent with the idea proposed by context-aware machine learning [47], in which “oov” is
+redefinedasthecontext-freepartofaword/sentence.
+13
+8000
+7000 6000
+5000
+4000
+3000
+2000
+1000
+0 10 50 100
+Number of TensorFlow Workers
+)BG(
+egasU
+yromeM
+latoT
+7764 80
+TensorFlow (vocab size: 727639) DynamicEmbedding with 10 workers 70 DynamicEmbedding with 20 workers 60
+50
+40
+30
+20 1164
+10
+382 25 26 126131 191203
+0 4 8 16
+Number of TensorFlow with GPU Workers
+)BG(
+egasU
+yromeM
+latoT
+78 250
+TensorFlow with vocabulary size 28886 D D y y n n a a m m i i c c E E m m b b e e d d d d i i n n g g w w i i t t h h 1 2 0 0 w w o o r r k k e e r r s s 65 68 200
+150
+353534
+100
+171515 50
+0 10 50 100
+Number of TensorFlow Workers
+)BG(
+egasU
+yromeM
+latoT
+242
+TensorFlow with vocabulary size 297781 DynamicEmbedding with 10 workers DynamicEmbedding with 20 workers
+152 139
+123
+68 76
+45
+22 23
+(a)Word2Vec(DEworkersmem.:30G) (b)Image2Label(DEworkersmem.:5G) (c)Seq2Seq(DEworkersmem.:14G)
+Figure5: (Bestviewedincolor)ComparisonsinmemoryusagebetweenTensorFlowandDynamicEmbedding
+forthreedifferentmodels.Itcanbeseenthatthelargerthedistinctfeaturesize(orvocabularysize),themore
+totalmemory(TensorFlowworkers+DynamicEmbeddingworkers)thatcanbesavedbyDynamicEmbedding.
+AlsothetotalmemoryconsumedbyDynamicEmbeddingisindependentofitsnumberofworkers.
+6
+5
+4
+3
+2
+1
+0 10 50 100
+Number of TensorFlow Workers
+)SSG(
+dnoceS
+rep
+spetS
+labolG
+11
+T D e y n n s a o m rF ic l E ow mbedding with 10 workers 10 DynamicEmbedding with 20 workers 9
+8
+7
+6
+5
+4
+3
+2 4 8 16
+Number of TensorFlow Workers
+)SSG(
+dnoceS
+rep
+spetS
+labolG
+50
+TensorFlow 45 D D y y n n a a m m i i c c E E m m b b e e d d d d i i n n g g w w i i t t h h 1 2 0 0 w w o o r r k k e e r r s s 40
+35
+30
+25
+20
+15
+10
+5
+0 10 50 100
+Number of TensorFlow Workers
+)SSG(
+dnoceS
+rep
+spetS
+labolG
+TensorFlow DynamicEmbedding with 10 workers DynamicEmbedding with 20 workers
+(a)Word2Vec (b)Image2Label (c)Seq2Seq
+Figure6: (Bestviewedincolor)ComparisonsintrainingspeedbetweenTensorFlowandDynamicEmbedding
+forthreedifferentmodels.Fromourexperience,bothDynamicEmbeddingandTensorFlowachievecomparable
+GSS.DynamicEmbeddingisoftenmorestableduetolessmodelloadingtimeandlessoftenworkerreschedule
+sincethemodelsizesforTensorFlowhavebecomemuchsmaller.
+evaluation,whichshowsDynamicEmbedding’sabilitytoreducememoryusagewhilemaintainingthesame
+levelofGSS.
+Insum,DynamicEmbeddingisabletodramaticallyreducethememoryusageofTensorFlowworkerswhen
+thedictionarysizegoesup,asithasmovedmostofthecontentpartofamodelintoDES.Thetotalmemory
+usagefortheDESonlydependsonthetotalsizeoftheembedding,oritcanbeevenlowerifonlypartofthe
+embeddingsareloadedintomemory(Fig.5). IncreasingthenumberofDynamicEmbeddingworkersonly
+helpsparallelism,whereasincreasingTensorFlowworkerswouldleadtoincreaseoftotalmemory,asmultiple
+copiesoftheembeddingdataaredistributedintodifferentworkers.IntermsoftrainingspeedmeasuredbyGSS,
+DynamicEmbeddingandTensorFlowarequitecomparableforgradientdescentbasedoptimization(Fig.6).
+4.4 DE-Sparse2LabelmodelforGoogleSmartCampaigns
+AsDynamicEmbeddingisdesignedtosolvereal-worldproblemswithextremelylargescale,wedemonstrate
+oneofoureffortsinkeywordsuggestionforGoogleSmartCampaignadvertisers[37].GoogleSmartCampaign
+isdevotedtoautomatingtheprocessofonlineadvertisingbysmartalgorithmspoweredbyAItechnologies.
+Oneofthemajorstepsincampaignoptimizationistorecommendrelevantkeywordsbasedonthecontentof
+advertisers’websitesprovidedduringsignup14.Althoughtherearebillionsof(cid:104)webpage,keyword(cid:105)examples
+fromGoogleSearcheveryday,noteveryadvertiser’swebsitehasbeenvisitedbysufficientnumberofusers.
+Therefore,ourgoalistolearnfromexistingwebpage-to-keywordmatchingexamplesandgeneralizeittonew
+websitesfromouradvertiserswhereallowed.
+Fig.7showsthearchitectureofourkeywordsuggestionmodel.Theinputtoourmodelisalistofsparsefeatures
+ofawebpagefromdifferentannotatorstoidentifyitsvarioustopics(e.g.,freebaseentities[8])andrepresentative
+keywords. Becauseeachfeaturecanhavemultiplevalues, weemploythecontext-awareCA-BSFEmodel
+introducedin[47]thatcompositestheembeddingsofdifferentsparsefeaturevaluesbasedonweightsthatare
+relatedtotheircontext-freeness.Aftertheembeddingsofeachfeatureiscomputed,theyareconcatenatedand
+fedintothehigherhiddenlayer,whichweemploytheResNet-likeCA-RESmodel[47]tofurtherfilterout
+14https://www.google.com/adwords/express/
+14
+DE
+Softmax
+Layer
+w
+l
+CA-RES CA-NN Layer +
+× ×
+σ 1 - σ
+NN Layer Default Value
+w
+1
+CA-NN Layer +
+× ×
+σ 1 - σ
+NN Layer Default Value
+Concatenation of Embeddings
+CA-BSFE + v 0 n-dim CA-BSFE + v 0 n-dim
+CA-EM Cell + CA-EM Cell + CA-EM Cell + CA-EM Cell +
+× × × × × × × ×
+f1 fn c1 ck
+Feature 1 Feature M
+Figure7: ArchitectureofourDE-Sparse2Labelmodelforkeywordsuggestion. Theinputtothemodelare
+varioussparsefeaturesfromawebsite.Thetargetforthemodelissimplyakeyword.Boththeinputandtarget
+containpotentiallyunlimitednumberoffeaturevalues.
+irrelevantinformation.Attheverytop,weusethesampledsoftmaxlayerimplementedbyDynamicEmbedding
+tohandlearbitrarynumberofoutputkeywordsastrainingtarget.
+Oneimportantfeatureofourmodelisthatitiscapableofsuggestingkeywordsforwebsitesinmorethan20
+languagesthataresupportedbyGoogleSmartCampaigns.PreviouslywithoutDynamicEmbedding,wewere
+onlyabletolaunchonemodelperlanguagewithaverylimitedkeyworddictionarysize(<1M).DE-Sparse2Label
+isthefirstall-languagemodelwehaveevertrainedanditturnsouttoworkremarkablywell:adgroups15with
+DynamicEmbeddingsuggestedkeywordsareabletooutperformthosenon-DynamicEmbeddingmodelsinkey
+metricssuchasclickthroughrate(CTR),etc(DynamicEmbeddingwins49outofatotalof72revaluation
+metricsweusedfordozensofdifferentcountriesthatweevaluated).Hence,wehaveproventhatitisnolonger
+necessarytopartitionthedatabasedonlanguages,whichisacommonpracticeamonglarge-scaleapplications.
+Dataandmodelsizes Ourtrainingdataaresimply(cid:104)website,keywords(cid:105)pairsfromGoogleSearch. We
+onlyselectthosepopularandcommerciallyrelatedonesfortraining.Ourmodelhasbeenfedwithnewtraining
+dataeverymonthanditssize(TensorFlowvariables+DynamicEmbeddingembeddings)hasbeenautomatically
+growingfromafewgigabytestohundredsofgigabytesinlessthansixmonths.Fig.8comparesexisting“large”
+models’parametersizeswithourmodelatdifferentcheckpoints(ann-dimensionalembeddingisconsideredto
+havenparametersinthetraditionalview),andourmodelhasalreadyfarexceededanyexistingknownmodels
+insize.
+4.4.1 Qualityevaluation
+Onechallengeofevaluatingthequalityofourmodelsuggestedkeywordsisthediscrepancybetweenkeyword
+andquery,asthesuggestedkeywordsmaynotbeexactlymappedtoGooglesearchqueries. Thematching
+betweenkeywordstoqueriesiscontrolledbymatchtype16andbyusingthedefaultbroadmatchoption,our
+selectionofkeywordsneedstobeveryspecific(e.g.,“wedding”isconsideredabadkeywordforawebsitethat
+doesweddingphotography).
+ToaccuratelymeasuretherealimpactofoursuggestedkeywordstoSmartCampaignAdvertisers,weemployed
+averystrictmetricasfollows: afterakeywordisservedtoGooglesearchquery,wedirectlyask5different
+trained human evaluators to give a score between [−100,100] to rate the match between the search query
+andadvertiser’swebsite(Fig.9). Theaverageofthe5scoresisusedasthefinalscoreforeachexample. To
+evaluatetheoverallqualityofnsuchquery-to-webpageexamples(a.k.a.,impressions),denotedasI,weusethe
+15https://support.google.com/google-ads/answer/6298?hl=en
+16https://support.google.com/google-ads/answer/7478529?hl=en
+15
+Inception
+6.8M
+ResNet 19.4M
+GPT-2 Language Model 1500M
+DistBelief Image Model 1700M
+DE-Sparse2Label (Feb 2019) 59265M
+DE-Sparse2Label (Nov 2019) 100844M
+DE-Sparse2Label (Feb 2020) 124964M
+0 25000 50000 75000 100000 125000
+Figure 8: Comparisoninmodelsizeamongdifferentmodels,namelyInception[39],ResNet[18],GPT-2
+languagemodel[32],DistBeliefimagemodel[12]andourDE-Sparse2Labelmodel(Fig.7).
+Dissatisfaction Likely Dissatisfaction Possible Satisfaction Possible Satisfaction Likely
+-100 -50 0 50 100
+Figure9: Keywordqualityevaluationdesign.Weask5humanraterstoevaluatetheextentofsearchqueryto
+websitematchbygivingascorebetween[−100,100]andcomputestheiraverageasthefinalrating.Thefinal
+GBratioofanoverallevaluationiscomputedasthenumberofexampleswithscore≥50(goodmatch)overthe
+numberofexampleswithscore≤0(badmatch).Seeappendixhoweachofthefourcategoriesareevaluated.
+followingGBratio17:
+|{i|score(i)≥50,i∈I}|
+GB(I)= , (15)
+|{i|score(i)≤0,i∈I}|
+wherescore(i)∈[−100,100]denotestheaveragescorefrom5differentratersforimpressioni.Notethatour
+modeliscompletelyunawareofsuchgood/badlabeling.
+Weruntheabovementionedevaluationexperimenton387,151impressions(i.e.,website→keyword→search
+querytuples).Besidesthekeywordssuggestedfromitssoftmaxoutputlayer,ourmodelalsoyieldsascorefor
+each(cid:104)webpage,keyword(cid:105)pairasaconfidenceoftherelatednessofthegivenkeywordtothewebpage.Herethe
+scoreiscomputedasthecosinedistancebetweenwebpageandkeywordembeddingscomputedthroughour
+model.Thereforebyusingdifferentthresholdvalues(i.e.,onlyservekeywordswithkeyword-to-webpagescores
+greaterthanthegiventhreshold),wecanexpecttocontrolthequalityofthesuggestedkeywords.Notethatour
+modelisabletoscoreany(cid:104)webpage,keyword(cid:105)pairs.
+Fig.10(a)showsthedistributionofthescoresforgood(score≥50)andbad(score≤0)matchesrespectively.
+Althoughthetwodistributionsoverlapsignificantlywhenscoresarelow(e.g.,below0.6),ourmodelbecomes
+extremelyaccurateattellinggoodkeywordsapartfrombadoneswhenthescoresarehigher(e.g.,above0.7).To
+seethis,wecomparedtheGBratioversusdifferentthresholdvaluesbetweenourmodelandotherrule-based
+scoringalgorithmsinFig.10(b),wherewedenotethesealgorithmsasRB1,RB2andRB3,respectively.We
+measuredtheprecision/recall tradeoffusingtheROCcurve basedonthetotalgood andbadexamples for
+differentthresholdvalues(Fig.10(b)).Herethetruepositiverateforeachthresholdiscomputedasthenumber
+ofkeptgoodkeywordsoverallpossiblegoodkeywords. Likewise,thefalsepositiverateiscomputedasthe
+numberofkeptbadkeywords,aboveagiventhreshold,overallpossiblebadkeywords.Itcanbeseenthatour
+modelunderperformstraditionalrule-basedsystemsslightlyunderlowerthresholdsbutsignificantlyoutperforms
+othersathigherthresholds(whentruepositiveratebecomessmaller).Inpractice,thisimpliesthatasmostofour
+advertisersneednomorethanafewthousandskeywords,wemaybeabletoguaranteeoursuggestedkeywords
+haveextremelyhighaccuracyifourmodelisusedtoscoreallpossiblekeywords.
+Lastly,afteroursystemisfullydeployedintoproductionfornearlyayear,ourpost-launchhumanevaluation
+onrealtrafficconfirmsthatthekeywordssuggestedbyourmodelachievesthehighestGBratio,aswellasthe
+17ThismetricwasoriginallyproposedbyGoogleDynamicSearchAdsteam:https://support.google.
+com/google-ads/answer/2471185?hl=en
+16
+1
+0.8
+0.6
+0.4
+0.2
+0
+0 0.2 0.4 0.6 0.8 1
+False Positive Rate
+etaR
+evitisoP
+eurT
+ROC Curves
+GM-Sparse2Label
+RB1
+RB2
+RB3
+(a) (c)
+Figure10: (Bestviewedincolor)Thecandidatewebsitetokeywordmatchescontainmoregoodthanbad
+onesandthehistogramsofthecosinescoresfromourmodelindicatesthatitcanidentifythosegoodonesquite
+reliablywhenthescoresarehigherthancertainthreshold(e.g.,0.7)asshownin(a).Incontrast,wecompared
+theGBratioversusthresholdbetweenourmodelandotherrule-basedscoringsystemsavailableinsideGoogle
+onthesamedatasetand(b)showstheROCcurvebasedongood/badkeywordskeptfromdifferentthresholds.
+lowestbadratio(percentageofbadkeywordsoverallservedkeywords),amongvariouskeywordsourcesusedin
+SmartCampaigns.
+5 Conclusion
+Wedemonstratedapreliminaryimplementationofournewcellmodel,DynamicCell,hasalreadyextendedthe
+capacityofTensorFlowsignificantlythroughdelegationtoexternalstoragesystems,resultinginasystemthat
+clearlyoutperformsitsrule-basedcounterparts.Wehopethatthesesolutionscanbeusedinawidevarietyof
+MLapplicationswhichfacechallengesaroundever-growingscaleindatainputs. Theremayalsobefuture
+improvementsaswelookatwhatwecanlearnacrossmachinelearning,neuroscienceandsystemdesignetc.
+Hopefully,bygoingacrossthesedisciplines,wewillmakefasterprogressesinAItogether.
+Acknowledgments
+OurworkreceivedconstructivereviewsandactivehelpsfrommultipleteamsinsideGoogle. Firstofall,we
+aredeeplyindebtedtoChaoCai,ourteamleader,fornotonlycoordinatingthecommunicationsamongallthe
+authors,internalreviewersandapprovers,butalsoproposingnumerouseditstoimprovethispaper’sreadability.
+WealsothankeveryonefromGoogleAdwordsExpress(a.k.a.GoogleSmartCampaigns)team,inparticular
+ourteamfounderXuefuWang,forbuildingavibrantworkingenvironmentforinnovation.Our2017summer
+internLimingHuangbuiltthefirstprototypeofourDE-Seq2Seqmodel. Our2018summerinterns,Brian
+XuandYuWang,contributedtremendouslyinthedevelopmentsofDE-Image2LabelandDE-Sparse2Label
+models.Our2019summerinternRuolinJiaappliedourDE-Sparse2Seqmodeltoanautomatedproduct.We
+alsothankGoogleBrainteam’sAlexandrePassosforprovidingvaluablecommentsonthecomparisonsbetween
+TensorFlow’sEagermodeandourwork,RohanAnilforsuggestingustoimplementbloomfilterforembedding
+update,andKaiChenforworkingrelentlesslywithusondevelopingthefirstversionofSparse2Labelmodel
+usingTensorFlow.MultipleteamsfromGoogleResearchprovidedhelpfulsuggestionsatdifferentstagesofits
+development:LiZhang,NicolasMayorazandSteffenRendleprovidedpositivereviewsonDynamicEmbedding’s
+initialdesign,encouragingustofurtherpursueitsimplementation;DaveDopson,RuiqiGuoandDavidSimcha
+wereveryresponsiveinhelpingusresolvetechnicalissuesduringthedevelopmentofTopKcomponent;Da-
+ChengJuan,Chun-TaLuandAllanHeydonareactivelycollaboratingwithusinexpandingthefunctionalitiesof
+DynamicEmbeddingforanewsemi-supervisedlearningframework,andareworkingwithJanDlabal,Futang
+PengandZheLitoenableDynamicEmbeddingtoworkwithTPUintheirimage-relatedprojects.Wewouldlike
+togiveourspecialthankstoMosheLichmanandDanHurtfortheirveryinsightfulandtimelyreviewsonthe
+theoryandsystempartsofthepaper,respectively,whichledtoimportantfinaltouches.Lastbutnotleast,our
+leadershipteamChaoCai,SunitaVerma,SugatoBasu,SunilKosalge,AdamJuda,ShivakumarVenkataraman,
+JerryDischler,SamyBengioandJeffreyDeanprovidedvaluablecommentsduringourinternalreviewprocess.
+Appendix: Instructionsforhumanevaluationofwebsitetosearchquerymatchquality
+TheinstructionsbelowelaborateonhowthefourcategoriesinFig.9arerated.
+• SatisfactionLikely:Toreceivethisrating,alandingpagemustofferjustwhattheuserlookedfor.If
+theuserwantscarreviews,itshouldoffercarreviews.Iftheuserwantscarreviewsaboutaspecific
+17
+model,itshouldoffercarreviewsaboutexactlythatmodel.Iftheuserwantsacategoryofproduct,
+thelandingpageshouldbedevotedtoorincludethatexactcategoryofproduct. ForaSatisfaction
+Likelyrating,whattheuserislookingforshouldbeapparentwithnoadditionalactionneededbythe
+user.Itispermissible,however,toclickonalinktogetdetailedinformation.
+• SatisfactionPossible:Usethisratingifthepageissatisfactorybutdoesnotimmediatelypresentex-
+actlywhattheuserseeks.Iftheproductorserviceisforsaleonthesite,butasearchorstraightforward
+navigationisrequiredtofindtheitem,selectaratingofSatisfactionPossibleratherthanSatisfaction
+Likely.Ifthesiteoffersaveryplausiblesubstituteforaparticularproductspecifiedinthequery,it
+mayreceivearatingofSatisfactionPossibleorlower. Ifthequeryisasearchforinformation,and
+thisinformationcanbefoundwithouttoomuchtroubleontheadvertisersitebutisnotonthelanding
+page,useSatisfactionPossible.Theoneexceptionherebeingiftheusercouldhavefoundthatsame
+informationonthesearchresultspagebeforeclickingonthead.Ifthatisthecase,thelandingpage
+doesnotdeserveapositiverating.
+• DissatisfactionPossible:(i)Ifthepageismarginallyrelatedtothequeryandyouthinkthatthere’sa
+smallchancetheuserwouldbeinterested.(ii)Ifthepagecaneventuallyleadtowhattheuserwants,
+butonlythroughmanyclicksorthroughclicksthatleadtoanentirelydifferentwebsite.(iii)Ifthepage
+offerssomethingthatyouthinktheusermightbeinterestedin,butnotwhattheuserwaslookingfor
+andnotespeciallyclosetoit.Forexample,iftheuserislookingforbaseballgloves,andthelanding
+pageoffersathleticsocks,there’sprobablysomechancethattheusermightbeinterested.However,
+it’snotwhattheuserwaslookingfor,andnotallthatclosetoit,soitdeservesDissatisfactionPossible.
+(iv)Ifthepagecaneventuallygivetheuserwhatheorsheislookingfor,buttheprocessisprotracted
+anddifficult.
+• DissatisfactionLikely: (i)Ifthepagehasnothingtodowiththequery. (ii)Ifthequeryisfora
+productorservice,andneithertheproduct/servicenoranythingclosetoitcanbepurchasedfrom
+thepage. (iii)Ifthequeryorawordinthequeryhastwomeanings,itisclearwhichmeaningis
+intendedbytheuser,andtheadvertiserrespondstothewrongmeaning.Forexample,[cars2]refers
+toamovie.Apageforacardealershipisclearlyabadlandingpageforthisquery,evenifitmightbe
+agoodresultfor[carsales].(iv)Ifthepagelookslikeascam,youthinkuserscouldbeharmedby
+it,oriteitherattemptstotricktheuserintodownloadingsomethingbylabelingadownloadbutton
+inaconfusingwayortriestodownloadafilewithoutactionbytheuser. (v)Ifthepageloadsbut
+iscompletelyunusable(forexample,becausesomecontentdoesnotload,orpagedoesn’tdisplay
+properly).Ifenoughofthepagedoesnotloadatall(forexample,youencountera404error),usethe
+ErrorDidNotLoadflaginsteadofarating.(vi)Ifthepageisverybadforanyotherreason.
+References
+[1] MartínAbadi,PaulBarham,JianminChen,ZhifengChen,AndyDavis,JeffreyDean,MatthieuDevin,
+SanjayGhemawat,GeoffreyIrving,MichaelIsard,ManjunathKudlur,JoshLevenberg,RajatMonga,
+SherryMoore,DerekG.Murray,BenoitSteiner,PaulTucker,VijayVasudevan,PeteWarden,Martin
+Wicke, Yuan Yu, and Xiaoqiang Zheng. Tensorflow: A system for large-scale machine learning. In
+Proceedingsofthe12thUSENIXConferenceonOperatingSystemsDesignandImplementation(OSDI),
+pages265–283,2016.
+[2] TomApostol. Mathematicalanalysis. AddisonWesley,2edition,1974.
+[3] YoshuaBengio,NicolasBoulanger-Lewandowski,andRazvanPascanu. Advancesinoptimizingrecurrent
+networks. InICASSP,pages8624–8628.IEEE,2013.
+[4] YoshuaBengio,RéjeanDucharme,PascalVincent,andChristianJauvin. Aneuralprobabilisticlanguage
+model. Journalofmachinelearningresearch,3(Feb):1137–1155,2003.
+[5] J.Bergstra,O.Breuleux,F.Bastien,P.Lamblin,R.Pascanu,G.Desjardins,J.Turian,D.Warde-Farley,
+andY.Bengio. Theano:aCPUandGPUmathexpressioncompiler. InSciPy,2010.
+[6] DimitriP.Bertsekas. ConvexOptimizationTheory. AthenaScientific,2009.
+[7] BurtonH.Bloom. Space/timetrade-offsinhashcodingwithallowableerrors. Commun.ACM,13(7),July
+1970.
+[8] KurtBollacker,ColinEvans,PraveenParitosh,TimSturge,andJamieTaylor. Freebase:Acollaboratively
+createdgraphdatabaseforstructuringhumanknowledge. InProceedingsofthe2008ACMSIGMOD
+InternationalConferenceonManagementofData,SIGMOD’08,pages1247–1250,2008.
+[9] GyörgyBuzsáki. Rhythmsofthebrain. OxfordUniversityPress,2011.
+18
+[10] FayChang,JeffreyDean,SanjayGhemawat,WilsonC.Hsieh,DeborahA.Wallach,MikeBurrows,Tushar
+Chandra,AndrewFikes,andRobertE.Gruber. Bigtable:Adistributedstoragesystemforstructureddata.
+In7thUSENIXSymposiumonOperatingSystemsDesignandImplementation(OSDI),pages205–218,
+2006.
+[11] JamesC.Corbett,JeffreyDean,MichaelEpstein,AndrewFikes,ChristopherFrost,JJFurman,Sanjay
+Ghemawat,AndreyGubarev,ChristopherHeiser,PeterHochschild,WilsonHsieh,SebastianKanthak,
+EugeneKogan,HongyiLi,AlexanderLloyd,SergeyMelnik,DavidMwaura,DavidNagle,SeanQuinlan,
+RajeshRao,LindsayRolig,DaleWoodford,YasushiSaito,ChristopherTaylor,MichalSzymaniak,and
+RuthWang. Spanner:Google’sglobally-distributeddatabase. InOSDI,2012.
+[12] JeffreyDean, GregS.Corrado, RajatMonga, KaiChen, MatthieuDevin, QuocV.Le, MarkZ.Mao,
+Marc’AurelioRanzato,AndrewSenior,PaulTucker,KeYang,andAndrewY.Ng. Largescaledistributed
+deepnetworks. InNIPS,2012.
+[13] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. BERT: pre-training of deep
+bidirectionaltransformersforlanguageunderstanding. CoRR,abs/1810.04805,2018.
+[14] John Duchi, Elad Hazan, and Yoram Singer. Adaptive subgradient methods for online learning and
+stochasticoptimization. JournalofMachineLearningResearch,12:2121–2159,2011.
+[15] KarlFriston,JamesKilner,andLeeHarrison. Afreeenergyprincipleforthebrain. JournalofPhysiology-
+Paris,100:70–87,2006.
+[16] SanjayGhemawat,HowardGobioff,andShun-TakLeung. Thegooglefilesystem. InProceedingsofthe
+19thACMSymposiumonOperatingSystemsPrinciples,pages20–43,2003.
+[17] YuvalNoahHarari. Sapiens:ABriefHistoryofHumankind. Harper,2015.
+[18] KaimingHe,XiangyuZhang,ShaoqingRen,andJianSun. Deepresiduallearningforimagerecognition.
+InComputerVisionandPatternRecognition(CVPR),2015.
+[19] GeoffreyE.Hinton. Trainingproductsofexpertsbyminimizingcontrastivedivergence. NeuralComputa-
+tion,14(8):1771–1800,2002.
+[20] EugeneM.Izhikevich. DynamicalSystemsinNeuroscience:TheGeometryofExcitabilityandBursting.
+MITpress,2007.
+[21] SébastienJean,KyunghyunCho,RolandMemisevic,andYoshuaBengio. Onusingverylargetarget
+vocabularyforneuralmachinetranslation. InProceedingsofthe53rdAnnualMeetingoftheAssociation
+forComputationalLinguisticsandthe7thInternationalJointConferenceonNaturalLanguageProcessing,
+2015.
+[22] YangqingJia,EvanShelhamer,JeffDonahue,SergeyKarayev,JonathanLong,RossGirshick,Sergio
+Guadarrama, and Trevor Darrell. Caffe: Convolutional architecture for fast feature embedding. In
+ProceedingsofACMMultimedia,pages675–678,2014.
+[23] RayKurzweil. HowtoCreateaMind:TheSecretofHumanThoughtRevealed. Viking,2012.
+[24] David Lovelock and Hanno Rund. Tensors, Differential Forms, and Variational Principles. Dover
+Publications,1989.
+[25] C.D.Manning,PRaghavan,andHSchutze. AnIntroductiontoInformationRetrieval. 2008.
+[26] ViktorMayer-SchönbergerandKennethCukier. BigData:ARevolutionThatWillTransformHowWe
+Live,Work,andThink. EamonDolan/HoughtonMifflinHarcourt,2013.
+[27] TomasMikolov,KaiChen,GregCorrado,andJeffreyDean. Efficientestimationofwordrepresentations
+invectorspace. CoRR,abs/1301.3781,2013.
+[28] MehryarMohri,AfshinRostamizadeh,andAmeetTalwalkar. FoundationsofMachineLearning. TheMIT
+Press,2edition,2018.
+[29] GermanIgnacioParisi,RonaldKemker,JoseL.Part,ChristopherKanan,andStefanWermter. Continual
+lifelonglearningwithneuralnetworks:Areview. CoRR,abs/1802.07569,2018.
+[30] JeffreyPennington,RichardSocher,andChristopherManning. Glove: Globalvectorsforwordrepre-
+sentation. InProceedingsofthe2014conferenceonempiricalmethodsinnaturallanguageprocessing
+(EMNLP),pages1532–1543,2014.
+19
+[31] PyTorch,2018. http://pytorch.org.
+[32] AlecRadford,JeffreyWu,RewonChild,DavidLuan,DarioAmodei,andIlyaSutskever.Languagemodels
+areunsupervisedmultitasklearners. OpenAI,2019.
+[33] HerbertRobbinsandSuttonMonro.Astochasticapproximationmethod.AnnalsofMathematicalStatistics,
+22(3),1951.
+[34] AndreiA.Rusu,NeilC.Rabinowitz,GuillaumeDesjardins,HubertSoyer,JamesKirkpatrick,Koray
+Kavukcuoglu,RazvanPascanu,andRaiaHadsell. Progressiveneuralnetworks. CoRR,abs/1606.04671,
+2016.
+[35] DavidE.Sadava,DavidM.Hillis,H.CraigHeller,andSallyD.Hacker. Life:TheScienceofBiology. W.
+H.Freeman,11edition,2016.
+[36] RobertM.Sapolsky. Behave:TheBiologyofHumansatOurBestandWorst. PenguinPress,2017.
+[37] Kim Spalding. Google ads, helping small businesses do more, 2018. https://blog.google/outreach-
+initiatives/small-business/google-ads-helping-businesses/.
+[38] KennethO.StanleyandRistoMiikkulainen. Evolvingneuralnetworksthroughaugmentingtopologies.
+EvolutionaryComputation,10(2):99–127,2002.
+[39] ChristianSzegedy,WeiLiu,YangqingJia,PierreSermanet,ScottE.Reed,DragomirAnguelov,Dumitru
+Erhan,VincentVanhoucke,andAndrewRabinovich. Goingdeeperwithconvolutions. InComputerVision
+andPatternRecognition(CVPR),2015.
+[40] NaftaliTishbyandNogaZaslavsky. Deeplearningandtheinformationbottleneckprinciple. InIEEE
+InformationTheoryWorkshop,2015.
+[41] ShoichiToyabe, TakahiroSagawa, MasahitoUeda, EiroMuneyuki, andMasakiSano. Experimental
+demonstrationofinformation-to-energyconversionandvalidationofthegeneralizedjarzynskiequality.
+NaturePhysics,6:988–992,2010.
+[42] AshishVaswani,NoamShazeer,NikiParmar,JakobUszkoreit,LlionJones,AidanNGomez,Lukasz
+Kaiser,andIlliaPolosukhin. Attentionisallyouneed. InAdvancesinNeuralInformationProcessing
+Systems(NIPS),pages5998–6008.2017.
+[43] AbhishekVerma,LuisPedrosa,MadhukarR.Korupolu,DavidOppenheimer,EricTune,andJohnWilkes.
+Large-scaleclustermanagementatGooglewithBorg. InProceedingsoftheEuropeanConferenceon
+ComputerSystems(EuroSys),2015.
+[44] JamesC.R.WhittingtonandRafalBogacz. Theoriesoferrorback-propagationinthebrain. Trendsin
+CognitiveSciences,2019.
+[45] XiangWu,RuiqiGuo,AnandaTheerthaSuresh,SanjivKumar,DanielNHoltmann-Rice,DavidSimcha,
+andFelixYu. Multiscalequantizationforfastsimilaritysearch. InI.Guyon,U.V.Luxburg,S.Ben-
+gio,H.Wallach,R.Fergus,S.Vishwanathan,andR.Garnett,editors,AdvancesinNeuralInformation
+ProcessingSystems30,pages5745–5755.2017.
+[46] YonghuiWu,MikeSchuster,ZhifengChen,QuocV.Le,MohammadNorouzi,WolfgangMacherey,Maxim
+Krikun,YuanCao,QinGao,KlausMacherey,JeffKlingner,ApurvaShah,MelvinJohnson,Xiaobing
+Liu,LukaszKaiser,StephanGouws,YoshikiyoKato,TakuKudo,HidetoKazawa,KeithStevens,George
+Kurian,NishantPatil,WeiWang,CliffYoung,JasonSmith,JasonRiesa,AlexRudnick,OriolVinyals,
+GregCorrado,MacduffHughes,andJeffreyDean. Google’sneuralmachinetranslationsystem:Bridging
+thegapbetweenhumanandmachinetranslation. CoRR,abs/1609.08144,2016.
+[47] YunZeng. Contextawaremachinelearning. CoRR,abs/1901.03415,2019.
+[48] Barret Zoph and Quoc V. Le. Neural architecture search with reinforcement learning. CoRR,
+abs/1611.01578,2016.
+20

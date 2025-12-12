@@ -1,0 +1,1497 @@
+Robust Sampling for Active Statistical Inference
+Puheng Li† Tijana Zrnic†,⋄ Emmanuel J. Cand`es†,△
+†Department of Statistics
+(cid:51)Stanford Data Science
+△Department of Mathematics
+Stanford University
+Abstract
+Active statistical inference [51] is a new method for inference with AI-assisted data col-
+lection. Given a budget on the number of labeled data points that can be collected and
+assumingaccesstoanAIpredictivemodel,thebasicideaistoimproveestimationaccuracy
+by prioritizing the collection of labels where the model is most uncertain. The drawback,
+however, is that inaccurate uncertaintyestimates canmakeactivesampling produce highly
+noisy results, potentially worse than those from naive uniform sampling. In this work, we
+present robust sampling strategies for active statistical inference. Robust sampling ensures
+thattheresultingestimatorisneverworsethantheestimatorusinguniformsampling. Fur-
+thermore, with reliable uncertainty estimates, the estimator usually outperforms standard
+active inference. This is achieved by optimally interpolating between uniform and active
+sampling, depending on the quality of the uncertainty scores, and by using ideas from ro-
+bust optimization. We demonstrate the utility of the method on a series of real datasets
+from computational social science and survey research.
+1 Introduction
+Collecting high-quality labeled data remains a challenge in data-driven research, especially
+wheneachlabeliscostlyandtime-consumingtoobtain. Inresponse, manyfieldshaveembraced
+machine learning as a practical solution for predicting unobserved labels, such as annotating
+satellite imagery in remote sensing [46] and predicting protein structures in proteomics [24].
+Prediction-powered inference [1] is a methodological framework showing how to perform valid
+statistical inference despite the inherent biases in such predicted labels.
+Active statistical inference [51] was recently introduced to further enhance inference by ac-
+tively selectingwhichdata pointsto label. The basic ideais tocompute the model’s uncertainty
+scores for all data points and prioritize collecting those labels for which the predictive model is
+most uncertain. When the uncertainty scores appropriately reflect the model’s errors, Zrnic and
+Cand`es[51]showthatactiveinferencecansignificantlyoutperformprediction-poweredinference
+(which can essentially be thought of as active inference with naive uniform sampling), meaning
+it results in more accurate estimates and narrower confidence intervals. However, when uncer-
+tainty scores are of poor quality, active inference can result in overly noisy estimates and large
+confidenceintervals. Thisisanimportantlimitation, seeingthatthereiswidespreadrecognition
+1
+5202
+voN
+21
+]LM.tats[
+1v19980.1152:viXra
+2285
+1947
+1660
+1415
+1206
+1028
+1291 1471 1677 1912
+ezis
+elpmas
+evitceffE
+1.0
+0.9
+0.8
+0.7
+0.6
+1291 1471 1677 1912
+egarevoC
+uniform active robust active
+n
+b
+Figure 1: Effective sample size and coverage on Pew post-election survey data. We
+compare uniform, active, and robust active sampling, for different values of the sampling budget
+n . The target of inference is the approval rate of a presidential candidate. We show the mean
+b
+andonestandarddeviationoftheeffectivesamplesizeestimatedover500trials; ineachtrialwe
+independently sample the observed labels.
+that measuring model uncertainty is challenging. Large language models, for example, are often
+overconfidentintheiranswers[10,47,48]. Miscalibrateduncertaintyscoresalsoarisewhenthere
+is a distribution shift between the training data and the test domain.
+To illustrate the issue empirically, consider the problem of estimating the approval rate of a
+presidentialcandidate: θ∗ =E[Y],whereY ∈{0,1}isthebinaryindicatorofapproval,usingPew
+post-election survey data [32]. Here, we have demographic covariates X ,...,X corresponding
+1 n
+to n people, but we do not observe the approval indicator Y for everyone. Rather, we have
+i
+a budget n < n on how many people we can survey and collect their Y . In addition, we
+b i
+have a machine learning model f that we can use to obtain a cheap prediction f(X ) of Y
+i i
+from the available covariates. Active inference suggests surveying those individuals where f is
+uncertain. For example, if f(X ) is obtained by thresholding a continuous score p(X ) ∈ [0,1]
+i i
+representing the probability the model assigns to the missing label taking on the value 1, this
+could mean prioritizing the collection of labels where p(X ) is close to 0.5. In Figure 1, we
+i
+show the effective sample size and coverage of prediction-powered inference (uniform sampling),
+standard active inference, and our robust active inference method, for varying values of the
+budget n . The effective sample size is formally defined in Section 4; it is the number of samples
+b
+the method that samples uniformly at random would need to use to achieve the accuracy of the
+labeling method under study. To demonstrate a challenge for active inference, we train f on a
+small dataset, resulting in poorly estimated uncertainties. We see that active sampling results
+in a smaller effective sample size and a much larger standard deviation than simple uniform
+sampling. This is because the variance of the active sampling strategy is large, which is due to
+some extreme values of sampling probability. Meanwhile, the robust method outperforms both
+baselines. This is achieved by estimating the quality of the uncertainty scores and optimally
+interpolating between uniform and active sampling. All three methods come with provable
+validity guarantees, as confirmed by the achieved target coverage of 90%.
+The source code for all experiments is available at:
+https://github.com/lphLeo/Robust-Active-Statistical-Inference.
+2
+1.1 Related work
+Ourpaperbuildsonactivestatisticalinference[51],whichitselfbuildsonprediction-powered
+inference [1] and, more generally, statistical inference assisted by predictive models [29, 40,
+45]. There is a growing literature in this space, aimed at ensuring robustness against poor
+predictions [2, 16, 19, 23, 30, 31], sample efficiency when there is no good pre-trained model
+f [52], simplicity and applicability to more general estimation problems [25, 50], and handling
+missing covariates [25, 31]. Notably, several works study adaptive label collection strategies
+[3, 14, 17].
+Zoomingoutfurther,atatechnicallevelthislineofworkrelatestosemiparametricinference,
+missing data, and causality [34, 35, 37, 44]. In particular, the prediction-powered and active
+inference estimators closely resemble the augmented inverse probability weighting (AIPW) esti-
+mator [35].
+Our work also connects with many areas in machine learning and statistics that study adap-
+tive data collection; most notably, active learning [36, 39] and adaptive experimental design
+[13, 21]. We collect data based on model uncertainty, akin to active learning; however, our ob-
+jective is statistical inference on typically low-dimensional parameters, rather than prediction.
+Active testing [26] also involves adaptive data collection, but it pursues a different objective of
+high-precision risk estimation for a fixed model and uses a distinct estimator. Our approach can
+beseenasanadaptivedesignassistedbyapowerfulpredictivemodel,witharobustnesswrapper
+for improved performance.
+More distantly, our work also relates to robust statistics and robust machine learning [8, 20,
+22, 33, 41, 42, 49]. In particular, our method provides a safeguard against poor uncertainty
+estimation by solving a robust optimization problem [5, 6, 15].
+1.2 Problem setup
+We follow the problem setting from [51]. We observe unlabeled instances X ,...,X drawn
+1 n
+i.i.d. from a distribution P , but we do not observe their labels Y . We use P = P ×P
+X i X Y|X
+to denote the joint distribution of (X ,Y ). Our goal is to perform inference for a parameter θ∗
+i i
+that depends on the distribution of the unobserved labels; that is, the parameter is a functional
+of P. In particular, we assume that θ∗ can be written as:
+θ∗ =argmin E[ℓ (X,Y)], where (X,Y)∼P.
+θ
+θ
+Here, ℓ is a convex loss function. This is a broad class of estimands, known as M-estimation,
+θ
+and it includes means, medians, linear and logistic regression coefficients, and more. We have a
+budgetn onthenumberoflabelswecancollectinexpectation, andtypicallyn ≪n. Toassist
+b b
+in imputing the missing labels, we also have a black-box predictive model f at our disposal.
+2 Warm-up: robust sampling for mean estimation
+Consider the case where θ∗ is the label mean, θ∗ =E[Y]. The active inference estimator for
+θ∗ is given by:
+n (cid:18) (cid:19)
+θˆπ = 1 (cid:88) f(X )+(Y −f(X )) ξ i . (1)
+n i i i π(X )
+i
+i=1
+3
+Here, π(·) is any sampling rule that satisfies E[π(X)]≤ nb so that the budget constraint is met
+n
+on average, and ξ ∼ Bern(π(X )) is the indicator of whether the label Y is sampled. Since
+i i i
+the number of labeled data points is a sum of independent Bernoullis, a standard Hoeffding
+argument guarantees that the realized labeling rate will closely match the budget with high
+probability. Specifically,thelabelingratiowillnotexceed nb +ϵwithprobability1−δ,provided
+n
+that n> log(1/δ) for any ϵ,δ >0. As shown in [51], the variance of this estimator is
+2ϵ2
+(cid:16) (cid:17) 1 (cid:18) (cid:20) (cid:18) 1 (cid:19)(cid:21)(cid:19)
+Var θˆπ = Var(Y)+E (Y −f(X))2 −1 , (2)
+n π(X)
+andtheoptimalsamplingruleisπ (X )∝
+(cid:112)E[(Y
+−f(X ))2|X ]. Inotherwords, itisoptimal
+opt i i i i
+to upsample where the model f makes the largest errors.
+The most straightforward sampling rule that satisfies the budget constraint is the uniform
+rule: πunif(X)=n /n. However, if we have access to a good measure of model uncertainty that
+b
+canserveasaproxyforthemodelerror
+(cid:112)E[(Y
+−f(X ))2|X ], thenwecanobtainarulethatis
+i i i
+closertoπ . Forexample,wemightpromptalargelanguagemodelforitsuncertaintyaboutX
+opt i
+or look at the softmax output of a neural network, and upsample where the uncertainty is high.
+The issue is that if we severely underestimate the model error, then the estimator’s variance can
+blow up: clearly, if π(X ) is small when the actual error (Y −f(X ))2 is large, the variance will
+i i i
+be large as well. This is the reason why we saw poor performance in Figure 1.
+Given any initial sampling rule π, our approach is to find an improved, robust sampling rule
+πrobust that is never worse than either π or πunif. By that we mean that the resulting active
+inferenceestimatorwillhaveavariancethatisnoworsethatwitheitherπ orπunif usedforlabel
+collection: Var(θˆπrobust)≤min{Var(θˆπ),Var(θˆπunif)}.
+2.1 Budget-preserving path
+Since our goal is to find a sampling rule πrobust that performs no worse than πunif and an
+arbitrarygivenπ,itisnaturaltoconsiderapaththatconnectsπ andπunif,whilepreservingthe
+sampling budget along the path.
+Definition 1 (Budget-preserving path). We call a continuous path π(ρ), ρ ∈ [0,1], a budget-
+preserving path connecting π and πunif if π(0) = π, π(1) = πunif, and E[π(ρ)(X)] = E[π(X)] for
+all ρ∈[0,1].
+Correspondingly, given a point ρ along the path, we compute the estimator θˆπ(ρ), obtained
+as the active inference estimator (1) with sampling rule π(ρ). The following are some examples
+of valid budget-preserving paths.
+Example 1 (Linear path). π(ρ) =(1−ρ)π+ρπunif.
+Example 2 (Geometric path). π(ρ) ∝ π1−ρ(πunif)ρ. The “∝” hides the normalization factor
+that ensures E[π(ρ)(X)]=E[π(X)] for all ρ.
+Anaturalfamilyofbudget-preservingpathscanberecoveredviathe“least-action”principle,
+yielding the definition of geodesic paths. See Appendix B for a general definition of geodesic
+paths, details of how Examples 1 and 2 can be recovered as special cases, as well as further
+examples.
+4
+Of course, if we consistently estimate the optimal point ρ∗ ∈ [0,1] along the path, we are
+guaranteed to find an estimator that outperforms naive active inference and uniform sampling.
+Moreover, the resulting estimator is still asymptotically normal, which permits the construction
+of valid confidence intervals. We formalize this key result below in which σ2 =nVar(θˆπ(ρ)).
+ρ
+Theorem 1. Suppose π(ρ) is a budget-preserving path connecting π and πunif. Let ρ∗ =
+argminVar(θˆπ(ρ)), and suppose ρˆ=ρ∗+o (1). Then,
+P
+ρ
+√ n (cid:16) θˆπ(ρˆ) −θ∗ (cid:17) −→ d N (cid:0) 0,σ2 (cid:1) ,
+ρ∗
+where σ2 ≤min{σ2,σ2}.
+ρ∗ 0 1
+Theorem 1 shows that consistently estimating ρ∗ will result in an estimator that is no worse
+than either endpoint. If ρ∗ is additionally unique and within (0,1), then the resulting sampling
+will strictly outperform both active sampling with π and uniform sampling. The theoretical
+results in this paper are asymptotic; however, validity in the finite-sample regime is shown
+empirically in the experiments in Section 4.
+It remains to explain how to estimate ρˆ. Recall from (2) that Var(θˆπ(ρ))= 1E[ e2(X) ]+C,
+n π(ρ)(X)
+wheree2(X)=E[(Y −f(X))2|X]andC isaquantitythathasnodependenceonπ(ρ). Therefore,
+to fit ρˆ, we fit an error function eˆ2(·) ≈ e2(·) and solve for the ρ that minimizes the empirical
+approximation of Var(θˆπ(ρ)):
+ρˆ=argmin 1 (cid:88) n eˆ2(X i ) . (3)
+n π(ρ)(X )
+ρ i
+i=1
+Wecanfindthesolutionbyperformingagridsearchoverρ∈[0,1]. Theerroreˆ2(·)canbefiton
+historical or held-out data, or it can be gradually fine-tuned during the data collection process.
+Notice that, if the error estimation is consistent in the sense that ∥eˆ2(X)−e2(X)∥ → p 0 and if
+∞
+ρ∗ is unique, then ρˆ→ p ρ∗, as assumed in Theorem 1. Here, the assumption that eˆconverges to e
+followsfromclassicalargumentsofuniformapproximationofflexibleestimators, andiscommon
+in the field of semiparametric inference. For instance, the widely-used doubly robust estimator
+[18, 35], which is closely related to our estimator, relies on consistent estimation of nuisance
+functions.
+2.2 Robustness to error function misspecification
+Givenapathπ(ρ), thepreviousdiscussionsuggestsfindingρˆthatminimizesanempiricalap-
+proximationofthevarianceVar(θˆπ(ρ)). Thisempiricalapproximationreliesonanerrorestimate
+eˆ(·). If this function is severely misspecified, then the computed ρˆmight be far from ρ∗; more
+importantly, it might not even outperform uniform sampling.
+Tomitigatethisconcern,weinsteadconsiderarobustoptimizationproblemthatincorporates
+the possibility of eˆbeing misspecified:
+ρ =argminmax 1 (cid:88) n eˆ2(X i )+ϵ i. (4)
+robust ρ ϵ∈C n π(ρ)(X i )
+i=1
+Here,ϵ=(ϵ ,...,ϵ )isthemisspecificationvectorandCistheadmissiblesetofmisspecifications.
+1 n
+This method allows for setting π(ρ) close to uniform if the misspecification set C is permissive
+5
+enough. Solving this minimax problem is computationally efficient, as long as C is a convex set.
+The outer problem can be solved via a one-dimensional grid search, while the inner problem is
+tractable due to convexity.
+Now, the question is how we should set C in practice. Our default will be to simply use
+C ={ϵ:∥ϵ∥ ≤c},forsomehyperparameterc>0. Empirically,ccanbesetbycross-validation.
+2
+OtherchoicesofthesetC arepossible, suchasboundingothernormsofϵ, forexample∥ϵ∥ <c.
+1
+Empirically we found the ℓ norm to work the best, and in illustrative theoretical examples we
+2
+reach the same conclusion; see Appendix C for details. We also tried relative misspecification,
+in the sense that ϵ = eˆ2(X )(1+η ), and constrained either the ℓ or ℓ norm of the relative
+i i i 1 2
+perturbation η. We found that this does not perform as well.
+Zrnic and Cand`es [51] briefly discussed a robustness proposal with linear interpolation. It
+assumes access to historical data, and otherwise it selects a default value for the coefficient,
+which has no guarantee to outperform uniform and active sampling. Our analysis is far more
+thorough and systematic, expanding the set of interpolating paths, not requiring historical data
+butincorporatingaburn-inperiod, andaddinga robustnessconstraint. Theseareall crucialfor
+the practicality and reliability of the method; see Section 4 for details.
+Thereareotherpotentialoptimizationobjectivestotakeintoaccountrobustnessconstraints.
+For example, one may penalize small values of ρ in the objective (3) with regularization, and
+similarlyusecross-validationtochoosethepenaltyparameter. Weleavetheinvestigationofsuch
+alternatives for future work.
+3 Robust sampling for general M-estimation
+Our sampling principle can be directly extended to general convex M-estimation, as consid-
+ered in [51]. We explain this step-by-step for completeness.
+Recall that we consider all inferential targets of the form θ∗ = argmin E[ℓ (X,Y)], for
+θ θ
+a convex loss ℓ . Denote ℓ = ℓ (X ,Y ),ℓf = ℓ (X ,f(X )), and define ∇ℓ and ∇ℓf
+θ θ,i θ i i θ,i θ i i θ,i θ,i
+similarly. For an active sampling strategy π, the general active inference estimator is defined as:
+θˆπ =argmin Lπ(θ), where Lπ(θ)= 1 (cid:88) n (cid:18) ℓf + (cid:16) ℓ −ℓf (cid:17) ξ i (cid:19) . (5)
+n θ,i θ,i θ,i π(X )
+θ i
+i=1
+As before, ξ ∼ Bern(π(X )) is the indicator of whether the label Y is sampled. Following [51],
+i i i
+we know that the asymptotic covariance matrix of θˆπ equals:
+(cid:18) (cid:16) (cid:17) ξ (cid:19)
+Σπ =H−1Var ∇ℓf + ∇ℓ −∇ℓf H−1,
+θ∗ θ∗ θ∗ θ∗ π(X) θ∗
+where H is the Hessian H =∇2E[ℓ (X,Y)].
+θ∗ θ∗ θ∗
+Weagainconsiderbudget-preservingpathsπ(ρ) andtunetheparameterρsuchthatwemini-
+mizethevarianceoftheresultingestimatorθˆπ(ρ). DenotebyΣ andΣ theasymptoticcovariance
+0 1
+matrices of the active inference estimator (5) using π(0) =π and π(1) =πunif, respectively.
+Theorem 2. Suppose π(ρ) is a budget-preserving path connecting π and πunif. Given a coor-
+dinate j of interest, let ρ∗ = argminΣπ(ρ), and suppose ρˆ= ρ∗ +o (1). Suppose further that
+jj P
+ρ
+6
+θˆπ(ρ∗) −→ p θ∗. Then,
+√ (cid:16) (cid:17)
+n θˆπ(ρˆ) −θ∗ −→ d N (0,Σ ),
+ρ∗
+where Σ ≤min{Σ ,Σ }.
+ρ∗,jj 0,jj 1,jj
+The consistency condition θˆπ(ρ∗) −→ p θ∗ is standard; see the corresponding discussion in [51]
+and [2]. For example, it is ensured when Lπ is convex, such as in the case of generalized linear
+models (GLMs), or when the parameter space is compact.
+As in the case of mean estimation, we fit ρˆby approximating the variance of the estimator
+Σπ(ρ) andsearchingoverρ. However,herethenotionoferrore2(·)weneedtoestimateisdifferent.
+In particular, given the form of Σπ, we let
+ρˆ=argmin 1 (cid:88) n eˆ2(X i ) ,
+n π(ρ)(X )
+ρ i
+i=1
+where eˆ2(X) aims to approximate e2(X) = E[((∇ℓ − ∇ℓf )⊤h(j))2|X] and h(j) is the j-th
+θ∗ θ∗
+column of H−1. In the context of generalized linear models (GLMs), this error simplifies to
+θ∗
+e2(X)=E[(Y−f(X))2|X]·(X⊤h(j))2. Therefore,asformeanestimation,theproblemessentially
+reducestoestimatingtheerrorE[(Y −f(X))2|X]. Asbefore,ifeˆ2 consistentlyestimatese2,then
+ρˆconsistently estimates ρ∗.
+Finally, toprotectagainstpoorlyestimatederrorseˆ, wecanincorporateanuncertaintysetC
+aroundtheerrorestimatesjustasbefore(4). Again, theonlydifferencehereisthattheeˆ2(X )’s
+i
+are estimating a different notion of model error tailored to the inference problem at hand.
+We summarize our general robust active inference algorithm in Algorithm 1.
+Algorithm 1: Robust Active Inference
+Input: unlabeled data X ,...,X , labeling budget n , predictive model f, initial
+1 n b
+sampling rule π, budget-preserving path π(ρ), error estimator eˆ2(·), robustness
+constraint C
+1 Solve the minimax problem ρ robust =a ρ r ∈ g [ m 0,1 i ] nm ϵ∈ a C x n 1 (cid:80)n i=1 eˆ π 2( (ρ X ) i (X )+ i ϵ ) i
+2 Sample labeling decisions according to π(ρrobust)(X i ): ξ i ∼Bern (cid:0) π(ρrobust)(X i ) (cid:1) ,i∈[n]
+3 Collect labels {Y i :ξ i =1}
+Output: estimator θˆπ(ρrobust) =argmin Lπ(ρrobust), as defined in Eq. (5)
+θ
+4 Experiments
+We turn to evaluating the performance of our robust sampling approach empirically. Each
+of the following subsections is dedicated to a different experiment using social science research
+data. Section 4.1 measures presidential approval, Section 4.2 analyzes US age–income patterns,
+and Section 4.3 applies language models to score text on social attributes such as political bias.
+On each of these datasets, we use the following methods to collect labels: (1) uniform sampling,
+whichessentiallyrecoversprediction-poweredinference[1];(2)standarduncertainty-basedactive
+sampling [51]; and (3) our robust active method as per Algorithm 1. Each dataset will use a
+different base predictive model f, which we describe therein. We set the target coverage level to
+be 0.9 throughout.
+7
+The main metric used for the comparison is effective sample size. To define this metric
+formally, consider the baseline estimator that samples uniformly at random, i.e., according to
+πunif. Its effective sample size is simply its budget n . For other estimators, we say that the
+b
+effective sample size is equal to n if the estimator achieves the same variance as the baseline
+eff
+estimator with budget n . For example, if given budget n = 100 the estimator achieves
+eff b
+the same variance as the baseline estimator with double the budget, then the estimator has
+n = 200. A larger n indicates a more efficient estimator. In the case where the effective
+eff eff
+sample size falls below the budget, n < n , the estimator performs worse than the baseline.
+eff b
+We show one standard deviation around the effective sample size in all plots, estimated over 500
+trials.
+We also plot empirical estimates of the methods’ coverage. We estimate the coverage by
+resampling the data, constructing confidence intervals for each resampling, and calculating the
+proportion of times the true parameter value (approximated by the full-data estimate of the
+target θ∗) falls within the constructed intervals. This approach allows us to assess how reliably
+eachmethodachievesthetargetcoveragelevel. Weresample500timestoestimatethecoverage.
+(We note that this approach yields conservative coverage estimates when n is large, because
+b
+we have n−n “fresh” labels to approximate θ∗.) From the theory, we know that the coverage
+b
+should be exactly 0.9 for all baselines.
+4.1 Post-election survey research
+Following[51],weevaluatethedifferentmethodsonsurveydatacollectedbythePewResearch
+Centerfollowingthe2020UnitedStatespresidentialelection,aimingatgaugingpeople’sapproval
+of the presidential candidates’ political messaging [32]. We aim to estimate the approval rate
+θ∗ = E[Y], where Y ∈ {0,1} is a binary indicator of approval of Biden’s political messaging.
+We use a multilayer perceptron (MLP) as our predictive model f. At the beginning, we have a
+“burn-in” period where we collect all burn-in labels Y and we use this burn-in data to estimate
+i
+the error function eˆ(·). Afterwards, we use the fitted function to run robust active inference, as
+per Algorithm 1. Naturally, the burn-in period counts towards the overall labeling budget n .
+b
+Westudythreequestions: (1)theeffectoftuningρalongthebudget-preservingpath,without
+incorporating a robustness constraint C; (2) the effect of tuning ρ along the path and the robust
+optimization over C combined; and (3) the performance of different budget-preserving paths.
+Tuning along the budget-preserving path. First, we conduct an experiment without the
+robustness set C, only tuning the parameter ρˆalong the budget-preserving path. We choose the
+geometric path from Example 2. To implement active inference, we use π(x) ∝ min{f(x),1−
+f(x)},inwhichf(x)isthepredictedprobabilitythatthelabeltakesonthevalue1,asconsidered
+in [51]. See Figure 2 for the results. We consider two training dataset sizes used to train f,
+allowingustoseetheresultsforalessaccuratef (left)andamoreaccurateone(right). Wefind
+that, even without robust optimization but only optimizing along the budget-preserving path,
+robustactiveinferencecanleadtonoticeableimprovementsintermsofpowercomparedtonaive
+uncertainty-based active sampling and uniform sampling. The performance of standard active
+inferencecruciallydependsonthequalityoff anditsuncertainties. Wedeferthecorresponding
+coverage plots to Appendix E.
+8
+2480
+2093
+1766
+1490
+1257
+1061
+895
+1357 1597 1880
+ezis
+elpmas
+evitceffE
+uniform active robust active
+Training size = 2000 Training size = 5000
+2456
+2100
+1796
+1536
+1313
+1123
+960
+1357 1597 1880
+n
+b
+Figure 2: Effective sample size on Pew post-election survey data, for different dataset
+sizes used to train f. We compare uniform, active, and robust active sampling, for different
+values of the sampling budget n . The target of inference is the approval rate of a presidential
+b
+candidate. We show the mean and one standard deviation (see Appendix E.1) of the effective
+sample size estimated over 500 trials; in each trial we independently sample the observed labels.
+Incorporating robustness. One strategy proposed by Zrnic and Cand`es [51] is to estimate eˆ
+andsetπ proportionaltoeˆ. Withthischoice,withouttheadditionalstepofrobustoptimization,
+our robust sampling approach would trivially estimate ρˆ=0 (a proof of this claim can be found
+in Appendix A). We show that incorporating the robustness constraint resolves this issue when
+π(x) ∝ eˆ(x). As in the previous case, we use the geometric path and an MLP as the predictive
+model. The results are shown in Figure 3. Recall, eˆis estimated from the burn-in data. Thus,
+the longer the burn-in period, the better the fit eˆ. This is consistent with the observation that
+active inference gradually outperforms uniform sampling as the burn-in period grows. However,
+when there is little data to fit eˆ, active sampling leads to a significantly higher variance than
+uniform sampling. Our robust sampling approach is never worse than either baseline, across all
+burn-in data sizes. This is explained by the fact that, when the fit eˆis poor, the constraint set
+C chosen via cross-validation is large, resulting in a large ρ , thus pushing the sampling rule
+robust
+closer to uniform. In Figure 6 (left), we plot the optimized value ρ for different burn-in
+robust
+sizes. As expected, ρ decreases, which means that the optimal strategy gradually moves
+robust
+from uniform sampling toward standard active sampling as the quality of eˆimproves.
+Choiceofbudget-preservingpath. Wehavethusfarusedthegeometricpathasourbudget-
+preserving path. In Figure 4 we compare three budget-preserving paths: the linear path, the
+geometric path, and the Hellinger path (see Appendix B). On the post-election survey dataset,
+Figure4showsthatthegeometricpathisthebestofthethreechosenpaths,regardlessofwhether
+ornotrobustoptimizationoverC isused. Therefore,asapracticaldefault,werecommendusing
+the geometric path. It has been stress-tested and has consistently demonstrated strong perfor-
+manceinourevaluations. Webelievethisisagoodtradeoffbetweensimplicityandperformance.
+For improved performance with a better choice of path, the practitioner might want to tune it
+in a data-driven way; for example, based on the estimated variance on a small held-out dataset.
+9
+2371
+2006
+1698
+1437
+1216
+1029
+871
+ezis
+elpmas
+evitceffE
+Burn-in size = 606 Burn-in size = 1213 Burn-in size = 1819 Burn-in size = 2426 Burn-in size = 3639
+2786 3191 3583 4412
+2512 2970 3399 4305
+2264 2765 3225 4201
+2041 2574 3060 4100
+1840 2397 2903 4001
+1659 2231 2754 3904
+1496 2077 2613 3810
+1.0
+0.9
+0.8
+0.7
+0.6
+1574 1775 2003
+egarevoC
+uniform active robust active
+2001 2216 2455 2515 2704 2906 2946 3108 3278 3968 4058 4151
+n
+b
+Figure 3: Effective sample size (top) and coverage (bottom) on Pew post-election
+survey data, for varying burn-in dataset sizes with respect to different proportions of the data.
+We compare uniform, active, and robust active sampling, for different values of the sampling
+budget n . The target of inference is the approval rate of a presidential candidate. We show the
+b
+mean and one standard deviation of the effective sample size estimated over 500 trials; in each
+trial we independently sample the observed labels.
+3206
+2991
+2790
+2603
+2428
+2265
+2113
+2420 2609 2812
+ezis
+elpmas
+evitceffE
+hellinger geometric linear
+Without robustness constraint With robustness constraint
+3214
+3000
+2801
+2615
+2441
+2279
+2128
+2420 2609 2812
+n
+b
+Figure 4: Effective sample size for different budget-preserving paths on Pew post-
+election survey data, without (left) and with (right) a robustness constraint C. In both cases,
+the geometric path leads to the largest effective sample size. The target of inference is the same
+asinFigure3. Weshowthemeanandonestandarddeviation(seeAppendixE.1)oftheeffective
+sample size estimated over 500 trials; in each trial we independently sample the observed labels.
+10
+3233
+2284
+1614
+1140
+805
+569
+402
+1728 1958 2218
+ezis
+elpmas
+evitceffE
+uniform active robust active
+Burn-in size = 140 Burn-in size = 280 Burn-in size = 420 Burn-in size = 560 Burn-in size = 840
+3418 3446 3382 3691
+2515 2657 2676 3017
+1850 2048 2118 2467
+1361 1579 1676 2017
+1001 1217 1327 1649
+737 938 1050 1348
+542 723 831 1102
+1443 1744 2109 1576 1874 2230 1478 1773 2127 1746 2036 2375
+n
+b
+Figure 5: Effective sample size on US Census data, for varying burn-in dataset sizes. We
+compare uniform, active, and robust active sampling, for different values of the sampling budget
+n . The target of inference is the relationship between age and income, estimated via a linear
+b
+regression. We show the mean and one standard deviation of the effective sample size estimated
+over 500 trials; in each trial we independently sample the observed labels.
+4.2 Census data analysis
+We study the annual American Community Survey (ACS) Public Use Microdata Sample
+(PUMS) collected by the US Census Bureau [12]. We are interested in investigating the rela-
+tionship between age and income in survey data collected in California in 2019, controlling for
+sex. We estimate the age coefficient θ∗ of the linear regression vector when regressing income
+on age and sex. We use an XGBoost model [9] to predict income Y from available demographic
+covariates. As in the previous problem, we set π(x) ∝ eˆ(x), as in [51], and fit eˆ using burn-in
+data. We use the geometric path and incorporate the robust optimization over C. We show the
+resultsinFigure5. Again,weobservethattherobustapproachoutperformsbothstandardactive
+sampling and uniform sampling for different qualities of the error estimate eˆ(·), corresponding
+to different burn-in dataset sizes. Standard active inference, on the other hand, is very sensitive
+to the quality of eˆ. In Figure 6 (right), we plot the optimized value ρ for different burn-in
+robust
+sizes. As in the previous example, ρ decreases as the quality of eˆ improves, as expected.
+robust
+We include corresponding coverage plots in Appendix E.
+4.3 Computational social science with language models
+We study three text annotation tasks used for computational social science research. In each
+task, we have text instances X and we seek to collect labels Y related to the text’s sentiment,
+i i
+political leaning, and so on. We wish to use a large language model (LLM) f to predict the
+high-quality annotations Y , which are typically collected through laborious human annotation.
+i
+A natural way of actively sampling human annotations is according to the confidence of the
+language model [17, 27]. Tian et al. [43] propose prompting LLMs to verbalize their confidence
+in the provided answer, and they find that this results in fairly calibrated confidence scores.
+Gligori´c et al. [17] find that such scores can be useful in actively sampling human annotations.
+We use GPT-4o annotations and confidences collected by Gligori´c et al. [17]. We apply active
+inferencewithπ(X )∝(1−C ),whereC isthecollectedconfidencescoreofthelanguagemodel
+i i i
+for prompt X . This can be a brittle strategy, since the scores are often overconfident and thus
+i
+11
+1.0
+0.8
+0.6
+0.4
+1000 2000 3000
+tsubor
+Post-election survey research Census data analysis
+200 400 600 800
+Size of burn-in data
+Figure6: Optimized value ρ along the geometric pathasa function ofthesizeofthe
+robust
+burn-in data for the post-election survey data (left) and US Census data (right).
+result in very small sampling probabilities, which can blow up the estimator variance through
+inverse probability weighting. For robust active inference, we use the geometric path and robust
+optimization with an ℓ constraint set C, as before.
+2
+Political bias. In the first task, the goal is to study the political leaning of media articles,
+using the data curated by Baly et al. [4]. The labels Y are one of left, centrist, or right.
+The inferential target is the prevalence of right-leaning articles: θ∗ =E[1{Y =right}].
+Politeness. The next task is to estimate how certain linguistic devices impact the perceived
+politenessofonlinerequests. WeusethedatasetofrequestsfromWikipediaandStackExchange
+curated by Danescu-Niculescu-Mizil et al. [11]. We study how the presence of hedging in the
+request, X ∈ {0,1}, impacts whether a text is seen as polite, Y ∈ {0,1}. Formally, θ∗ is
+hedge
+this effect estimated via a logistic regression with an intercept: logit(P(Y =1|X ))=θ +
+hedge 0
+θ∗X .
+hedge
+Misinformation. Finally, we study the prevalence of misinformation in news headlines, using
+the dataset collected by Gabrel et al. [15]. The labels Y ∈ {0,1} indicate whether a headline
+contains misinformation. The inferential target is the prevalence of misinformation, θ∗ =E[Y].
+We show the results in Figure 7. Across all tasks, the robust approach is essentially never
+worse than uniform sampling or active inference, in cases even outperforming both by a large
+margin. Standard active inference often leads to large intervals, given that sampling directly
+according to the model’s verbalized uncertainty leads to instability through inverse probability
+weighting. We include the corresponding coverage plots in Appendix E.
+5 Conclusion
+We presented robust sampling strategies for active inference: a principled hedge between
+uniform and conventional active sampling. By selecting an optimal tuning parameter ρ along a
+12
+1265
+1117
+987
+872
+770
+680
+601
+908 1019 1142
+ezis
+elpmas
+evitceffE
+uniform active robust active
+Political bias Politeness Misinformation
+3911 1381
+3297 1238
+2779 1110
+2343 995
+1975 892
+1665 800
+1404 717
+1976 2378 2861 1010 1138 1281
+n
+b
+Figure 7: Effective sample size on social science text annotation datasets. We compare
+uniform, active, and robust active sampling, for different values of the sampling budget n . The
+b
+targetsofinferenceare(lefttoright)theprevalenceofright-leaningpoliticalbias,therelationship
+between hedging and politeness, and the prevalence of misinformation. We show the mean and
+one standard deviation of the effective sample size estimated over 500 trials; in each trial we
+independently sample the observed labels.
+budget-preserving path, robust active inference ensures performance that is no worse than with
+standard active sampling, and it reduces to near-uniform sampling when uncertainty scores are
+unreliable. Furthermore, the estimator can even surpass standard active inference given reliable
+uncertainties.
+Many directions remain for future work. For example, it would be valuable to understand
+how to optimally choose the constraint set C, or at least how to choose between several different
+constraint sets. As presented, our procedure is sensitive to the choice of C and may result in
+sampling rules that are too close or too far from uniform if this set is chosen poorly. We also
+leave investigations into the optimal budget-preserving path, and practical heuristics for how a
+practitioner might effectively choose a good path in a data-driven way, for future work.
+Acknowledgement
+EJC was supported by the Office of Naval Research grant N00014-24-1-2305, the National
+Science Foundation grant DMS-2032014, and the Simons Foundation under award 814641.
+References
+[1] Anastasios N Angelopoulos, Stephen Bates, Clara Fannjiang, Michael I Jordan, and Tijana
+Zrnic. Prediction-powered inference. Science, 382(6671):669–674, 2023.
+[2] Anastasios N Angelopoulos, John C Duchi, and Tijana Zrnic. PPI++: Efficient prediction-
+powered inference. arXiv preprint arXiv:2311.01453, 2023.
+[3] RuichengAo, HongyuChen, andDavid Simchi-Levi. Prediction-guidedactive experiments.
+arXiv preprint arXiv:2411.12036, 2024.
+13
+[4] RamyBaly,GiovanniDaSanMartino,JamesGlass,andPreslavNakov. Wecandetectyour
+bias: Predictingthepoliticalideologyofnewsarticles. InProceedingsofthe2020Conference
+on Empirical Methods in Natural Language Processing (EMNLP), pages 4982–4991, 2020.
+[5] A Ben-Tal. Robust optimization. Princeton University Press, 2:35–53, 2009.
+[6] Hans-Georg Beyer and Bernhard Sendhoff. Robust optimization–a comprehensive survey.
+Computer methods in applied mechanics and engineering, 196(33-34):3190–3218, 2007.
+[7] Dmitri Burago, Yuri Burago, and Sergei Ivanov. A course in metric geometry, volume 33.
+American Mathematical Society Providence, 2001.
+[8] DavideCacciarelli,MuratKulahci,andJohnSølveTyssedal. Robustonlineactivelearning.
+Quality and Reliability Engineering International, 40(1):277–296, 2024.
+[9] TianqiChenandCarlosGuestrin. Xgboost: Ascalabletreeboostingsystem. InProceedings
+of the 22nd acm sigkdd international conference on knowledge discovery and data mining,
+pages 785–794, 2016.
+[10] Prateek Chhikara. Mind the confidence gap: Overconfidence, calibration, and distractor
+effects in large language models. arXiv preprint arXiv:2502.11028, 2025.
+[11] CristianDanescu-Niculescu-Mizil,MoritzSudhof,DanJurafsky,JureLeskovec,andChristo-
+pher Potts. A computational approach to politeness with application to social factors. In
+51stAnnualMeetingoftheAssociationforComputationalLinguistics,pages250–259.ACL,
+2013.
+[12] FrancesDing,MoritzHardt,JohnMiller,andLudwigSchmidt.Retiringadult: Newdatasets
+forfairmachinelearning. Advances in neural information processing systems,34:6478–6490,
+2021.
+[13] Valerii Vadimovich Fedorov. Theory of optimal experiments. Elsevier, 2013.
+[14] Adam Fisch, Joshua Maynez, R Alex Hofer, Bhuwan Dhingra, Amir Globerson, and
+William W Cohen. Stratified prediction-powered inference for hybrid language model eval-
+uation. arXiv preprint arXiv:2406.04291, 2024.
+[15] VirginieGabrel, C´ecile Murat, and Aur´elieThiele. Recentadvancesinrobust optimization:
+An overview. European journal of operational research, 235(3):471–483, 2014.
+[16] Feng Gan, Wanfeng Liang, and Changliang Zou. Prediction de-correlated inference: A safe
+approach for post-prediction inference. Australian & New Zealand Journal of Statistics, 66
+(4):417–440, 2024.
+[17] Kristina Gligori´c, Tijana Zrnic, Cinoo Lee, Emmanuel J Cand`es, and Dan Jurafsky.
+Can unconfident llm annotations be used for confident conclusions? arXiv preprint
+arXiv:2408.15204, 2024.
+[18] Adam N Glynn and Kevin M Quinn. An introduction to the augmented inverse propensity
+weighted estimator. Political analysis, 18(1):36–56, 2010.
+[19] Jessica Gronsbell, Jianhui Gao, Yaqi Shi, Zachary R McCaw, and David Cheng. Another
+look at inference after prediction. arXiv preprint arXiv:2411.19908, 2024.
+14
+[20] YuejunGuo,QiangHu,MaximeCordy,MikePapadakis,andYvesLeTraon. Robustactive
+learning: Sample-efficient training of robust deep learning models. In Proceedings of the
+1st International Conference on AI Engineering: Software Engineering for AI,pages41–42,
+2022.
+[21] Jinyong Hahn, Keisuke Hirano, and Dean Karlan. Adaptive experimental design using the
+propensity score. Journal of Business & Economic Statistics, 29(1):96–108, 2011.
+[22] Peter J Huber. Robust estimation of a location parameter. In Breakthroughs in statistics:
+Methodology and distribution, pages 492–518. Springer, 1992.
+[23] Wenlong Ji, Lihua Lei, and Tijana Zrnic. Predictions as surrogates: Revisiting surrogate
+outcomes in the age of ai. arXiv preprint arXiv:2501.09731, 2025.
+[24] John Jumper, Richard Evans, Alexander Pritzel, Tim Green, Michael Figurnov, Olaf Ron-
+neberger, Kathryn Tunyasuvunakool, Russ Bates, Augustin Zˇ´ıdek, Anna Potapenko, et al.
+Highly accurate protein structure prediction with alphafold. nature, 596(7873):583–589,
+2021.
+[25] Dan M Kluger, Kerri Lu, Tijana Zrnic, Sherrie Wang, and Stephen Bates. Prediction-
+powered inference with imputed covariates and nonuniform sampling. arXiv preprint
+arXiv:2501.18577, 2025.
+[26] JannikKossen,SebastianFarquhar,YarinGal,andTomRainforth. Activetesting: Sample-
+efficient model evaluation. In International Conference on Machine Learning, pages 5753–
+5763. PMLR, 2021.
+[27] Minzhi Li, Taiwei Shi, Caleb Ziems, Min-Yen Kan, Nancy Chen, Zhengyuan Liu, and Diyi
+Yang.Coannotating: Uncertainty-guidedworkallocationbetweenhumanandlargelanguage
+models for data annotation. In Proceedings of the 2023 Conference on Empirical Methods
+in Natural Language Processing, pages 1487–1505, 2023.
+[28] Matthias Liero, Alexander Mielke, and Giuseppe Savar´e. Optimal transport in competition
+with reaction: The hellinger–kantorovich distance and geodesic curves. SIAM Journal on
+Mathematical Analysis, 48(4):2869–2911, 2016.
+[29] Zachary R McCaw, Sheila M Gaynor, Ryan Sun, and Xihong Lin. Leveraging a surrogate
+outcome to improve inference on a partially missing target outcome. Biometrics, 79(2):
+1472–1484, 2023.
+[30] Jiacheng Miao and Qiongshi Lu. Task-agnostic machine-learning-assisted inference. arXiv
+preprint arXiv:2405.20039, 2024.
+[31] Jiacheng Miao, Xinran Miao, Yixuan Wu, Jiwei Zhao, and Qiongshi Lu. Assumption-lean
+and data-adaptive post-prediction inference. arXiv preprint arXiv:2311.14220, 2023.
+[32] Pew. American trends panel (ATP) wave 79, 2020. URL https://www.pewresearch.org/
+science/dataset/american-trends-panel-wave-79/.
+[33] MarcoRamoniandPaolaSebastiani. Robustlearningwithmissingdata. MachineLearning,
+45:147–170, 2001.
+[34] JamesMRobinsandAndreaRotnitzky. Semiparametricefficiencyinmultivariateregression
+modelswithmissingdata. JournaloftheAmericanStatisticalAssociation,90(429):122–129,
+1995.
+15
+[35] James M Robins, Andrea Rotnitzky, and Lue Ping Zhao. Estimation of regression coeffi-
+cients when some regressors are not always observed. Journal of the American statistical
+Association, 89(427):846–866, 1994.
+[36] Nicholas Roy and Andrew McCallum. Toward optimal active learning through sampling
+estimation of error reduction. In ICML, volume 1, page 5. Citeseer, 2001.
+[37] Donald B Rubin. Multiple imputation. In Flexible imputation of missing data, second
+edition, pages 29–62. Chapman and Hall/CRC, 2018.
+[38] VivienSeguyandMarco Cuturi. Principal geodesic analysisforprobabilitymeasures under
+theoptimaltransportmetric. AdvancesinNeuralInformationProcessingSystems,28,2015.
+[39] Burr Settles. Active learning literature survey. 2009.
+[40] Shanshan Song, Yuanyuan Lin, and Yong Zhou. A general M-estimation theory in semi-
+supervisedframework. JournaloftheAmericanStatisticalAssociation,119(546):1065–1075,
+2024.
+[41] Robert G Staudte and Simon J Sheather. Robust estimation and testing. John Wiley &
+Sons, 2011.
+[42] JacobSteinhardt. Robust learning: Information theory and algorithms. StanfordUniversity,
+2018.
+[43] Katherine Tian, Eric Mitchell, Allan Zhou, Archit Sharma, Rafael Rafailov, Huaxiu Yao,
+Chelsea Finn, and Christopher D Manning. Just ask for calibration: Strategies for eliciting
+calibrated confidence scores from language models fine-tuned with human feedback. In
+Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing,
+pages 5433–5442, 2023.
+[44] Anastasios A Tsiatis. Semiparametric theory and missing data, volume 4. Springer, 2006.
+[45] Siruo Wang, Tyler H McCormick, and Jeffrey T Leek. Methods for correcting inference
+based on outcomes predicted by machine learning. Proceedings of the National Academy of
+Sciences, 117(48):30266–30275, 2020.
+[46] MichaelXie,NealJean,MarshallBurke,DavidLobell,andStefanoErmon.Transferlearning
+from deep features for remote sensing and poverty mapping. In Proceedings of the AAAI
+conference on artificial intelligence, volume 30, 2016.
+[47] Mozhi Zhang, Mianqiu Huang, Rundong Shi, Linsen Guo, Chong Peng, Peng Yan, Yaqian
+Zhou, and Xipeng Qiu. Calibrating the confidence of large language models by eliciting
+fidelity. arXiv preprint arXiv:2404.02655, 2024.
+[48] Kaitlyn Zhou, Dan Jurafsky, and Tatsunori Hashimoto. Navigating the grey area: How
+expressions of uncertainty and overconfidence affect language models. arXiv preprint
+arXiv:2302.13439, 2023.
+[49] Abdelhak M Zoubir, Visa Koivunen, Yacine Chakhchoukh, and Michael Muma. Robust
+estimation in signal processing: A tutorial-style treatment of fundamental concepts. IEEE
+Signal Processing Magazine, 29(4):61–80, 2012.
+[50] TijanaZrnic.Anoteontheprediction-poweredbootstrap.arXivpreprintarXiv:2405.18379,
+2024.
+16
+[51] Tijana Zrnic and Emmanuel J Cand`es. Active statistical inference. In Proceedings of the
+41st International Conference on Machine Learning, pages 62993–63010, 2024.
+[52] Tijana Zrnic and Emmanuel J Cand`es. Cross-prediction-powered inference. Proceedings of
+the National Academy of Sciences, 121(15):e2322083121, 2024.
+17
+A Proofs
+A.1 Proof of Theorem 1
+By the definition of θˆπ(ρ), we have
+n (cid:18) (cid:19)
+θˆπ(ρ) = 1 (cid:88) f(X )+(Y −f(X )) ξ i .
+n i i i π(ρ)(X )
+i
+i=1
+From the assumption, we have ρˆ=ρ∗+o (1). By the continuity of the budget-preserving path
+P
+π(ρ), it follows that π(ρˆ)(X )=π(ρ∗)(X )+o (1) for any i∈{1,...,n}. This, as a result, gives
+i i P
+θˆπ(ρˆ) =θˆπ(ρ∗) +o (1) by the continuity of θˆπ(ρ).
+P
+It follows from Proposition 1 in [51] that we have
+√ n (cid:16) θˆπ(ρ∗) −θ∗ (cid:17) −→ d N (cid:0) 0,σ2 (cid:1) , σ2 =Var(θˆπ(ρ∗) ).
+ρ∗ ρ∗
+Since θˆπ(ρˆ) −→ p θˆπ(ρ∗),
+√ n (cid:16) θˆπ(ρˆ) −θ∗ (cid:17) −→ d N (cid:0) 0,σ2 (cid:1) .
+ρ∗
+By the definition of ρ∗, ρ∗ =argminVar(θˆπ(ρ)), we have
+ρ
+σ2 =Var(θˆπ(ρ∗) )≤min{Var(θˆπ(0) ),Var(θˆπ(1) )}=min{σ2,σ2}.
+ρ∗ 0 1
+This completes the proof.
+A.2 A sufficient condition for ρˆ= ρ∗ +o (1)
+P
+Proposition 1. Suppose eˆ2(X)=e2(X)+o (1), and ρ∗ is unique. Suppose eˆ(X) is uniformly
+P
+upper bounded by M >0. Suppose further that π(ρ)(X) is uniformly lower-bounded by m>0,
+then we have ρˆ=ρ∗+o (1).
+P
+Proof. Denote
+(cid:26) eˆ2(x) (cid:27)
+F = f (x)= :ρ∈[0,1] .
+ρ π(ρ)(x)
+We first show that F is a P-Glivenko-Cantelli class.
+Since π(ρ) is continuous, and supported on [0,1], it is uniformly continuous on [0,1]. Hence
+for any δ >0, there exists η >0 such that |π(ρ1)(X)−π(ρ2)(X)|≤
+M
+m2
+2
+δ whenever |ρ
+1
+−ρ
+2
+|≤η.
+Now, wecover[0,1]withagrid0=ρ <ρ <···<ρ =1, whereρ −ρ =η fork ≤K−1.
+0 1 K k k−1
+Then, for any ρ∈[ρ ,ρ ], we have
+k−1 k
+|f ρ (x)−f ρk−1 (x)|= (cid:12) (cid:12) (cid:12) (cid:12)π eˆ ( 2 ρ ( ) x (x ) ) − π(ρ eˆ k 2 − ( 1 x ) ) (x) (cid:12) (cid:12) (cid:12) (cid:12) ≤ M m2 2 (cid:12) (cid:12) (cid:12) π(ρ)(x)−π(ρk−1)(x) (cid:12) (cid:12) (cid:12) ≤δ.
+18
+Hence [f −δ,f +δ] is an 2δ-bracket in L (P) that contains every f with ρ∈[ρ ,ρ ].
+ρk−1 ρk−1 1 ρ k−1 k
+So the bracketing number N is finite, N (2δ,F,L (P)) ≤ K ≤ 1 +1 < ∞. We thus conclude
+[] [] 1 η
+from the Blum-DeHardt theorem that F is a P-Glivenko-Cantelli class. Consequently, we have
+(cid:12) (cid:12)
+sup (cid:12) (cid:12) 1 (cid:88) n eˆ2(X i ) −E eˆ2(X) (cid:12) (cid:12)−→ p 0.
+(cid:12)n π(ρ)(X ) π(ρ)(X)(cid:12)
+ρ∈[0,1](cid:12)
+i=1
+i (cid:12)
+This implies that
+(cid:12) (cid:12)
+(cid:12) (cid:12) inf 1 (cid:88) n eˆ2(X i ) − inf E eˆ2(X) (cid:12) (cid:12)−→ p 0.
+(cid:12) (cid:12)ρ∈[0,1]n π(ρ)(X i ) ρ∈[0,1] π(ρ)(X)(cid:12) (cid:12)
+i=1
+By definition, ρˆ=argmin 1 (cid:80)n eˆ2(Xi) . Denote S =argminE eˆ2(X) . Then, by continu-
+ρ
+n i=1 π(ρ)(Xi)
+ρ
+π(ρ)(X)
+ity of π(ρ)(X), we have d(ρˆ,S)−→ p 0, for d(ρˆ,S)=inf{|ρˆ−ρˆ∗|:ρˆ∗ ∈S}.
+Now, for any ρˆ∗ ∈S, we have
+e2(X) eˆ2(X)+o (1)
+E ≤ E P
+π(ρˆ∗)(X) π(ρˆ∗)(X)
+eˆ2(X) 1
+≤ E +o (1)E
+π(ρ∗)(X) P π(ρˆ∗)(X)
+e2(X)+o (1) 1
+≤ E P +o (1)E
+π(ρ∗)(X) P π(ρˆ∗)(X)
+e2(X) (cid:20) 1 1 (cid:21)
+= E +o (1)E +
+π(ρ∗)(X) P π(ρ∗)(X) π(ρˆ∗)(X)
+e2(X)
+= E +o (1).
+π(ρ∗)(X) P
+Since
+(cid:18) e2(X) (cid:19)
+Var(θˆπ(ρ) )=E +C,
+π(ρ)(X)
+where C is a constant independent of ρ, we have
+Var(θˆπ(ρˆ∗) )≤Var(θˆπ(ρ∗)
+)+o (1).
+P
+On the other hand, by the definition of ρ∗,
+Var(θˆπ(ρˆ∗) )≥Var(θˆπ(ρ∗)
+)
+also holds. Whence
+Var(θˆπ(ρˆ∗))−→ p Var(θˆπ(ρ∗)).
+Since ρ∗ is the unique minimizer of Var(θˆπ(ρ)), ρˆ∗ −→ p ρ∗ by continuity. Since d(ρˆ,S)−→ p 0 and
+ρˆ∗ is an arbitrary element in S, we immediately conclude that
+ρˆ−→ p ρ∗.
+19
+A.3 Proof of Theorem 2
+By the definition of θˆπ(ρ), we have
+θˆπ(ρ) =argmin 1 (cid:88) n (cid:18) ℓf + (cid:16) ℓ −ℓf (cid:17) ξ i (cid:19) .
+n θ,i θ,i θ,i π(ρ)(X )
+θ i
+i=1
+We assume ρˆ=ρ∗+o (1). By the continuity of the budget-preserving path π(ρ), it follows that
+P
+π(ρˆ)(X )=π(ρ∗)(X )+o (1)foranyi∈{1,...,n}. This,asaresult,givesθˆπ(ρˆ) =θˆπ(ρ∗)+o (1)
+i i P P
+(cid:16) (cid:17)
+by the continuity of ℓf + ℓ −ℓf ξi with respect to θ.
+θ,i θ,i θ,i π(ρ)(Xi)
+Given the assumption that θˆπ(ρ∗) −→ p θ∗, from Theorem 1 in [51], we have
+√ n (cid:16) θˆπ(ρ∗) −θ∗ (cid:17) −→ d N (0,Σ ),
+ρ∗
+(cid:16) (cid:16) (cid:17) (cid:17)
+where Σ =H−1Var ∇ℓf + ∇ℓ −∇ℓf ξ H−1.
+ρ∗ θ∗ θ∗,i θ∗,i θ∗,i π(ρ∗)(Xi) θ∗
+Since θˆπ(ρˆ) −→ p θˆπ(ρ∗),
+√ (cid:16) (cid:17)
+n θˆπ(ρˆ) −θ∗ −→ d N (0,Σ ).
+ρ∗
+The definition ρ∗ =argminΣπ(ρ) yields
+jj
+ρ
+Σ
+=Σπ(ρ∗) ≤min{Σπ(0) ,Σπ(1)
+}=min{Σ ,Σ }.
+ρ∗,jj jj jj jj 0,jj 1,jj
+This completes the proof.
+A.4 Setting π ∝ eˆ leads to a trivial choice of ρˆ = 0 when not incorpo-
+rating robustness constraint
+Starting from the variance estimate used in the optimization objective
+ρˆ=argmin 1 (cid:88) n eˆ2(X i ) ,
+n π(ρ)(X )
+ρ i
+i=1
+by the Cauchy-Schwarz inequality, for any π such that
+(cid:80)n
+π(X ) = n (i.e. satisfying the
+i=1 i b
+budgetconstraint),
+(cid:80)n eˆ2(Xi)
+≥
+((cid:80)n
+i=1
+eˆ(Xi))2
+=
+((cid:80)n
+i=1
+eˆ(Xi))2
+. Theequalityholdswhenπ ∝eˆ,
+i=1 π(Xi) (cid:80)n
+i=1
+π(Xi) nb
+which corresponds to π(ρ) with ρ=0.
+B A natural family of budget-preserving paths
+Amongthediversesetofpossiblepaths[28,38],itisnaturaltoconsidergeodesicpaths,which
+are a family of “shortest paths.”
+20
+Definition 2 (Geodesic [7]). A curve γ : I → M from an interval I ⊆ R to a metric space
+M with metric d is a geodesic if there is a constant v ≥ 0 such that for any ρ ∈ I there is a
+neighborhood J of ρ in I such that for any ρ ,ρ ∈J we have
+1 2
+d(γ(ρ ),γ(ρ ))=v|ρ −ρ |.
+1 2 1 2
+We revisit the examples from Section 2 and provide more geodesic paths.
+In all the following examples, we assume P and Q have the same support.
+Example 3 (Linear path). The linear path, π(ρ) ∝(1−ρ)π+ρπunif, is the geodesic path with
+respect to d(P,Q)=∥P −Q∥ with v =∥π−πunif∥. Here, ∥·∥ is any norm.
+Example 4 (Geometric path). The geometric path, π(ρ) ∝ π1−ρ(πunif)ρ, is the geodesic path
+with respect to d(P,Q) = ∥logP − logQ∥ with v = ∥logπ − logπunif∥. Here, log is taken
+element-wise.
+(cid:16) √ √ (cid:17)2
+Example 5 (Hellinger path). The Hellinger path, π(ρ) ∝ (1−ρ) π+ρ πunif , is the
+√ √ √ √
+geodesic path with respect to d(P,Q) = ∥ P − Q∥ with v = ∥ π − πunif∥. Here, the
+square root is taken element-wise.
+Note(moreexamples). Somedistancemetricsmaynothaveananalyticalcharacterization
+for their corresponding geodesic path, such as the Wasserstein and Jensen-Shannon distances.
+However,itiscomputationallytractabletosolveforageodesicpathnumericallyuptoatolerance
+margin for many well-defined distance metrics. For example, when computing the geodesic for
+theJensen-Shannondistance,wecandiscretizetheinterval[0,1]intoN segmentssothatP =P
+0
+and P = Q, and we define a series of intermediate distributions P ,P ,...,P . The task
+N 1 2 N−1
+is then cast as an optimization problem: we minimize the total path length computed as the
+sumofthesquarerootsoftheJensen-Shannondivergencesbetweensuccessivedistributions,i.e.,
+(cid:80)N−1(cid:112) JS(P ,P ). Here, JS(P∥Q) = 1D(P∥M)+ 1D(Q∥M), where M = 1(P +Q). This
+i=0 i i+1 2 2 2
+is a constrained optimization problem and can be solved by standard gradient-based methods.
+B.1 Uniqueness of ρ∗
+In Section 2, we saw that the uniqueness of the optimal ρ∗ and the consistency of eˆ are
+sufficientconditionsfortheconsistencyofρˆ. Inthecaseofallthreebudget-presevingpathsfrom
+the previous section, it can be easily verified by computing the second derivative of Var(θˆπ(ρ))
+that this variance is strictly convex and thus ρ∗ is unique. We include the corresponding proofs
+for completeness.
+Linear path. We have π(ρ)(X) = (1−ρ)π(X)+ρnb. The problem of minimizing Var(θˆπ(ρ))
+n
+is equivalent to
+(cid:20) (Y −f(X))2 (cid:21)
+argminE .
+ρ (1−ρ)π(X)+ρn n b
+(cid:104) (cid:105)
+Denoting g(ρ)=E (Y−f(X))2 , we have
+(1−ρ)π(X)+ρnb
+n
+(cid:34)
+−(Y
+−f(X))2(cid:0)nb
+−π(X)
+(cid:1)(cid:35)
+g′(ρ)=E n ,
+(cid:0) (1−ρ)π(X)+ρnb (cid:1)2
+n
+21
+and
+(cid:34)
+2(Y
+−f(X))2(cid:0)nb
+−π(X)
+(cid:1)2(cid:35)
+g′′(ρ)=E n .
+(cid:0) (1−ρ)π(X)+ρnb (cid:1)3
+n
+Clearly, g′′(ρ)>0, which means that g(ρ) is convex. Hence, there is a unique optimal value
+of ρ in [0,1].
+Notice that g′(1) = n2E(cid:2) (Y −f(X))2(cid:0) π(X)− nb (cid:1)(cid:3) . Hence, if E(cid:2) (Y −f(X))2π(X) (cid:3) >
+n2 n
+nbE(cid:2) (Y −f(X))2(cid:3) , then g′ b (1)>0, which implies that the optimal ρ lies in [0,1).
+n
+Geometric path. Consider the path π(ρ)(X) ∝ π(X)1−ρ(πunif)ρ; in particular, π(ρ)(X) =
+nb π(X)1−ρ .
+n E[π(X)1−ρ]
+Similartothelastexample,wedenoteg(ρ)=E (cid:104) (Y−f(X))2 (cid:105) = n E (cid:104) (Y−f(X))2 (cid:105) E(cid:2) π(X)1−ρ(cid:3) .
+π(ρ)(X) nb π(X)1−ρ
+Then, we have
+g′(ρ)= n E (cid:20) (Y −f(X))2 logπ(X) (cid:21) E(cid:2) π(X)1−ρ(cid:3) − n E (cid:20) (Y −f(X))2(cid:21) E(cid:2) π(X)1−ρlogπ(X) (cid:3) ,
+n π(X)1−ρ n π(X)1−ρ
+b b
+and
+g′′(ρ)= n E (cid:20) (Y −f(X))2 log2π(X) (cid:21) E(cid:2) π(X)1−ρ(cid:3) + n E (cid:20) (Y −f(X))2(cid:21) E(cid:2) π(X)1−ρlog2π(X) (cid:3)
+n π(X)1−ρ n π(X)1−ρ
+b b
+−2 n E (cid:20) (Y −f(X))2 logπ(X) (cid:21) E(cid:2) π(X)1−ρlogπ(X) (cid:3) .
+n π(X)1−ρ
+b
+Since (Y −f(X))2 ≥0, π(X)>0, and log2π(X)≥0, we have that
+E (cid:20) (Y −f(X))2 log2π(X) (cid:21) E(cid:2) π(X)1−ρ(cid:3) +E (cid:20) (Y −f(X))2(cid:21) E(cid:2) π(X)1−ρlog2π(X) (cid:3)
+π(X)1−ρ π(X)1−ρ
+(cid:115)
+≥2 E (cid:20) (Y −f(X))2 log2π(X) (cid:21) E[π(X)1−ρ]E (cid:20) (Y −f(X))2(cid:21) E(cid:2) π(X)1−ρlog2π(X) (cid:3)
+π(X)1−ρ π(X)1−ρ
+(cid:115)
+=2 E (cid:20) (Y −f(X))2 log2π(X) (cid:21) E (cid:20) (Y −f(X))2(cid:21) E[π(X)1−ρ]E(cid:2) π(X)1−ρlog2π(X) (cid:3)
+π(X)1−ρ π(X)1−ρ
+(cid:115)
+(cid:20) (Y −f(X))2 (cid:21)
+≥2 E2 logπ(X) E2[π(X)1−ρlogπ(X)]
+π(X)1−ρ
+=E (cid:20) (Y −f(X))2 logπ(X) (cid:21) E(cid:2) π(X)1−ρlogπ(X) (cid:3) .
+π(X)1−ρ
+ThelastinequalityfollowsfromtheCauchy-Schwarzinequality. Therefore,wehaveg′′(ρ)≥0.
+Further, if π(X) ̸= πunif, the inequality is strict, which means g(ρ) is convex. Thus, there is a
+unique optimal value of ρ in [0,1].
+22
+Hellinger path. Suppose P and Q are two discrete distributions. The Hellinger distance
+√ √
+between P and Q is H(P,Q)= √1 2 ∥ P − Q∥ 2 . The geodesic connecting π(X) and πunif = n n b
+is:
+(cid:18) (cid:114) (cid:19)2
+π(ρ)(X)=
+sin((1−ρ)β)(cid:112)
+π(X)+
+sin(ρβ) n
+b ,
+sinβ sinβ n
+(cid:18) (cid:113) (cid:19)
+where β =arccos (cid:80)n π(Xi) ·n .
+i=1 n b
+Similarly as above, minimizing the variance Var(θˆπ(ρ)) amounts to minimizing the function
+ 
+(Y −f(X))2
+g(ρ)=E 
+(cid:16) sin((1−ρ)β)(cid:112)
+π(X)+
+sin(ρβ)(cid:112)nb (cid:17)2
+sinβ sinβ n
+over ρ. The derivative g′(ρ) is given by
+(cid:34) (cid:18) (cid:114) (cid:19)−3(cid:18) (cid:114) (cid:19)(cid:35)
+−2E (Y −f(X))2
+sin((1−ρ)β)(cid:112)
+π(X)+
+sin(ρβ) n
+b −β
+cos((1−ρ)β)(cid:112)
+π(X)+β
+cos(ρβ) n
+b ,
+sinβ sinβ n sinβ sinβ n
+while the second g′′(ρ) is given by
+(cid:34) (cid:18) (cid:114) (cid:19)−4(cid:34) (cid:18)
+E (Y −f(X))2
+sin((1−ρ)β)(cid:112)
+π(X)+
+sin(ρβ) n
+b 6 −β
+cos((1−ρ)β)(cid:112)
+π(X)
+sinβ sinβ n sinβ
+(cid:114) (cid:19)2 (cid:18) (cid:114) (cid:19)2(cid:35)(cid:35)
++β
+cos(ρβ) n
+b +2β2
+sin((1−ρ)β)(cid:112)
+π(X)+
+sin(ρβ) n
+b >0.
+sinβ n sinβ sinβ n
+Therefore, g(ρ) is strictly convex, and there is a unique optimal value of ρ in [0,1].
+C Perturbed model errors after robust optimization
+It is natural to choose the constraint C by upper-bounding the norm of ϵ. Our default choice
+is the ℓ norm, i.e. ∥ϵ∥ ≤c. The ℓ norm can be roughly thought of as controlling the variance
+2 2 2
+of the errors in eˆ2. In particular, imagine eˆ2(X ) can be viewed as a noisy version of e2(X ):
+i i
+eˆ2(X ) = e2(X ) + ξ , where the (X ,ξ ) pairs are i.i.d. and ξ have mean zero. Then, by
+i i i i i i
+concentration, ∥ϵ∥2 ≈ (cid:80) Var(ξ ).
+2 i i
+InFigure8weillustratehowrobustoptimizationovertheℓ setC recoverserrorseˆ2(X )+ϵ
+2 i i
+that are much closer to e2(X ) than simply using eˆ2(X ).
+i i
+D A toy example: choice of C
+Asimpleℓ normconstraintmaynotalwaysbethemostpowerfulchoiceofC. Zoomingout,
+2
+our method can in principle be combined with any choice of C, including one where we learn
+regions of the space where scores are systematically overconfident or underconfident. At a high
+23
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+                    
+ , Q G H [
+ U R U U (
+ 7 U X H  H U U R U
+ 5 R E X V W  H U U R U   /  
+ ( V W L P D W H G  H U U R U
+Figure 8: Perturbed errors eˆ2(X )+ϵ vs naive errors eˆ2(X ) with ℓ constraint C. We
+i i i 2
+consider a regime where we underestimate the true error (for example, due to the model being
+overconfident). We let e(X ) ∼ N(5,0.25) and eˆ(X ) ∼ N(3,0.25), and π(ρ) is the linear path
+i i
+with ρ = 0.5. The robustness constraint is C = {ϵ : ∥ϵ∥ ≤ 50}. Each index i corresponds to
+2
+one sample X . The robust error (green bar) is the error after perturbation, eˆ2(X )+ϵ , and the
+i i i
+estimated error (blue bar) is the error before perturbation, eˆ2(X ). The robust errors are much
+i
+closer to the estimated errors.
+level, our method (1) learns C (in our experiment, the “learning” is a simple fitting of c through
+cross-validation), and(2)solvesarobustoptimizationproblemwithC inplace. Yoursuggestion
+is an interesting choice of step (1).
+We developed a dataset featuring a central “hard” region (|X| ≤ 2) flanked by two “easy”
+regions (2<|X|<5). In the easy regions, error data was sampled from N(2,0.05). In the hard
+region, error was drawn from N(1,0.25). The estimator of error, ϵˆ(X), is designed to underes-
+timate the error in the hard region and overestimate the error in the easy region. Specifically,
+ϵˆ(X)=0.5 for |X|≤2, and ϵˆ(X)=2.5 otherwise.
+Subsequently, we trained a meta-classifier, a gradient boost classifier, h(X), to identify these
+regions solely based on the performance of ϵˆ(X), without prior knowledge of the region bound-
+aries.
+Thisapproachprovedhighlyeffective,withthemeta-classifierachievingover99%accuracyin
+identifying the regions. This demonstrates our success in learning the error regions and enables
+us to separate the constraint set C based on these distinctions. For instance, C can be defined
+as ∥ϵ ∥ ≤ c for the easy region (2 < |X| < 5) and ∥ϵ ∥ ≤ c for the hard region
+easy 2 easy hard 2 hard
+(|X|≤2). Or even simpler, we can only optimize over hard regions, i.e. c =0. While these
+easy
+regions’dimensionsarenotfixedanddependonX,thispresentsnopracticaldifficultiesbecause
+we have complete information about X.
+Next, we compared this structured constraint with the global constraint. Here, for the struc-
+tured constraint, we only optimize over the hard region. The following table shows the result
+when n=7000, n =1400, and π ∝ϵˆ.
+h
+WefoundthatincorporatingthestructuredconstraintprovidedaslightgaininESSoverthe
+24
+Method ESS ESS Gain (%)
+Uniform 1400 0.00%
+Active 1213 -13.3%
+Robust active (global) 1491 6.5%
+Robust active (structured) 1495 6.8%
+global constraint while reducing the constraint size (c = 85 vs. c = 75). This suggests
+global hard
+that a more focused perturbation can be beneficial when we have strong knowledge of confident
+regions. However, we note that the global constraint remains a simple and practical approach
+given the limited gain.
+E Additional experimental results
+E.1 Plots with coverage and standard deviation
+In this subsection, we provide figures corresponding to the figures in the main text, where in
+addition to the effective sample size we also plot coverage.
+3233
+2284
+1614
+1140
+805
+569
+402
+ezis
+elpmas
+evitceffE
+Burn-in size = 140 Burn-in size = 280 Burn-in size = 420 Burn-in size = 560 Burn-in size = 840
+3418 3446 3382 3691
+2515 2657 2676 3017
+1850 2048 2118 2467
+1361 1579 1676 2017
+1001 1217 1327 1649
+737 938 1050 1348
+542 723 831 1102
+1.0
+0.9
+0.8
+0.7
+0.6
+1728 1958 2218
+egarevoC
+uniform active robust active
+1443 1744 2109 1576 1874 2230 1478 1773 2127 1746 2036 2375
+n
+b
+Figure 11: Effective sample size and coverage on US Census data, for varying burn-in
+dataset sizes. We compare uniform, active, and robust active sampling, for different values of
+the sampling budget n . The target of inference is the relationship between age and income,
+b
+estimated via a linear regression. We show the mean and one standard deviation of the effective
+sample size estimated over 500 trials; in each trial we independently sample the observed labels.
+25
+2480
+2093
+1766
+1490
+1257
+1061
+895
+ezis
+elpmas
+evitceffE
+Training size=2000 Training size=5000
+2456
+2100
+1796
+1536
+1313
+1123
+960
+284
+238
+191
+144
+98
+51
+5
+noitaived
+dradnatS
+277
+233
+188
+143
+98
+54
+9
+1.0
+0.9
+0.8
+0.7
+0.6
+1357 1597 1880
+egarevoC
+uniform active robust active
+1357 1597 1880
+n
+b
+Figure 9: Effective sample size and coverage on Pew post-election survey data, for
+different dataset sizes used to train f. We compare uniform, active, and robust active sampling,
+for different values of the sampling budget n . The target of inference is the approval rate of a
+b
+presidential candidate. We show the mean and one standard deviation of the effective sample
+size estimated over 500 trials; in each trial we independently sample the observed labels.
+26
+3206
+2991
+2790
+2603
+2428
+2265
+2113
+ezis
+elpmas
+evitceffE
+Without robustness constraint With robustness constraint
+3214
+3000
+2801
+2615
+2441
+2279
+2128
+122
+111
+100
+90
+79
+68
+57
+noitaived
+dradnatS
+138
+127
+116
+105
+95
+84
+73
+1.0
+0.9
+0.8
+0.7
+0.6
+2246 2420 2609 2812
+egarevoC
+hellinger geometric linear
+2420 2609 2812
+n
+b
+Figure10: Effectivesamplesizeandcoveragefordifferentbudget-preservingpathson
+Pew post-election survey data, without (left) and with (right) a robustness constraint C. In
+both cases, the geometric path leads to the largest effective sample size. The target of inference
+isthesameasinFigure3. Weshowthemeanandonestandarddeviationoftheeffectivesample
+size estimated over 500 trials; in each trial we independently sample the observed labels.
+27
+1265
+1117
+987
+872
+770
+680
+601
+ezis
+elpmas
+evitceffE
+Political bias Politeness Misinformation
+3911 1381
+3297 1238
+2779 1110
+2343 995
+1975 892
+1665 800
+1404 717
+1.0
+0.9
+0.8
+0.7
+0.6
+810 908 1019 1142
+egarevoC
+uniform active robust active
+1976 2378 2861 1010 1138 1281
+n
+b
+Figure 12: Effective sample size and coverage on social science text annotation
+datasets. We compare uniform, active, and robust active sampling, for different values of the
+sampling budget n . The targets of inference are (left to right) the prevalence of right-leaning
+b
+political bias, the relationship between hedging and politeness, and the prevalence of misinfor-
+mation. We show the mean and one standard deviation of the effective sample size estimated
+over 500 trials; in each trial we independently sample the observed labels.
+2327
+2002
+1722
+1481
+1274
+1096
+943
+ezis
+elpmas
+evitceffE
+Burn-in size = 606 Burn-in size = 1213 Burn-in size = 1819 Burn-in size = 2426 Burn-in size = 3639
+2831 3245 3580 4448
+2527 3007 3411 4334
+2256 2786 3250 4222
+2014 2581 3097 4114
+1798 2391 2951 4008
+1605 2216 2812 3906
+1432 2053 2680 3805
+1.0
+0.9
+0.8
+0.7
+0.6
+1417 1578 1757
+egarevoC
+uniform active robust active (geometric) robust active (linear)
+2047 2191 2345 2417 2606 2808 2917 3052 3194 3986 4094 4204
+n
+b
+Figure 13: Effective sample size (top) and coverage (bottom) on Pew post-election
+survey data, for varying burn-in dataset sizes with respect to different proportions of the data.
+We compare uniform, active, and robust active sampling with geometric and linear paths, for
+different values of the sampling budget n . The target of inference is the approval rate of a
+b
+presidential candidate. We show the mean and one standard deviation of the effective sample
+size estimated over 500 trials; in each trial we independently sample the observed labels.
+28
+E.2 Burn-in size v.s. robustness constraint C
+In addition to optimized ρ along the path, we also provided the optimized value c in
+robust
+the robustness constraint C = {ϵ : ∥ϵ∥ ≤ c}. As expected, we observe a more conservative
+2
+constraint when the errors are poorly estimated.
+4
+3
+2
+1
+500 1000 1500 2000 2500 3000 3500
+Size of burn-in data
+c
+Post-election survey research
+Figure 14: Optimized value c along the geometric path as a function of the size of the
+burn-in data for the post-election survey data.
+E.3 Sensitivity to step size
+Whenwesolvetheoptimizationproblem(4),weemployagridsearchforρintheouterloop.
+We conducted experiments to explore different step sizes of the grid search and confirmed the
+robustness of our results to step-size selection, as shown below. The gap in effective sample size
+between these two estimators is minimal, and both significantly outperform uniform and active
+baselines.
+3605
+3430
+3263
+3104
+2953
+2809
+2945 3107 3277
+ezis
+elpmas
+evitceffE
+1.0
+0.9
+0.8
+0.7
+0.6
+2945 3107 3277
+egarevoC
+179
+150
+122
+93
+64
+36
+7
+2945 3107 3277
+SSE
+fo
+noitaived
+dradnatS
+uniform active robust active (step_size=0.01) robust active (step_size=0.1)
+nb
+Figure15: Effective sample size on Pew post-election survey data,fordifferentstepsizes
+in grid search for ρ. We compare uniform, active, and robust active sampling with grid search
+stepsizesof0.01and0.1. Thetargetofinferenceistheapprovalrateofapresidentialcandidate.
+We show the mean and one standard deviation of the effective sample size estimated over 500
+trials; in each trial we independently sample the observed labels.
+29

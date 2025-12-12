@@ -1,0 +1,699 @@
+1
+Blind CT Image Quality Assessment Using
+DDPM-derived Content and Transformer-based
+Evaluator
+Yongyi Shi, Wenjun Xia, Ge Wang, Xuanqin Mou
+Abstract — Lowering radiation dose per view and images is assessed, radiologist’s opinions serve as the gold
+utilizing sparse views per scan are two common CT scan standard. Nonetheless, collecting these opinions is an expensive
+modes, albeit often leading to distorted images and intricate process, making it impractical for real-time and
+characterized by noise and streak artifacts. Blind image
+large-scale IQA tasks. Consequently, peak signal-to-noise
+quality assessment (BIQA) strives to evaluate perceptual
+(PSNR) and structural similarity index measure (SSIM) have
+quality in alignment with what radiologists perceive, which
+plays an important role in advancing low-dose CT been widely used as surrogate metrics [11]. However, both
+reconstruction techniques. An intriguing direction involves PSNR and SSIM have shown limited correlation with
+developing BIQA methods that mimic the operational radiologists’ opinions on image quality, primarily due to their
+characteristic of the human visual system (HVS). The reliance on mathematical models that do not account for the
+internal generative mechanism (IGM) theory reveals that the
+intricacies of human perception. Moreover, the requirement for
+HVS actively deduces primary content to enhance
+reference images to calculate these metrics poses challenges in
+comprehension. In this study, we introduce an innovative
+BIQA metric that emulates the active inference process of clinical environments; for example, obtaining high-quality
+IGM. Initially, an active inference module, implemented as images is infeasible without increasing patient radiation
+a denoising diffusion probabilistic model (DDPM), is exposure. To overcome these limitations, one direction is to
+constructed to anticipate the primary content. Then, the develop no-reference image quality metrics that correlates well
+dissimilarity map is derived by assessing the interrelation
+with radiologists’ opinion on image quality.
+between the distorted image and its primary content.
+No-reference image quality assessment (NR-IQA), also
+Subsequently, the distorted image and dissimilarity map
+are combined into a multi-channel image, which is inputted known as blind IQA (BIQA), is widely used to evaluate the
+into a transformer-based image quality evaluator. quality of natural images [12-13]. Traditional BIQA methods
+Remarkably, by exclusively utilizing this transformer-based typically comprise three steps. First, some handcrafted
+quality evaluator, we won the second place in the MICCAI descriptors are employed to extract quality-aware features of
+2023 low-dose computed tomography perceptual image
+training images. Then, the statistical distribution of the
+quality assessment grand challenge. Leveraging the
+extracted features serves as the guidance. Some approaches also
+DDPM-derived primary content, our approach further
+improves the performance on the challenge dataset. involve parameterizing this distribution through modeling.
+Finally, a mapping function, such as support vector regression
+Index Terms—Blind image quality assessment, (SVR) [14], is designed to convert the distributions into a
+denoising diffusion probabilistic model (DDPM), primary quality score. In traditional BIQA, features are derived from
+content, transformer-based image quality evaluator.
+various sources including discrete wavelet transform (DWT)
+[15-17], discrete cosine transform (DCT) [18] and spatial
+I. INTRODUCTION
+domain measures [19-20] to predict the perceptual quality.
+X- RAY image quality assessment (IQA) plays a crucial role Alternatively, it is assumed that the human visual system (HVS)
+in computed tomography (CT) imaging, facilitating the gauges image quality by discerning features like gradient [21],
+advancement of novel algorithms for low-dose CT luminance contrast [22] or local binary pattern [23]. Certain
+reconstruction. Two strategies for low-dose CT scans are either approaches combine these extracted features to improve image
+reducing the X-ray tube current or acquiring sparse views. quality assessment further [24-25]. Nevertheless, due to the
+However, these strategies often introduce noise and/or streak complexities of image contents and distortion patterns, the
+artifacts in the filtered backprojection (FBP) images. To address representation capabilities of handcrafted features are often
+these problems, deep learning-based methods have been used unsatisfactory.
+for low-dose CT image denoising [1-5] and sparse view CT In recent years, the convolutional neural network (CNN) has
+reconstruction [6-10]. When the quality of these reconstructed gained major attention in BIQA tasks because of its potent
+This work was supported in part by the National Institute of Biomedical Imaging and Bioengineering/National Institutes of Health under Grant R01
+EB016977. The work of Xuanqin Mou was supported in part by the Natural Science Foundation of China, under Grant 62071375. (Corresponding
+authors: Ge Wang; Xuanqin Mou).
+Yongyi Shi, Wenjun Xia and Ge Wang are with the Department of Biomedical Engineering, Rensselaer Polytechnic Institute, Troy, NY 12180
+USA (e-mail: shiy11@rpi.edu; xiaw4@rpi.edu; wangg6@rpi.edu).
+Xuanqin Mou are with the Institute of Image Processing and Pattern Recognition, Xi’an Jiaotong University, Xi’an 710049, China (e-mail:
+xqmou@mail.xjtu.edu.cn).
+2 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. xx, NO. x, 2020
+feature representation power [26-27] and started gaining and restoration [47- 49]. These qualities underscore a huge
+momentum [28-33]. Rank-IQA utilizes synthetically generated potential of diffusion models in generating high-quality primary
+distortions and a Siamese network to rank images based on their content, particularly in the context of low-dose CT imaging [50,
+quality [29]. DBCNN demonstrates effectiveness with both 51] which is featured by uniquely intricate noise and streak
+synthetic and authentic image distortions [30]. Hyper-IQA artifacts, quite different from what in natural images.
+segregates features into low-level and high-level categories, Low-dose CT images frequently suffer from conspicuous
+then transforms the latter to reshape the former’s influence [31]. noise and streak artifacts, being the primary culprits of the
+Meta-IQA employes meta-learning to train the networks on image quality deterioration. Specifically, the streak artifacts
+distinct types of distortions, thereby acquiring prior knowledge exhibit directional appearance contributing to globalized
+[32]. More recently, vision transformers (ViTs) [33] have artifacts in a whole image [6]. This makes the existing datasets
+emerged as competitive alternatives to CNNs. Their self- of natural images inadequate for accurately predicting quality
+attention mechanism empowers ViT to grasp global contextual scores of low-dose CT images. On the other hand, given the
+information from an entire image, ensuring a comprehensive scarcity of open datasets for low-dose CT BIQA, experiments
+consideration of all image features of significance for task- have been conducted using disparate datasets, yielding results
+specific prediction. This attribute aligns well with the that are challenging to compare and interpret [52, 53]. These
+requirements of BIQA task, which involves predicting a quality challenges demand a standardized image quality metric in
+index globally [34-40]. MSTIQA leverages a Swin transformer general, and for low-dose CT imaging in particular. Notably, a
+to amalgamate features from multiple stages to enhance quality low-dose CT BIQA dataset has recently been unveiled for the
+assessment [38]. MANIQA introduces a multi-dimensional MICCAI 2023 low-dose CT perceptual image quality
+attention network for BIQA. This approach introduces the assessment grand challenge [54]. As low-dose CT images are
+transposed attention block and the multiscale Swin transformer obtained by reducing the number of projections per rotation
+block to strengthen global and local interactions [39]. and/or the X-ray tube current, the combination of sparse view
+MAMIQA employs a lightweight attention mechanism that streaks and noise needs to be dealt with in the challenge so that
+utilizes decomposed large kernel convolutions to extract the best-performing IQA model can be identified and made
+multiscale features. Furthermore, it includes a feature applicable in real clinical environments.
+enhancement module to enrich local fine-grained details and Given the globalized artifact patterns in low-dose CT images,
+global semantic information at multi-scales [40]. Among the we utilized a transformer-based quality evaluator [39] and won
+various transformer-based BIQA methods, MANIQA has not the second place in the MICCAI 2023 low-dose CT perceptual
+only achieved the state-of-the-art performance in BIQA tasks image quality assessment grand challenge [54]. We found in
+but also secured the first place in the no-reference track of our study that directional artifacts may sometimes be
+NTIRE 2022 perceptual image quality assessment challenge misleading by resembling genuine anatomical structures. To
+[41]. Intriguingly, the top three methods in this challenge all further improve the performance, inspired by IGM here we
+rely on transformer-based techniques, highlighting the efficacy propose a novel approach utilizing a DDPM-based active
+of the transformers in BIQA tasks. Nonetheless, the lack of inference for low-dose CT BIQA. At the outset, given DDPM’s
+reference information poses a challenge, preventing these capability to simultaneously eliminate noise and streak artifacts,
+methods from aligning seamlessly with the HVS and may we employ DDPM to generate high-quality primary content,
+adversely impacting their overall performance. closely mimicking the HVS. Recognizing the heightened
+The theory of internal generative mechanisms (IGMs) sensitivity of HVS to structures, the dissimilarity map is
+suggests that the HVS engages in an active process of deducing extracted from the distorted image and its primary content.
+the primary content of an image during human evaluations [42- After that, incorporating such diverse prior information as input,
+44]. In this process, IGM initially analyzes pixel correlations a multi-channel image is synthesized, amalgamating content,
+within an input image. In conjunction with intrinsic prior distortion, and structural characteristics for comprehensive
+knowledge, IGM deduces the corresponding primary content as quality prediction. The final step involves employing a
+an active comprehension of the input image [45]. The primary transformer-based quality evaluator to predict the score.
+content consists of essential scene information, representing the Empirical trials conducted on the low-dose CT BIQA challenge
+structured, meaningful elements within the image, which is dataset systematically affirm the efficacy of our proposed
+transported to the high level of HVS for interpretation [46]. method.
+Thus, the ability to generate high-quality primary content In brief, the main contributions of this paper can be
+becomes critical in emulating the HVS. Notably, recent summarized as follows:
+successes in adapting and applying the denoising diffusion 1) We propose a conditional DDPM to emulate the active
+probabilistic model (DDPM) and other diffusion models have inference process of IGM. The proposed DDPM-based active
+showcased their amazing capabilities in both image generation inference module can effectively predict the primary content of
+3 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. xx, NO. x, 2020
+Figure 1. Workflow of the conditional DDPM that maps low-dose CT images to normal dose counterparts.
+distorted images which contain intricate noise and streak
+artifacts from both low-dose and sparse view CT imaging.
+𝑞(𝒙
+𝑡
+|𝒙
+𝑡−1
+)=𝒩(𝒙
+𝑡
+;√1−𝛽
+𝑡
+𝒙
+𝑡−1
+,𝛽
+𝑡
+𝑰) (2)
+2) Based on the primary content, we introduce a transformer- 𝑇
+based quality evaluator to predict the image quality on a low-
+𝑞(𝒙 |𝒙 )=∏𝑞(𝒙 |𝒙 ) (3)
+1:𝑇 0 𝑡 𝑡−1
+dose CT BIQA dataset. Note that we secured the runner-up
+𝑡=1
+position in the MICCAI 2023 low-dose CT perceptual image
+quality assessment grand challenge by only employing this where 𝒙 1 ,⋯,𝒙 𝑇 are latent variables of the same dimensionality
+transformer-based quality evaluator. On that basis, we have as the sample 𝒙 0 ∼𝑞(𝒙 0 ).
+improved the image quality assessment performance even According to the properties of the Gaussian distribution, the
+further, as explained in detail below. sampling result 𝒙 𝑡 at an arbitrary timestep 𝑡 can be written in
+The remainder of the paper is organized as follows. Section the following closed form:
+II outlines the process of utilizing a conditional DDPM to
+𝑞(𝒙 |𝒙 )=𝒩(𝒙 ;√𝛼̅ 𝒙 ,(1−𝛼̅ )𝑰) (4)
+acquire both the primary content and the dissimilarity map, 𝑡 0 𝑡 𝑡 0 𝑡
+while also detailing the transformer-based quality evaluator. where 𝛼 =1−𝛽 and 𝛼̅ =∏𝑡 𝛼 .
+𝑡 𝑡 𝑡 𝑖=1 𝑖
+Section III reports our evaluation results on the low-dose CT After the forward process, 𝒙 follows a standard normal
+𝑇
+BIQA challenge dataset. Section IV discusses relevant issues distribution when 𝑇 is large enough. Thus, if we know the
+and makes the conclusion. conditional distribution 𝑞(𝒙 |𝒙 ), we can use the reverse
+𝑡−1 𝑡
+process to get a sample under 𝑞(𝒙 ) from 𝒙 ~𝒩(𝟎,𝑰).
+0 𝑇
+II. METHODOLOGY However, 𝑞(𝒙
+𝑡−1
+|𝒙
+𝑡
+) depends on the entire data distribution,
+which is hard to calculate. Hence, a neural network was
+A. Conditional DDPM for Low-Dose CT
+designed to learn a latent data distribution by gradually
+To generate high-quality primary content for emulating the denoising a normal distribution variable, which corresponds to
+HVS, a typical deep learning method trains a network to learn learning the reverse process of a fixed Markov Chain of length
+a mapping from low-dose CT images to normal-dose CT 𝑇 conditioned on a low-dose CT image 𝒚. The reverse process
+images. Let us assume that 𝒚∈ℝ𝑁 and 𝒙∈ℝ𝑁 are paired low- can be defined as:
+dose CT and normal-dose CT images. The parameters of the
+𝑝 (𝒙 |𝒙 ,𝒚)= 𝒩(𝒙 ;𝝁 (𝒙 ,𝒚,𝑡),𝜎2𝑰) (5)
+network can be trained as follows: 𝜃 𝑡−1 𝑡 𝑡−1 𝜃 𝑡 𝑡
+𝑇
+min‖𝐷 (𝒚)−𝒙‖2 (1)
+𝜃 𝜃 2 𝑝 (𝒙 |𝒚)=𝑝(𝒙 )∏𝑝 (𝒙 |𝒙 ,𝒚) (6)
+𝜃 0:𝑇 𝑇 𝜃 𝑡−1 𝑡
+where 𝐷 is the network parameterized by 𝜃, which is the key 𝑡=1
+𝜃
+for producing high-quality images. where 𝑝(𝒙 ) is the density function of 𝒙 . In Eq. (6),
+𝑇 𝑇
+Recently, DDPM has demonstrated superior performance in 𝝁 (𝒙 ,𝒚,𝑡) and 𝜎2 are needed to solve 𝑝 (𝒙 |𝒙 ,𝒚) .
+𝜃 𝑡 𝑡 𝜃 𝑡−1 𝑡
+generating high-quality images from their distorted According to the Bayes theorem, the posterior 𝑞(𝒙 |𝒙 ,𝒙 )
+𝑡−1 𝑡 0
+counterparts, particularly in complex scenarios involving are defined as
+multiple distortions, such as CT imaging.
+The architecture of the conditional DDPM is shown in Fig. 1. 𝑞(𝒙 𝑡−1 |𝒙 𝑡 ,𝒙 0 )=𝒩(𝒙 𝑡−1 ;𝝁̃ 𝑡 (𝒙 𝑡 ,𝒙 0 ),𝜎 𝑡 2𝑰) (7)
+DDPM starts with a forward process that gradually adds noise
+where
+to the normal-dose CT image 𝒙 ∼𝑞(𝒙 ) over the course of 𝑇
+0 0
+timesteps according to a variance schedule 𝛽 ,⋯,𝛽 : √𝛼 (1−𝛼̅ ) √𝛼̅ (1−𝛼 )
+1 𝑇 𝝁̃ (𝒙 ,𝒙 )= 𝑡 𝑡−1 𝒙 + 𝑡−1 𝑡 𝒙 (8)
+𝑡 𝑡 0 1−𝛼̅ 𝑡 1−𝛼̅ 0
+𝑡 𝑡
+4 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. xx, NO. x, 2020
+𝜎2 = (1−𝛼̅ 𝑡−1 )(1−𝛼 𝑡 ) (9) Algorithm 1: Training DDPM
+𝑡 1−𝛼̅ 𝑡 𝜃 ← Randomly Initialize parameters of DDPM
+Since 𝜎 𝑡 2 is a constant, the most natural parameterization of 𝑇,𝛽 𝑡 ←Iinitialize time steps and variance schedule
+𝝁 (𝒙 ,𝒚,𝑡) is a neural network that predicts 𝝁̃ (𝒙 ,𝒙 ) directly. repeat
+𝜃 𝑡 𝑡 𝑡 0
+Alternatively, given that 𝒙 =√𝛼̅ 𝒙 +√1−𝛼̅ 𝝐, 𝝐~𝒩(𝟎,𝑰), (𝒙 ,𝒚)←Get minibatch from a training dataset
+𝑡 𝑡 0 𝑡 0
+the posterior expectation in Eq. (8) can be expressed as 𝑡 ← Uniform ({1,2,…,𝑇 })
+𝝐←𝒩(𝟎,𝑰)
+1
+𝝁̃ (𝒙 ,𝒙 )=𝝁̃ (𝒙 , (𝒙 −√1−𝛼̅ 𝝐)) g←∇ℒ Calculate gradient
+𝑡 𝑡 0 𝑡 𝑡 𝑡 𝑡
+√𝛼̅
+𝑡 𝜃 ←Update parameters
+until Epoch is completed
+1 1−𝛼
+𝑡
+= (𝒙 𝑡 − 𝝐) (10) return 𝜃
+√𝛼 √1−𝛼̅
+𝑡 𝑡
+Since 𝝁̃
+𝑡
+(𝒙
+𝑡
+,𝒙
+0
+) can be represented by 𝝐, we can also use a
+neural network model 𝐷 to predict the noise 𝝐, which has been
+𝜃 Algorithm 2: Inferencing with DDPM
+proved to work well by Ho et al. [47]. Hence, the corresponding
+𝜃 ← Load parameters from the trained DDPM
+objective can be simplified to
+𝑇,𝛽 ←Iinitialize time steps and the variation schedule
+ℒ =𝔼 𝔼 [
+(1−𝛼𝑡)2
+‖ 𝝐−𝐷 (√𝛼̅ 𝒙 +√1−𝛼̅ 𝝐,𝒚,𝑡)‖
+2
+] 𝒙 ~
+𝑡
+𝒩(𝟎,𝑰)
+𝒙,𝒚 𝝐,𝑡 2𝜎𝑡 2𝛼̅̅̅(̅1̅̅−̅̅𝛼̅̅̅̅) 𝜃 𝑡 0 𝑡
+2 fo
+𝑇
+r 𝑡 =1,2,…,𝑇
+(11)
+𝒛~𝒩(𝟎,𝑰) 𝑖𝑓 𝑡 >1 𝑒𝑙𝑠𝑒 𝒛=𝟎
+with 𝑡 uniformly sampled as {1,⋯,𝑇}.
+𝒙 =
+1
+(𝒙 −
+1−𝛼𝑡
+𝐷 (𝒙 ,𝒚,𝑡))+𝜎 𝒛
+In this study, the latent space is diffused into Gaussian noise 𝑡−1 √𝛼𝑡 𝑡 √1−𝛼̅𝑡 𝜃 𝑡 𝑡
+using 𝑇 =1000 steps. A U-Net [55] model 𝐷 𝜃 is trained to end
+predict the noise 𝜖 in the latent space. To obtain high-quality
+return Primary content
+primary contents, samples can be computed as follows:
+𝒙 =
+1
+(𝒙 −
+1−𝛼𝑡
+𝐷 (𝒙 ,𝒚,𝑡))+𝜎 𝒛 (12)
+𝑡−1 √𝛼𝑡 𝑡 √1−𝛼̅𝑡 𝜃 𝑡 𝑡
+where 𝒛~𝒩(𝟎,𝑰). For clarify, the pseudo codes of Algorithms
+1 and 2 are presented for training and inference, respectively.
+Through the emulation of IGM for active inference using
+conditional DDPM, we successfully obtained the primary
+content. It is important to note that conditional DDPM is not
+intended to completely restore a distorted image to the reference
+image, but the predicted primary content may present the
+reference image much better than the distorted input. Therefore,
+our goal is to estimate a dissimilarity map from this primary
+content, rather than merely quantifying the disparity between
+the distorted image and its primary content. The process for
+generating this dissimilarity map is depicted in Fig. 2.
+After we obtain the primary content with the conditional
+DDPM, we calculate the SSIM map between the distorted
+image and the primary content, which assigns values between 0
+and 1 to each and every pixel, with 0 indicating the lowest
+dissimilarity and 1 representing the perfect similarity. As
+dissimilarity indicates the presence of distortion, a critical
+factor in assessing image quality, we subtract the SSIM map
+from an all-one matrix 𝑰 to obtain the dissimilarity weights,
+where larger values signify more severe distortions. Finally, we
+calculate the Hadamard product between the distorted image
+and the dissimilarity weights to obtain the dissimilarity map.
+With this dissimilarity map as an input, the subsequent image
+quality evaluator can more effectively leverage the
+Figure 2. Dissimilarity map computed from the distorted image and the
+characteristics of IGM for BIQA. We call our method as corresponding primary content.
+distortion-based BIQA or D-BIQA.
+5 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. xx, NO. x, 2020
+Figure 3. Transformer-based quality evaluator. a: general overview of the architecture; b: multi-scale vision transformer; c: transposed attention
+block; d: scale Swin transformer block; e: patch-weighted quality prediction; and f: legend of the submodules.
+denotes the batch size, 𝑐 represents channel size, 𝐻 and 𝑊
+B. Transform-based Quality Evaluator 𝑖 𝑖 𝑖
+denote the dimensions of the i-th feature. Specifically, we
+After obtaining the dissimilarity map, we integrate it with the utilize 4 layers to extract features with varying semantic
+distorted image, resulting in a multi-channel image (a tensor in significance. Then, we concatenate 𝐹̂ , where 𝑖 ∈{7,8,9,10},
+𝑖
+general). Our primary goal is to create a quality evaluator that yielding a composite feature tensor denoted as 𝐹̃ ∈
+can effectively process the multi-channel data tensor consisting
+ℝ𝑏×∑𝑖𝑐𝑖×𝐻𝑖𝑊𝑖.
+of these input images. To comprehensively utilize information
+with both the spatial and channel dimensions, we introduce a 2) Transposed Attention Block
+transformer-based model tailored for perceptual quality To enhance channel interaction within these concatenated
+prediction based on MANIQA [39]. The overall architecture of features, we employ a transposed attention block. Unlike the
+this transformer-based quality evaluator is depicted in Fig. 3a. conventional spatial attention, this block facilitates self-
+The core components of the transformer-based quality attention across channels, effectively computing cross-
+evaluator include: 1) vision transformer; 2) transposed attention covariance between channels to generate an attention map that
+block; 3) scale Swin transformer block, and 4) patch-weighted encodes global contextual relations. Beginning with the feature
+quality prediction. tensor 𝐹̃ ∈ℝ𝑏×∑𝑖𝑐𝑖×𝐻𝑖𝑊𝑖, the transposed attention block first
+generates query (Q), key (K) and value (V) projections through
+1) Vision Transformer
+independent linear projections. These projections are utilized to
+Fig. 3b shows the architecture of ViT. In the context of a given
+encode pixel-wise cross-channel dependency. The query and
+multi-channel image, denoted as 𝑬∈ℝ𝐻×𝑊×3, where 𝐻 and
+key projections are reshaped for dot-product interaction,
+𝑊 represent the height and width respectively, we employ the
+producing a transposed-attention map A∈ℝ𝐶̃×𝐶̃. Note that 𝐶̃ is
+ViT denoted by 𝑓 with a learnable vector of parameters 𝜑.
+𝜑
+equal to 𝑐 . It is noteworthy that the layer normalization and
+From the ViT, we extract features 𝐹 ∈ℝ𝑏×𝑐𝑖×𝐻𝑖𝑊𝑖 𝑖
+𝑖 multi-layer perceptron components from the original
+corresponding to the i-th layer, where 𝑖 ranges from 1 to 12, 𝑏
+6 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. xx, NO. x, 2020
+transformer structure are omitted. Mathematically, the 1,222 abdomen normal dose images from the 2016 low-dose
+transposed attention block is defined as follows: CT grand challenge dataset and simulated 14,664 images with
+different noise levels and numbers of projection views to train
+𝑿̂ =𝑊𝐴𝑡𝑡𝑛(𝑸̂,𝑲̂,𝑽̂)+𝑿 (13)
+𝑝 our DDPM model.
+Attn(𝑸̂,𝑲̂,𝑽̂)=𝑽̂∙𝑆𝑜𝑓𝑡𝑚𝑎𝑥(𝑲̂ ∙𝑸̂/𝛼) (14) 2) Low-dose CT BIQA Dataset
+The low-dose CT BIQA dataset comprises a total of 1,000
+where 𝛼 denotes the spatial dimension of Q, K and V. The
+distorted abdominal images, which exhibit both noise and
+specifics of the transposed attention block are illustrated in Fig.
+streak artifacts. These images were generated at four different
+3c.
+dose levels: 100%, 50%, 25%, and 10%. Additionally, three
+3) Scale Swin Transformer Block numbers of projection views were uniformly selected over a full
+The scale Swin transformer block is shown in Fig. 3d. The scan, resulting in a total of 12 different types of image
+scale Swin transformer block consists of Swin transformer degradation. Out of these images, 900 were allocated for the
+layers and convolutional layers. Given an input feature 𝐹 , the training phase, while the remaining 100 were reserved for the
+𝑖,0
+scale Swin transformer block first encodes the feature tensor testing phase. In this dataset, CT values exceeding 350
+through 2 Swin transformer layers: Hounsfield Units (HU) were capped at 350 HU, resulting in a
+CT value range from -1000 HU to 350 HU. These CT values
+𝐹 =𝐻 (𝐹 ),𝑗 =1,2, (15)
+𝑖,𝑗 𝑆𝑇𝐿𝑖,𝑗 𝑖,𝑗 were then transformed to a normalized range from 0 to 1. The
+CT image quality assessment was performed using the
+where 𝐻 (∙) represents the j-th Swin transformer layer in
+𝑆𝑇𝐿𝑖,𝑗 abdominal soft-tissue window, defined by the width/level
+the i-th stage, 𝑖 ∈{1,2} . After the encoding process, a
+setting of 350/40, and evaluated by five proficient radiologists.
+convolutional layer is applied before the residual connection.
+The ultimate human perceptual score for each image was
+The output of the scale Swin transformer block is formulated as
+determined by averaging the individual ratings by these
+radiologists. The specific criteria for this assessment are
+𝐹 =𝛼∙𝐻 (𝐻 (𝐹̃ ))+𝐹̃ (16)
+𝑜𝑢𝑡 𝐶𝑂𝑁𝑉 𝑆𝑇𝐿 𝑖,2 𝑖,0 detailed in Table I.
+where 𝐻 𝐶𝑂𝑁𝑉 (∙) is the convolutional layer, and 𝛼 denotes a Table I. Image scoring criteria.
+scale factor for the output of the Swin transformer layer. Score Quality Diagnostic quality criteria
+0 Bad Desired features are not shown
+4) Patch-Weighted Quality Prediction
+1 Poor Diagnostic interpretation is impossible
+A dual-branch structure for patch-weighted quality
+2 Fair Suitable for compromised interpretation
+prediction is shown in Fig. 3e. Given the feature tensor, we
+generate weight and score projections, which are achieved 3 Good Good for diagnostic interpretation
+through 2 independent linear projections. The final patch score 4 Excellent Anatomical features are clearly visible
+of the distorted image is generated by multiplying the score and
+weight of each patch, then the final score of the whole image is D. Network Training
+generated by the summation of all the final patch scores.
+For training the DDPM model, we set the total number of time
+C. Dataset steps 𝑇 to 1,000. The model underwent training using the Adam
+optimizer, with a learning rate of 1×10−4. The training
+1) DDPM Training Dataset
+process demonstrated convergence after 5×105 iterations on a
+For training DDPM, we simulated images with varying levels
+computing server equipped with four Nvidia Tesla V100 GPUs.
+of dosage, by adding realistic noise to the dataset used in the
+Upon completing the training process, we employed the trained
+2016 low-dose CT grand challenge [56]. With the assumed use
+DDPM to obtain the primary contents from the low-dose CT
+of a monochromatic source, the projection measurements from
+BIQA challenge dataset. Subsequently, we computed the
+a CT scan follow the Poisson distribution, which can be
+dissimilarity map, resulting in a multi-channel image.
+expressed as
+To train the transformer-based quality evaluator, we selected
+the ViT-B/8 model as our pre-trained model. This model was
+𝑛 ~𝑃𝑜𝑖𝑠𝑠𝑜𝑛{𝑏𝑒−𝑙𝑖 +𝑟}, 𝑖 =1,⋯,𝐼 (17)
+𝑖 𝑖 𝑖 initially trained on ImageNet-21k and fine-tuned on ImageNet-
+1k, using a patch size of 8. To accommodate the varying input
+where 𝑛 is the measurement along the i-th ray path. 𝑏 are the
+𝑖 𝑖 sizes of our datasets, we applied central cropping to resize the
+air scan photons, 𝑟 denotes read-out noise. In Eq. (17), the
+𝑖 images to 448×448, as the edges of the images typically
+noise level can be controlled by 𝑏. This allowed us to obtain
+𝑖 represent air and have limited influence on the overall image
+three additional noise levels equivalent to 50%, 25% and 10%
+quality score. Furthermore, we resized these cropped images to
+of the normal dose for the 2016 low-dose CT grand challenge
+a final size of 224×224. Then, we combined a dissimilarity map
+dataset. Streak artifacts are generated using a similar pipeline to
+and two duplicated distorted images to form a three-channel
+noise insertion, but by reconstructing with different numbers of
+image tensor.
+projections. There are three different numbers of projection
+The transformer-based quality evaluator consists of two
+views used in our study, which are 720, 360, and 180 views
+stages, each comprising 2 transposed attention blocks and 1
+equiangularly distributed over a full scan. For each noise level
+scale Swin transformer block. The dimensions of the hidden
+we obtain 3 different sparse view, hence we obtained 12
+layer, the number of heads, and the window size are set to 768,
+reconstructed images for each normal dose scan. We selected
+7 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. xx, NO. x, 2020
+4, and 4 in each scale Swin transformer block. We set the scale
+parameter to 0.8 in the scale Swin transformer block. For
+training, we established the learning rate at 1×10−5 and used
+a batch size of 8. The Adam optimizer was used with a weight
+decay of 1×10−5 and cosine annealing for learning rate
+scheduling. The selected loss function was the mean square
+error (MSE). As our transformer-based quality evaluator was
+built upon the foundation of MANIQA [39], we still call the
+transformer-based quality assessment method without primary
+content as MANIQA throughout this paper. Our experiments
+were conducted on an NVIDIA RTX A4000 using PyTorch
+2.0.1 and CUDA 11.8 for both training and testing.
+E. Evaluation Criteria
+We use Pearson’s linear correlation coefficient (PLCC), the
+absolute value of the Spearman’s rank order correlation
+coefficient (SROCC), and the Kendall rank-order correlation
+coefficient (KROCC) as the metrics to evaluate the
+performance of our models. The PLCC is defined as
+∑𝑀 (𝑠 −𝜇 )(𝑠̂ −𝜇 )
+𝑃𝐿𝐶𝐶 =
+𝑖=1 𝑖 𝑠𝑖 𝑖 𝑠̂𝑖
+(18)
+√∑𝑀 (𝑠 −𝜇 ) 2 √∑𝑀 (𝑠̂ −𝜇 ) 2
+𝑖=1 𝑖 𝑠𝑖 𝑖=1 𝑖 𝑠̂𝑖
+where 𝑠 and 𝑠̂ respectively indicate the ground-truth and
+𝑖 𝑖
+predicted quality scores of the i-th image, 𝜇 and 𝜇 indicate
+𝑠𝑖 𝑠̂𝑖
+their means, and 𝑀 denotes the testing images. Let 𝑑 denote
+𝑖
+the difference between the ranks of the i-th test image in
+ground-truth and the predicted quality score. The SROCC is
+defined as
+6∑𝑀 𝑑2
+𝑖=1 𝑖
+𝑆𝑅𝑂𝐶𝐶 =1− (19)
+𝑀(𝑀2−1)
+The KROCC is defined as:
+2(𝑀 −𝑀 )
+𝑐 𝑑
+𝐾𝑅𝑂𝐶𝐶 = (20)
+𝑀(𝑀−1)
+Figure 4. Visualization of the primary contents produced using different
+where 𝑀 is the count of data pairs sharing the same rank, and
+𝑐 reconstructed methods. (a1)–(a3) the input distorted images at different
+𝑀 𝑑 is the count of data pairs with different rank. We use the distortion levels, of which quality scores are 0.2, 2.0 and 4.0,
+absolute values of all the metrics, PLCC, SROCC and KROCC, respectively; (b1)–(b3) the primary contents reconstructed by RED-
+are all in the range of [0, 1]. A higher value indicates better CNN; (c1)–(c3) the primary contents reconstructed by SU-Net; and (d1)–
+(d3) the primary contents reconstructed by DDPM. The display window
+performance. The overall metric is defined as
+(width/level) is set to 350/40 HU.
+𝑂𝑣𝑒𝑟𝑎𝑙𝑙 =𝑃𝐿𝐶𝐶+𝑆𝑅𝑂𝐶𝐶+𝐾𝑅𝑂𝐶𝐶 (21)
+In Fig. 4, we present three representative samples from the
+low-dose CT BIQA challenge dataset, with assigned quality
+III. RESULTS
+scores of 0.2, 2.0, and 4.0 respectively. It can be seen that the
+A. Inspection of Primary Contents FBP-reconstructed image with a quality score of 0.2 exhibits
+As obtaining high-quality primary contents is of paramount distortions caused by both noise and streak artifacts. Crucial
+importance in mimicking the HVS, our initial focus is on features are not discernible. At a quality score of 2.0, the FBP-
+evaluating primary contents across various quality scores and reconstructed image displays noticeable streak artifacts, but the
+comparing the outcomes using distinct reconstruction methods. main structural features are still recognizable. In the FBP
+We employed the four classic methods for this purpose: 1) FBP: reconstruction with a quality score of 4.0, the anatomical
+Reconstructing the original image from the low-dose CT BIQA structure is highly visible, qualified as a reference image. The
+challenge dataset using FBP; 2) RED-CNN: Utilizing CNN for RED-CNN method successfully mitigates noise artifacts but
+low-dose CT reconstruction; 3) SU-Net: Combining the U-Net sometimes amplifies streak artifacts. This effect is particularly
+architecture with the Swin transformer for low-dose CT pronounced in the image with a quality score of 0.2, exerting a
+reconstruction; and 4) DDPM: Known for its powerful image negative impact on image quality. SU-Net effectively
+generation capabilities in low-dose CT reconstruction. suppresses both noise and streak artifacts. However, the
+8 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. xx, NO. x, 2020
+resultant image appears overly smooth, deviating from the
+authentic appearance of the real clinical counterpart. The
+DDPM approach emerges as an accurate yet robust solution,
+effectively suppressing noise and streak artifacts while
+simultaneously preserving intricate details. Furthermore, the
+distribution of the images closely aligns with that of real clinical
+reference images. As a result, opting for DDPM to generate
+high-quality primary contents proves feasible and
+advantageous, facilitating an accurate emulation of the IGM
+principle within the HVS.
+B. Visualization of the Prior Information
+By employing primary contents generated through DDPM,
+we can glean insights into the proposed method. In Fig. 5, the
+first row showcases distorted images across varying levels of
+distortions. From the second to the last row, we present
+corresponding primary contents and dissimilarity maps. The
+effectiveness of the IGM becomes evident in its ability to
+mitigate noise and infer high-quality primary content, as
+evidenced in Fig. 5(d)-(f). Concurrently, as depicted in Fig.
+5(g)-(i), when subjected to distinct levels of artifacts, the
+dissimilarity map exhibits diverse patterns. Notably, Fig. 5(i)
+demonstrates lower dissimilarity, implying less content
+degradation in Fig. 5(c).
+Figure 6. Visualization of several exemplary images from the test
+dataset. From left to right are the distorted images, the weight maps, and
+scores. From top to bottom are five representative example images with
+the radiologist scores of 0.0, 1.0, 2.0, 3.0 and 4.0 and our model
+predictions respectively.
+C. Visualization of Exemplary Images
+In Fig. 6, we visualize distorted images and weight maps for
+five represetative examples from the low-dose CT BIQA test
+dataset. These weight maps clearly highlight salient subjects,
+which are significant areas that strongly influence human
+perception. When humans view an image, features of interest
+greatly affects our perception, and therefore these features
+receive higher weights as depicted in Fig. 6. Furthermore, as the
+score increases, the weight also becomes larger. Regarding the
+predicted scores for the images, we observed some bias relative
+to the radiologists’ scores, indicating that there is still room for
+improvement.
+D. Performance Comparison within the Low-dose CT
+BIQA Challenge Dataset
+Given the absence of reference images in the dataset, we
+Figure 5. Generative prior information with DDPM. (a)–(c) the input
+distorted images at different distortion levels, with image quality scores straightforwardly partition the dataset based on distorted
+of 0.2, 2.0 and 4.0 respectively. The lower the quality score, the higher images. We compared our method against one traditional BIQA
+the distortion level and the worse the perceptual quality; (d)–(f) the method and two CNN-based methods, along with one
+primary contents generated by DDPM; and (g)–(i) the dissimilarity maps
+transformer-based method. For the traditional approach, we
+calculated by SSIM.
+selected the natural image quality evaluator (NIQE) as a
+representative method as implemented in the official code.
+9 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. xx, NO. x, 2020
+Among the CNN-based methods, we used DBCNN and Hyper- helpful to derive the primary content and guide our image
+IQA as representative networks, using the implementations quality assessment, our goal is achieved.
+provided in [56]. As for the transformer-based method, we In conclusion, we have introduced a novel D-BIQA model
+employed MANIQA. Referring to Table II, limited by the for image quality assessment based on DDPM-driven active
+handcrafted features, the traditional NIQE demonstrates the inference. Leveraging the amazing image synthesis capability
+lowest performance. The CNN-based methods show of DDPM, our active inference module seems adeptly
+remarkable improvements over the NIQE approach. Between emulating the IGM theory to forecast the primary contents from
+these two CNN-based methods, DBCNN outperforms in PLCC distorted images. Through the amalgamation of information
+and KROCC metrics, while Hyper-IQA excels in SROCC. The derived from distorted images and dissimilarity maps, a multi-
+performance of these two CNN-based methods is closely channel image tensor is formed and fed into a transformer-
+comparable. As a representative of transformer-based methods, based quality evaluator. A comprehensive set of experiments
+MANIQA exhibits superior performance over the CNN-based substantiates the efficacy and superiority of our proposed
+methods. Remarkably, our proposed D-BIQA method achieves approach. While we achieved the second place in the MICCAI
+the highest performance. In summary, D-BIQA demonstrates 2023 low-dose CT perceptual image quality assessment grand
+strong efficacy on the low-dose CT BIQA challenge dataset, challenge with our reported transformer-based quality
+thereby affirming the effectiveness of our proposed approach. evaluator, this much-improved approach for D-BIQA has
+further enhanced performance guided by the IGM theory, which
+Table II. Comparisons on the Low-dose CT BIQA Dataset.
+is the main innovation of this work.
+Methods PLCC SROCC KROCC Overall
+NIQE 0.9181 0.9335 0.7897 2.6414
+ACKNOWLEDGMENTS
+DBCNN 0.9716 0.9693 0.8692 2.8103
+HyperIQA 0.9680 0.9694 0.8672 2.8045 The authors would like to express their gratitude to the
+MANIQA 0.9789 0.9792 0.9041 2.8622 organizers of the MICCAI 2023 low-dose CT perceptual image
+quality assessment grand challenge for providing the dataset.
+D-BIQA 0.9814 0.9816 0.9122 2.8753
+REFERENCES
+IV DISCUSSIONS AND CONCLUSION
+[1] H. Chen, Y. Zhang, M. K. Kalra, F. Lin, Y. Chen, P. Liao, J. Zhou, and
+Given the widespread artifacts in low-dose CT images, we
+G. Wang, “Low-dose CT with a residual encoder-decoder convolutional
+have opted for a transformer-based approach to comprehend neural network,” IEEE Transactions on Medical Imaging, vol. 36, no. 12,
+these artifacts globally. It is worth emphasizing the importance pp. 2524– 2535, 2017.
+[2] K. H. Jin, M. T. McCann, E. Froustey, and M. Unser, “Deep convolutional
+of pretraining when utilizing transformers. In this study, we
+neural network for inverse problems in imaging,” IEEE Transactions on
+have chosen to use a pretrained ViT-B/8 model with a 224×224
+Image Processing, vol. 26, no. 9, pp. 4509–4522, 2017.
+configuration for further training on a low-dose CT dataset. In [3] Q. Yang, P. Yan, Y. Zhang, H. Yu, Y. Shi, X. Mou, M. K. Kalra, Y.
+typical natural image BIQA, researchers often employ a random Zhang, L. Sun, and G. Wang, “Low-dose CT image denoising using a
+generative adversarial network with Wasserstein distance and perceptual
+crop of 224×224 to align with the requirement for training a
+loss,” IEEE Transactions on Medical Imaging, vol. 37, no. 6, pp. 1348–
+transformer. However, in the case of CT images, the peripheral
+1357, 2018.
+region of the image predominantly corresponds to air and [4] E. Kang, W. Chang, J. Yoo, and J. C. Ye, “Deep convolutional framelet
+should not influence the quality assessment. As a result, we denoising for low-dose CT via wavelet residual network,” IEEE
+Transactions on Medical Imaging, vol. 37, no. 6, pp. 1358–1369, 2018.
+have cropped each original 512×512 images down to a
+[5] H. Shan, Y. Zhang, Q. Yang, U. Kruger, M. K. Kalra, L. Sun, W. Cong,
+centralized 448× 448 image, excluding the air and less and G. Wang, “3-d convolutional encoder-decoder network for low-dose
+important features from consideration. To ensure the quality of CT via transfer learning from a 2-d trained network,” IEEE Transactions
+neural network training while simultaneously minimizing on Medical Imaging, vol. 37, no. 6, pp. 1522–1534, 2018.
+[6] Y. Han, J. C. Ye, “Framing U-Net via deep convolutional framelets:
+computational complexity, we have employed a common
+Application to sparse-view CT,” IEEE Transactions on Medical Imaging,
+down-sampling technique [57]. Specifically, all images were vol. 37, no. 6, pp. 1418-1429, 2018.
+consistently down-sampled to a uniform size of 224×224. This [7] Z. Zhang, X. Liang, X. Dong, Y. Xie, G. Cao, “A sparse-view CT
+enables us to effectively address the globalized artifacts in low- reconstruction method based on combination of DenseNet and
+deconvolution,” IEEE Transactions on Medical Imaging, vol. 37, no. 6,
+dose CT images while losing little information in this medical
+pp. 1407-1417, 2018.
+imaging domain. [8] H. Zhang, B. Liu, H. Yu, B. Dong, “MetaInv-Net: Meta inversion network
+Directional artifacts in low-dose CT images can occasionally for sparse view CT image reconstruction,” IEEE Transactions on Medical
+mislead radiologists because they might resemble actual Imaging, vol. 40, no. 2, pp. 621-634, 2020.
+[9] D. Hu, J. Liu, T. Lv, Q. Zhao, Y. Zhang, G Quan, et al., “Hybrid-domain
+anatomical structures. To address this issue, we have
+neural network processing for sparse-view CT reconstruction,” IEEE
+implemented a DDPM to mitigate these artifacts. While the Transactions on Radiation and Plasma Medical Sciences, vol. 5, no. 1,
+DDPM has demonstrated the capability to generate high-quality pp. 88-98. 2020.
+images that closely resemble reality, it is important to clarify [10] M. Lee, H. Kim, H. J. Kim, “Sparse-view CT reconstruction based on
+multi-level wavelet convolution neural network,” Physica Medica, vol.
+that our intention is not to restore a perfectly pristine or
+80, pp. 352-362, 2020.
+distortion-free image. Our DDPM efforts may still retain [11] Z. Wang, A. C. Bovik, H. R. Sheikh, E. P. Simoncelli, “Image quality
+compromised information when dealing with severely distorted assessment: from error visibility to structural similarity,” IEEE
+images. Nevertheless, our primary objective is to emulate the Transactions on Image Processing, vol. 13, no. 4, pp. 600-612. 2004.
+[12] V. Kamble, K. M. Bhurchandi, “No-reference image quality assessment
+active inference process employed by IGM to predict the vital
+algorithms: A survey,” Optik, vol. 126, no. 11-12, pp. 1090-1097, 2015.
+content within the image. As long as the DDPM results are
+10 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. xx, NO. x, 2020
+[13] S. Xu, S. Jiang, W. Min, “No-reference/blind image quality assessment: a [36] S. A. Golestaneh, S. Dadsetan, K. M. Kitani, “No-reference image quality
+survey,” IETE Technical Review, vol. 34, no. 3, pp. 223-245, 2017. assessment via transformers, relative ranking, and self-consistency,”
+[14] A. J. Smola and B. Schölkopf, “A tutorial on support vector regression,” Proceedings of the IEEE Winter Conference on Applications of Computer
+Statistics Computing, vol. 14, no. 3, pp. 199–222, 2004. Vision, pp. 1220-1230, 2022.
+[15] A. K. Moorthy and A. C. Bovik, “Blind image quality assessment: From [37] M. V. Conde, M. Burchi, R. Timofte, “Conformer and blind noisy
+natural scene statistics to perceptual quality,” IEEE Transactions on students for improved image quality assessment,” Proceedings of the
+Image Processing, vol. 20, no. 12 2011 IEEE Conference on Computer Vision and Pattern Recognition, pp. 940-
+[16] G. Wang, Z. Wang, K. Gu, L. Li, Z. Xia, L. Wu, “Blind quality metric of 950, 2022.
+DIBR-synthesized images in the discrete wavelet transform domain,” [38] J. Wang, H. Fan, X. Hou, Y. Xu, T. Li, X. Lu, “MSTRIQ: No reference
+IEEE Transactions on Image Processing, vol. 11, no. 29 pp. 1802-1814, image quality assessment based on Swin transformer with multi-stage
+2019. fusion,” Proceedings of the IEEE Conference on Computer Vision and
+[17] C. Deng, S. Wang, A. C. Bovik, G. B. Huang, B. Zhao, “Blind noisy Pattern Recognition, pp. 1269-1278, 2022.
+image quality assessment using sub-band kurtosis,” IEEE Transactions [39] S. Yang, T. Wu, S. Shi, S. Lao, Y. Gong, M. Cao, et al., “MANIQA:
+on Cybernetics, vol. 50, no. 3, pp. 1146-1156, 2019. Multi-dimension attention network for no-reference image quality
+[18] M. A. Saad, A. C. Bovik, C. Charrier, “Blind image quality assessment: assessment,” Proceedings of the IEEE Conference on Computer Vision
+A natural scene statistics approach in the DCT domain,” IEEE and Pattern Recognition, pp. 1191-1200, 2022.
+Transactions on Image Processing, vol. 21, no. 8, pp. 3339-3352, 2012. [40] L. Yu, J. Li, F. Pakdaman, M. Ling, M. Gabbouj, “MAMIQA: No-
+[19] A. Mittal, A. K. Moorthy, and A. C. Bovik, “No-reference image quality Reference Image Quality Assessment Based on Multiscale Attention
+assessment in the spatial domain,” IEEE Transactions on Image Mechanism with Natural Scene Statistics,” IEEE Signal Processing
+Processing, vol. 21, no. 12, pp. 4695-4708, Dec. 2012. Letters, vol. 30, pp. 588-592, 2023.
+[20] A. Mittal, R. Soundararajan, and A. C. Bovik, “Making a ‘completely [41] J. Gu, H. Cai, C. Dong, J. S. Ren, R. Timofte, Y. Gong et al., “NTIRE
+blind’ image quality analyzer,” IEEE Signal Processing Letter, vol. 22, 2022 challenge on perceptual image quality assessment,” Proceedings of
+no. 3, pp. 209–212, 2013. the IEEE Conference on Computer Vision and Pattern Recognition, pp.
+[21] M. Khan, I. F. Nizami, and M. Majid, “No-reference image quality 951-967, 2022.
+assessment using gradient magnitude and wiener filtered wavelet [42] G. Zhai, X. Wu, X. Yang, W. Lin, and W. Zhang, “A psychovisual quality
+features,” Multimedia Tools and Applications, vol. 78, pp. 14485-14509, metric in free-energy principle,” IEEE Transactions on Image
+2019. Processing, vol. 21, no. 1, pp. 41–52, Jan. 2012.
+[22] Q. Li, W. Lin, J. Xu, and Y. Fang, “Blind image quality assessment using [43] J. Wu, W. Lin, G. Shi, and A. Liu, “Perceptual quality metric with internal
+statistical structural and luminance features,” IEEE Transactions on generative mechanism,” IEEE Transactions on Image Processing, vol.
+Multimedia, vol. 18, no. 12, pp. 2457–2469, 2016. 22, no. 1, pp. 43–54, Jan. 2013.
+[23] Q. Wu, Z. Wang, H. Li, “A highly efficient method for blind image quality [44] K. Gu, G. Zhai, X. Yang, and W. Zhang, “Using free energy principle for
+assessment,” Proceedings of the IEEE International Conference on Image blind image quality assessment,” IEEE Transactions on Multimedia, vol.
+Processing, pp. 339-343, 2015. 17, no. 1, pp. 50–63, Jan. 2015.
+[24] M. Zhang, C. Muramatsu, X. Zhou, T. Hara, H. Fujita, “Blind image [45] J. Ma, J. Wu, L. Li, W. Dong, X. Xie, G. Shi, “Blind image quality
+quality assessment using the joint statistics of generalized local binary assessment with active inference,” IEEE Transactions on Image
+pattern,” IEEE Signal Processing Letters, vol. 22, no. 2, pp. 207-210, Processing,” vol. 30, pp. 3650-3663, 2021.
+2014. [46] M. P. Eckert and A. P. Bradley, “Perceptual quality metrics applied to still
+[25] W. Xue, X. Mou, L. Zhang, A. C. Bovik, X. Feng, “Blind image quality image compression,” Signal Processing, vol. 70, no. 3, pp. 177–200, 1998.
+assessment using joint statistics of gradient magnitude and Laplacian [47] J. Ho, A. Jain, P. Abbeel, “Denoising diffusion probabilistic models,”
+features,” IEEE Transactions on Image Processing, vol. 23, no. 11, pp. Advances in Neural Information Processing Systems, vol. 33, pp. 6840-
+4850-4862, 2014. 51, 2020.
+[26] L. Kang, P. Ye, Y. Li, D. Doermann, “Convolutional Neural Networks for [48] C. Saharia, J. Ho, W. Chan, T. Salimans, D. J. Fleet, M. Norouzi, “Image
+No-Reference Image Quality Assessment,” Proceedings of the IEEE super-resolution via iterative refinement,” IEEE Transactions on Pattern
+Conference on Computer Vision and Pattern Recognition, pp. 1733-1740, Analysis and Machine Intelligence, vol. 45, no. 4, pp. 4713-4726, 2022.
+2014. [49] P. Dhariwal, A. Nichol, “Diffusion models beat GANs on image
+[27] W. Hou, X. Gao, D. Tao, X. Li, “Blind image quality assessment via deep synthesis,” Advances in Neural Information Processing Systems, vol. 34,
+learning,” IEEE Transactions on Neural Networks and Learning Systems, pp. 8780-94, 2021.
+vol. 26, no. 6, pp. 1275-1286, 2014. [50] W. Xia, Q. Lyu, G. Wang, “Low-Dose CT Using Denoising Diffusion
+[28] X. Yang, F. Li, H. Liu, “A survey of DNN methods for blind image quality Probabilistic Model for 20x Speedup,” arXiv preprint arXiv:2209.15136,
+assessment,” IEEE Access, vol. 7, pp. 123788-123806, 2019. 2022.
+[29] X. Liu, J. Weijer, A. D. Bagdanov, “Rank-IQA: Learning from Rankings [51] Y. Shi, G. Wang, “Conversion of the Mayo LDCT Data to Synthetic
+for No-Reference Image Quality Assessment,” Proceedings of the IEEE Equivalent through the Diffusion Model for Training Denoising Networks
+International Conference on Computer Vision, pp. 1040-1049, 2017. with a Theoretically Perfect Privacy,” arXiv preprint arXiv:2301.06604,
+[30] W. Zhang, K. Ma, J. Yan, D. Deng, Z. Wang, “Blind image quality 2023.
+assessment using a deep bilinear convolutional neural network,” IEEE [52] Q. Gao, S. Li, M. Zhu, D. Li, Z. Bian, Q. Lyu, et al., “Blind CT image
+Transactions on Circuits and Systems for Video Technology, vol. 30, no. quality assessment via deep learning framework,” Proceeding of the IEEE
+1, pp. 36–47, 2018. Nuclear Science Symposium and Medical Imaging Conference, pp. 1-4,
+[31] S. Su, Q. Yan, Y. Zhu, C. Zhang, X. Ge, J. Sun et al., “Blindly assess 2019.
+image quality in the wild guided by a self-adaptive hyper network,” [53] S. Li, J. He, Y. Wang, Y. Liao, D. Zeng, Z. Bian, et al., “Blind CT image
+Proceedings of the IEEE Conference on Computer Vision and Pattern quality assessment via deep learning strategy: initial study,” Proceeding
+Recognition, pp. 3667-3676, 2020. of Society of Photo-Optical Instrumentation Engineers, vol. 10577, pp.
+[32] H. Zhu, L. Li, J. Wu, W. Dong, G. Shi, “Meta-IQA: Deep meta-learning 293-297, 2018.
+for no-reference image quality assessment,” Proceedings of the IEEE [54] Online available: https://ldctiqac2023.grand-challenge.org/.
+Conference on Computer Vision and Pattern Recognition, pp. 14143- [55] O. Ronneberger, P. Fischer, T. Brox, “U-net: Convolutional networks for
+14152, 2020. biomedical image segmentation,” In International Conference on Medical
+[33] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai, T. Image Computing and Computer-Assisted Intervention, vol. 9351, pp.
+Unterthiner, “An image is worth 16x16 words: Transformers for image 234-241, 2015.
+recognition at scale,” arXiv reprint arXiv:2010.11929, 2020. [56] C. Chen, Pytorch toolbox for image quality assessment, 6, 2022.
+[34] J. You, J. Korhonen, “Transformer for image quality assessment,” [57] H. R. Sheikh, A. C. Bovik, G. D. Veciana, “An information fidelity
+Proceeding of the IEEE International Conference on Image Processing, criterion for image quality assessment using natural scene statistics,”
+pp. 1389-1393, 2021. IEEE Transactions on Image Processing, vol. 14, no. 12, pp. 2117-2128,
+[35] J. Ke, Q. Wang, Y. Wang, P. Milanfar, F. Yang, “MUSIQ: Multi-scale 2005.
+image quality transformer,” Proceedings of the IEEE International
+Conference on Computer Vision, pp. 5148-5157, 2021.

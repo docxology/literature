@@ -1,0 +1,1888 @@
+An empirical evaluation of active inference in multi-armed bandits
+Dimitrije Markovi´ca,b,1,∗, Hrvoje Stoji´cc,d,1, Sarah Schw¨obela, Stefan J. Kiebela,b
+aFaculty of Psychology, Technische Universit¨at Dresden, 01062 Dresden, Germany
+bCentre for Tactile Internet with Human-in-the-Loop (CeTI),
+Technische Universit¨at Dresden, 01062 Dresden, Germany
+cMax Planck UCL Centre for Computational Psychiatry and Ageing Research, University College London,
+10-12 Russell Square, London, WC1B 5EH, United Kingdom
+dSecondmind, 72 Hills Rd, Cambridge, CB2 1LA, United Kingdom
+Abstract
+A key feature of sequential decision making under uncertainty is a need to balance between
+exploiting–choosing the best action according to the current knowledge, and exploring–
+obtaining information about values of other actions. The multi-armed bandit problem, a
+classical task that captures this trade-off, served as a vehicle in machine learning for devel-
+oping bandit algorithms that proved to be useful in numerous industrial applications. The
+active inference framework, an approach to sequential decision making recently developed in
+neuroscience for understanding human and animal behaviour, is distinguished by its soph-
+isticated strategy for resolving the exploration-exploitation trade-off. This makes active
+inference an exciting alternative to already established bandit algorithms. Here we derive an
+efficient and scalable approximate active inference algorithm and compare it to two state-
+of-the-art bandit algorithms: Bayesian upper confidence bound and optimistic Thompson
+sampling. This comparison is done on two types of bandit problems: a stationary and a dy-
+namic switching bandit. Our empirical evaluation shows that the active inference algorithm
+does not produce efficient long-term behaviour in stationary bandits. However, in the more
+challenging switching bandit problem active inference performs substantially better than the
+two state-of-the-art bandit algorithms. The results open exciting venues for further research
+in theoretical and applied machine learning, as well as lend additional credibility to active
+inference as a general framework for studying human and animal behaviour.
+Keywords: Decision making, Bayesian inference, Multi-armed bandits, Active Inference,
+Upper confidence bound, Thompson sampling
+1. Introduction
+When we are repeatedly deciding between alternative courses of action – about whose
+outcomes we are uncertain – we have to strike a trade-off between exploration and exploita-
+∗Corresponding author
+Email address: dimitrije.markovic@tu-dresden.de (Dimitrije Markovi´c)
+1These authors contributed equally
+Preprint submitted to Elsevier 5th August 2021
+1202
+guA
+4
+]GL.sc[
+4v99680.1012:viXra
+tion. Do we exploit and choose an option that we currently expect to be the best, or do we
+sample more options with uncertain outcomes in order to learn about them, and potentially
+find a better option? This trade-off is one of the fundamental problems of sequential decision
+makingandithasbeenextensivelystudiedbothinthecontextofneuroscience[1,2,3]aswell
+as machine learning [4, 5, 6, 7]. Here we propose active inference – an approach to sequential
+decision making developed recently in neuroscience [8, 9, 10, 11, 12] – as an attractive altern-
+ative to established algorithms in machine learning. Although the exploration-exploitation
+trade-off has been described and analysed within the active inference framework [13, 14, 15],
+the focus was on explaining animal and human behaviour rather than the algorithm per-
+formance on a given problem. What is lacking for a convincing machine learning application
+is the evaluation on multi-armed bandit problems [4], a set of standard problems that isolate
+the exploration-exploitation trade-off, thereby enabling a focus on best possible performance
+and the comparison to state-of-the-art bandit algorithms from machine learning. Conversely,
+these analyses will also feed back into neuroscience research, giving rational foundations to
+active inference explanations of animal and human behaviour.
+When investigating human and animal behaviour in stochastic (uncertain) environments,
+it has become increasingly fruitful to model and describe behaviour based on principles
+of Bayesian inference [16, 17, 18], both when describing perception, and decision making
+and planning [19]. The approach to describing sequential decision making and planning as
+probabilistic inference is jointly integrated within active inference [8, 9, 10, 11, 12, 15], a
+mathematical framework for solving partially observable Markov decision processes, derived
+fromthegeneralself-organisingprincipleforbiologicalsystems–thefreeenergyprinciple[20,
+21]. Recent work has demonstrated that different types of exploratory behaviour – directed
+and random exploration – naturally emerge within active inference [22]. This makes active
+inference a useful approach for modelling how animals and humans resolve the exploration-
+exploitation trade-off, but also points at its potential usefulness for bandit and reinforcement
+learning problems in machine learning where the exploration-exploitation trade-off plays a
+prominent role [4, 23]. Active inference in its initial form was developed for small state
+spaces and toy problems without consideration for applications to typical machine learning
+problems. This has recently changed and various scalable solutions have been proposed
+[24, 25], in addition to complex sequential policy optimisation that involves sophisticated
+(deep tree) searches [26, 27]. Therefore, to make the active inference approach practical
+and scalable to bandit problems typically used in machine learning, we introduce here an
+approximate active inference (A-AI) algorithm.
+Here we examine how well the exact and A-AI algorithms perform in multi-armed-bandit
+problems that are traditionally used as benchmarks in the research on the exploration-
+exploitation trade-off [4]. Although originally formulated for improving medical trials [28],
+multi-armed bandits have become an essential tool for studying human learning and decision
+makingearlyon[29], andlateronattractedtheattentionofstatisticians[30,31]andmachine
+learning researchers [4] for studying the nature of sequential decision making more generally.
+We consider two types of bandit problems in our empirical evaluation: a stationary bandit
+as a classical machine learning problem [31, 6, 7, 32] and a switching bandit commonly used
+2
+in neuroscience [33, 34, 35, 36, 37, 38]. This will make the presented results directly relevant
+not only for the machine learning community, but also for learning and decision making
+studies in neuroscience, which are often utilising the active inference framework for a wide
+range of research questions.
+Using these two types of bandit problems we empirically compare the active inference
+algorithm to two state-of-the-art bandit algorithms from machine learning: a variant of the
+upper confidence bound (UCB) [6] algorithm – the Bayesian UCB algorithm [39, 32, 7] –
+and a variant of Thompson sampling – optimistic Thompson sampling [40]. Both types of
+algorithms keep track of uncertainty about the values of actions, in the form of posterior
+beliefs about reward probabilities, and leverage these to balance between exploration and ex-
+ploitation, albeit in a different way. These two algorithms reach state-of-the-art performance
+on various types of stationary bandit problems [6, 5, 39, 32], achieving regret (the difference
+between actual and optimal performance) that is close to the best possible logarithmic regret
+[31]. In switching bandits, learning is more complex, but once this is properly accounted
+for, both the optimistic Thompson sampling and Bayesian UCB exhibit the state-of-the-art
+performance [41, 42, 43, 40, 44].
+We use a Bayesian approach to the bandit problem, also known as Bayesian bandits [45],
+for all algorithms – active inference, Bayesian UCB and optimistic Thompson sampling.
+The Bayesian treatment allows us to keep the learning rules equivalent, thus facilitating
+the comparison of different action selection strategies. In other words, belief updating and
+learning of the hidden reward probabilities exclusively rests on the learning rules derived
+from an (approximate) inference scheme, and are independent on the specific action selec-
+tion principle [40]. Furthermore, learning algorithms derived from principles of Bayesian
+inference can be made domain-agnostic and fully adaptive to a wide range of unknown prop-
+erties of the underlying bandit dynamics, such as the frequency of changes of choice-reward
+contingencies. Therefore, we use the same inference scheme for all algorithms – variational
+surprise minimisation learning (SMiLE), an algorithm inspired by recent work in the field
+of human and animal decision making in changing environments [46, 47]. The variational
+SMiLE algorithm corresponds to online Bayesian inference modulated by surprise, which can
+be expressed in terms of simple delta-like learning rules operating on the sufficient statistics
+of posterior beliefs.
+In what follows, we will first introduce in detail the two types of bandit problems we focus
+on: the stationary and the dynamic bandit problem. We first describe each bandit problem
+formally in an abstract way and then specify the particular instantiation we use in our
+computational experiments. We will constrain ourselves to a well-studied version of bandits,
+the so-called Bernoulli bandits. For Bernoulli bandits, choice outcomes are drawn from
+an arm-specific Bernoulli distribution. Bernoulli bandits together with Gaussian bandits
+are the most commonly studied variant of multi armed bandits, both in theoretical and
+applied machine learning [5, 40, 48, 32] and experimental cognitive neuroscience [36, 49,
+38]. This is followed by an introduction of three algorithms: we start with the derivation
+of the learning rules based on variational SMiLE, and introduce different action selection
+algorithms. Importantly, in active inference we will derive an approximate action selection
+3
+scheme comparable in form to the well known UCB algorithm. Finally, we empirically
+evaluate the performance of different algorithms, and discuss the implications of the results
+for the fields of machine learning and cognitive neuroscience.
+2. The multi-armed bandit problem
+The bandit problem is a sequential game between an agent and an environment [4]. The
+game is played in a fixed number of rounds (a horizon), where in each round the agent
+chooses an action (commonly referred to as a bandit arm). In response to the action, the
+environment delivers an outcome (e.g. a reward, punishment, or null). The goal of the agent
+is to develop a policy that allocates choices so as to maximise cumulative reward over all
+rounds. Here, we will be concerned with a bandit problem where the agent chooses between
+multiple arms (actions), a so-called multi-armed bandit (MAB). A well-studied canonical
+example is the stochastic stationary bandit, where rewards are drawn from arm-specific and
+fixed (stationary) probability distributions [50].
+Here, theexploration-exploitationtrade-offstemsfromtheuncertaintyoftheagentabout
+how the environment is delivering the rewards, and from the fact that the agent observes
+outcomes only for the chosen arms, that is, it has only incomplete information about the
+environment. Hence, theagentobtainsnotonlyrewardsfromoutcomesbutalsolearnsabout
+the environment by observing the relation between an action and its outcome. Naturally,
+more information can be obtained from arms that have been tried fewer times, thus creating
+a dilemma between obtaining information, about an unknown reward probability of an arm,
+or trying to obtain a reward from a familiar arm. Importantly, in bandit problems there is
+no need to plan ahead because available choices and rewards in the next run are not affected
+by current choices 2. The lack of need for planning simplifies the problem substantially and
+puts a focus on the exploration-exploitation trade-off, making the bandit problem a standard
+test-bed for any algorithm that purports to address the trade-off [51].
+Bandit problems were theoretically developed largely in statistics and machine learning,
+usually focusing on the canonical stationary bandit problem [4, 31, 50, 6, 39, 32]. However,
+they also play an important role in cognitive neuroscience and psychology, where they have
+been applied in a wide range of experimental paradigms, investigating human learning and
+decision-making rather than optimal performance. Here dynamic or non-stationary variants
+have been used more often, as relevant changes in choice-reward contingencies in everyday
+environments of humans and other animals are typically hidden and stochastic [52, 53, 36,
+3, 38]. We focus on a switching bandit, a particularly popular variant of the dynamic
+banditwherecontingencieschangeperiodicallyandstayfixedforsometimebetweenswitches
+[33, 34, 35, 36, 37, 38]. The canonical stationary bandit has been influential in cognitive
+neuroscience and psychology as well [49, 54, 55, 56], in particular when combined with side
+information or context to investigate structure or function learning [57, 58, 59, 60].
+2Notethatthistypeofdependencebetweencurrentandfuturechoicesets,orrewards, wouldconvertthe
+bandit problem into a reinforcement learning problem. It makes the exploration-exploitation trade-off more
+complex and optimal solutions cannot be derived beyond trivial problems.
+4
+Note that many experimental tasks, even if not explicitly referred to as bandit problems,
+canbeinfactreformulatedasanequivalentbanditproblem. Theoftenusedreversallearning
+task [33], for example, corresponds to a dynamic switching two-armed bandit [61], and the
+popular go/no-go task can be expressed as a four-armed stationary bandit [62], as another
+example. Furthermore, various variants of the well-established multi-stage task [63] can be
+mapped to a multi-armed bandit problem, where the choice of arm corresponds to a specific
+sequence of choices in the task [64].
+In summary, we will perform a comparative analysis on two types of bandit problems:
+stationary stochastic and switching bandit. In this section, we first describe each bandit
+problem formally in an abstract way and then specify the particular instantiations we use in
+our computational experiments.
+2.1. Stationary stochastic bandit
+A stationary stochastic bandit with finitely many arms is defined as follows: in each
+round t ∈ {1,...,T} the agent chooses an arm or action k from a finite set of K arms, and
+the environment then reveals an outcome o (e.g. reward or punishment). The stochasticity
+t
+of the bandit implies that outcomes o are i.i.d. random variables drawn from a probab-
+t
+(cid:126)
+ility distribution o ∼ p(o |θ,a ). In Bernoulli bandits, these are draws specifically from a
+t t t
+Bernoulli distribution for which outcomes are binary, that is, o ∈ {0,1}, where each arm
+t
+k has a reward probability θ that parametrises the Bernoulli distribution. Hence, we can
+k
+express the observation likelihood as
+(cid:16) (cid:17)
+p o |θ (cid:126) ,a = k = θot(1−θ )1−ot (1)
+t t k k
+where a denotes the chosen arm on trial t. In stationary bandits reward probabilities of
+t
+individual arms θ are fixed for all trials t. We use k∗ to denote an optimal arm associated
+k
+with the maximal expected reward θ .
+k∗
+In our computational experiments we follow a setup that has been used in previous
+investigations of stationary stochastic bandits [5]: We consider the variant of the problem
+in which all but the best arm k∗ have the same reward probability θ = p = 1,∀k ∈
+k 2
+{1,...,K}\{k∗}. The probability of the best arm is set to θ = p+(cid:15), where 0 < (cid:15) < 1.
+k∗ 2
+The number of arms K and the mean outcome difference (cid:15) modulate the task difficulty. The
+more arms and the lower the reliability, the more difficult is the problem. To understand
+how task difficulty influences the performance of different action selection algorithms, in the
+experiments we systematically vary K ∈ {10,20,40,80} and (cid:15) ∈ {0.05,0.10,0.20} steps.
+Note that the larger number of arms (K > 10) is a standard setting in machine learning
+benchmarks, as many industrial applications of multi-armed bandits contain a large number
+of options [50]. In contrast, in experimental cognitive neuroscience one typically considers
+only a small number of options (e.g. two or three), to reduce the task complexity, thus,
+the training time and the experiment duration. Interestingly, when humans are exposed
+to a large number of options it appears that they are a priori discounting a number of
+options, thus simplifying the tasks for themselves. The exact neuronal and computational
+mechanisms of option discounting in complex problems are still a topic of extensive research
+[65, 66, 67, 54] and go beyond the the scope of this paper.
+5
+2.2. Switching bandit
+A switching bandit is a dynamic multi-armed bandit, which, as the stationary bandit,
+is characterised by a set of K arms, where each arm k ∈ {1,...,K} is associated with an
+i.i.d. random variable o at a given time step t ∈ {1,...,T}. However, in contrast to the
+t
+stationary bandit problem, outcomes are drawn from a time-dependent Bernoulli probability
+distribution
+p(o |θ (cid:126) ,a = k) = θot (cid:0) 1−θ (cid:1)1−ot. (2)
+t t t t,k t,k
+We use k∗ to denote the optimal arm associated with the maximal expected reward θ
+t t,k t ∗
+at trial t; hence, k∗ = argmax θ .
+t k t,k
+In the switching bandit [68, 69] the reward probability θ changes suddenly but is oth-
+t,k
+erwise constant. Here we use the same reward probability structure as in the stationary
+bandits, but change the optimal arm k∗ with probability ρ as follows
+t
+j ∼ p(j ) = ρjt(1−ρ)1−jt
+t
+(cid:40)
+δ , if j = 0, (3)
+k∗ ,k∗ t
+k∗ ∼ t−1 t
+t 1−δ kt ∗ −1,kt ∗ , if j = 1,
+K−1 t
+where δ denotes the Kronecker delta, and j denotes an auxiliary Bernoulli random variable
+i,j t
+representing the presence or absence of a switch on trial t. The optimal arm is always
+associated with the same reward probability θ = p + (cid:15) and the probability of all other
+t,k∗
+t
+arms is set to the same value θ = p = 1,∀k (cid:54)= k∗. In the experiments with the switching
+t,k 2 t
+bandit problem we systematically vary K ∈ {10,20,40,80} and ρ ∈ {0.005,0.01,0.02,0.04},
+and (cid:15) ∈ {0.05,0.10,0.20} sets.
+In addition, we will consider the possibility that the task difficulty changes over time.
+Specifically, we will consider a setup in which the mean outcome difference (cid:15) is not fixed, and
+changes over time. We obtain an effective non-stationary (cid:15) by introducing a time evolution
+of the reward probabilities θ . At each switch (j = 1) point, we generate the reward
+t,k t
+probabilities from a uniform distribution. Hence, the dynamics of the switching bandit with
+non-stationary difficulty can be expressed with the following transition probabilities
+(cid:40)
+δ(θ −θ ), for j = 0,
+p(θ |θ ,j ) = t,k t−1,k t (4)
+t,k t−1,k t Be(1,1), for j = 1,
+t
+where δ(x) denotes Dirac’s delta function, and Be(1,1) a uniform distribution on [0,1]
+interval, expressed as the special case of a Beta distribution.
+2.3. Evaluating performance in bandit problems
+A standard approach to evaluate the performance of different decision making algorithms
+in bandit problems is regret analysis [4, 70], and we will therefore use it here as a primary
+measure. Regret is typically defined as an external measure of performance which computes
+a cumulative expected loss of an algorithm relative to an oracle which knows the ground
+truth and always selects the optimal arm k∗. If we define the cumulative expected reward
+6
+of an agent, up to trial T, that chose arm a on trial t as
+(cid:80)T
+θ then the (external)
+t t=1 t,at
+cumulative regret is defined as
+T
+(cid:88)
+R = Tθ − θ . (5)
+T t,k∗ t,at
+t=1
+The cumulative regret can also be viewed as a retrospective loss, which an agent playing
+the bandit game can estimate after it learns which arm was optimal. This definition makes
+senseforstationarystochasticbanditsandinthelimitofT → ∞. Inpractice, thecumulative
+regret R of a specific agent playing the game will be a function of the sequence of observed
+T
+outcomes o , the sequence of chosen arms a , and a selection strategy of the given agent.
+1:T 1:T
+We additionally introduce a regret rate measure, a time average of the cumulative regret
+T
+1 1 (cid:88)
+˜
+R = R = θ − θ . (6)
+T
+T
+T k∗
+T
+t,at
+t=1
+In the case of stationary bandits a decision making algorithm is considered consistent if
+˜
+lim R = 0 and asymptotically efficient if its cumulative regret approaches the following
+T→∞ T
+lower bound as T → ∞ [31]
+˜
+R ≥ R
+T T
+(cid:88) θ k∗ −θ i (7)
+R = ln(T) +const. ≡ ω(K,(cid:15))lnT +const.
+T D (cid:0) p (o |i)||p (o |k∗) (cid:1)
+i(cid:54)=k∗ KL θ(cid:126) t θ(cid:126) t
+In our case of Bernoulli bandits and specifically structured reward probabilities (see
+Stationary stochastic bandit subsection) the Kullback-Leibler divergence between outcome
+likelihoods of any arm i (cid:54)= k∗ and the arm k∗ associated with highest reward probability
+becomes
+1
+(cid:0) (cid:1) (cid:0) (cid:1)
+D p (o |k∗)||p (o |i) = − ln 1−4(cid:15)2 ≈ 2(cid:15)2. (8)
+KL θ(cid:126) t θ(cid:126) t
+2
+Hence, the lower bound to the cumulative regret becomes approximately
+K −1 K −1
+R = 2(cid:15) lnT ≈ lnT. (9)
+T ln(1+4(cid:15)2) 2(cid:15)
+In addition, we can define an upper bound in terms of a random choice algorithm, which
+selects any arm with same probability on every trial. In the case of random and uniform
+action selection the cumulative regret becomes
+K −1
+¯
+R = T(cid:15) (10)
+T
+K
+Note that the cumulative regret is an external quantity not accessible to an agent, which
+hasuncertainbeliefsabouttherewardprobabilitiesofdifferentarms. Although,instationary
+7
+bandits thecumulative regret can revealhow efficientan algorithm isin accumulatingreward
+in the long term, it tells us little about how efficient an algorithm is in reducing regret in
+the short-term. This short-term efficiency is particularly important for dynamic bandits
+as an agent has to switch constantly between exploration and exploitation. Therefore, to
+investigate short-term efficiency of the algorithm, specifically in the dynamic context, we
+will analyse the regret rate, instead of the commonly used cumulative regret (see [71]).
+3. Algorithms
+Bandit algorithms can be thought of as consisting of two parts: (i) a learning rule that
+estimatesactionvalues, and(ii)anaction-selectionstrategythatusestheestimatestochoose
+actions and effectively balance between exploration and exploitation. As described in the
+previous section, for the canonical stationary problem a good bandit algorithm achieves
+a regret that scales sub-linearly with the number of rounds (see Eq. 9). Intuitively, this
+means that the algorithm should be reducing exploration and allocating more choices over
+time to arms with high expected value. The relevant question is how to reduce exploration
+concretely? Naturally, this is a fine balancing act: reducing exploration too quickly would
+potentially result in false beliefs about the best arm, hence repeatedly choosing sub-optimal
+arms and accumulating regret. In contrast, reducing exploration too slowly would result in
+wasting too many rounds exploring sub-optimal arms and again accumulating regret.
+For comparison with the algorithm based on active inference, we focus on two popular
+classes of bandit algorithms that are known to hit the right balance: the (Bayesian) upper
+confidence bound (B-UCB) [6, 39] and (optimistic) Thompson sampling (O-TS) [5, 28, 32,
+71] algorithms. Our aim is not to exhaustively test bandit algorithms, but to provide a
+proof-of-concept and evaluate whether active inference based algorithms are viable bandit
+algorithms. Hence, we have to necessarily ignore a multitude of other bandit algorithms
+that would also be interesting competitors, but are in our judgement less popular. For
+example, there are other interesting information-directed algorithms for the stationary case
+[72, 73], or algorithms that are more finely tuned for the switching bandits [74, 75, 76]. Note
+that (cid:15)-greedy or Softmax action-selection strategies [23], frequently used in reinforcement
+learning, have fixed exploration, and consequently poor regret performance in open ended
+bandit problems (i.e. problems with an unknown time horizon). There are variants of these
+strategies where exploration parameters, (cid:15) in (cid:15)-greedy and τ in Softmax, are reduced with
+specific schedules [6]. However, choosing a schedule is based on heuristics and parameters
+are difficult to tune. Hence, we do not include these types of strategies in our comparisons.
+In what follows we decompose active inference and the other two bandit algorithms into
+two components: the learning rule and the action selection strategy. We derive learning
+rules from an approximate Bayesian inference scheme and keep the rules fixed across action
+selection strategies, and modify only the action selection strategy. This setup allows us
+to have a fair comparison between active inference and the competing bandit algorithms.
+Finally, we will use the same action selection strategies for both stationary and dynamic
+bandit problem, and derive parameterised learning rules e that can account for the presence
+or absence of changes.
+8
+3.1. Shared learning rule - variational SMiLe
+To derive the belief update equations we start with a hierarchical generative model de-
+scribed here and apply variational inference to obtain approximate learning rules. The ob-
+tained belief update equations correspond to the variational surprise minimisation learning
+(SMiLe) rule [46, 47]. Importantly, we recover the learning rules for the stationary bandit
+(see 21) as a special case when changes are improbable.
+Figure 1: Graphical representation of the generative model. Shaded circles denote observables and
+transparentcirclesdenotelatentrandomvariables. Notethatunliketheoutcomeso ,whichdependonlatent
+t
+states θ(cid:126) actions are generated from beliefs (probability distribution) p(θ(cid:126) ,j ) about current reward probab-
+t t t
+ilities θ(cid:126) and change probability j . Hence, we use dashed red arrows to underline the causal dependence on
+t t
+beliefs, in contrast to the causal dependence on latent states marked with black arrows. In practice, beliefs
+aboutlatentstatesarefullydescribedwithparametersofaBetadistribution(α ,β )associatedwith
+k,t−1 k,t−1
+each arm k and the explicit knowledge of the change probability ρ. Hence, Bayesian bandit algorithms will
+differ only in the way they map the beliefs into actions.
+We will express the hierarchical generative model of choice outcomes o = (o ,...,o )
+1:T 1 T
+as the following joint distribution
+T
+(cid:89)
+(cid:126) (cid:126) (cid:126) (cid:126)
+p(o ,θ ,j |a ) = p(o |θ ,a )p(θ |θ ,j )p(j ), (11)
+1:T 1:T 1:T 1:T t t t t t−1 t t
+t=1
+where the observation likelihood corresponds to the Bernoulli distribution. Hence,
+K
+p(o |θ (cid:126) ,a ) =
+(cid:89)(cid:104)
+θot (cid:0) 1−θ (cid:1)1−ot
+(cid:105)δ
+at,k . (12)
+t t t t,k t,k
+k=1
+(cid:126) (cid:126)
+If no change (j = 0) occurs on a given trial t the reward probabilities are fixed, θ = θ .
+t t t−1
+Otherwise, if a change occurs (j = 1), a new value is generated for each arm from some
+t
+prior distribution Be(α ,β ). Formally, we can express this process as
+0 0
+
+(cid:16) (cid:17)
+ δ θ (cid:126) −θ (cid:126) , if j = 0
+p(θ (cid:126) |θ (cid:126) ,j ) = t t−1 t (13)
+t t−1 t
+
+(cid:81)K
+Be(α ,β ) if j = 1
+i=1 0 0 t
+9
+Similarly, the probability that a change in reward probabilities occurs on a given trial is
+ρ, hence we f express the probability of change occurring on trial t as the following Bernoulli
+distribution
+p(j ) = ρjt(1−ρ)1−jt (14)
+t
+The Bayesian approach requires us to specify a prior. The prior over reward probabilities
+(cid:126)
+associated with each arm p(θ ) = p(θ ,...,θ ) is given as the product of conjugate priors
+0 0,1 0,K
+of the Bernoulli distribution, that is, the Beta distribution
+K
+(cid:89)
+(cid:126)
+p(θ ) = Be(α ,β ), (15)
+0 0,k 0,k
+k=1
+where we initially set the prior to a uniform distribution, α ,β = 1,∀ k. In Fig. 1 we
+0,k 0,k
+show the graphical representation of the generative model.
+Hence, given the Bayes rule at time step t
+(cid:126) (cid:126) (cid:126)
+p(θ ,j |o ,a ) ∝ p(o |θ ,a )p(θ ,j |o ), (16)
+t t 1:t 1:t t t t t t 1:t−1
+(cid:126)
+we can express the exact marginal posterior beliefs over reward probabilities θ as
+t
+(cid:16) (cid:17) (cid:16) (cid:17)
+(cid:126) (cid:126)
+p θ |o ,a = (1−γ )p θ |j = 0,o ,a
+t 1:t 1:t t t t 1:t 1:t
+(17)
+(cid:16) (cid:17)
+(cid:126)
++γ p θ |j = 1,o ,a
+t t t t t
+whereanda correspondstothesequenceofchosenarms,andγ correspondstothemarginal
+1:t t
+posterior probability that a change occurred on trial t. g We obtain the posterior change
+probability as follows
+(cid:0) (cid:1)
+γ = γ St ,m
+t BF
+mS
+γ(S,m) =
+1+mS
+(cid:0) (cid:1)
+p o |j = 0,a ,o (18)
+St = t t t t:t−1
+BF p (cid:0) o |j = 1,a ,o (cid:1)
+t t t 1:t−1
+ρ
+m =
+1−ρ
+The exact marginal posterior in Eq. 17 will not belong to the Beta distribution family,
+making the exact inference analytically intractable, as each iteration of the belief update
+results in a novel distribution family with ever increasing complexity. In practice, there
+are numerous ways one can perform approximate inference in dynamic Bernoulli bandits
+[77, 78, 40, 79]. Here we will focus on the method based on variational inference due to
+its simplicity and efficiency. Although, more optimal inference methods do exist, we do
+not expect them to change the relative performance of different decision algorithms as for
+Bayesian bandits we can always use the same (most optimal) learning rule for all Bayesian
+decision algorithms.
+10
+To obtain the learning rule we constrain the joint posterior to an approximate, fully
+factorised, form, expressed as
+K
+(cid:89)
+p(θ (cid:126) ,j |o ,a ) ≈ Q(j ) Q(θk). (19)
+t t 1:t 1:t t t
+k=1
+Applying the variational calculus results in the following variational SMiLe rule (for more
+details on derivations of the SMiLe rule see [46])
+α = (1−γ )α +γ α +δ o
+t,k t t−1,k t 0 at,k t
+(20)
+β = (1−γ )α +γ α +δ (1−o )
+t,k t t−1,k t 0 at,k t
+(cid:0) (cid:1)
+for the parameters of the Beta distributed factors Q(θ ) = Be α ,β . The categorically
+t,k t,k t,k
+distributed change probability Q(j = 1) = γ is update based on Eq. 18.
+t t
+Note that for a stationary environment the changes are improbable, hence ρ = 0 and
+consequently γ = 0 for every t. This implies that for the stationary bandit we recover the
+t
+following learning rules
+α = α +o ·δ ,
+t,k t−1,k t at,k
+(21)
+β = β +(1−o )δ ,
+t,k t−1,k t at,k
+thatcorrespondtotheexactBayesianinferenceoverthestationaryBernoullibanditproblem,
+as in absence of changes the Beta prior corresponds to a conjugate prior of a Bernoulli
+likelihood.
+3.2. Action selection
+3.2.1. Active inference
+One view on the exploration-exploitation trade-off is that it can be formulated as an
+uncertainty-reduction problem [22], where choices aim to resolve expected and unexpected
+uncertainty about hidden properties of the environment [80]. This leads to casting choice
+behaviour and planning as a probabilistic inference problem [8, 9, 10, 11, 12], as expressed
+by active inference. Using this approach, different types of exploitative and exploratory
+behaviournaturallyemerge[22]. Inactiveinference, decisionstrategies(behaviouralpolicies)
+are chosen based on a single optimisation principle: minimising expected surprisal about
+observed and future outcomes, that is, the expected free energy [10]. Formally, we express
+the expected free energy of a choice a on trial t as
+(cid:20) (cid:21)
+(cid:104) (cid:105)
+(cid:0) (cid:1) (cid:126)
+G (a) = D Q(o |a = a)||P(o ) +E H o |θ,a = a
+t KL t t t Q(θ(cid:126)) t t
+(cid:124) (cid:123)(cid:122) (cid:125)
+Risk (cid:124) (cid:123)(cid:122) (cid:125)
+Ambiguity
+(cid:2) (cid:3)
+= −E lnP(o )
+Q(ot|at=a) t
+(cid:124) (cid:123)(cid:122) (cid:125) (22)
+Extrinsicvalue
+(cid:34) (cid:35)
+(cid:18) (cid:19)
+(cid:16) (cid:17) (cid:16) (cid:17)
+(cid:126) (cid:126)
+−E D Q θ,j |o ,a = a ||Q θ,j
+Q(ot|at=a) KL t t t t
+(cid:124) (cid:123)(cid:122) (cid:125)
+Intrinsicvalue/Novelty
+11
+(cid:16) (cid:17) (cid:16) (cid:17) (cid:16) (cid:17)
+(cid:126) (cid:126) (cid:82) (cid:126) (cid:126) (cid:126)
+where Q θ,j = p θ,j |o , Q(o |a ) = dθp(o |θ,a )Q θ , P(o ) denotes prior pref-
+t t 1:t−1 t t t t t
+(cid:104) (cid:105)
+(cid:126)
+erences over outcomes, H o |θ,a denotes the conditional entropy of observation likelihood
+t t
+(cid:16) (cid:17)
+(cid:126)
+p o |θ,a , and D (p||q), stands for the Kullback-Leibler divergence. Then, a choice a is
+t t KL t
+made by selecting the action with the smallest expected free energy3
+a = argminG (a), (23)
+t t
+a
+where we consider the simplest form of active inference, as in other bandit algorithms, one-
+step-ahead beliefs about actions.
+Note that in active inference, the most likely action has dual imperatives, implicit within
+the expected free energy acting as the loss function (see the different decomposition in
+Eq. 22): The expected free energy can, on one hand, be decomposed into ambiguity and
+risk. On the other hand, it can be understood as a combination of intrinsic and extrinsic
+value, where intrinsic value corresponds to the expected information gain, and the extrinsic
+value to the expected value. The implicit information gain or uncertainty reduction pertains
+to beliefs about the parameters of the likelihood mapping, which has been construed as
+novelty [83, 15]. efe Therefore, selecting actions that minimise the expected free energy
+dissolves the exploration-exploitation trade-off, as every selected action tries to maximise
+the expected value and the expected information gain at the same time.
+To express the expected free energy, G (a), in terms of beliefs about arm-specific reward
+t
+probabilities,wewillfirstconstrainthepriorpreferencetothefollowingBernoullidistribution
+1
+P(o ) = eotλe−(1−ot)λ. (24)
+t
+Z(λ)
+Inactiveinference, priorpreferencesdeterminewhetheraparticularoutcomeisattractive
+or rewarding. Here we assume that agents prefer outcome o = 1 over outcome o = 0.
+t t
+Hence, we specify payoffs or rewards with prior preferences over outcomes that have an
+associated precision λ, where λ ≥ 0. The precision parameter λ determines the balance
+between epistemic and pragmatic imperatives. When prior preferences are very precise,
+corresponding to large λ, the agent becomes risk sensitive and will tend to forgo exploration
+if the risk (i.e., the divergence between predicted and preferred outcomes, see Eq. 22) is
+high. Conversely, a low lambda corresponds to an agent which is less sensitive to risk
+and will engage in exploratory, epistemic behaviour, until it has familiarised itself with the
+environment (i.e., the latent reward probabilities h of different arms).
+3Inusualapplicationsofactiveinferenceforunderstandinghumanbehaviour,ratherthanminimisingthe
+expectedfreeenergyonewouldsampleactionsfromposteriorbeliefsaboutactions(cf. planningasinference
+[19, 81]). This becomes useful when fitting empirical choice behaviour in behavioural experiments [34, 82].
+12
+Given the following expressions for the marginal predictive likelihood, obtained as,
+(cid:90) K
+Q
+(cid:0)
+o |a
+(cid:1)
+= dθ
+(cid:126)
+p
+(cid:16)
+o |θ
+(cid:126)
+,a
+(cid:17)
+Q
+(cid:16)
+θ
+(cid:126)
+(cid:17)
+=
+(cid:89)(cid:104)
+(cid:2)
+µ˜
+(cid:3)ot (cid:2)
+1−µ˜
+(cid:3)1−ot
+(cid:105)δ
+at,k
+t t t t t t t t,k t,k
+k=1
+K K
+(cid:16) (cid:126) (cid:17) (cid:16) (cid:126) (cid:17) (cid:89) (cid:0) (cid:1) (cid:89)
+Q θ = p θ |o = (1−ρ) Be α ,β +ρ Be(α ,β )
+t t−1:1 t−1,k t−1,k 0 0
+k=1 k=1 (25)
+(cid:18) (cid:19)
+1
+µ˜ = µ +ρ −µ
+t,k t−1,k t−1,k
+2
+α
+t−1,k
+µ =
+t−1,k
+ν
+t−1,k
+ν = α +β
+t−1,k t−1,k t−1,k
+we get the following expressions for the expected free energy
+G (a) = −2λ(1−ρ)µ +µ˜ lnµ˜ +(1−µ˜ )ln(1−µ˜ )
+t t−1,a t,a t,a t,a t,a
+(cid:104) (cid:105)
+(cid:0) (cid:1) (cid:0) (cid:1) (cid:0) (cid:1)
+−(1−ρ) µ ψ α + 1−µ ψ β
+t−1,a t−1,a t−1,a t−1,a
+(26)
+(cid:34) (cid:35)
+1
+(cid:0) (cid:1)
++(1−ρ) ψ ν − +const.
+t−1,a
+ν
+t−1,a
+More details on how we derive Eq. 26 is available in the Appendix Appendix A.
+If we approximate digamma function as ψ(x) ≈ lnx− 1 i (which is valid for x (cid:29) 1), and
+2x
+note that for all relevant use cases ρ (cid:28) 1; then by substituting the approximate digamma
+expression into Eq. (26) we get the following action selection algorithm
+(cid:34) (cid:35)
+1
+a = argmax 2λµ + . (27)
+t t−1,k
+2ν
+k t−1,k
+More details on how we arrive at Eq. 26 is available in the Appendix Appendix B.
+Note that a similar exploration bonus – inversely proportional to the number of obser-
+vations – was proposed in the context of Bayesian reinforcement learning [84] when working
+with Dirichlet prior and posterior distributions.
+We will denote active inference agents which make choices based on the approximate
+expected free energy, Eq. 27, with A-AI, and agents which minimise directly the exact
+expected free energy, Eq. 23, with G-AI.
+3.2.2. Bayesian upper confidence bound
+Theupperconfidencebound(UCB)isaclassicalactionselectionstrategyforresolvingthe
+exploration-exploitation dilemma [6]. ucb-bernoulli When fine-tuned for Bernoulli bandits,
+the action selection strategy can be defined as
+
+(cid:18) (cid:19)
+(cid:113)
+  argmax m + lnt + m t,k lnt for t > K
+a = k t,k n n , (28)
+t t,k t,k
+  t otherwise
+13
+where m is the expected reward of k-th arm and n the number of times the k-th arm
+t,k t,k
+was selected (see [5] for more details).
+However, we consider a more recent variant called Bayesian UCB [39], grounded in
+Bayesian bandits. In Bayesian UCB the best arm is selected as the one with the highest z-th
+percentile of posterior beliefs, where the percentile increases over time as z = 1− 1. Hence,
+t t
+we can express the action selection rule as
+a = argmaxCDF−1(z ,α¯k,β ¯k) (29)
+t t t t
+k
+where CDF(·) denotes cumulative distribution function of Beta distributed posterior beliefs,
+and the parameters (α¯k, β ¯k) denote approximate sufficient statistics of the Beta distributed
+t t
+priorbeliefsontrialt. Notethattheexactpredictivepriorontrialtcorrespondstoamixture
+of two Beta distributions
+(cid:16) (cid:17) (cid:16) (cid:17)
+p θk|o = (1−ρ)Be αk ,βk +ρBe(α ,β ). (30)
+t t−1:1 t−1 t−1 0 0
+As the inverse of a cumulative distribution function of the above mixture distribution is
+analytically intractable we will assume the following approximation
+(cid:16) (cid:17) (cid:16) (cid:17)
+p θk|o ≈ Be α¯k,β ¯k
+t 1:t−1 t t
+α¯k = (1−ρ)αk +ρα (31)
+t t−1 0
+β ¯k = (1−ρ)βk +ρβ
+t t−1 0
+Thus, in the case of the Beta distributed prior beliefs, the inverse cumulative distribution
+functioncorrespondstotheinverseincompleteregularisedbetafunction. Hence,wecanwrite
+CDF−1(z,α,β) = I−1(α,β), (32)
+z
+j where I−1(α,β) corresponds to the solution of the following equation with respect to x
+z
+Γ(α+β) (cid:90) x
+z = uα−1(1−u)β−1du . (33)
+Γ(α)Γ(β)
+0
+3.2.3. Thompson sampling
+Thompson sampling is traditionally associated with Bayesian bandits [85, 5, 28], where
+the action selection is derived from the i.i.d samples from the posterior beliefs about the
+reward probability. The standard algorithm corresponds to
+(cid:0) (cid:1)
+a = argmaxθ∗ , θ∗ ∼ p θ |o , (34)
+t t,k t,k t,k 1:t−1
+k
+where θ∗ denotes a single sample from the current beliefs about reward probabilities
+t,k
+associated with the k-th arm.
+14
+An extension of the standard algorithm, proposed in the context of dynamic bandits, is
+called optimistic Thompson sampling [71], defined as
+(cid:20) (cid:21)
+(cid:16) (cid:17)
+(cid:0) (cid:1)
+a = argmax max θ∗ ,µ˜ , θ∗ ∼ p θ |o , (35)
+t t,k t,k t,k t,k 1:t−1
+k
+where the expected reward probability at current trial t,
+(cid:18) (cid:19)
+1
+µ˜ = µ +ρ −µ ,
+t,k t−1,k t−1,k
+2
+constrains the minimal accepted value of the sample from the prior, hence biasing the
+sampling towards optimistic larger values.
+code-and-data-availability
+3.3. Code and data availability
+The code accompanying the paper is available at github.com/dimarkov/aibandits. The
+repository contains the implementation of all algorithms and scripts for execution of the
+simulations. The folder with jupyter notebooks contains the scripts used to generate the
+figures. The results of simulations, which can be used to reproduce the figures, are available
+at osf.io/85ek4/. All the simulations are controlled with a manually set seed and it should
+be possible to reproduce the results exactly.
+4. Results
+In what follows, we first examine the performance of active inference based agents, A-
+AI (minimising approximated estimate of the expected free energy) and G-AI (minimising
+exact expected free energy) in the stationary Bernoulli bandits. Using the regret rate as
+performance criterion we analyse the dependence of agent’s performance on the precision of
+prior preferences (λ) parameter and simultaneously verify that our approximation is good
+enough. After illustrating the effectiveness of A-AI (Eq. 27), in comparison to G-AI (Eq. 23),
+we empirically compare only the A-AI algorithm – now in terms of the cumulative regret –
+with agents using the optimistic Thompson sampling (O-TS; Eq. 35) and Bayesian upper
+confidence bound (B-UCB; Eq. 29) algorithms, in the same stationary Bernoulli bandit.
+k Finally, we provide an empirical comparison of the algorithms in the case of switching
+Bernoulli bandit, both in scenarios with fixed and varying difficulty.
+4.1. The stationary Bernoulli bandit
+The precision parameter λ acts as a balancing parameter between exploitation and ex-
+ploration (Eq. 27). Hence, it is paramount to understand how λ impacts the performance
+across different difficulty conditions. We expect that there will be a λ∗((cid:15),K) for which the
+active inference algorithm achieves minimal cumulative regret after a fixed number of trials
+T, for each mean outcome difference (cid:15) and each number of arms K. When the AI agent has
+l weak preferences (λ → 0), it would engage in exploration for longer, thereby reducing its
+15
+free energy (i.e., uncertainty about the likelihood mappings), at the expense of accumulating
+reward. Conversely, an AI agent with m strong preferences (λ → ∞) would commit to a
+particular arm as soon as it had inferred that this was the arm with highest likelihood of
+payoffs. However, the ensuing ‘superstitious’ behaviour would prevent it from finding the
+best arm. To illustrate this, in Fig. 2 we report regret rate averages over a N = 103 sim-
+ulations, and compare the agents using either the approximate (A-AI) or the exact (G-AI)
+expected free energy for action selection. Using the regret rate simplifies the comparison, as
+unlike cumulative regret, the regret rate stays on the same range of values independent of
+trial number T. differences Surprisingly, the A-AI algorithm achieves slightly lower regret
+0.04
+0.02
+0.00
+TR
+K=10 K=20 K=40
+T=102
+T=103
+T=104
+=0.05
+K=80
+G-AI
+A-AI
+RC
+0.10
+0.05
+0.00
+TR
+=0.1
+0.2
+0.1
+0.0
+0.00 0.25 0.50 0.75 1.00
+TR
+0.00 0.25 0.50 0.75 1.00 0.00 0.25 0.50 0.75 1.00 0.00 0.25 0.50 0.75 1.00
+=0.2
+Figure 2: Regret rate analysis for active inference based agents in the stationary Bernoulli
+bandit. The regret rate R˜ , Eq. 6, for the approximate (A-AI) and the exact (G-AI) variants of active
+T
+inference as a function of the precision over prior preferences λ. The coloured lines show numeric estimates
+obtained as an average over N = 103 runs. Different line styles denote R˜ values estimated after different
+T
+numbers of trials T: Dotted lines correspond to T = 102, dotted dashed lines to T = 103 and solid lines to
+T =104,asannotatedinthetopleftplot. Thedashedblacklinedenotestheupperboundontheregretrate
+correspondingtotherandom(RC)agentwhichgainsnoinformationfromthechoiceoutcomes. Thevertical
+doted line (purple) corresponds to λ = 0.1 level, which we find to be sufficiently close to the minimum or
+regretrateinarangeofconditions. Eachcolumnandrowoftheplotcorrespondstodifferenttaskdifficulties,
+characterised by the number of arms K, and the mean outcome difference (cid:15), respectively.
+rate in certain ranges of λ values depending on the problem difficulty. The reason for this
+is that the approximate information gain used in A-AI algorithm Eq. 27 is always larger
+or equal than the exact information gain Eq. 26. Hence, for sufficiently low values of λ
+(e.g. λ < 0.25) the behaviour is initially strongly dominated by the exploratory part of AI
+algorithms, and both algorithms exhibit similar regret rates. As we increase the value of λ
+the exploitative part becomes more dominant in action selection. However, a higher value
+16
+of λ is required in the A-AI algorithm for the exploitative part to become dominant, as
+the approximate information gain is initially larger and converges slower to zero than the
+exact information gain. As λ becomes sufficiently large both algorithms become equally bad
+(action selection start depending only on the expected value) hence the difference in regret
+rate disappears again. Interestingly, this performance differences are not visible in the case
+of switching bandits analysed later in this section.
+lambda Using a visual inspection of Fig. 2 we find the minimal regret rate – at the
+asymptotic limit of large number of trials T = 104, see solid lines in Fig. 2 – is close to the
+value λ = 0.1 for a range of problem difficulties4. Hence, for the n subsequent between-agent
+comparisons we restrict the active inference agents to a fixed precision of prior preferences,
+λ = 0.1. As both G-AI (red lines) and A-AI (green lines) achieve very similar regret rates as
+a function of precision λ and number of trials T, we will only consider the A-AI variant for
+the between-agent comparison. We anticipated that even this approximate form of active
+inference would outperform bandit algorithms; most notably when considering short sessions
+in the stationary scenario: i.e., when exploration gives way to exploitation after the agent
+becomes familiar with the payoffs afforded by the multi-armed options. The reason for this
+expectation is the exact computation of the information gain implicit within the expected
+free energy (see 22).
+Next we compare and contrast the cumulative regret, as a function of trial number t,
+of the A-AI agents with agents based on the optimistic Thompson sampling (O-TS) and
+the Bayesian UCB (B-UCB) algorithms (Fig. 3). The dotted lines mark the corresponding
+asymptotic limit (see Eq. 9) of the corresponding problem difficulty ((cid:15),K). The asymptotic
+limit scales as lnt and defines long term behaviour of the asymptotically efficient algorithm.
+Note that the limit behaviour can be offset by an arbitrary constant to form a lower bound
+[31, 5]. For convenience we fix the constant to zero, and show the asymptotic curve only as
+a reference for long term behaviour of cumulative regret for different algorithms.
+The comparison reveals that the A-AI agent o on average outperforms the bandit al-
+gorithms, but only up until some trial t that depends on the task difficulty – in the asymp-
+totic limit the regret grows faster than logarithmic with trial number. For example, for
+K = 10, A-AI outperforms bandit algorithms only up to T = 104. The divergence in cumu-
+lative regret is driven by a percentage of the N = 103 agents in the ensemble that did not
+not find the optimal solution and are over-confident in their estimate of the arm with the
+highest reward probability. histogram We illustrate this in Fig. S1 in the form of histogram
+of the logarithm of cumulative regret at T = 106 estimated over the ensemble of N = 103
+agents. It might appear surprising, that the divergence is p more prominent for the smaller
+number of arms. However, the reason for this is, that the smaller the number of arms is, the
+more chance an agent has to explore each individual arm, for a limited trial number. Hence,
+the agent will commit faster to a wrong arm and stay with that choice longer. Therefore, we
+found that our initial expectation about the performance of active inference algorithms is
+4For the hardest considered setting, corresponding to (cid:15)=0.05, the minimum is sharp and corresponds to
+the value λ=0.06.
+17
+10000
+5000
+0
+tR
+K=10 K=20 K=40
+B-UCB
+O-TS
+A-AI
+(,K) lnt
+=0.05
+K=80
+4000
+2000
+0
+tR
+=0.1
+3000
+2000
+1000
+0
+102 103 104 105 106
+t
+tR
+102 103 104 105 106 102 103 104 105 106 102 103 104 105 106
+t t t
+=0.2
+Figure3: Between-agent comparison in the stationary Bernoulli bandit. Comparisonofcumulative
+regret trajectories for the approximate active inference (A-AI), the optimistic Thompson sampling (O-TS),
+and Bayesian upper confidence bound (B-UCB) based agents. For the A-AI based agent the prior precision
+is set to λ = 0.1, that is, to the near optimal value for a range of difficulty conditions. Solid coloured
+lines denote the ensemble cumulative regret average and shaded regions (not visible in every subplot) mark
+the 95% confidence interval of the mean estimate. All the values are estimated as ensemble averages over
+N =103 simulations.
+only partially correct. Although one could set λ for any task difficulty in a way that active
+inference initially outperforms the alternative algorithms, in the asymptotic limit the high
+performance level will not hold. The reason for this can be seen already in Fig. 2, if one
+notes that maximal performance (minimal regret rate) depends both on preference precision
+λ and trial number T, for every K,(cid:15) tuple.
+execution-times We also timed the execution of all algorithms, to provide an additional
+measure of practicality of our approximate A-AI algorithm. All algorithms use the same
+learning rule, hence the only difference in execution time would come from action selection
+part of the algorithm. Results show that A-AI obtains the lowest time, on par with classical
+UCB (see Table .1 in the appendix). Usual caveats with timing apply, results depend on
+implementation details and hardware used, as well as on the specifics of our bandit problem,
+hence one should be careful with generalizing from these results.
+Although active inference based agents behave poorly in the asymptotic limit, the fact
+that they achieve higher performance on a short time scale suggests that in dynamic envir-
+onments – if changes occur sufficiently often – one would get higher performance on average
+when compared to considered alternatives.
+18
+4.2. The switching bandit problem
+Inthecaseofourswitchingbanditproblem, thechangeprobabilityρactsasanadditional
+difficulty parameter, besides the number of arms K and the mean outcome difference (cid:15).
+Therefore, for the between-algorithm comparison we will first keep (cid:15) fixed at its medial
+value, (cid:15) = 0.1 and vary number of arms in Fig. 4, and then keep the number of arms fixed
+at K = 40 and vary the expected outcome difference in Fig. 5. lambda2 For the algorithm
+comparison in switching bandits we fix the precision parameter λ, to λ = 0.5, based on
+a similar visual inspection of regret rate dependence on λ (see Fig. S2 ). Interestingly,
+in the case of switching bandits the minimum of the regret rate stabilises after certain
+trial number and is not dependent on T, like in stationary case. Note that in stationary
+environments small values of λ are desirable to achieve low cumulative regret for large T,
+in switching environments larger values of λ are preferable. q Furthermore, we find that
+the larger the arm number K is, the larger would be the preferable λ value. However,
+here we will not optimise λ for different difficulty settings but use the same value in all
+examples. For between-algorithm comparison in switching bandits we will use regret rate,
+instead of cumulative regret, as a reference performance measure. The reason for this is that
+in dynamic environments cumulative regret increases linearly with trial number t, and regret
+rate provides visually more accessible gauge of performance differences [71].
+InFig.4weillustratetheregretrateforeachagenttypeoverthecourseoftheexperiment
+for a range of different values of change probability ρ and number of arms K, and a fixed
+mean outcome difference (cid:15) = 0.1. Importantly, when estimating the mean regret rate over an
+ensemble of N = 103 agents, for each agent n ∈ {1,...,N} we simulate a distinct switching
+schedule with the same change probability ρ. Hence, the average is performed not only over
+different choice outcome trajectories but also over different hidden trajectories of changes.
+This ensures that comparison is based on environmental properties, and not on specific
+realisation of the environment. We find better performance for the active inference agents
+compared to other bandit algorithms in all conditions. However, we observe that the more
+difficult the task is (in terms of higher change probability ρ and larger number of arms K)
+the less pronounced is the performance advantage of the active inference based agents.
+In Fig. 5 we show the regret rate for each agent type, however with a fixed number of
+arms, K = 40, but varying mean outcome difference (cid:15). Here, the picture is very similar,
+where for increasing task difficulty the A-AI agent type exhibits a diminishing performance
+advantage relative to the bandit algorithms. Importantly, although we present here the
+regret analysis only up to T = 5·103, unlike in the stationary bandit problem, the results
+do not change after a further increase in the number of trials. When we simulate longer
+experiments we find a convergent performance for all algorithms towards a non-zero regret
+rate; implying a linear increase in cumulative regret with trial number t. Finally, we further
+illustrate the dependence of performance on mean outcome preference, using the switching
+bandit with non-stationary task difficulty, where (cid:15) is not fixed but changes stochastically
+over the course of experiment (see Switching bandit for more details). r Importantly, in the
+case of non-stationary difficulty we will include the G-AI algorithm into comparison. The
+regret rate based comparison between A-AI and G-AI algorithms (shown in Fig. S3 ) reveals,
+19
+0.09
+0.08
+0.07
+R t
+=0.005 =0.01 =0.02
+K=10
+=0.04
+B-UCB
+O-TS
+A-AI
+RC
+0.095
+0.090
+0.085
+R t
+K=20
+0.096
+0.094
+R t
+K=40
+0.0985
+0.0980
+0.0975
+5000 10000
+t
+R t
+5000 10000 5000 10000 5000 10000
+t t t
+K=80
+Figure 4: Between-agent comparison in switching Bernoulli bandits with a fixed mean outcome
+difference ((cid:15) = 0.1). Comparison of the regret rate of approximate active inference (A-AI), optimistic
+Thompson sampling (O-TS), and Bayesian upper-confidence-bound (B-UCB) based agents in the switching
+banditproblem(seeSwitchingbanditsubsection). Eachcolumnandrowoftheplotcorrespondstodifferent
+task difficulties, characterised by the change probability ρ, and the number of arms K. For the A-AI agents
+the prior precision over outcome preferences is fixed to λ = 0.5. All the values are estimated as ensemble
+averages over N =103 simulations, where the switching schedule is also generated randomly for each agent
+instance within the ensemble. The 95% confidence intervals, although plotted, are hardly visible, implying
+a statistically robust comparison.
+for the first time, a noticeable difference between the two algorithms. Furthermore, the G-AI
+algorithm shows a more stable minimum of the regret rate as a function of λ in a range of
+conditions, corresponding to λ = 0.25, suggesting potential benefits of exact form of active
+inference over the approximate one. As shown in Fig. 6, we find an increasing advantage
+of G-AI (and similarly A-AI algorithm) over B-UCB and O-TS algorithms (Fig. 4) in more
+difficult problems – with either larger number of arms K or larger change probability ρ.
+However, the opposite is the case for lowered task difficulty; e.g. for ρ = 0.005 and K = 10,
+where B-UCB achieves higher performance then A-AI algorithm, but is matched with the
+G-AI algorithm. Notably, we would expect that for small number of arm (K < 10) and
+slower changing environments (ρ < 0.001) the drop in performance of the AI agents becomes
+even more pronounced, as we are approaching the stationary limit.
+As a final remark, we find it interesting that the B-UCB algorithm consistently out-
+performs the O-TS algorithm, in almost all non-stationary problems we examined. This
+is in contrast to the previous asymptotic analysis in the stationary bandit problem, which
+concluded that Thompson sampling exhibits better asymptotic scaling than B-UCB [32, 7].
+20
+0.0488
+0.0486
+0.0484
+0.0482
+R t
+=0.005 =0.01 =0.02
+=0.05
+=0.04
+0.096
+0.094
+R t
+=0.1
+0.18
+0.16
+5000 10000
+t
+R t
+5000 10000 5000 10000 5000 10000
+t t t
+=0.2
+B-UCB
+O-TS
+A-AI
+RC
+Figure 5: Between-agent comparison in the switching Bernoulli bandit with a fixed number of
+arms(K =40). Comparisonoftheregretrateofapproximateactiveinference(A-AI),optimisticThompson
+sampling (O-TS), and Bayesian upper-confidence-bound (B-UCB) based agents in the switching bandit (see
+Switching bandit subsection). Each column and row of the plot corresponds to different task difficulties,
+characterised by the change probability ρ, and the mean outcome difference (cid:15). For the A-AI agents the
+prior precision over outcome preferences is fixed to λ = 0.5. As in the previous figure, all the values are
+estimated as ensemble averages over N = 103 simulations, with instance specific switching schedule within
+the ensemble. The 95% confidence intervals, although plotted, are in most cases not larger then the line
+thickness.
+We are not aware of previous works comparing these two algorithms in the context of the
+switching bandit problem. bucb-guess However, the two papers which we found to compare
+B-UCB and TS in stationary bandits [7, 32] show similar patterns in cumulative regret to
+what we found. For the initial T = 1,000 trials B-UCB achives lower regret, and TS out-
+performs B-UCB only at later stages. Hence, we would infer from these findings that in the
+switching case B-UCB achieves a lower regret rate as changes occur on a shorter time scale,
+similar to the advantage we find for the A-AI and G-AI algorithms.
+5. Discussion
+In this paper we provide an empirical comparison between active inference, a Bayesian
+information-theoretic framework [10], and two state-of-the-art machine learning algorithms
+– Bayesian UCB and optimistic Thompson sampling – in stationary and non-stationary
+stochastic multi-armed bandits. We introduced an approximate active inference algorithm,
+for which our checks on the stationary bandit problem showed that its performance closely
+21
+0.4
+0.2
+R t
+=0.005 =0.01 =0.02
+B-UCB
+O-TS
+A-AI G-AI
+RC
+K=10
+=0.04
+0.4
+0.2
+R t
+K=20
+0.4
+0.2
+R t
+K=40
+0.4
+0.2
+5000 10000
+t
+R t
+5000 10000 5000 10000 5000 10000
+t t t
+K=80
+Figure6: Between-agentcomparisonintheswitchingbanditwithnon-stationarydifficulty. Com-
+parison of the regret rate of exact (G-AI) and approximate active inference (A-AI), optimistic Thompson
+sampling(O-TS),andBayesianupper-confidence-bound(B-UCB)agentsintheswitchingbandit(seeSwitch-
+ing bandit subsection) when the reward probabilities are sampled from uniform distribution after every
+switch. The re-sampling of latent reward probabilities makes the difficulty of the problem non-stationary,
+as the advantage of the best arm over the second best arm changes with time. For the A-AI agent we fixed
+the prior precision over outcome preferences to λ=0.5, as in the previous examples. However, for the G-AI
+agent we fixed the lambda to λ=0.25 based on a visual inspection of dependency of regret rate on λ shown
+in Fig. S3 . All the values are estimated as ensemble averages over N =103 simulations, and result in tight
+confidence intervals.
+follows that of the exact version. Hence, we derived an active inference algorithm that is
+efficient and easily scalable to high-dimensional problems.
+To our surprise, the empirical algorithm comparison in the stationary bandit problem
+showed that the active inference algorithm is not asymptotically efficient – the cumulative
+regret increased faster than logarithmic in the limit of large number of trials. The cause for
+this behaviour seems to be the fixed prior precision over preferences λ, which acts as a balan-
+cing parameter between exploration and exploitation. An analysis of how the performance
+depends on this parameter showed that parameter values that give the best performance
+decrease over time, suggesting that this parameter should be adaptive and decay over time
+as the need for exploration decreases. Attempts to remedy the situation with a simple and
+widely used decay scheme were not successful (for example logarithm of time, not reported
+here). adaptive-lambda Similarly, introducing a hyper-prior over λ and deriving learning
+rules for the precision parameter [86, 87] did not result in the desired asymptotic behaviour.
+22
+This indicates it is not a simple relationship and a proper theoretical analysis will be needed
+to identify whether such a scheme exists.
+In the non-stationary switching bandit problem the active inference algorithm generally
+outperformed Bayesian UCB and optimistic Thompson sampling. This provides evidence
+that the active inference framework may provide a good solution for optimisation problems
+that require continuous adaptation. Active inference provides the most efficient way of
+gaining information and this property of the algorithm pays off in the non-stationary setting.
+Such dynamic settings are also relevant in neuroscience, as relevant changes in choice-reward
+contingencies are typically hidden and stochastic in everyday environments of humans and
+other animals [52, 53, 36, 3, 38]. In contrast to previous neuroscience research that showed
+that active inference is a good description of human learning and decision making [88, 89,
+90, 91, 92, 93], our results on the dynamic switching bandit show that active inference
+also performs well in objective sense. Such explanations of cognitive mechanisms that are
+grounded in optimal solutions are arguably more plausible [94]. Hence, this result lends
+additionalcredibilitytoactiveinferenceasageneralisedframeworkforunderstandinghuman
+behaviour, not only in the behavioural experiments inspired by multi-armed bandits [33, 34,
+35, 36, 37, 38], but in a range of related investigations of human and animal decision making
+in complex dynamic environments under uncertainty [89, 95, 96, 97].
+An important next step in examining active inference in the context of multi-armed ban-
+dits is to establish theoretical bounds on the cumulative regret for the stationary bandit
+problem. A key part of these theoretical studies will be to investigate whether it is possible
+to devise a sound decay scheme for the λ parameter (see Eq. 27), that provably works for
+all instances of the canonical stationary bandit. This would lead to the development of new
+active inference inspired algorithms which can achieve asymptotic efficiency. These theor-
+etical bounds would allow us to more rigorously compare active inference algorithms to the
+already established bandit algorithms for which regret bounds are known. Moreover, we
+would potentially be able to generalise beyond the settings we have empirically tested here.
+Future work may also consider an information-theoretic analysis of active inference, which
+might be more appropriate than regret analysis [43]. For example, the Bayesian exploration
+bonus previously considered in Bayesian reinforcement learning was analysed with respect to
+sample complexity of identifying a good policy [84]. Similarly, in [98] the authors introduced
+a new measure of regret weighted by the inverse information gain between actions and out-
+comes, and provided expected bounds for this measure for several Bayesian algorithms, such
+as Thompson sampling and Bayesian UCB. s Finally, future work should contrast the act-
+ive inference framework with alternative approaches that can generate directed exploration
+[99, 73].
+As optimal behaviour is always defined with respect to a chosen objective function, a
+different objective function will lead to different behaviour, and the appropriateness of the
+objective function for the specific problem determines the performance of the algorithm on a
+given task. In other words, behaviour is determined not only by the beliefs about the hidden
+structure about the states of the world but also by the beliefs about useful preferences and
+objectives one should take into account in that environment. Therefore, although one can
+23
+consider the sensitivity of the introduced active inference algorithm on the prior precision
+over preferences λ as a limitation of the algorithm in comparison to the other two algorithms,
+we believe that it is possible to introduce various adaptations to the algorithm to improve
+asymptotic behaviour. Fore example, one can consider learning rules for prior outcome
+preferences, as illustrated in [87, 95]. This would introduce a way to adapt an objective
+function to different environments achieving high performance in a wide-range of multi-
+armed bandit problems. Alternatively, instead of basing action selection on the expected
+free energy, one can define a stochastic counterpart, which is estimated based on samples
+from the posterior, akin to Thompson sampling. This would enable the algorithm to better
+leverage directed and random exploration.
+Despite of the poor asymptotic performance in the stationary bandit problem there are
+some advantages of active inference over classical bandit algorithms, both for artificial in-
+telligence and neuroscience. Unlike the Thompson sampling and UCB algorithms, active
+inference is easily extendable to more complex settings where actions affect future states and
+actions available. Such settings are usually formalised as a (partially observable) Markov
+decision process, which require the combination of adaptive decision making with complex
+planning mechanism [25, 24, 27]. In these settings learning is non-stationary because changes
+in policy cause a shift in state value distributions [23]. Given our finding that active infer-
+ence algorithm has an advantage in non-stationary settings, it seems promising to apply
+the framework to Markov decision processes. Reinforcement learning algorithms is a pop-
+ular choice for tackling Markov decision processes, in particular it would be interesting to
+compare active inference to Bayesian reinforcement learning approaches [100, 101, 102].
+The generative modelling approach integral to active inference allows several improve-
+ments to the presented algorithm, which also holds for related Bayesian approaches. For
+example, we have considered here only one learning algorithm, variational SMiLE [46], which
+we have chosen based on its simplicity and efficiency. A potential drawback of variational
+SMiLE is that it might not be optimal (in terms of inference) for t switching bandits or
+a generic problem of dynamic bandits (e.g. different mechanisms for generating changes
+and different reward distribution). For example, alternative-switching-learning for switching
+bandits several candidates come closer to the exact inference and would likely improve per-
+formance [77, 78, 40, 79]. For restless bandits, which follow a random walk process, recently
+published alternative efficient learning algorithms derived from different generative models
+are likely to provide a better performance [103, 104]. Employing a good learning algorithm
+is especially important in dynamic settings, where exact inference is not tractable, and the
+performance of learning rules is tightly coupled to the overall performance of the algorithm.
+In practice, one would expect that the better the generative model and the corresponding
+approximate inference algorithm, the better the performance will be on a given multi-armed
+bandit problem. Furthermore, one can easily extend the learning algorithms with deep
+hierarchical variants, which can infer a wide range of unknown dynamical properties of the
+environment [103] and learn higher order temporal statistics [34, 95].
+24
+6. Conclusion
+Wehavederivedanapproximateactiveinferencealgorithm,basedonaBayesianinformation-
+theoretic framework recently developed in neuroscience, proposing it as a novel machine
+learning algorithm for bandit problems that can compete with state-of-the-art bandit al-
+gorithms. Our empirical evaluation has shown that the active inference framework can
+indeed be used to derive a promising bandit algorithm. We consider the present work as
+a first step, where two important next steps are the development of a decay schedule for
+the outcome preference precision parameter λ and a theoretical regret analysis for the sta-
+tionary bandit. The fact that the active inference algorithm achieves excellent performance
+in switching bandit problems, commonly used in cognitive neuroscience, provides rational
+grounds for using active inference as a generalised framework for understanding human and
+animal learning and decision making.
+7. Acknowledgements
+We thank Karl Friston and Gergely Neu for valuable feedback and constructive dis-
+cussions. DM and SS were funded by the German Research Foundation (DFG, Deutsche
+Forschungsgemeinschaft), SFB 940/3 - Project ID 178833530, A09,TRR 265/1 - Project ID
+402170461, B09 and partially supported by Germany’s Excellence Strategy – EXC 2050/1
+– Project ID 390696704 – Cluster of Excellence “Centre for Tactile Internet with Human-
+in-the-Loop” (CeTI) of Technische Universit¨at Dresden. The Max Planck UCL Centre for
+Computational Psychiatry and Ageing Research is funded by the Max Planck Society, Mu-
+nich, Germany, URL: https://www.mpg.de/en, grant number: 647070403019.
+References
+[1] R. C. Wilson, E. Bonawitz, V. D. Costa, R. B. Ebitz, Balancing exploration and ex-
+ploitationwithinformationandrandomization,CurrentOpinioninBehavioralSciences
+38 (2020) 49–56.
+[2] K. Mehlhorn, B. R. Newell, P. M. Todd, M. D. Lee, K. Morgan, V. A. Braith-
+waite, D. Hausmann, K. Fiedler, C. Gonzalez, Unpacking the exploration–exploitation
+tradeoff: A synthesis of human and animal literatures., Decision 2 (3) (2015) 191.
+[3] J. D. Cohen, S. M. McClure, A. J. Yu, Should i stay or should i go? how the hu-
+man brain manages the trade-off between exploitation and exploration, Philosophical
+Transactions of the Royal Society B: Biological Sciences 362 (1481) (2007) 933–942.
+[4] T. Lattimore, C. Szepesv´ari, Bandit algorithms, Cambridge University Press, 2020.
+[5] O. Chapelle, L. Li, An empirical evaluation of thompson sampling, in: Advances in
+neural information processing systems, 2011, pp. 2249–2257.
+[6] P. Auer, N. Cesa-Bianchi, P. Fischer, Finite-time analysis of the multiarmed bandit
+problem, Machine learning 47 (2-3) (2002) 235–256.
+25
+[7] E. Kaufmann, et al., On bayesian index policies for sequential resource allocation, The
+Annals of Statistics 46 (2) (2018) 842–865.
+[8] R. Kaplan, K. Friston, Planning and navigation as active inference, bioRxiv
+(2017). arXiv:https://www.biorxiv.org/content/early/2017/12/07/230599.
+full.pdf, doi:10.1101/230599.
+URL https://www.biorxiv.org/content/early/2017/12/07/230599
+[9] K. J. Friston, R. Rosch, T. Parr, C. Price, H. Bowman, Deep temporal models and
+active inference, Neuroscience & Biobehavioral Reviews 77 (Supplement C) (2017) 388
+– 402. doi:https://doi.org/10.1016/j.neubiorev.2017.04.009.
+URL http://www.sciencedirect.com/science/article/pii/S0149763416307096
+[10] K. Friston, T. FitzGerald, F. Rigoli, P. Schwartenbeck, G. Pezzulo, Active inference:
+A process theory, Neural Computation 29 (1) (2017) 1–49, pMID: 27870614. doi:
+10.1162/NECO\_a\_00912.
+[11] M. B. Mirza, R. A. Adams, C. D. Mathys, K. J. Friston, Scene construction, visual
+foraging, and active inference, Frontiers in computational neuroscience 10 (2016).
+[12] K. Friston, T. FitzGerald, F. Rigoli, P. Schwartenbeck, J. O’Doherty, G. Pezzulo,
+Active inference and learning, Neuroscience & Biobehavioral Reviews 68 (Supplement
+C) (2016) 862 – 879. doi:https://doi.org/10.1016/j.neubiorev.2016.06.022.
+URL http://www.sciencedirect.com/science/article/pii/S0149763416301336
+[13] T. H. FitzGerald, P. Schwartenbeck, M. Moutoussis, R. J. Dolan, K. Friston, Active
+inference, evidence accumulation, and the urn task, Neural computation 27 (2) (2015)
+306–328.
+[14] K. Friston, F. Rigoli, D. Ognibene, C. Mathys, T. Fitzgerald, G. Pezzulo, Active
+inference and epistemic value, Cognitive neuroscience 6 (4) (2015) 187–214.
+[15] P. Schwartenbeck, T. FitzGerald, R. Dolan, K. Friston, Exploration, novelty, surprise,
+and free energy minimization, Frontiers in psychology 4 (2013) 710.
+[16] K. Friston, The history of the future of the bayesian brain, NeuroImage 62 (2) (2012)
+1230–1233.
+[17] K. Doya, S. Ishii, A. Pouget, R. P. Rao, Bayesian brain: Probabilistic approaches to
+neural coding, MIT press, 2007.
+[18] D. C. Knill, A. Pouget, The bayesian brain: the role of uncertainty in neural coding
+and computation, TRENDS in Neurosciences 27 (12) (2004) 712–719.
+[19] M. Botvinick, M. Toussaint, Planning as inference, Trends in cognitive sciences 16 (10)
+(2012) 485–488.
+26
+[20] F. Karl, A free energy principle for biological systems, Entropy 14 (11) (2012) 2100–
+2121.
+[21] K. Friston, J. Kilner, L. Harrison, A free energy principle for the brain, Journal of
+Physiology-Paris 100 (1-3) (2006) 70–87.
+[22] P. Schwartenbeck, J. Passecker, T. U. Hauser, T. H. FitzGerald, M. Kronbichler, K. J.
+Friston, Computational mechanisms of curiosity and goal-directed exploration, Elife 8
+(2019) e41703.
+[23] R. S. Sutton, A. G. Barto, Reinforcement learning: An introduction, MIT press, 2018.
+[24] K. Ueltzho¨ffer, Deep active inference, Biological cybernetics 112 (6) (2018) 547–573.
+[25] B. Millidge, Deep active inference as variational policy gradients, Journal of Mathem-
+atical Psychology 96 (2020) 102348.
+[26] K. Friston, L. Da Costa, D. Hafner, C. Hesp, T. Parr, Sophisticated inference, arXiv
+preprint arXiv:2006.04120 (2020).
+[27] Z. Fountas, N. Sajid, P. A. Mediano, K. Friston, Deep active inference agents using
+monte-carlo methods, arXiv preprint arXiv:2006.04176 (2020).
+[28] W. R. Thompson, On the likelihood that one unknown probability exceeds another in
+view of the evidence of two samples, Biometrika 25 (3/4) (1933) 285–294.
+[29] R. R. Bush, F. Mosteller, A stochastic model with applications to learning, The Annals
+of Mathematical Statistics (1953) 559–585.
+[30] P. Whittle, Multi-armed bandits and the gittins index, Journal of the Royal Statistical
+Society: Series B (Methodological) 42 (2) (1980) 143–149.
+[31] T. L. Lai, H. Robbins, Asymptotically efficient adaptive allocation rules, Advances in
+applied mathematics 6 (1) (1985) 4–22.
+[32] E. Kaufmann, N. Korda, R. Munos, Thompson sampling: An asymptotically op-
+timal finite-time analysis, in: International conference on algorithmic learning theory,
+Springer, 2012, pp. 199–213.
+[33] A. Izquierdo, J. L. Brigman, A. K. Radke, P. H. Rudebeck, A. Holmes, The neural
+basis of reversal learning: an updated perspective, Neuroscience 345 (2017) 12–26.
+[34] D. Markovi´c, A. M. Reiter, S. J. Kiebel, Predicting change: Approximate inference
+under explicit representation of temporal structure in changing environments, PLoS
+computational biology 15 (1) (2019) e1006707.
+27
+[35] S. Iglesias, C. Mathys, K. H. Brodersen, L. Kasper, M. Piccirelli, H. E. den Ouden,
+K. E. Stephan, Hierarchical prediction errors in midbrain and basal forebrain during
+sensory learning, Neuron 80 (2) (2013) 519–530.
+[36] R. C. Wilson, Y. Niv, Inferring relevance in a changing world, Frontiers in human
+neuroscience 5 (2012) 189.
+[37] D. Racey, M. E. Young, D. Garlick, J. N.-M. Pham, A. P. Blaisdell, Pigeon and human
+performance in a multi-armed bandit task in response to changes in variable interval
+schedules, Learning & behavior 39 (3) (2011) 245–258.
+[38] T. E. Behrens, M. W. Woolrich, M. E. Walton, M. F. Rushworth, Learning the value
+of information in an uncertain world, Nature neuroscience 10 (9) (2007) 1214–1221.
+[39] E. Kaufmann, O. Capp´e, A. Garivier, On bayesian upper confidence bounds for bandit
+problems, in: Artificial intelligence and statistics, 2012, pp. 592–600.
+[40] X. Lu, N. Adams, N. Kantas, On adaptive estimation for dynamic bernoulli bandits,
+Foundations of Data Science 1 (2) (2019) 197.
+[41] Y.Cao, W.Zheng, B.Kveton,Y.Xie, Nearlyoptimaladaptiveprocedureforpiecewise-
+stationarybandit: achange-pointdetectionapproach, arXivpreprintarXiv:1802.03692
+(2018).
+[42] R. Alami, O. Maillard, R. F´eraud, Memory bandits: a bayesian approach for the
+switching bandit problem, in: NIPS 2017-31st Conference on Neural Information Pro-
+cessing Systems, 2017.
+[43] D. J. Russo, B. Van Roy, A. Kazerouni, I. Osband, Z. Wen, et al., A tutorial on
+thompson sampling, Foundations and Trends® in Machine Learning 11 (1) (2018)
+1–96.
+[44] D. M. Roijers, L. M. Zintgraf, A. Now´e, Interactive thompson sampling for multi-
+objective multi-armed bandits, in: International Conference on Algorithmic Decision-
+Theory, Springer, 2017, pp. 18–34.
+[45] Y. Wang, J. Gittins, Bayesian bandits in clinical trials: Clinical trials, Sequential
+analysis 11 (4) (1992) 313–325.
+[46] V. Liakoni, A. Modirshanechi, W. Gerstner, J. Brea, Learning in volatile environments
+with the bayes factor surprise, Neural Computation 33 (2) (2021) 269–340.
+[47] D. Markovi´c, S. J. Kiebel, Comparative analysis of behavioral models for adaptive
+learning in changing environments, Frontiers in Computational Neuroscience 10 (2016)
+33.
+28
+[48] F. Liu, J. Lee, N. Shroff, A change-detection based framework for piecewise-stationary
+multi-armed bandit problem, in: Thirty-Second AAAI Conference on Artificial Intel-
+ligence, 2018.
+[49] M. Steyvers, M. D. Lee, E.-J. Wagenmakers, A bayesian analysis of human decision-
+making on bandit problems, Journal of Mathematical Psychology 53 (3) (2009) 168–
+179.
+[50] A. Slivkins, et al., Introduction to multi-armed bandits, Foundations and Trends® in
+Machine Learning 12 (1-2) (2019) 1–286.
+[51] D. I. Mattos, J. Bosch, H. H. Olsson, Multi-armed bandits in the wild: pitfalls and
+strategies in online experiments, Information and Software Technology 113 (2019) 68–
+81.
+[52] E. Schulz, S. J. Gershman, The algorithmic architecture of exploration in the human
+brain, Current opinion in neurobiology 55 (2019) 7–14.
+[53] J. Gottlieb, P.-Y. Oudeyer, M. Lopes, A. Baranes, Information-seeking, curiosity, and
+attention: computational and neural mechanisms, Trends in cognitive sciences 17 (11)
+(2013) 585–593.
+[54] H. Stoji´c, J. L. Orquin, P. Dayan, R. J. Dolan, M. Speekenbrink, Uncertainty in
+learning, choice, and visual fixation, Proceedings of the National Academy of Sciences
+117 (6) (2020) 3291–3300.
+[55] R. C. Wilson, A. Geana, J. M. White, E. A. Ludvig, J. D. Cohen, Humans use directed
+andrandomexplorationtosolvetheexplore–exploitdilemma.,JournalofExperimental
+Psychology: General 143 (6) (2014) 2074.
+[56] P. B. Reverdy, V. Srivastava, N. E. Leonard, Modeling human decision making in
+generalized gaussian multiarmed bandits, Proceedings of the IEEE 102 (4) (2014)
+544–571.
+[57] D. Acuna, P. Schrater, Bayesian modeling of human sequential decision-making on
+the multi-armed bandit problem, in: Proceedings of the 30th annual conference of the
+cognitive science society, Vol. 100, Washington, DC: Cognitive Science Society, 2008,
+pp. 200–300.
+[58] H. Stoji´c, E. Schulz, P. P Analytis, M. Speekenbrink, It’s new, but is it good? how
+generalization and uncertainty guide the exploration of novel options., Journal of Ex-
+perimental Psychology: General (2020).
+[59] E. Schulz, E. Konstantinidis, M. Speekenbrink, Putting bandits into context: How
+function learning supports decision making., Journal of Experimental Psychology:
+Learning, Memory, and Cognition 44 (6) (2018) 927.
+29
+[60] E. Schulz, N. T. Franklin, S. J. Gershman, Finding structure in multi-armed bandits,
+Cognitive Psychology 119 (2020) 101261.
+[61] L. Clark, R. Cools, T. Robbins, The neuropsychology of ventral prefrontal cortex:
+decision-making and reversal learning, Brain and cognition 55 (1) (2004) 41–53.
+[62] M. Guitart-Masip, L. Fuentemilla, D. R. Bach, Q. J. Huys, P. Dayan, R. J. Dolan,
+E. Duzel, Action dominates valence in anticipatory representations in the human stri-
+atum and dopaminergic midbrain, Journal of Neuroscience 31 (21) (2011) 7867–7875.
+[63] N.D.Daw,S.J.Gershman,B.Seymour,P.Dayan,R.J.Dolan,Model-basedinfluences
+on humans’ choices and striatal prediction errors, Neuron 69 (6) (2011) 1204–1215.
+[64] A. Dezfouli, B. W. Balleine, Habits, action sequences and reinforcement learning,
+European Journal of Neuroscience 35 (7) (2012) 1036–1051.
+[65] A. Tversky, Elimination by aspects: A theory of choice., Psychological review 79 (4)
+(1972) 281.
+[66] E.Reutskaja, R.Nagel, C.F.Camerer, A.Rangel, Searchdynamicsinconsumerchoice
+undertimepressure: Aneye-trackingstudy, AmericanEconomicReview101(2)(2011)
+900–926.
+[67] F. Lieder, T. L. Griffiths, Strategy selection as rational metareasoning., Psychological
+review 124 (6) (2017) 762.
+[68] W. C. Cheung, D. Simchi-Levi, R. Zhu, Hedging the drift: Learning to optimize under
+non-stationarity, arXiv preprint arXiv:1903.01461 (2019).
+[69] L. Besson, E. Kaufmann, The generalized likelihood ratio test meets klucb:
+an improved algorithm for piece-wise non-stationary bandits, arXiv preprint
+arXiv:1902.01575 (2019).
+[70] A. Blum, Y. Mansour, Learning, Regret Minimization, and Equilibria, Cambridge
+University Press, 2007, Ch. 4, p. 79–102. doi:10.1017/CBO9780511800481.006.
+[71] V. Raj, S. Kalyani, Taming non-stationary bandits: A bayesian approach, arXiv pre-
+print arXiv:1707.09727 (2017).
+[72] D. Russo, B. Van Roy, Learning to optimize via information-directed sampling, Ad-
+vances in Neural Information Processing Systems 27 (2014) 1583–1591.
+[73] P. I. Frazier, W. B. Powell, S. Dayanik, A knowledge-gradient policy for sequential
+informationcollection, SIAMJournalonControlandOptimization47(5)(2008)2410–
+2439.
+30
+[74] A. Garivier, E. Moulines, On upper-confidence bound policies for switching bandit
+problems, in: International Conference on Algorithmic Learning Theory, Springer,
+2011, pp. 174–188.
+[75] O. Besbes, Y. Gur, A. Zeevi, Stochastic multi-armed-bandit problem with non-
+stationary rewards, Advances in neural information processing systems 27 (2014) 199–
+207.
+[76] R. Allesiardo, R. F´eraud, O.-A. Maillard, The non-stationary stochastic multi-armed
+bandit problem, International Journal of Data Science and Analytics 3 (4) (2017)
+267–283.
+[77] R. P. Adams, D. J. MacKay, Bayesian online changepoint detection, arXiv preprint
+arXiv:0710.3742 (2007).
+[78] J. Mellor, J. Shapiro, Thompson sampling in switching environments with bayesian
+online change detection, in: Artificial Intelligence and Statistics, PMLR, 2013, pp.
+442–450.
+[79] R. Alami, O. Maillard, R. F´eraud, Restarted bayesian online change-point detector
+achieves optimal detection delay, in: International Conference on Machine Learning,
+PMLR, 2020, pp. 211–221.
+[80] A. Soltani, A. Izquierdo, Adaptive learning under expected and unexpected uncer-
+tainty, Nature Reviews Neuroscience 20 (10) (2019) 635–644.
+[81] H. Attias, Planning by probabilistic inference., in: AISTATS, Citeseer, 2003.
+[82] P. Schwartenbeck, K. Friston, Computational phenotyping in psychiatry: a worked
+example, ENeuro 3 (4) (2016).
+[83] R. Kaplan, K. J. Friston, Planning and navigation as active inference, Biological cy-
+bernetics 112 (4) (2018) 323–343.
+[84] J. Z. Kolter, A. Y. Ng, Near-bayesian exploration in polynomial time, in: Proceedings
+of the 26th annual international conference on machine learning, 2009, pp. 513–520.
+[85] K. Kandasamy, A. Krishnamurthy, J. Schneider, B. Po´czos, Parallelised bayesian op-
+timisation via thompson sampling, in: International Conference on Artificial Intelli-
+gence and Statistics, 2018, pp. 133–142.
+[86] L. Da Costa, T. Parr, N. Sajid, S. Veselic, V. Neacsu, K. Friston, Active inference
+on discrete state-spaces: a synthesis, Journal of Mathematical Psychology 99 (2020)
+102447.
+[87] N. Sajid, P. J. Ball, K. J. Friston, Active inference: demystified and compared, arXiv
+preprint arXiv:1909.10863 (2019) 2–3.
+31
+[88] J. Limanowski, K. Friston, Active inference under visuo-proprioceptive conflict: Sim-
+ulation and empirical results, Scientific reports 10 (1) (2020) 1–14.
+[89] R. A. Adams, M. Moutoussis, M. M. Nour, T. Dahoun, D. Lewis, B. Illingworth,
+M. Veronese, C. Mathys, L. de Boer, M. Guitart-Masip, et al., Variability in ac-
+tion selection relates to striatal dopamine 2/3 receptor availability in humans: A pet
+neuroimaging study using reinforcement learning and active inference models, Cerebral
+Cortex 30 (6) (2020) 3573–3589.
+[90] R. Smith, P. Schwartenbeck, J. L. Stewart, R. Kuplicki, H. Ekhtiari, M. P. Paulus,
+T. . Investigators, et al., Imprecise action selection in substance use disorder: Evidence
+for active learning impairments when solving the explore-exploit dilemma, Drug and
+Alcohol Dependence 215 (2020) 108208.
+[91] M. Cullen, B. Davey, K. J. Friston, R. J. Moran, Active inference in openai gym: a
+paradigm for computational investigations into psychiatric illness, Biological psychi-
+atry: cognitive neuroscience and neuroimaging 3 (9) (2018) 809–818.
+[92] P. Schwartenbeck, T. H. FitzGerald, C. Mathys, R. Dolan, M. Kronbichler, K. Fris-
+ton, Evidence for surprise minimization over value maximization in choice behavior,
+Scientific reports 5 (2015) 16575.
+[93] P. Schwartenbeck, T. H. FitzGerald, C. Mathys, R. Dolan, K. Friston, The dopaminer-
+gic midbrain encodes the expected certainty about desired outcomes, Cerebral cortex
+25 (10) (2015) 3434–3445.
+[94] N. Chater, M. Oaksford, Ten years of the rational analysis of cognition, Trends in
+Cognitive Sciences 3 (2) (1999) 57–65.
+[95] D. Markovi´c, T. Goschke, S. J. Kiebel, Meta-control of the exploration-exploitation
+dilemmaemergesfromprobabilisticinferenceoverahierarchyoftimescales, Cognitive,
+Affective, & Behavioral Neuroscience (2020) 1–25.
+[96] R. A. Adams, S. Shipp, K. J. Friston, Predictions not commands: active inference in
+the motor system, Brain Structure and Function 218 (3) (2013) 611–643.
+[97] G. Pezzulo, An active inference view of cognitive control, Frontiers in psychology 3
+(2012) 478.
+[98] D. Russo, B. Van Roy, An information-theoretic analysis of thompson sampling, The
+Journal of Machine Learning Research 17 (1) (2016) 2442–2471.
+[99] D. Russo, B. Van Roy, Learning to optimize via information-directed sampling, Oper-
+ations Research 66 (1) (2018) 230–252.
+32
+[100] M. Ghavamzadeh, S. Mannor, J. Pineau, A. Tamar, et al., Bayesian reinforcement
+learning: A survey, Foundations and Trends® in Machine Learning 8 (5-6) (2015)
+359–483.
+[101] A.Guez, D.Silver, P.Dayan, Scalableandefficientbayes-adaptivereinforcementlearn-
+ing based on monte-carlo tree search, Journal of Artificial Intelligence Research 48
+(2013) 841–883.
+[102] A. Guez, N. Heess, D. Silver, P. Dayan, Bayes-adaptive simulation-based search with
+value function approximation., in: NIPS, Vol. 27, 2014, pp. 451–459.
+[103] P. Piray, N. D. Daw, A simple model for learning in volatile environments, PLOS
+Computational Biology 16 (7) (2020) 1–26. doi:10.1371/journal.pcbi.1007963.
+URL https://doi.org/10.1371/journal.pcbi.1007963
+[104] V. Moens, A. Z´enon, Learning and forgetting using reinforced bayesian change detec-
+tion, PLoS computational biology 15 (4) (2019) e1006713.
+[105] J. M. Bernardo, Algorithm as 103: Psi (digamma) function, Journal of the Royal
+Statistical Society. Series C (Applied Statistics) 25 (3) (1976) 315–317.
+[106] J.Bradbury, R.Frostig, P.Hawkins, M.J.Johnson, C.Leary, D.Maclaurin, G.Necula,
+A. Paszke, J. VanderPlas, S. Wanderman-Milne, Q. Zhang, JAX: composable trans-
+formations of Python+NumPy programs (2018).
+URL http://github.com/google/jax
+Appendix
+A. Deriving the expression for the expected free energy
+We write the approximate (exact in the case of stationary Bernoulli bandits) posterior
+(cid:126)
+beliefs about reward probabilities θ at trial t−1 as
+t−1
+K
+(cid:16) (cid:126) (cid:17) (cid:89) (cid:0) (cid:1)
+Q θ |(cid:126)η = Be α ,β , (A.1)
+t−1 t t−1,k t−1,k
+k=1
+where (cid:126)η = (α ,β ,...,α ,β ), contains the information about the history
+t−1 t−1,1 t−1,1 t−1,K t−1,K
+of choices a and outcomes o up to trial t−1. Next, we obtain the predictive prior
+1:t−1 1:t−1
+distribution at trial t as
+(cid:90)
+(cid:16) (cid:17) (cid:16) (cid:17) (cid:16) (cid:17)
+(cid:126) (cid:126) (cid:126) (cid:126) (cid:126)
+p θ |j ,(cid:126)η = dθ p θ |θ ,j Q θ |(cid:126)η
+t t t−1 t−1 t t−1 t t−1 t
+(cid:40) (A.2)
+(cid:81)K
+Be
+(cid:0)
+α ,β
+(cid:1)
+for j = 0
+= k=1 t−1,k t−1,k t
+(cid:81)K
+Be
+(cid:0)
+α ,β
+(cid:1)
+for j = 1
+k=1 0,k 0,k t
+33
+(cid:16) (cid:17)
+(cid:126)
+whereα = β = 1. Marginalisingoutj fromthejointpredictivedistributionp θ |j ,(cid:126)η
+0,k 0,k t t t t−1
+leads to the following marginal predictive probability
+K K
+(cid:16) (cid:126) (cid:17) (cid:89) (cid:0) (cid:1) (cid:89) (cid:0) (cid:1)
+p θ |(cid:126)η = (1−ρ) Be α ,β +ρ Be α ,β . (A.3)
+t t−1 t−1,k t−1,k 0,k 0,k
+k=1 k=1
+Finally we compute the probability of observing outcome o given action a on current trial
+t t
+(cid:16) (cid:17)
+(cid:126) (cid:126)
+t by marginalising the joint distribution p o ,θ |a ,(cid:126)η over latent states θ . Hence,
+t t t t−1 t
+(cid:90)
+(cid:16) (cid:17) (cid:16) (cid:17)
+(cid:0) (cid:1) (cid:126) (cid:126) (cid:126)
+Q o |a ,(cid:126)η = dθ p o |a ,θ p θ |(cid:126)η
+t t t−1 t t t t t t−1
+(A.4)
+K
+=
+(cid:89)(cid:104)
+µ˜ot (cid:0) 1−µ˜ (cid:1)1−ot
+(cid:105)δ
+at,k ,
+t,k t,k
+k=1
+whereµ˜ correspondstotheexpressionusedinEq.25. Tocomputetheexpectedfreeenergy
+t,k
+G(a ) we will split the full expression on two terms the risk, denoted with G (a ), and the
+t R t
+ambiguity, denoted with G (a ). Hence,
+A t
+G(a ) = G (a )+G (a ). (A.5)
+t R t A t
+Combining Eq. 24 and Eq. 25 we compute the risk using the following relation
+(cid:0) (cid:1)
+G (a) = D Q(o |a = a)||P(o )
+R KL t t t
+(cid:88) Q(o |a)
+t
+= Q(o |a)ln
+t
+P(o )
+t
+ot
+(cid:20) (cid:21)
+(cid:88) (cid:0) (cid:1) (cid:16) (cid:0) (cid:1) (cid:17)
+= const.+ Q(o |a) o lnµ˜ −λ +(1−o ) ln 1−µ˜ +λ (A.6)
+t t t,a t t,a
+ot
+(cid:20) (cid:21)
+(cid:16) (cid:17)
+(cid:0) (cid:1) (cid:0) (cid:1)
+= const.+ µ˜ lnµ˜ −λ +(1−µ˜ ) ln 1−µ˜ +λ
+t,a t,a t,a t,a
+(cid:0) (cid:1) (cid:0) (cid:1)
+= −λ 2µ˜ −1 +µ˜ lnµ˜ +(1−µ˜ )ln 1−µ˜ +const.
+t,a t,a t,a t,a t,a
+To derive the expression for the ambiguity part G (a) of the expected free energy we will
+A
+start by computing conditional entropy of outcomes o , defined as
+t
+(cid:104) (cid:105) (cid:88)
+(cid:126) (cid:126) (cid:126)
+H o |θ ,a = − p(o |θ ,a )lnp(o |θ ,a )
+t t t t t t t t t
+ot
+K
+(cid:88) (cid:126) (cid:88) (cid:104) (cid:0) (cid:1) (cid:105) (A.7)
+= − p(o |θ ,a ) δ o lnθ +(1−o )ln 1−θ
+t t t at,k t t,k t t,k
+ot k=1
+(cid:0) (cid:1) (cid:0) (cid:1)
+= −θ lnθ − 1−θ ln 1−θ .
+t,at t,at t,at t,k
+34
+As the ambiguity term corresponds to expectation over latent states of the conditional
+entropy we obtain the following expression
+(cid:20) (cid:21)
+(cid:104) (cid:105)
+(cid:126)
+G (a) = E H o |θ ,a = a
+A p(θ(cid:126) t|η(cid:126)t−1) t t t
+(cid:20) (cid:21)
+1
+= −(1−ρ) µ ψ(α )+(1−µ )ψ(β )−ψ(ν )+ +const. (A.8)
+t−1,a t−1,a t−1,a t−1,a t−1,a
+ν
+Where we used the following relations
+(cid:90)
+dxBe(x;α,β)xlnx
+(cid:90)
+B(α+1,β)
+= dxB(x;α+1,β)lnx
+B(α,β)
+B(α+1,β)
+(cid:2) (cid:3)
+= ψ(α+1)−ψ(ν +1)
+B(α,β) (A.9)
+(cid:2) (cid:3)
+= µ ψ(α+1)−ψ(ν +1)
+(cid:20) (cid:21)
+1 1
+= µ ψ(α)+ −ψ(ν)−
+α ν
+(cid:20) (cid:21)
+1 1
+= µψ(α)+ −µ ψ(ν)+
+ν ν
+and
+(cid:90)
+dxBe(x;α,β)(1−x)ln(1−x)
+(cid:90)
+B(α,β +1)
+= dxB(x;α,β +1)ln(1−x)
+B(α,β)
+B(α,β +1)
+(cid:2) (cid:3)
+= ψ(β +1)−ψ(ν +1)
+B(α,β) (A.10)
+(cid:2) (cid:3)
+= (1−µ) ψ(β +1)−ψ(ν +1)
+(cid:20) (cid:21)
+1 1
+= (1−µ) ψ(β)+ −ψ(ν)−
+β ν
+(cid:20) (cid:21)
+1 1
+= (1−µ)ψ(β)+ −(1−µ) ψ(ν)+
+ν ν
+to obtain the expectations of conditional entropy. Combining Eqs. (A.6) and (A.8) we get
+the expression for the expected free energy of action a on trial t shown in Eq. 26.
+B. Deriving the approximate expression of the expected free energy
+To derive the approximate expression for the expected free energy shown in Eq. 27 we
+note that for a sufficiently large x the following relation holds [105]
+1
+ψ(x) = lnx− . (B.11)
+2x
+35
+As parameters of the Beta distribution are monotonically increasing with each update, we
+can assume that they reach large enough value after certain number of trials. Hence, instead
+of using the exact expression for ambiguity derived in Eq. A.8, we can used a simplified
+expression based on the mentioned approximation of the digamma function. Therefore, the
+approximate ambiguity term becomes
+(cid:32) (cid:33)
+1
+G (a) ≈ −(1−ρ)µ lnα −
+A t−1,a t−1,a
+2α
+t−1,a
+(cid:18) (cid:19)
+1
+−(1−ρ)(1−µ ) lnβ −
+t−1,a t−1,a
+2βt−1,a
+(B.12)
+(cid:18) (cid:19)
+3
++(1−ρ) lnν − +const.
+t−1,a
+2ν
+(cid:34) (cid:35)
+1
+(cid:0) (cid:1) (cid:0) (cid:1)
+= −(1−ρ) µ lnµ + 1−µ ln 1−µ +
+t−1,a t−1,a t−1,a t−1,a
+2ν
+t−1,a
+As we are interested only in cases for which change probability is small, namely ρ ≤ 0.1
+we can further approximate the risk term of the expected free energy as
+(cid:104) (cid:105)
+(cid:0) (cid:1) (cid:0) (cid:1)
+G (a) ≈ −(1−ρ) 2λµ −µ lnµ˜ − 1−µ ln 1−µ˜
+R t−1,a t−1,a t,a t−1,a t,a
+(B.13)
+(cid:104) (cid:105)
+(cid:0) (cid:1) (cid:0) (cid:1)
+≈ −(1−ρ) 2λµ −µ lnµ − 1−µ ln 1−µ
+t−1,a t−1,a t−1,a t−1,a t−1,a
+(cid:0) (cid:1) (cid:0) (cid:1)
+where we set lnµ˜ ≈ lnµ and ln 1−µ˜ ≈ ln 1−µ . Adding together the two
+t,a t−1,a t,a t−1,a
+approximate terms leads to the following expression for the approximate free energy
+(cid:34) (cid:35)
+1
+G (a) ≈ −(1−ρ) 2λµ + . (B.14)
+t t−1,a
+2ν
+t−1,a
+Thus minimising approximate expected free energy corresponds the expression shown in
+Eq. 27, where cancelling the negative sign turns minimisation into maximisation process.
+C. Benchmark of action selection algorithms
+All multi-armed bandits algorithms used in this paper have been implemented using JAX
+(Autorgrad and XLA) [106] and executed in Python 3.9.4 environment. JAX uses XLA
+(Accelerated Linear algebra) to just-in-time compile Python functions into XLA-optimized
+kernels and run them on GPUs and TPUs. For the benchmarks presented in Table .1 we
+have used a Lenovo Workstation with AMD Threadripper 3955WX CPU, NVIDIA Quadro
+RTX 4000 GPU, and 64 GB RAM.
+Note that the presented compute times can hardly be generalised to other multi-armed
+bandit problems, and are highly dependent on the efficiency of JAX framework to optimise
+various functions, and sampling algorithms.
+D. Supplementary Figures
+36
+Algorithm K = 10 K = 20 K = 40 K = 80
+UCB 0.038 0.039 0.042 0.042
+B-UCB 0.963 0.980 1.052 1.185
+TS 0.992 0.967 1.207 1.864
+O-TS 0.968 0.939 1.034 1.609
+G-AI 0.041 0.041 0.054 0.072
+A-AI 0.034 0.036 0.039 0.040
+Table .1: Compute times per decision presented in milliseconds. The compute times were estimated as
+an average over ten repetitions of a T = 10000 long loop, consisting of only action selection and learning
+algorithm. Outcomes were kept fixed on all trials. Each algorithm was executed with N = 1000 parallel
+simulations. For comparison, we show run times of classical variants of UCB and TS [5].
+300
+200
+100
+0
+tnuoC
+K=10 K=20 K=40
+B-UCB
+O-TS
+A-AI
+RC
+=0.05
+K=80
+300
+200
+100
+0
+tnuoC =0.1
+400
+200
+0
+5 10
+lnR(T=106)
+tnuoC
+5 10 5 10 5 10
+lnR(T=106) lnR(T=106) lnR(T=106)
+=0.2
+Figure S1 : Histogram of the logarithm of cumulative regret. The ensemble based distribution the
+cumulative regret at T = 106 for different algorithms estimated from N = 103 simulations. Note that
+the peak in the tail of the distribution for A-AI algorithm, proportional to random choices, implies that
+percentage of agents in the ensemble never found a correct solution. Hence, as number of trials increases
+the average cumulative regret over the ensemble is pulled towards values which grow linearly with the trial
+number t.
+37
+0.044
+0.042
+R T
+=0.005 =0.01 =0.02
+G-AI T=1000
+G-AI T=10000
+A-AI T=1000
+A-AI T=10000
+=0.05
+=0.04
+0.09
+0.08
+0.07
+R
+T
+=0.1
+0.175
+0.150
+0.125
+0.100
+0 1 2
+R
+T
+0 1 2 0 1 2 0 1 2
+=0.2
+K=10
+Figure S2 : Regret rate analysis for active inference based agents in the switching Bernoulli
+bandits with fixed difficulty. The regret rate R˜ , Eq. 6, for the approximate (A-AI) and the exact
+T
+(G-AI) variants of active inference as a function of the precision over prior preferences λ. The coloured lines
+show numeric estimates obtained as an average over N = 103 runs. Different line styles denote R˜ values
+T
+estimated after different numbers of trials T. The dashed black line denotes the upper bound on the regret
+rate corresponding to the random (RC) agent which gains no information from the choice outcomes. The
+verticaldottedline(purple)correspondstoλ=0.5,whichwefindtobesufficientlyclosetotheminimumor
+regretrateinarangeofconditions. Eachcolumnandrowoftheplotcorrespondstodifferenttaskdifficulties,
+characterised by the change probability ρ, and the mean outcome difference (cid:15), respectively. We have fixed
+the arm number to K =10.
+38
+0.4
+0.2
+R
+T
+=0.005 =0.01 =0.02
+G-AI T=1000
+G-AI T=10000
+A-AI T=1000
+A-AI T=10000
+K=10
+=0.04
+0.4
+0.2
+R
+T
+K=20
+0.4
+0.2
+R
+T
+K=40
+0.4
+0.2
+0.0 0.5 1.0
+R
+T
+0.0 0.5 1.0 0.0 0.5 1.0 0.0 0.5 1.0
+K=80
+Figure S3 : Regret rate analysis for active inference based agents in the switching Bernoulli
+bandits with varying difficulty. The regret rate R˜ , Eq. 6, for the approximate (A-AI) and the exact
+T
+(G-AI) variants of active inference as a function of the precision over prior preferences λ. The coloured lines
+show numeric estimates obtained as an average over N = 103 runs. Different line styles denote R˜ values
+T
+estimated after different numbers of trials T. The dashed black line denotes the upper bound on the regret
+rate corresponding to the random (RC) agent which gains no information from the choice outcomes. The
+vertical dotted line (purple) corresponds to λ=0.25, which we find to be sufficiently close to the minimum
+or regret rate of the G-AI algorithm in a range of conditions. Each column and row of the plot corresponds
+to different task difficulties, characterised by the change probability ρ, and the arm number K, respectively.
+39

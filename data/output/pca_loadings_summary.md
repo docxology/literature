@@ -6,187 +6,187 @@ loadings, showing which words contribute most to each principal component.
 ## Overview
 
 - **Total Components Analyzed**: 5
-- **Total Variance Explained**: 18.10%
+- **Total Variance Explained**: 7.89%
 
 ## Component Analysis
 
 ### Principal Component 1 (PC1)
 
-- **Variance Explained**: 4.42%
+- **Variance Explained**: 2.40%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | learning | 0.2172 |
-| 2 | markov | -0.2125 |
-| 3 | aguilera | -0.1653 |
-| 4 | brain | 0.1546 |
-| 5 | particular | -0.1517 |
-| 6 | synaptic | 0.1463 |
-| 7 | comment | -0.1398 |
-| 8 | blankets | -0.1333 |
-| 9 | particular physics | -0.1263 |
-| 10 | markov blankets | -0.1253 |
-| 11 | blanket | -0.1226 |
-| 12 | principle aguilera | -0.1224 |
-| 13 | physics free | -0.1212 |
-| 14 | markov blanket | -0.1170 |
-| 15 | physics | -0.1144 |
-| 16 | tschantz | -0.1130 |
-| 17 | aguilera millidge | -0.1130 |
-| 18 | tschantz buckley | -0.1130 |
-| 19 | buckley | -0.1130 |
-| 20 | millidge tschantz | -0.1130 |
+| 1 | energy | 0.3004 |
+| 2 | free energy | 0.2953 |
+| 3 | free | 0.2869 |
+| 4 | fep | 0.2593 |
+| 5 | principle | 0.2580 |
+| 6 | energy principle | 0.2477 |
+| 7 | active | -0.2138 |
+| 8 | active inference | -0.2096 |
+| 9 | inference | -0.1841 |
+| 10 | systems | 0.1124 |
+| 11 | mechanics | 0.1044 |
+| 12 | agent | -0.1028 |
+| 13 | agents | -0.0920 |
+| 14 | learning | -0.0908 |
+| 15 | bayesian | 0.0868 |
+| 16 | quantum | 0.0868 |
+| 17 | planning | -0.0866 |
+| 18 | bayesian mechanics | 0.0801 |
+| 19 | control | -0.0778 |
+| 20 | brain | 0.0767 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): learning, brain, synaptic
-**Negative contributors** (low loading): markov, aguilera, particular, comment, blankets
+**Positive contributors** (high loading): energy, free energy, free, fep, principle
+**Negative contributors** (low loading): active, active inference, inference, agent, agents
 
 ---
 
 ### Principal Component 2 (PC2)
 
-- **Variance Explained**: 3.87%
+- **Variance Explained**: 1.75%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | fep | 0.3745 |
-| 2 | 2025 | -0.2671 |
-| 3 | entropy | -0.1859 |
-| 4 | systems | 0.1380 |
-| 5 | brain | 0.1353 |
-| 6 | learning | 0.1290 |
-| 7 | control | -0.1269 |
-| 8 | synaptic | 0.1250 |
-| 9 | theory | 0.1196 |
-| 10 | changes | -0.1088 |
-| 11 | university | -0.1066 |
-| 12 | mathematical | 0.0960 |
-| 13 | machine | 0.0908 |
-| 14 | november | -0.0890 |
-| 15 | november 2025 | -0.0890 |
-| 16 | press | -0.0878 |
-| 17 | principle | 0.0874 |
-| 18 | friston | -0.0842 |
-| 19 | free energy | 0.0830 |
-| 20 | using | -0.0828 |
+| 1 | active inference | 0.2895 |
+| 2 | inference | 0.2701 |
+| 3 | active | 0.2700 |
+| 4 | free | 0.2273 |
+| 5 | energy | 0.2246 |
+| 6 | free energy | 0.2232 |
+| 7 | expected | 0.1611 |
+| 8 | agents | 0.1503 |
+| 9 | data | -0.1495 |
+| 10 | activity | -0.1429 |
+| 11 | expected free | 0.1346 |
+| 12 | agent | 0.1343 |
+| 13 | human | -0.1185 |
+| 14 | efe | 0.1175 |
+| 15 | variational | 0.1095 |
+| 16 | rl | 0.1078 |
+| 17 | deep | 0.1018 |
+| 18 | planning | 0.0966 |
+| 19 | control | 0.0963 |
+| 20 | state | 0.0888 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): fep, systems, brain, learning, synaptic
-**Negative contributors** (low loading): 2025, entropy, control, changes, university
+**Positive contributors** (high loading): active inference, inference, active, free, energy
+**Negative contributors** (low loading): data, activity, human
 
 ---
 
 ### Principal Component 3 (PC3)
 
-- **Variance Explained**: 3.37%
+- **Variance Explained**: 1.30%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | 2025 | 0.3021 |
-| 2 | fep | 0.1787 |
-| 3 | active | -0.1691 |
-| 4 | active inference | -0.1647 |
-| 5 | entropy | -0.1542 |
-| 6 | estimation | -0.1446 |
-| 7 | university | 0.1319 |
-| 8 | inference | -0.1306 |
-| 9 | noise | -0.1190 |
-| 10 | brain | 0.1165 |
-| 11 | changes | 0.1147 |
-| 12 | synaptic | 0.1122 |
-| 13 | article | 0.1121 |
-| 14 | information | -0.1119 |
-| 15 | press | 0.1056 |
-| 16 | states | -0.1046 |
-| 17 | november 2025 | 0.1007 |
-| 18 | november | 0.1007 |
-| 19 | energy | -0.0991 |
-| 20 | study | 0.0951 |
+| 1 | control | 0.3488 |
+| 2 | navigation | -0.1954 |
+| 3 | agents | -0.1918 |
+| 4 | exploration | -0.1716 |
+| 5 | agent | -0.1632 |
+| 6 | perception | 0.1543 |
+| 7 | inference | 0.1476 |
+| 8 | aif | -0.1474 |
+| 9 | environments | -0.1410 |
+| 10 | brain | 0.1396 |
+| 11 | deep | 0.1384 |
+| 12 | active inference | 0.1240 |
+| 13 | active | 0.1237 |
+| 14 | estimation | 0.1160 |
+| 15 | multi | -0.1068 |
+| 16 | curiosity | -0.1045 |
+| 17 | action | 0.1025 |
+| 18 | decision | -0.0993 |
+| 19 | neural | 0.0981 |
+| 20 | decision making | -0.0896 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): 2025, fep, university, brain, changes
-**Negative contributors** (low loading): active, active inference, entropy, estimation, inference
+**Positive contributors** (high loading): control, perception, inference, brain, deep
+**Negative contributors** (low loading): navigation, agents, exploration, agent, aif
 
 ---
 
 ### Principal Component 4 (PC4)
 
-- **Variance Explained**: 3.25%
+- **Variance Explained**: 1.25%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | estimation | 0.3268 |
-| 2 | control | 0.2802 |
-| 3 | state | 0.2137 |
-| 4 | noise | 0.1943 |
-| 5 | 2025 | -0.1587 |
-| 6 | network | 0.1250 |
-| 7 | input | 0.1090 |
-| 8 | repeated | 0.1077 |
-| 9 | states | -0.1037 |
-| 10 | colored noise | 0.1019 |
-| 11 | inference | -0.1014 |
-| 12 | aguilera | 0.0984 |
-| 13 | performance | 0.0982 |
-| 14 | colored | 0.0978 |
-| 15 | estimation control | 0.0959 |
-| 16 | active | -0.0949 |
-| 17 | self | -0.0902 |
-| 18 | agents | 0.0889 |
-| 19 | theory | -0.0883 |
-| 20 | wind | 0.0864 |
+| 1 | learning | 0.1921 |
+| 2 | model | 0.1846 |
+| 3 | fep | 0.1659 |
+| 4 | bayesian | -0.1522 |
+| 5 | brain | 0.1463 |
+| 6 | navigation | 0.1457 |
+| 7 | predictive | 0.1381 |
+| 8 | cognitive | 0.1339 |
+| 9 | self | 0.1330 |
+| 10 | motor | 0.1233 |
+| 11 | perception | 0.1187 |
+| 12 | neural | 0.1155 |
+| 13 | human | 0.1118 |
+| 14 | world | 0.1112 |
+| 15 | states | -0.1089 |
+| 16 | mechanics | -0.1074 |
+| 17 | predictive coding | 0.1044 |
+| 18 | coding | 0.1043 |
+| 19 | environment | 0.1021 |
+| 20 | markov | -0.1001 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): estimation, control, state, noise, network
-**Negative contributors** (low loading): 2025, states, inference, active, self
+**Positive contributors** (high loading): learning, model, fep, brain, navigation
+**Negative contributors** (low loading): bayesian, states, mechanics, markov
 
 ---
 
 ### Principal Component 5 (PC5)
 
-- **Variance Explained**: 3.20%
+- **Variance Explained**: 1.19%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | entropy | 0.2261 |
-| 2 | 2025 | -0.1973 |
-| 3 | principles | 0.1958 |
-| 4 | local | 0.1918 |
-| 5 | estimation | -0.1652 |
-| 6 | synaptic | 0.1528 |
-| 7 | active inference | -0.1487 |
-| 8 | max entropy | 0.1486 |
-| 9 | max | 0.1486 |
-| 10 | belief | 0.1452 |
-| 11 | active | -0.1436 |
-| 12 | control | -0.1236 |
-| 13 | brain | 0.1218 |
-| 14 | kikuchi | 0.1139 |
-| 15 | bethe kikuchi | 0.1139 |
-| 16 | bethe | 0.1139 |
-| 17 | energy | 0.1091 |
-| 18 | legendre | 0.1091 |
-| 19 | variational principles | 0.1091 |
-| 20 | belief propagation | 0.1091 |
+| 1 | ai | 0.3995 |
+| 2 | intelligence | 0.1940 |
+| 3 | systems | 0.1904 |
+| 4 | active inference | 0.1653 |
+| 5 | inference | 0.1497 |
+| 6 | agents | 0.1461 |
+| 7 | active | 0.1421 |
+| 8 | cognitive | 0.1397 |
+| 9 | artificial | 0.1381 |
+| 10 | data | -0.1237 |
+| 11 | cognition | 0.1188 |
+| 12 | artificial intelligence | 0.1167 |
+| 13 | deep | -0.1152 |
+| 14 | consciousness | 0.1094 |
+| 15 | embodied | 0.1080 |
+| 16 | robot | -0.1075 |
+| 17 | object | -0.1073 |
+| 18 | navigation | -0.1008 |
+| 19 | model | -0.0953 |
+| 20 | human | 0.0949 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): entropy, principles, local, synaptic, max entropy
-**Negative contributors** (low loading): 2025, estimation, active inference, active, control
+**Positive contributors** (high loading): ai, intelligence, systems, active inference, inference
+**Negative contributors** (low loading): data, deep, robot, object, navigation
 
 ---
 

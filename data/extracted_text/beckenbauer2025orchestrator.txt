@@ -1,0 +1,1059 @@
+Orchestrator: Active Inference for Multi-Agent
+Systems in Long-Horizon Tasks
+LukasBeckenbauer∗†∗ JohannesLöwe† GeZheng∗
+AlexandraBrintrup∗
+∗DepartmentofEngineering,UniversityofCambridge,Cambridge,UK
+†TUMSchoolofManagement,TechnicalUniversityofMunich,Munich,DE
+Abstract
+Complex,non-lineartaskschallengeLLM-enhancedmulti-agentsystems(MAS)
+duetopartialobservabilityandsuboptimalcoordination. WeproposeOrchestrator,
+anovelMASframeworkthatleveragesattention-inspiredself-emergentcoordina-
+tionandreflectivebenchmarkingtooptimizeglobaltaskperformance.Orchestrator
+introducesamonitoringmechanismtotrackagent-environmentdynamics,using
+activeinferencebenchmarkstooptimizesystembehavior. Bytrackingagent-to-
+agentandagent-to-environmentinteraction,Orchestratormitigatestheeffectsof
+partialobservabilityandenablesagentstoapproximateglobaltasksolutionsmore
+efficiently. We evaluate the framework on a series of maze puzzles of increas-
+ing complexity, demonstrating its effectiveness in enhancing coordination and
+performanceindynamic,non-linearenvironmentswithlong-horizonobjectives.
+1 Introduction
+WiththerapidadvancementofLargeLanguageModels(LLMs),researchonintelligentmulti-agent
+systems (MAS) is gaining new traction. Researchers have investigated use-cases across a broad
+rangeofapplications,includingenhancingthereasoningandtask-executioncapabilitiesofgeneral-
+purposeLLMs[1,2,3],supportingsoftwareproductioninrecommendersystems[4,5],facilitating
+data interfacing and visualization [6], and enabling self-supervising supply chain infrastructures
+[7,8]. However,whileaneedforAI-drivenMASsolutionsthatenableadvancedagent-coordination
+andeffectivenessacrosscomplex,non-lineartask-settingshasbeenrecognized[9,1,10,2,11,12],
+researchontheoptimizationofsystem-levelMAS-coordinationtowardstaskexecutionfornon-linear,
+long-horizonproblemsettingshasgainedtractiononlyrecently[7].
+ExistingworkhasprimarilyadvancedMASbyimprovingfeedbackloopsacrossagent-to-agentor
+agent-to-environmentsettings. Intraditionalsettingsthishasmainlybeenpursuedviareinforcement
+learning[13,14,15,16]. Morerecently,attentionhasshiftedtowardLLM-supportedmulti-agent
+collaboration,oftenenhancedbyreflectiveorsupervisorymechanisms[17,18,19,16]. Whilethese
+approacheshavedemonstratednotablesuccess,theyoftenrelyonstatictopologies[1,10,2,20]and
+aretypicallybenchmarkedonshort-horizon,agent-specifictaskssuchasHumanEval,GPQA[21],
+orGSM8K[22]. Further,whileadominantbodyofthisworkhasfocusedonimprovingplanning
+efficiencyinlong-horizonsettingsofsteadylevelsofcomplexity[23,24,16,25,26],thereremains
+limitedexplorationintohowLLM-augmentedMAScanbeenabledtoscaleandsustainhigh-accuracy
+whenaddressingadvanced,long-horizontaskscharacterizedbygrowingcomplexitylevels[27,28].
+Toaddressthischallenge,weproposeOrchestrator—amulti-agentcoordinationframeworkwith
+task-observationinstanceandembeddedactiveinferencefeedback-loops—andapplyittosolvinga
+seriesofclassicmazepuzzleswithvaryingdifficultylevels(easy,medium,hard). Groundedinactive
+∗Correspondingauthor
+Preprint.
+5202
+peS
+6
+]AM.sc[
+1v15650.9052:viXra
+(a) Graph Depiction of Cell-
+InternalMASWorkflow (b)OrchestratorCellDesign.AreprintisavailableinAppendixA.2.
+Figure1: OrchestratorFrameworkOverview
+inferenceprinciples[29,26],statingthatsentientagentsacttominimizesurpriseandmaintaintheir
+internalstatesbyminimizingaquantitycalledvariationalfreeenergy(VFE),Orchestratordraws
+onabenchmark-drivenintrospectionmechanismthatconsidersboth,inter-agenticcommunication
+[30,16,12],anddynamicstatesbetweenagents’andtheirimmediateenvironment[11,30,31]. We
+operationalizeactiveinferencebycontrastingagent’srealizedinformationgainwithcoordination
+costs and optimizing for free energy (FE) output as a measure of effective task solving. This
+signal regulates agent autonomy and dynamically adapts system behavior in response to rising
+decisionuncertaintyand/orefficiencycosts[32,31,33]. Subsequently,weaddressagents’partial
+observability,asakeylimitationtooveralloperationalperformance[34],byformulatingtheiterative
+approximation of effective agent-to-agent and agent-environment coordination as a quantitative
+optimizationproblem.
+We evaluate Orchestrator’s capacity to overcome local minima, by testing it on a range of maze
+puzzleswithvaryinglevelsofescapecomplexity. Orchestratoroutperformsbaselineagentensembles
+thatoperatewithoutactive-inferencebenchmarkinganddynamicorchestrationbyanaveragefactor
+of 3,03 on mazes of 18 x 18 size and medium difficulty. Specifically, our results indicate that,
+compared to a baseline success rate of 11%, active inference-driven orchestration significantly
+improvesreliability,efficiency,andscalabilityinlong-horizonmaze-solvingtasks,achievingupto
+100%accuracyacross25runsinmediumdifficultyandupto76,67%accuracyinhardmazesof25x
+25size.
+We validate our results through ablation studies and summarize our key contributions as: (i) we
+introduceaself-optimizing,scalablecellarchitectureconsistingofaplanning,execution,andobser-
+vationinstance—drivenbyactive-inferencefeedbackandtask-observationmechanisms,enabling
+MAS to operate effectively in settings that demand adaptive autonomy; (ii) we propose a set of
+coordinationbenchmarksandoptimizationmethodsthattrackbothagent’sinternaldecisionoutcomes
+andtheircollaborativebehavior, guidingagentcellstoawayfromlocaltask-completionminima
+andtowardgloballyoptimalsolutionhorizons;and(iii)wedemonstratesustainedtask-completion
+accuracy across long-horizon maze tasks across various difficulty levels, using only lightweight,
+resource-efficientLLMmodels,thusaligningwithproduction-readydeploymentscenariosunder
+strictbudgetandresourceconstraints.
+2 RelatedWork
+Maze-AssessmentasLong-HorizonBenchmarkforMAS. Maze-basedenvironmentshavebe-
+comeacentraltestbedforevaluatingthereasoning,planning,andcoordinationabilitiesofintelligent
+agents[35,28,36]. Earlybenchmarksfocusonsingle-agentnavigationinstatic,fullyobservable
+mazes,whereclassicalgorithmssuchasA*,FloodFill,DFS,ormulti-agentpathfinding(MAPF)
+[37] in non-LLM contexts are used to assess pathfinding and basic spatial reasoning capabilities
+[38,39,40,36].
+More recent work has produced a new generation of maze benchmarks that probe the limits of
+agent memory, adaptability, and sequential decision-making. Memory Gym [41], for example,
+introducesendless,procedurallygeneratedenvironmentstotestagents’memoryeffectivenessover
+unboundedhorizons.MazeBench[28]shiftsthefocustoLLMs,usingtokenizedmazerepresentations,
+2
+reinforcementlearning,andchain-of-thoughtpromptingtoevaluatestep-by-stepspatialreasoning
+insmall-sizemazes. MazeEval[42]isolatespurespatialreasoningbyrequiringLLMstonavigate
+mazesusingonlycoordinateanddistance-to-wallfeedback,withoutvisualinput. Finally,MAPFhas
+beenproposedasastructuredLLMbenchmark,highlightingtheuniquedifficultiesofmulti-agent
+coordination,long-horizonplanning,andsymbolicmapunderstanding[43].
+Despitetheseadvances,theresultsofexistingmazebenchmarksrevealthatLLMsandRLagents
+strugglewiththecombinatorialdemandsofmulti-agentcoordination,especiallyinenvironmentswith
+ahighdegreeinpathdeviationsandobstacles[43,36]. Spatialandlong-horizonreasoningpresent
+core challenges, with LLMs often failing to build robust internal representations and implement
+effectivesolutionstowardsglobaltaskcompletion. Further,structurallimitations,suchascontext
+windowsizeandlackofscalablememory-architectureshinderperformanceonlargeorcomplex
+mazes. Our work directly addresses these research gaps by introducing a unified, dynamic, and
+scalableframeworkthatexpandsthelimitationsofpriorLLM-basedmazesolvingapproaches,by
+supportinglong-horizontaskcompletion,activeinference-basedoptimizationloops,andreal-time
+performanceassessmentforLLM-basedagents.
+ReflectiveInstancesinMulti-AgentSettings. Toorchestratemulti-agentinteractions,previous
+research, such as [44, 1, 17], has introduced reflective mechanisms that optimize agent-to-agent,
+and/oragent-to-environmentcoordination. Boetal. [30]introducetheCOPPERframework,which
+implementsafine-tunedLLMtocritiqueandrefineoutputsofprimaryagents,drawingonareward
+mechanismtoassesseachagentsoverallcontributiontoovertasksuccess, andhelpingagentsto
+performonspecificbaselinebenchmarks,includingHotPotQA[45],GSM8K[46],and‘Checkmate
+inOneMove’[47]. Similarly,Nayaketal. [18]implementaplan-act-correct-verifymechanismto
+helpanLLM-guidedrobotagenttoautonomouslynavigatea3D-environment;Leveragingvisual
+feedbackbetweenenvironmentandinternalreflectioninstancestoenhancenavigationalaccuracyof
+theagent. Likewise,Xieetal. [48]utilizereinforcementlearningtoimproveanLLM-agent’sability
+tocritiqueitsownwork,improvingrelativeperformanceby106%oncodingbenchmarks. Whereas
+Dingetal.[15]proposeanasynchronouscommunicationframeworktooptimizedecision-capabilities
+inMAS,reducingerrormarginsduetosequence-relatedcirculardependenciesinlinearworkflows.
+AgentsPartialObservabilityLimitations. Whileseveralauthorshaveassessedthebenefitsof
+reflectiveinstancestoovercomeagent’spartialobservabilityproblem[18,49],thisstrandofresearch
+iscloselyalignedwithsuccessesinagent-to-agentreinforcementlearningpipelines[44]. Expanding
+onthesepreviousapproaches,butaimingforemergentperformancewithoutreinforcement-driven
+validation,Keetal.[50]discussanemergentzero-supervisionMASframeworktoovercomeagent’s
+partialobservabilityproblemsandsolvetasksatadvancedcomplexity,byimplementingareflective
+meta-levelinstancethatoptimizesagent-to-agentsequenceslocallyandneed-based. Inparallel,work
+suchas[51]and[20]introducesdynamicsocialgraphs,orgraph-attentionparadigms[52,53]to
+supportemergentmulti-agentinteractioninnon-linearproblemsettings. Whilefurther, evolving
+orchestrationapproacheshavebeenproposed[17,19,20,23]thatformalizeagentinteractionasadi-
+rectedgraph,withacentralorchestratordynamicallyselectingandsequencingagentactivationsbased
+onevolvingtaskstates,yieldingmorecompactandefficientcollaborationpatterns. However,while
+theseapproachesareabletohandletasksatadvancedcomplexity,theyfallshortintaskcompletion
+thatrequireahighnumberofstepsacrosslong-termplanningandproblemsolving. Toaddressthese
+gaps,morerecentworkhassuggestedactiveinferenceprinciples,aneurosciencegroundedparadigm
+thatcanbeleveragedtoaidagent’sreasoningcapabilitiesanddrivetaskcompletionsuccessesvia
+quantifiedfeedbackprinciples[33].
+Applications of Active Inference in MAS. We integrate active inference principles by imple-
+menting a reflective benchmarking mechanisms to capture agents’ free energy [32, 26, 33] and
+to control for system-wide entropy metrics and enhance long-term adaptability by nudging the
+system to reduce its error rates. There is a long tradition of benchmark-driven optimization in
+MAS research, which has found special traction in multi-agent reinforcement learning (MARL)
+contexts, suchas[52,15,54,55]. Authorsjustifytheneedfordynamicbenchmarkstooptimize
+agentbehaviorinhighlydynamicandhardtopredictenvironments. Forexample,Surietal. [32]
+stabilizemulti-agentinteractionsbycollectivelyminimizingfreeenergyacrossagentdistributions,
+effectivelyreducingtheoccurrenceofunexpectedstates. While,Ruiz-Serraetal.[31]integrateactive
+inferenceframeworkstoincorporateagents’assumptionaboutotheragents’internalstatesforstrate-
+gicdecision-makinginiterativescenarios. Inthiswork,wedrawonrecentadvancesonreflective
+mechanismsinLLM-basedagent-optimization[53,19,30,23]andmergetheapproachwithactive
+3
+inferencedynamic-optimizationmechanisms,asdemonstratedin[12,31,33]. Oursystemuniquely
+synthesizesthesereflection-basedandinformation-theoreticinsightsbyimplementingareflective,
+benchmark-drivenorchestrationinstancetocontinuouslyevaluateandenhanceagent-to-agentand
+agent-to-environmentinteractions.
+Insummary,Orchestratorunifiesthreekeyadvancesintheaboveliterature: First,weimplementa
+modular’cell-structured’graphdesign,embeddingplanning,execution,andorchestrationasexplicit
+computationalstageswithineach’cell’. Second,weintroduceareflectivebenchmarkingmechanism,
+usingactiveinferenceprinciplestomonitorFE-groundedintra-andinter-cellperformancemetricsto
+continuouslyassessandadaptlocalagentroutinesinlightofglobalprogress. Lastly,weleverage
+these performance metrics to foster dynamic adjustments of LLM’s internal policy and prompt
+design,nudgingagentstoadjusttheirbehavioriftheyencounterlocalsolutionminimaorexhibit
+other behavior that is stalling progress. In this manner, and optimizing for both immediate and
+longitudinalperformance,Orchestrator’scell-basedtask-executiondesignempowersbenchmark-
+drivencoordinationbetweencomponentsofanagentensemble,proactivelyreducingerrorpotential
+whileimprovingtaskaccuracyatthelocalandsystemiclevel.
+3 OrchestratorFramework
+3.1 Graph-BasedandDynamicMulti-AgentArchitecture
+WeformalizetheOrchestratorframeworkshowninFigure1asaunifiedgraph-basedarchitecture
+thatenablesdynamicbehavioraladaptationandreal-timecoordination.Thesystem’supdatesequence
+ismodeledasadirectedgraphinFigure1a,whileeachsystemstateatiterationtisrepresentedby
+theagentic’cell’architecture,illustratingagentinteractionsandcoordinationdynamicsasdepicted
+inFigure1b.
+Mathematically,theOrchestratorframeworkisdefinedas,
+Orchestrator=G(N,E,F) (1)
+WhereN =N ∪N ∪N denotesthecompletenodeset,witheachnodecorrespondingto
+plan exec orch
+anagent. Theframeworkconsistsofthreenodetypes: theplanningnode(N ),theexecutionnode
+plan
+(N ),andtheorchestrationnode(N ). Forthiswork,weimplementasingleorchestratorcell-
+exec orch
+instance,comprisingoneplanningnodeandoneorchestrationnode,withtheremaining(N−2)nodes
+instantiatedasexecutionnodes. Theplannode,N ={P},providesasequenceofstrategicaction
+plan
+stepsthatguideexecutionnodes. Executionnodes,N ={e ,e ,...,e ,...,e },poweredby
+exec 1 2 n N−2
+LLMs,interpretthepolicypromptandactintheenvironment. WheredirectededgesE ⊆(N ×N)
+are associated with routing functions, G (t) = {g ,g ,...,g ,...,g }, that
+r r(1;t) r(2;t) r(n;t) r(N−2;t)
+define define interaction pathways among agents at iteration t. The action performance of each
+execution node is continuously evaluated by its variational free energy (VFE) following active
+inferenceprinciples(describedinmoredetailinsection3.2). Thisensuresthatactionsareselectedto
+maximizeinformationgain,wherehighuncertaintycorrespondstoactiveexploration,whiledriving
+agentstowardtheglobalobjectiveofmazecompletion. Whileexecutionnodeshaveknowledgeof
+otheragent’sexploredmazejunctionsatalltimes,theorchestrationnode,N ={O},servesasa
+orch
+communicationhubandglobalmemory,allowingexecutionnodestoshareadditionalinformation
+(suchasotheragenterrorratesordeadenddetections)indirectly.
+Atthebeginningofthemazeexploration,theexecutionnodesN andtheorchestrationnodeN
+exec orch
+areinitializedwithdistinctstates,denotedasSeandSo,respectively,whicharedynamicallyupdated
+t t
+overtime. Forthepurposeofdemonstration, andwhilefutureimplementationsmayincorporate
+adaptiveplanning,wefurtherinitializeplanningnodeP withapresetsequenceofksteps,which
+ispassedasloopofactionableinstructionsintoexecutenodesatS (seesectionA.1inthe
+n;(t−1)
+Appendix). Each execute node E is equipped with its own, active-inference-based optimization
+function f , described in detail in the section 3.2. Orchestration node O maintains global state
+N
+includingtheinformationofstatesofallexecutenodes,whilethestateofeachexecutenodeisdefined
+asalocalstate. Atthestartofeachiterationt,eachexecutenodeconsiders(i)itsownstateand(ii)
+thestatesofotherexecutenodesupdatedbytheorchestratornodeandstoredinitstemporarystateS
+t
+andthentakesactionsfollowingitsinternalpolicyπ andtheactionable-guidanceP oflength
+plan
+k. Eachnodeen thenloopsthroughapredefinedsequenceofkstepsuntilplancompletionor
+S(t−1)
+interventiontriggersaremet(AppendixA.1).
+4
+After completion of each step k, the weight of each execute node, written as ∆w, is updated by
+calculating its VFE through the respective optimization function, {f ,f ,...,...f ,...,f }.
+1 2 n N−2
+The outcomes of these computations are then used to dynamically inject guidance instructions
+intotemporarylocalstatesofexecutionnodes,{Sˆe ,Sˆe ,...,Sˆe ,...,Sˆe }.
+1;(t−1) 2;(t−1) n;(t−1) (N−2);(t−1)
+Next,attheexecutionlayer,thetemporarylocalstatesareconsolidatedintoupdatedlocalstates,
+{Se ,Se ,...,Se ,...,Se }. ThissystemstateisthenpassedtotheorchestrationnodeO,
+1;t 2;t n;t (N−2);t
+whichreviewsagentprogressandprovidedirectoptimizationrecommendationsforexecutionagents.
+Theserecommendationsaredeliveredthroughdynamicpromptinjectionsthatupdatetheexecution
+agents’ internal policy, πE , as the global state SO is passed to the next iteration. The detailed
+t−1 t
+optimizationcomputationforagentsisexplainedinsection3.2andweprovideasequentialoverview
+ofhowtheorchestrationupdatesequenceoperatesduringmazeexplorationinFigure8.
+Figure2: SchematicrepresentationofOrchestrator’sdecision-makingcyclewhilesolvingamedium-
+difficultymaze-puzzleacrossn-steps.
+3.2 ActiveInferenceBenchmarkingandPerformanceAssessment
+Buildingonactiveinferenceprinciples,wereformulatetheVFEobjective. Insteadofsolelyminimiz-
+ingsurprisetoreducedeviationsfromthemodelpredictions,wedefinetheobjectiveasabalanced
+trade-off: maximizingagents’realizedinformationgaintoencourageactivelearning,whileoffsetting
+thiswithanexplicitcostfunctionthatcapturescoordinationdemandsandbehavioralefficiency. We
+providetheextendedformalismtothisapproachinsectionA.3intheAppendixandoperationalizeit
+asfollows:
+EpistemicUncertainty. Wequantifyepistemicuncertaintythroughmeasuringinformationentropy
+betweenconsecutivestates{S ,S },providingareal-timeestimateofeachagent’srateofactual
+t t+1
+informationgain
+U (n,t,k)=−H[S |S ] (2)
+epistemic n,t,k n−1,t−1,k−1
+where H[S ] denotes the normalized Shannon entropy of the message output for agent n at
+n,t,k
+iterationtandstepk. Theentropyiscomputedoverindividualmessagetokensj as:
+(cid:88)
+H (n,t,k)=− p (k)logp (k) (3)
+tokens j j
+j∈Kmessage
+AccuracyCostAssessment. Asacounterbalancetotheagent’sepistemicuncertainty,weoper-
+ationalize the accuracy principle of VFE as cost term. While in principle the VFE accuray term
+corresponds to the expected negative log-likelihood of observed outcomes under the generative
+model, directaccesstotheselikelihoodsisunavailableduetotheunderlyingLLMarchitectures.
+AsdescribedinsectionA.3,wethereforeapproximateaccuracycostusingabehavioralproxythat
+capturesbehavioralefficiencyandcoordinationateachstepk:
+5
+(cid:88)
+C (n,t,k)= w ·R (n,t,k) (4)
+accuracy j j
+j=1
+5
+wherethestaticweightsw =0.20forallj ∈{1,2,3,4,5}equallyweightasetoffivepredefined
+j
+riskcomponents:
+1. MovementEfficiency: R (n,t,k)=1− totalmoves
+1 totalmoveattempts
+2. ExplorationEfficiency: R (n,t,k)=1− uniquepositionsvisited
+2 totalmoves
+3. BacktrackingPatterns: R (n,t,k)=backtrackratio+1.5·oscillationpenalty
+3
+4. Dead-EndRecognition: R (n,t,k)=1− dead-endrevisits
+4 totalmoves
+5. OscillationAvoidance: R (n,t,k)=1− uniquepositionsinrecentmoves
+5 recentmovecount
+BehavioralOptimizationFunction. Tonormalizeoutputs,wecapbothuncertaintyandcostterms
+at±2.0anddefinethevariationalfreeenergyF (t,k)foreachagentnatiterationtandstepkas:
+n
+F (t,k)=U (n,t,k)−C (n,t,k) (5)
+n epistemic accuracy
+Thesubtractiveformulationreflectsouroptimizationprinciple: highepistemicuncertaintysignals
+productiveinformationgain(positivecontribution),whereashighpragmaticcostspenalizescoun-
+terproductivebehaviorsincludingoscillationpatterns,redundantexploration,ormovementfailures
+(negativecontribution).
+PerformancePolicies. Basedonfreeenergyoutcomes,thesystemassignsagentstooneoffour
+performance categories, where threshold variables ϑ and ϑ have been deliberately assigned to
+1 2
+matchbestperformanceusinggrid-searchasdeterminingmethod(seesectionA.5intheAppendix).
+• HighEpistemicDrive,LowAccuracyCost(U >0.6,C <0.4): Effective
+epistemic accuracy
+explorationwithefficientexecution
+• HighEpistemicDrive,HighAccuracyCost(U >0.6,C >0.4): Active
+epistemic accuracy
+discoverybutinefficientexecution
+• LowEpistemicDrive,LowAccuracyCost(U <0.6,C <0.4): Consis-
+epistemic accuracy
+tentexecutionbutlimitedexploration
+• LowEpistemicDrive, HighAccuracyCost(U < 0.6, C > 0.4): Poor
+epistemic accuracy
+explorationandinefficientexecution
+DynamicWeightModulation. Eachperformancecategorytriggersadjustmentstoasetofbehav-
+ioralweights:
+w (t,k)={w (t,k), w (t,k), w (t,k), w (t,k)} (6)
+n explore exploit coordinate backtrack
+whichareupdatedas:
+w (t,k)=w +∆w(F (t,k),∇F (t,k)) (7)
+n base n n
+where∆waccountsforbothcurrentfree-energyanditstemporalgradient,∇F (t,k),thusincorpo-
+n
+ratingpredictivedynamics. Forexample,agentsintheexpressinghighepistemicdrivebuthighcosts,
+areassignedincreasedw weightstoimproveexecutionefficiency,whileagentswithlowdrive
+exploit
+buteffectivecostmanagement,receivehigherw weightstoencouragebroaderenvironmental
+explore
+exploration. Furtherdetailsonmovementrewardscoringanddynamicweightupdatesareprovided
+insectionsA.1andA.4. PromptdesignofagentsarepresentedinsectionsA.7andA.8.
+4 Experiments
+Weevaluateourapproachonasuiteofsyntheticmazeenvironmentsdesignedtostress-testreasoning
+andcoordinationacrosslonghorizontasksettings. WedrawontheAMazebenchmark[36],whichis
+designedtoprocedurallygeneratechallengingmazeenvironmentsandassessgeneralizationabilityof
+RL-agentsacross(long-horizon)tasksettings. ThealgorithmicdesignofourAMazeimplementation
+isprovidedinAppendixsectionA.9.
+Challenge. Weconsiderthreemazedifficultylevels(easy,medium,hard),eachinstantiatedwith
+fiveuniquemazes. AsdefinedbytheAMazebenchmark,mazesdifferinlength,branchingfactor,
+andrequiredcoordination. Arunisconsideredsuccessfulifoneofnexecutionagentsreachesthe
+mazeexitwithinthemaximumstepbudget. Asmaximumstepbudgetweallocateaheuristicof
+two-and-a-halftimesthenumberoftilespermazeconfiguration,aswellasamaximumdurationof
+7200seconds,ifoneoftheseconditionsisreached,timeoutisinitializedandthemazeexplorationis
+consideredasfailed.
+6
+Agents. Toensureefficiencyandresponsivenessunderreal-worlddeploymentconstraints—where
+computationalresourcesandbudgetarecritical—weinstantiateouragentsusingstate-of-the-art,
+butcompact,fast-inferenceLLMs(specificallyGPT-4.1-nanoandGPT-5-nano). Forthepurposeof
+demonstration,wepresentexperimentswithn=2executionagents,only. Whilepreliminarytests
+haveshowcasedthefeasibilityofn=1orn=3agents,weconsidern=2abalancedtrade-offinterms
+of efficiency, speed, and resource-allocation for thepurpose of maze exploration. Further, while
+mixed-modelapproachesarepossible,weconstraintheorchestrator,whenenabled,tobeingidentical
+totheexecutionmodel,privilegingahomogeneousapproach.
+BaselinesandExperimentConfigurations. Weevaluatethreecoreexperimentalconfigurations
+to systematically assess the impact of benchmarking and orchestration. As a floor baseline, we
+implement a random walk agent: a memory-enhanced, single-agent policy that self-selects valid
+moves at each step, with no access to FE-benchmarking, or orchestration support. Second, we
+introduceFE-benchmarking,providingagentswithreal-timefeedbackanddynamicweightadjust-
+ments,basedontheirperformance. Thethirdconfigurationaddsanorchestratornodeinaddition
+toFE-benchmarking,totestforthemodelsabilitytofacilitatehigher-levelcoordinationbetween
+agents. Tosavecompute,weomittherandomwalkforhard-leveldifficultyaschanceofsuccess
+is considerably low, as well as assessment of the FE + orchestration configuration on easy-level
+difficulty,aschancesforsuccessareconsiderablyhigh.
+ExecutionandEvaluationMetrics. Weexecuteatleast10runsperconfigurationandlevelof
+difficulty,across15mazesinabalancedsetting,yieldingaminimumof150runsintotal. Foreach
+configuration,wereportkeymetricssuchassuccessrate,totalnumberofstepstaken,numberof
+failedmoves, andtotalcosts(normalizedAPItokenusageindollars). Weavoidwall-clocktime
+measures,asproviderratelimitsandreal-timechangesonOpenAIAPIdemanddistorttheresults.
+Further,wepredeclareaprecisiontargetof±15percentagepoints(pp)forsuccessrateCIs. Runsare
+increaseduntilthistargetisreached.
+5 ResultsandDiscussion
+Table1: SuccessrateswithWilson95%confidenceintervals(CI)andcorrespondinghalf-widthsin
+percentagepoints(pp)permodelconfigurationsandmazedifficultylevels.
+Configuration Difficulty #ofRuns Successes SuccessRate(%) 95%CILower 95%CIUpper Half-width(pp)
+gpt-4.1-nano(Solo) easy 34 11 32.35 19.13 49.16 15.01
+gpt-4.1-nano(Solo) medium 33 10 30.3 17.38 47.34 14.98
+gpt-4.1-nano+FEBenchmarkonly easy 10 10 100.0 72.25 100.0 13.88
+gpt-4.1-nano+FEBenchmarkonly medium 36 26 72.22 56.01 84.15 14.07
+gpt-4.1-nano+FEBenchmarkonly hard 26 22 84.62 66.47 93.85 13.69
+gpt-4.1-nano+FE+OrchestrationNode medium 25 25 100.0 86.68 100.0 6.66
+gpt-4.1-nano+FE+OrchestrationNode hard 32 23 71.88 54.63 84.44 14.9
+gpt-5-nano(Solo) easy 10 0 0.0 0.0 27.75 13.88
+gpt-5-nano(Solo) medium 11 0 0.0 0.0 25.88 12.94
+gpt-5-nano+FEBenchmarkonly easy 10 10 100.0 72.25 100.0 13.88
+gpt-5-nano+FEBenchmarkonly medium 25 20 80.0 60.87 91.14 15.14
+gpt-5-nano+FEBenchmarkonly hard 36 23 63.89 47.58 77.52 14.97
+gpt-5-nano+FE+OrchestrationNode medium 24 20 83.33 64.15 93.32 14.59
+gpt-5-nano+FE+OrchestrationNode hard 30 23 76.67 59.07 88.21 14.57
+WepresentourresultsinTable1. Forsoloagentensembleswithoutbenchmarkandorchestration
+nodes, wefindpoormodelperformanceinrunsoneasy-level(32,35%successrateforGPT-4.1-
+nano; 0% success rate for GPT-5-nano) and medium-level difficulty (30,03% for GPT-4.1-nano;
+0%forGPT-5-nano). Incontrast,Orchestratorstronglyoutperformssoloagentensemblesoneasy
+(100% for both GPT-nano models) and medium-difficulty levels (100% for GPT-4.1.-nano and
+83.33%forforGPT-5-nano),accountingforathreefoldincreaseinsuccessratesforGPT-4.1-nano
+configurationsandanincreasebyafactorof3,33and2,77respectivelyforeasyandmediumlevels
+in GPT-5-nano configurations. Further, we find that just incorporating FE-benchmarks, already
+substantiallyimprovesmodelperformance(medium: 72.22%forGPT-4.1-nano,80.0%forGPT-
+5-nano; hard: 84.62% for GPT-4.1-nano, 63.89% for GPT-5-nano). Lastly, adding orchestration
+improvesperformancefor3outof4configurations(medium: 100%forGPT-4.1-nano,83.33%for
+GPT-5-nano;hard: 71.88%forGPT-4.1-nano,76.67%forGPT-5-nano). Surprisingly,GPT-4.1-nano
+withFEbenchmarksoutperformsthesamemodelwithaddedorchestrationonhardmazes(84.62%
+vs. 71.88%). Onepossibleexplanationisthatorchestration,whilegenerallybeneficial,canintroduce
+additionalreasoningoverheadinhigh-complexityenvironments,exceedingthemodel’seffective
+planning horizon [27]. In such cases, more streamlined reasoning—guided by FE benchmarks
+7
+Figure 3: Success rate and Wilson CI ranges by model configuration and difficulty as shown in
+Table1. Numericalidentifiersforconfigurationsareasfollows: 1)GPT-4.1-nano(Solo);2)GPT-
+5-nano(Solo);3)GPT-4.1-nano+FEBenchmarkonly;4)GPT-5-nano+FEBenchmarkonly;5)
+GPT-4.1-nano+FE+OrchestrationNode;6)GPT-5-nano+FE+OrchestrationNode.
+alone—mayyieldbetterresults[33,56]. Thissuggeststhatwhileadditionalorchestrationinstances
+improvetask-completionaccuracyformostscenarios[23,24,19],theiractualutilitymaydependon
+correctlyapplyingtheensemblecompositionofagentstomatchthespecifictaskathand. Additional
+resultsconcerningmodelcost-effectiveness,completionefficiency,andconvergenceintervalsper
+configurationarelistedinsectionsA.6.4,andA.6.5intheAppendix.
+6 Conclusion
+ThispaperintroducedOrchestrator,aunifiedactiveinference-basedframeworkformulti-agentcoor-
+dinationinlong-horizonenvironments. Motivatedbythelimitationsofexistinglong-horizon,maze
+solvingapproaches—whichoftenfailtocapturethechallengesofmemory-retention,adaptability,
+andlong-horizoncoordination—Orchestratorintegratesdynamicfeedback,reflectivebenchmarking,
+andmodularorchestrationintoasingle,scalablearchitecture.
+Ourresultshighlightseveralkeycontributions:First,weproposeanovelactive-inference-basedarchi-
+tectureformulti-agentcoordinationthatsupportsreal-timeadaptation,memory-drivencollaboration,
+andscalablereasoning. Second,weshowthatthisapproachachievesstrongperformanceevenwith
+lightweight,fast-inferencemodelssuitableforreal-worlddeployment,butisabletoaccommodate
+moresophisticatedreasoningagentsinalignmentwithrisingtaskcomplexity. Third,wedemonstrate
+thatthecombinationofactive-inferencebenchmarkingandorchestrationsubstantiallyimprovesboth
+thereliabilityandefficiencyofagentteams,particularlyincomplex,long-horizontasks. Bybridging
+thegapbetweenstaticbenchmarksandadaptive,feedback-drivenorchestration,ourworkcontributes
+to the debate on foundational frameworks for robust, autonomous, and LLM-based multi-agent
+systemscapableofaddressinglong-horizonchallengesinreal-worldproductionsettings.
+Nevertheless several limitations remain: As the present analysis is restricted to synthetic maze
+environmentsandsmallagentteams,theabilityofOrchestratortoaddresslong-horizontasksinmore
+heterogeneoussettingsandacrossotherproblemdomainsremainstobeexplored. Further,toassess
+essentialdeploymentfactorsintermsofscalability,cost,andperformance,frameworkperformance
+shouldbeextensivelytestedforaddressinghigher-complexitytaskswhileusinglargerLLMmodels.
+Lastly,giventhefactthatourarchitectureachieveshighlevelperformancewithsmaller-size,high
+inference-speedLLMs,weseegreatpotentialfordeployingOrchestratorusingopen-sourcemodels.
+Thefeasibilityoftheseapproachesshouldbetestedinfutureiterations.
+8
+References
+[1] WeizeChen,YushengSu,JingweiZuo,ChengYang,ChenfeiYuan,Chi-MinChan,Heyang
+Yu, Yaxi Lu, Yi-Hsin Hung, Chen Qian, Yujia Qin, Xin Cong, Ruobing Xie, Zhiyuan Liu,
+MaosongSun,andJieZhou. AgentVerse:FacilitatingMulti-AgentCollaborationandExploring
+EmergentBehaviorsinAgents. 2024.
+[2] JunyouLi,QinZhang,YangbinYu,QiangFu,andDehengYe. MoreAgentsIsAllYouNeed,
+October2024. arXiv:2402.05120[cs].
+[3] Jintian Zhang, Xin Xu, Ningyu Zhang, Ruibo Liu, Bryan Hooi, and Shumin Deng. Ex-
+ploringCollaborationMechanismsforLLMAgents: ASocialPsychologyView,May2024.
+arXiv:2310.02124[cs].
+[4] YuanzheLiu,RyanDeng,TimKaler,XuhaoChen,CharlesE.Leiserson,YaoMa,andJieChen.
+Lessons Learned: A Multi-Agent Framework for Code LLMs to Learn and Improve, 2025.
+VersionNumber: 1.
+[5] JundaHe,ChristophTreude,andDavidLo. LLM-BasedMulti-AgentSystemsforSoftware
+Engineering: LiteratureReview,VisionandtheRoadAhead,July2025. arXiv:2404.04834[cs].
+[6] Chao Xu, Qi Zhang, Baiyan Li, Anmin Wang, and Jingsong Bao. Visual analysis of time
+series data for multi-agent systems driven by large language models. In Proceedings of the
+3rdInternationalConferenceonSignalProcessing,ComputerNetworksandCommunications,
+SPCNC’24,page427–431,NewYork,NY,USA,2025.AssociationforComputingMachinery.
+[7] Liming Xu, Sara Almahri, Stephen Mak, and Alexandra Brintrup. Multi-Agent Systems
+andFoundationModelsEnableAutonomousSupplyChains: OpportunitiesandChallenges.
+IFAC-PapersOnLine,58(19):795–800,2024. Publisher: ElsevierBV.
+[8] Liming Xu, Stephen Mak, Maria Minaricova, and Alexandra Brintrup. On Implementing
+AutonomousSupplyChains: aMulti-AgentSystemApproach,June2024. arXiv:2310.09435
+[cs].
+[9] TalAlon,MagdalenDobson,ArielProcaccia,InbalTalgam-Cohen,andJamieTucker-Foltz.
+Multiagent Evaluation Mechanisms. Proceedings of the AAAI Conference on Artificial
+Intelligence,34(02):1774–1781,April2020.
+[10] WeizeChen,JiaruiYuan,ChenQian,ChengYang,ZhiyuanLiu,andMaosongSun. Optima:
+OptimizingEffectivenessandEfficiencyforLLM-BasedMulti-AgentSystem,February2025.
+arXiv:2410.08115[cs].
+[11] WenlinYao,HaitaoMi,andDongYu. HDFlow: EnhancingLLMComplexProblem-Solving
+withHybridThinkingandDynamicWorkflows,September2024. arXiv:2409.17433[cs].
+[12] RithvikPrakki. ActiveInferenceforSelf-OrganizingMulti-LLMSystems: ABayesianTher-
+modynamicApproachtoAdaptation,January2025. arXiv:2412.10425[cs].
+[13] Shariq Iqbal and Fei Sha. Actor-Attention-Critic for Multi-Agent Reinforcement Learning.
+2018.
+[14] ZeyangLiu,XinruiYang,andShiguangSun. GroundedAnswersforMulti-agentDecision-
+makingProblemthroughGenerativeWorldModel. 2024.
+[15] ZiluoDing,ZeyuanLiu,ZhiruiFang,KefanSu,LiwenZhu,andZongqingLu. Multi-Agent
+CoordinationviaMulti-LevelCommunication. 2024.
+[16] LutfiErenErdogan,NicholasLee,SehoonKim,SuhongMoon,HirokiFuruta,GopalaAnu-
+manchipalli,KurtKeutzer,andAmirGholami. Plan-and-Act: ImprovingPlanningofAgents
+forLong-HorizonTasks,April2025. arXiv:2503.09572[cs].
+[17] MingchenZhuge,WenyiWang,LouisKirsch,FrancescoFaccio,DmitriiKhizbullin,andJürgen
+Schmidhuber. LanguageAgentsasOptimizableGraphs,August2024. arXiv:2402.16823[cs].
+9
+[18] Siddharth Nayak, Adelmo Morrison Orozco, Jackson Zhang, Darren Chen, Aditya Kapoor,
+Eric Robinson, Karthik Gopalakrishnan, James Harrison, Brian Ichter, Anuj Mahajan, and
+HamsaBalakrishnan. Long-HorizonPlanningforMulti-AgentRobotsinPartiallyObservable
+Environments. 2024.
+[19] Edward Y. Chang and Longling Geng. SagaLLM: Context Management, Validation, and
+TransactionGuaranteesforMulti-AgentLLMPlanning,July2025. arXiv:2503.11951[cs].
+[20] BoyiLi, ZhonghanZhao, Der-HorngLee, andGaoangWang. AdaptiveGraphPruningfor
+Multi-AgentCommunication,June2025. arXiv:2506.02951[cs].
+[21] DavidRein,BettyLiHou,AsaCooperStickland,JacksonPetty,RichardYuanzhePang,Julien
+Dirani,JulianMichael,andSamuelRBowman. GPQA:AGraduate-LevelGoogle-ProofQ&A
+Benchmark. InFirstConferenceonLanguageModeling,2024.
+[22] SayashKapoor,BenediktStroebl,ZacharyS.Siegel,NityaNadgir,andArvindNarayanan. AI
+AgentsThatMatter. TransactionsonMachineLearningResearch,June2025.
+[23] YufanDang,ChenQian,XuehengLuo,JingruFan,ZihaoXie,RuijieShi,WeizeChen,Cheng
+Yang, Xiaoyin Che, Ye Tian, Xuantang Xiong, Lei Han, Zhiyuan Liu, and Maosong Sun.
+Multi-AgentCollaborationviaEvolvingOrchestration,May2025. arXiv:2505.19591[cs].
+[24] Enhao Zhang, Erkang Zhu, Gagan Bansal, Adam Fourney, Hussein Mozannar, and Jack
+Gerrits. Optimizing Sequential Multi-Step Tasks with Parallel LLM Agents, July 2025.
+arXiv:2507.08944[cs].
+[25] YijiaXiao,EdwardSun,DiLuo,andWeiWang. TradingAgents: Multi-AgentsLLMFinancial
+TradingFramework,June2025. arXiv:2412.20138[q-fin].
+[26] Michael Walters, Rafael Kaufmann, Justice Sefas, and Thomas Kopinski. Free energy risk
+metrics for systemically safe ai: Gatekeeping multi-agent study, 2025. arXiv:2502.04249
+[cs.AI].
+[27] Parshin Shojaee, Iman Mirzadeh, Keivan Alizadeh, Maxwell Horton, Samy Bengio, and
+MehrdadFarajtabar. TheIllusionofThinking: UnderstandingtheStrengthsandLimitationsof
+ReasoningModelsviatheLensofProblemComplexity,July2025. arXiv:2506.06941[cs].
+[28] Alan Dao and Dinh Bach Vu. AlphaMaze: Enhancing Large Language Models’ Spatial
+IntelligenceviaGRPO. arXivpreprintarXiv:2502.14669,2025.
+[29] Thomas Parr, Giovanni Pezzulo, and Karl J. Friston. Active Inference: The Free Energy
+PrincipleinMind,Brain,andBehavior. TheMITPress,032022.
+[30] XiaoheBo,ZeyuZhang,QuanyuDai,XueyangFeng,LeiWang,RuiLi,XuChen,andJi-Rong
+Wen. ReflectiveMulti-AgentCollaborationbasedonLargeLanguageModels. 2025.
+[31] Jaime Ruiz-Serra, Patrick Sweeney, and Michael S. Harré. Factorised Active Inference for
+StrategicMulti-AgentInteractions,May2025. arXiv:2411.07362[cs].
+[32] KarushSuri,XiaoQiShi,KonstantinosPlataniotis,andYuriLawryshyn. SurpriseMinimizing
+Multi-AgentLearningwithEnergy-basedModels. 2022.
+[33] YavarTaheriYeganeh,MohsenJafari,andAndreaMatta. DeepActiveInferenceAgentsfor
+DelayedandLong-HorizonEnvironments,May2025. arXiv:2505.19867[cs].
+[34] ShayeganOmidshafiei,JasonPazis,ChristopherAmato,JonathanP.How,andJohnVian. Deep
+DecentralizedMulti-taskMulti-AgentReinforcementLearningunderPartialObservability,July
+2017. arXiv:1703.06182[cs].
+[35] ManousosLinardakis, IraklisVarlamis, andGeorgiosTh.Papadopoulos. DistributedMaze
+ExplorationUsingMultipleAgentsandOptimalGoalAssignment. IEEEAccess,12:101407–
+101418,2024.
+10
+[36] KevinGodin-Dubois,KarineMiras,andAnnaVKononova. AMaze: AnIntuitiveBenchmark
+Generator for Fast Prototyping of Generalizable Agents. Frontiers in Artificial Intelligence,
+8:1511712,2025.
+[37] RoniStern,NathanSturtevant,ArielFelner,SvenKoenig,HangMa,ThayneWalker,Jiaoyang
+Li,DorAtzmon,LironCohen,TKKumar,etal. Multi-AgentPathfinding: Definitions,Variants,
+and Benchmarks. In Proceedings of the International Symposium on Combinatorial Search,
+volume10,pages151–158,2019.
+[38] DanielFoead,AlifioGhifari,MarchelBudiKusuma,NovitaHanafiah,andEricGunawan. A
+SystematicLiteratureReviewofA*Pathfinding. ProcediaComputerScience,179:507–514,
+2021.
+[39] SemuilTjiharjadi,SazalinsyahRazali,andHamzahAsyraniSulaiman. ASystematicLiterature
+ReviewofMulti-agentPathfindingforMazeResearch. JournalofAdvancesinInformation
+Technology,13(4),2022.
+[40] NingLiu,SenShen,XiangruiKong,HongtaoZhang,andThomasBräunl. CooperativeHybrid
+Multi-AgentPathfindingBasedonSharedExplorationMaps,March2025. arXiv:2503.22162
+[cs].
+[41] MarcoPleines,MatthiasPallasch,FrankZimmer,andMikePreuss. MemoryGym: Towards
+EndlessTaskstoBenchmarkMemoryCapabilitiesofAgents. JournalofMachineLearning
+Research,26(6):1–40,2025.
+[42] Hafsteinn Einarsson. MazeEval: A Benchmark for Testing Sequential Decision-Making in
+LanguageModels. arXivpreprintarXiv:2507.20395,2025.
+[43] WeizheChen,SvenKoenig,andBistraDilkina. Solvingmulti-agentpathfindingasanLLM
+benchmark: How,howgoodandwhy. TransactionsonMachineLearningResearch,2025.
+[44] NoahShinn,FedericoCassano,EdwardBerman,AshwinGopinath,KarthikNarasimhan,and
+ShunyuYao. Reflexion: LanguageAgentswithVerbalReinforcementLearning,October2023.
+arXiv:2303.11366[cs].
+[45] ZhilinYang,PengQi,SaizhengZhang,YoshuaBengio,WilliamWCohen,RuslanSalakhutdi-
+nov,andChristopherDManning. HotpotQA:ADatasetforDiverse,ExplainableMulti-Hop
+QuestionAnswering. arXivpreprintarXiv:1809.09600,2018.
+[46] KarlCobbe,VineetKosaraju,MohammadBavarian,MarkChen,HeewooJun,LukaszKaiser,
+MatthiasPlappert,JerryTworek,JacobHilton,ReiichiroNakano,etal. TrainingVerifiersto
+SolveMathWordProblems. arXivpreprintarXiv:2110.14168,2021.
+[47] Nitish Shirish Keskar. Checkmate in One Move. https://github.com/google/
+BIG-bench/blob/main/bigbench/benchmark_tasks/checkmate_in_one/README.md,
+2021. Accessed: 2025-08-21.
+[48] ZhihuiXie,JieChen,LiyuChen,WeichaoMao,JingjingXu,andLingpengKong. Teaching
+LanguageModelstoCritiqueviaReinforcementLearning,February2025. arXiv:2502.03492
+[cs].
+[49] AmanMadaan,NiketTandon,PrakharGupta,SkylerHallinan,LuyuGao,SarahWiegreffe,Uri
+Alon,NouhaDziri,ShrimaiPrabhumoye,YimingYang,ShashankGupta,BodhisattwaPrasad
+Majumder, KatherineHermann, SeanWelleck, AmirYazdanbakhsh, andPeterClark. Self-
+Refine: IterativeRefinementwithSelf-Feedback,May2023. arXiv:2303.17651[cs].
+[50] ZixuanKe,AustinXu,YifeiMing,Xuan-PhiNguyen,CaimingXiong,andShafiqJoty. MAS-
+ZERO:DesigningMulti-AgentSystemswithZeroSupervision,May2025. arXiv:2505.14996
+[cs].
+[51] YizheHuang,XingboWang,HaoLiu,FanqiKong,AoyangQin,MinTang,Song-ChunZhu,
+MingjieBi, SiyuanQi, andXueFeng. AdaSociety: AnAdaptiveEnvironmentwithSocial
+StructuresforMulti-AgentDecision-Making. 2024.
+11
+[52] YaruNiu,RohanPaleja,andMatthewGombolay.Multi-AgentGraph-AttentionCommunication
+andTeaming. 2021.
+[53] EdwardY.Chang. EVINCE:OptimizingMulti-LLMDialoguesUsingConditionalStatistics
+andInformationTheory,January2025. arXiv:2408.14575[cs].
+[54] AngelosAssos,YuvalDagan,andConstantinosDaskalakis. Maximizingutilityinmulti-agent
+environmentsbyanticipatingthebehaviorofotherlearners,July2024. arXiv:2407.04889[cs].
+[55] RuichenJiang,AliKavis,QiujiangJin,SujaySanghavi,andAryanMokhtari. Adaptiveand
+OptimalSecond-orderOptimisticMethodsforMinimaxOptimization. 2024.
+[56] Peter Belcak, Greg Heinrich, Shizhe Diao, Yonggan Fu, Xin Dong, Saurav Muralidharan,
+YingyanCelineLin,andPavloMolchanov. Smalllanguagemodelsarethefutureofagenticai,
+2025.
+[57] E. T. Jaynes. Information theory and statistical mechanics. Phys. Rev., 106:620–630, May
+1957.
+12
+A TechnicalAppendicesandSupplementaryMaterial
+A.1 OrchestratorUpdateAlgorithm
+Algorithm1Multi-AgentActiveInferenceMazeSolver
+Require: MazeM,starts ,targetτ,numberofexecuteagents(N −2)
+0
+Require: StaticplanperiterationP =[p ,p ,...,p ,...,p ](lengthK steps)
+1 2 k K
+1: Initialize:
+2: S 0 O ←OrchestratorNode.initialize(M,s o ,τ) ▷OrchestratorstateS 0 O containsallexecute
+nodes’states(e.g. initialpositions).
+3: target_found←False,t←1
+4: whilenottarget_founddo ▷Iterateuntiltargetisfound
+5: π t−1 ←OrchestratorNode.encodePolicy(S t O −1 ,P) ▷Policypromptcombiningplanand
+globalstateSO .
+t−1
+6: foreachexecutenoden=1toN −2andnottarget_founddo
+7: Sˆ n e ;(t−1) ←f n (S t O −1 ,π t−1 ,S n e ;(t−1) )▷Executenodenintegratespolicypromptintoits
+ownstate.
+8: foreachstepk =1toK inplando
+9: ifstepkis"LookAround"then
+10: Nodenobservessurroundingsandupdatesitslocalmap/beliefs.
+11: elseifstepkis"SelectDirection"then
+12: Nodenchoosesthebestdirectiontomove(basedonitsobservations).
+13: elseifstepkis"MarkDeadEnd"then
+14: Nodenmarkscurrentpositionasdead-endinitsmemory(ifapplicable).
+15: ifstepkrequiresanactualmovethen
+16: Nodenexecutesmoveinthedecideddirection. ▷Directionalactioninthemaze
+environment.
+17: Nodenobservesnewstate(e.g. newpositionandsensoryinputs).
+18: ComputevariationalfreeenergyF n (t,k)fornodenatthisstep.
+19: ∆F n (t,k)←F n (t,k)−F n (t−1,k) ▷Changeinvariationalfreeenergyfrom
+previousstep.
+(cid:0) (cid:1)
+20: ∆w n (t,k)←f ∆ F n (t,k),∆F n (t,k) ▷Gradient-likeupdatefornoden’s
+parametersconsideringF (t,k)and∆F (t,k).
+n n
+21: w base ←w n (t,k−1)+∆w n (t,k) ▷Updatenoden’sinternalparameters.
+22: Updatenoden’sstateSe (e.g. newposition,updatedmemory).
+n;t
+23: ifNodenhasreachedtargetthen
+24: target_found←True
+25: breakfrombothfor-loops ▷Exitifthetargetisfound.
+26: SO ←OrchestratorNode.update(Se ,Se ,...,Se ,...,Se ) ▷Orchestratornode
+t 1;t 2;t n;t N−2;t
+updatesitsstatewithallexecutenodes’newstate.
+27: t←t−1 ▷Incrementtime/iterationcounter.
+28: Output: Pathorsolutionfoundbyagentsreachingthegoal.
+13
+A.2 OrchestratorCellArchitectureOverview
+Figure4: OrchestratorCellDesign-large-sizereprintofFigure1b.
+A.3 ActiveInferenceCalculation
+Drawingonactiveinferenceprinciples,wereformulatethevariationalfreeenergy(VFE)objective.
+Ratherthanminimizingsurprisetoreducedeviationfromamodel’spredictions,wecasttheobjective
+asabalancedprocess: maximizingexpectedBayesiansurprisetoencourageactivelearning,while
+offsettingthiswithexplicitpenaltytermsforcoordinationandnavigationefficiency.
+Activeinference,rootedincomputationalneuroscience,providesaprincipledframeworkforreason-
+ingunderuncertaintyandhasbeenshowntoenhanceagents’taskperformancethroughquantified
+feedbackmechanisms[33,29]. Giventheassumptionthatagentsoperateunderpartialobservability
+oftheproblemenvironmentandriskbecomingtrappedinlocalminimaduringtaskoptimization,we
+operationalizeVFEtonudgeagentstowardsactiveexplorationandlearning-drivenbehavior.
+Following[29],VFEisdefinedas,
+VFE =F[Q,y]=−E [lnP(y,x)]−H[Q(x)]
+Q(x)
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+Energy Entropy
+=D [Q(x)||P(x)]−E [lnP(y|x)]
+KL Q(x)
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+Complexity Accuracy
+where
+• E [·]denotestheexpectationundertheapproximateposteriorQ(x),
+Q(x)
+• H[Q(x)]istheentropyofQ(x),
+• D [Q(x)||P(x)]istheKullback–Leibler(KL)divergencebetweenQ(x)andP(x),
+KL
+• P(y|x)isthelikelihoodofygivenlatentstatex,
+14
+Expandingtheentropydefinition,weobtain:
+F[Q,y]=−E [lnP(y,x)]−H[Q(x)]
+Q(x)
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+Energy Entropy
+=−E [lnP(y,x)]− (cid:0) −E [lnQ(x)] (cid:1)
+Q(x) Q(x)
+=−E [lnP(y|x)+lnP(x)]+E [lnQ(x)]
+Q(x) Q(x)
+(cid:20) (cid:21)
+Q(x)
+=E ln −E [lnP(y|x)]
+Q(x) P(x) Q(x)
+=D [Q(x)||P(x)]−E [lnP(y|x)]
+KL Q(x)
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+Complexity Accuracy
+Inpractice,however,directaccesstoLLMinternalpriorandexactlikelihoodsisunavailable. To
+address this, we adopt Jaynes’s maximum entropy principle [57], approximating the unknown
+posteriorP(x)asuniform. SubstitutingintotheKLtermyields:
+D [Q(x),||,P(x)]=E [lnQ(x)]+ln(N),
+KL Q(x)
+whereN denotesthesupportsizeoftheuniformprior. Therefore,VFEsimplifiesto:
+F[Q,y]=−H[Q(x)]+ln(N)−E [lnP(y|x)].
+Q(x)
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+ActualInformationGain AccuracyTerm
+Weinterpretthefirstcomponentasaproxyforepistemicvalue(actualinformationgain),whilethe
+secondactsapenaltyoninaccuratepredictions. Approximatingthelikelihood-basedcost,wedefine:
+AccuracyTerm=−E [lnP(y|x)]≈ −[lnP(y|x)]
+Q(x)
+Finally,castingthisintoouroperationalformforOrchestrator:
+VFE ≈ −H[S |S ] − E [lnP(S |x)]
+t t−1 Q(x) t−1
+=−H[S |S ] +
+E(cid:2)
+AccuracyCost(S )
+(cid:3)
+t t−1 t−1
+=U −C
+epistemic accuracy
+whereU = −H[S | S ]measuresactiveinformationgainacrossstates,andC
+epistemic t t−1 accuracy
+penalizesinaccuratepredictionsbasedonexpectednegativelog-likelihood.
+A.4 MovementScorePolicyUpdates
+The dynamic weights w (t,k) derived from free energy assessment are operationalized through
+n
+directional movement scoring functions that convert performance metrics into actionable spatial
+insights, which are passed to the agent as part of the dynamic policy updates at SO. For each
+t
+executionnodee atiterationtandstepk,thesystemcomputesmovementscoresM (d,t,k)for
+n n
+eachfeasibledirectiond∈{north,south,east,west}as:
+(cid:88)
+M (d,t,k)= w (t,k)·ϕ (d,Se ) (8)
+n i i n;t
+i
+whereϕ (d,Se )encodesexploration,efficiency,coordination,andbacktrackingfactorsfordirection
+i n;t
+dgiventhecurrentlocalstateSe . Thesemovementscoresprovideexecutionnodeswithquantified
+n;t
+directional preferences that integrate both individual performance optimization and system-wide
+coordinationobjectives,enablingthetranslationofabstractfreeenergymetricsintoconcretespatial
+decisionswithinthemazeenvironment,towardsexploringthemazewithgreaterefficiency.
+15
+A.5 DeterminationofThresholdVariablesforAgentPerformancePolicyAssessment
+Figure5: Resultsofgrid-searchtodeterminebestthresholdparametersformaximumperformanceof
+theOrchestratorframework.
+Toidentifyoptimalthresholdvaluesforagentperformancepolicyassessmentasdiscussedinsection
+3.2,weconductedabriefgridsearchoverasetofthresholdparametersϑ (epistemicdrive)and
+1
+ϑ (accuracy cost) and assess performance in terms of total number of steps required to solve
+2
+themaze,giventherespectiveparametersetupacrossbothdifficulties(mediumandhard). Maze-
+solving experiments were performed at two difficulty levels, with n = 3 runs per setting. The
+results indicate that for medium-difficulty mazes, best performance is achieved with ϑ = 0.6
+1
+and ϑ = 0.4, while for hard mazes, optimal performance is observed at a lower accuracy cost
+2
+threshold(ϑ =0.9,ϑ =0.01). However,totalstepcountisslightlylowerfortheformersetting
+1 2
+(ϑ = 0.6,ϑ = 0.04) indicating subtly elevated performance to the latter. For consistency and
+1 2
+comparability across all experiments in this paper, we adopt the higher-performance setting of
+ϑ = 0.6 and ϑ = 0.4 throughout. Future iterations should test the framework at additional
+1 2
+thresholdparametersforϑ andϑ .
+1 2
+A.6 AgentToolInterfaceSpecification
+Theexecutionagentsoperatewithinthemazeenvironmentthroughastructuredtoolinterfacethat
+providesbothenvironmentalinteractioncapabilitiesandinternalstatemanagementfunctions. This
+tool-basedarchitectureensuresconsistentactionexecutionacrossallagentswhilemaintainingproper
+statesynchronizationwithinthemulti-agentframework.
+A.6.1 SpatialNavigationTools
+The core navigation functionality is implemented through four directional movement tools:
+move_north(),move_south(),move_east(),andmove_west(). Eachtoolattemptstoexecute
+asingle-stepmovementinthespecifiedcardinaldirectionandreturnsdeterministicsuccess/failure
+feedback. Thetoolsoperateontheagent’sindividualMazeWrapperinstance,ensuringpropercol-
+lisiondetectionwithwallsandmazeboundaries. Uponsuccessfulmovement,thetoolreportsthe
+agent’snewpositioncoordinatesusingmatrixnotation(row,column),whilefailedattemptsprovide
+specificfailurereasons(e.g.,blockedbywall,boundaryviolation).
+16
+A.6.2 EnvironmentalPerceptionandStateManagement
+The get_current_view() tool provides agents with local environmental perception through a
+structuredobservationthatincludestheagent’scurrentposition,availablemovementdirectionsata
++1tilehorizon,exitproximitystatus,andaspatialrepresentationoftheimmediatesurroundings. This
+toolservesastheprimarysensoryinputmechanism,enablingagentstomakeinformeddecisions
+basedontheirlocalenvironmentstate.
+Themark_dead_end()toolallowsagentstomaintainpersistentspatialmemorybymarkingtheir
+current position as a dead end when specific confidence criteria are met. This tool supports the
+system’sexplorationefficiencybypreventingredundantexplorationofpreviouslyidentifieddead-end
+locations.
+A.6.3 BacktrackingandRecoveryMechanisms
+Thestart_backtracking()toolimplementsanautomatedrecoverymechanismforagentsthat
+become stuck or require strategic repositioning. When invoked, this tool calculates the shortest
+path to the nearest unexplored opening using breadth-first search through the agent’s movement
+history. Thetoolestablishesa“lockmode”statethatprovidesdeterministicstep-by-stepnavigation
+instructionsuntilthetargetpositionisreached,ensuringreliablerecoveryfromsuboptimalpositions.
+Thebacktrackingmechanismoperatesexclusivelythroughpreviouslyvisitedpositions,maintaining
+consistencywiththeagent’sexploredknowledgewhilepreventingnavigationthroughunknownor
+potentially blocked areas. Upon completion of the backtracking sequence, agents automatically
+resumenormalexplorationbehavior. Thistoolinterfacedesignensuresthatwhileagentsreceive
+algorithmicassistanceforbasicspatialoperationsandstatemanagement,thehigh-leveldecision-
+makingregardingwhichtoolstouse,whentoinitiatebacktracking,andhowtocoordinatewithother
+agentsremainswithinthedomainofthelanguagemodel’sreasoningcapabilities.
+17
+A.6.4 SupplementaryPerformanceCharts
+Figure6: Cost-effectivenessofdifferentconfigurations,showingthetradeoffbetweenaveragerun
+costandsuccessrate. Numericalidentifiersforconfigurationsareasfollows:1)GPT-4.1-nano(Solo);
+2)GPT-5-nano(Solo);3)GPT-4.1-nano+FEBenchmarkonly4)GPT-5-nano+FEBenchmarkonly;
+5)GPT-4.1-nano+FE+OrchestrationNode;6)GPT-5-nano+FE+OrchestrationNode
+Figure 7: Distribution of steps taken to solve mazes, grouped by configuration and difficulty for
+medium-andhard-difficultymazesusingtheorchestratorframework(successfulrunsonly). Nu-
+merical identifiers for configurations are as follows: 1) GPT-4.1-nano + FE Benchmark only; 2)
+GPT-4.1-nano+FE+OrchestrationNode;3)GPT-5-nano+FEBenchmarkonly;4)GPT-5-nano+
+FE+OrchestrationNode. Easylevelhasbeenomittedduetonegligiblysmallscale.
+18
+A.6.5 ConfidenceIntervalConvergenceacrossModelConfigurations
+Figure8: Statisticalconvergenceanalysisdemonstratingthestabilizationofperformanceestimates
+with increasing sample size across different model configurations. Each line represents the 95%
+confidenceintervalhalf-widthforsuccessrateestimatesasafunctionofcumulativeexperimental
+runs,withdifferentcolorsindicatingdistinctmodelconstellations(executionmodel,orchestration
+model combinations). The y-axis shows the confidence interval half-width in percentage points,
+providingadirectmeasureofestimateprecision. Theshadedregionsindicatetargetprecisionzones:
+greenzone(≤5percentagepoints)representshighprecisionsuitableforreliableperformancecom-
+parisons,yellowzone(5–15percentagepoints)indicatesmoderateprecisionadequateforpreliminary
+analysis, and white zone (> 15 percentage points). All configurations demonstrate asymptotic
+convergencebehavior,withmostachievingstableestimates(≤10percentagepointshalf-width)after
+20–25experimentalruns. Thereferencelinesshowtheoreticalconvergenceboundsfordifferent
+baselinesuccessrates(50%,70%)underWilsonscoreintervalcalculations,validatingtheidentified
+convergencepatterns.
+19
+A.7 MazeExecutionAgentPromptTemplate
+A.ModelSystemPrompt
+You are Agent {agent_id} in a collaborative maze escape.
+CRITICAL RULE
+- Must call exactly ONE tool per step.
+- Only exception: mark_dead_end() is optional.
+COORDINATE SYSTEM
+- Matrix coordinates (row, col), not Cartesian.
+- (3,5) means "row 3, column 5".
+- NORTH = -row, SOUTH = +row, EAST = +col, WEST = -col.
+- Maze is displayed like a spreadsheet grid, not a graph.
+WEIGHTED DECISION SYSTEM
+Guided by dynamic performance weights.
+DECISION HIERARCHY (check in order)
+1. Backtracking Lock Mode (override):
+If "BACKTRACKING LOCK MODE ACTIVE", immediately execute the required move.
+Ignore all other rules until cleared.
+2. Coordinate with Teammates:
+Avoid teammate-explored areas unless no alternatives.
+Apply weight ×{teammate_avoidance}.
+3. Orchestrator & Optimization Guidance:
+Apply orchestrator corrections and optimization hints.
+Current weights: exploration={exploration_weight}, efficiency={efficiency_weight}.
+4. Standard Backtracking Mode:
+If "BACKTRACKING ACTIVE", execute required move and skip other checks.
+5. Oscillation Detection:
+If stuck looping (same 2-3 positions), call start_backtracking().
+6. Safety Check:
+Never move into walls. If blocked everywhere, call start_backtracking().
+7. Exploration Priority:
+Use weighted movement scores. Avoid dead ends unless necessary for backtracking.
+AVAILABLE ACTIONS
+- get_current_view() →Observe 3x3 surroundings
+- move_north/south/east/west() →Advance one step
+- mark_dead_end() →Optional, no args
+- start_backtracking() →Return to nearest unexplored opening
+DEAD END MARKING (threshold={dead_end_confidence})
+Mark a cell as dead end only if:
+(a) Only one possible move, leading back to visited tiles
+(b) No unexplored directions remain
+(c) Not currently backtracking
+Skip marking if multiple unexplored paths exist, confidence < threshold,
+or backtracking mode is active.
+TURN STRUCTURE
+1. get_current_view()
+2. move_[direction]()
+3. Optionally: mark_dead_end()
+VICTORY CONDITION
+- If "Maze Exit" found →return FINISH immediately.
+FORBIDDEN
+- Multiple tool calls per step
+- Moving in loops
+- Explaining reasoning
+- Calling start_backtracking() when already backtracking
+20
+B.Execution-ContextMessage(runtime)
+EXECUTION CONTEXT -STEP {step_index + 1}
+CURRENT STEP
+- {current_step}
+CURRENT STATE
+- Position: {current_position}
+- Available moves: {possible_moves}
+- Current unexplored directions: {agent_unexplored_directions}
+- Known unexplored openings: {known_openings}
+- {_format_dynamic_modifiers(dynamic_prompts)}
+WEIGHTED MOVEMENT ANALYSIS
+- {movement_guidance}
+- All direction scores: {score_details}
+- Backtrack threshold: {weights.get(’backtrack_threshold’, 0.7):.2f}
+- Dead end confidence: {dead_end_confidence:.2f}
+(threshold={weights.get(’dead_end_confidence’, 0.8):.2f})
+BACKTRACKING STATUS
+- Currently backtracking: {"YES" if is_backtracking else "NO"}
+- Lock mode active: {"YES" if lock_mode else "NO"}
+- WARNING: Do NOT call start_backtracking() if already backtracking
+EXPLORATION STATUS
+- Previously visited: {previously_visited_tiles}
+- Dead ends marked: {len(marked_dead_ends) if marked_dead_ends else 0}
+- Avoid backtracking to recent path unless other rules apply: {recent_positions}
+OSCILLATION CHECK
+- Recent movement pattern: {recent_positions}
+- WARNING: If current position appears >2 times in recent pattern,
+call start_backtracking()
+MULTI-AGENT COORDINATION
+- AVOID returning to your previous position:
+{previous_position if previous_position else "None"}
+- Teammate recent positions (last 10, avoid if alternatives exist):
+{recent_other_positions[-10:] if len(recent_other_positions) >= 10 else
+recent_other_positions}
+- Teammate explored junctions/dead ends (avoid if alternatives exist):
+{strategic_waypoints}
+GUIDANCE
+- Orchestrator: {agent_guidance}
+PERFORMANCE WEIGHTS
+- Exploration weight: {weights.get(’exploration_weight’, 1.0):.1f}
+- Efficiency weight: {weights.get(’efficiency_weight’, 1.0):.1f}
+- Backtrack threshold: {weights.get(’backtrack_threshold’, 0.7):.1f}
+- Dead end confidence: {weights.get(’dead_end_confidence’, 0.8):.1f}
+A.8 OrchestrationAgentPromptDesign
+A.ModelSystemPrompt)
+You are the Maze Strategy Orchestrator with REAL-TIME DECISION AWARENESS.
+COORDINATE SYSTEM
+- Grid maze: ’W’ (Wall), ’O’ (Open), ’E’ (Exit).
+- MATRIX coordinates (row, col); NORTH=-row, SOUTH=+row, EAST=+col, WEST=-col.
+YOUR CAPABILITIES
+21
+1. Real-time decision contexts per agent (positions, scores, weights, unexplored
+dirs).
+2. Movement conflicts (local penalties vs global exploration value).
+3. Coordination opportunities (overlap/duplication).
+4. Global optimization patterns (bottlenecks, gaps).
+STRATEGIC RESPONSIBILITIES
+1. Validate dead ends: flag incorrect markings against discovered cells.
+2. Resolve movement conflicts: where efficiency penalties block global exploration.
+3. Coordinate agents: divide unexplored areas to maximize coverage.
+4. Break local minima: recommend overrides or temporary weight relaxations.
+5. Keep guidance decision-aware: amplify agents’ local context, do not blindly
+overwrite.
+RESPONSE CONTRACT (STRICT)
+- Output a SINGLE JSON object (no prose, no code fences).
+- Keys: "analysis", "corrections", "guidance_for_agents".
+- corrections.remove_dead_ends: list of [row, col].
+- corrections.add_exploration_focus: list of [row, col].
+- guidance_for_agents: mapping agent_id -> short, actionable directive.
+- Be specific but concise. Avoid chain-of-thought; summaries only.
+VALIDATION GUARDRAILS
+- If uncertain, return empty lists/objects.
+- Never invent agent_ids or coordinates not in context.
+- JSON must be valid UTF-8, no trailing commas, no comments.
+B.SystemContextMessage(runtime).
+Task: Find maze exit. Current Maze Exploration Analysis:
+Orchestration Data (JSON): {{orchestration_data_json}}
+ENHANCED DECISION INTELLIGENCE
+- Movement Conflicts: {{movement_conflicts_json}}
+- Exploration Coordination: {{exploration_coordination_json}}
+- Efficiency Optimization: {{efficiency_optimization_json}}
+FOCUS AREAS
+- Dead end validation accuracy: {{dead_end_analysis_json}}
+- Agent coordination summaries: {{agent_summaries_json}}
+- Exploration coverage: {{discovered_cells_count}} cells
+- Real-time decision contexts available: {{num_agents_with_context}} agents
+INSTRUCTIONS
+- Use the above decision data to produce ONLY the JSON object
+defined in the response contract. No markdown, no extra text.
+C.ResponseContract(senttoexecutionagentnode)
+{
+"analysis": "Short decision-aware synthesis of conflicts/coordination and key gaps
+.",
+"corrections": {
+"remove_dead_ends": [ [{{r1}}, {{c1}}], [{{r2}}, {{c2}}] ],
+"add_exploration_focus": [ [{{r3}}, {{c3}}], [{{r4}}, {{c4}}] ]
+},
+"guidance_for_agents": {
+"{{agent_id_0}}": "Actionable, context-grounded instruction (e.g., override
+penalty and go EAST).",
+"{{agent_id_1}}": "Actionable instruction tailored to their movement scores/
+unexplored dirs."
+}
+}
+22
+A.9 MazeGenerationandComplexityMetrics
+A.9.1 MazeGenerationAlgorithm
+OurexperimentalevaluationemploysacustommazegenerationframeworkderivedfromtheAMaze
+benchmark[36],enhancedwithShannonentropy-basedcomplexitymeasurestocreatesystematic
+long-horizontaskenvironments. Themazegenerationalgorithmcombinesrecursivebacktracking
+with entropy-guided optimization to produce structured sequential decision-making challenges
+suitableforevaluatingmulti-agentcoordinationinextendedtaskhorizons.
+CoreGenerationProcess Themazegenerationfollowsamodifiedrecursivebacktrackingalgo-
+rithmthatoperatesonadiscretegridG∈{W,O,E,X}n×n,whereW representswalls,Odenotes
+openpaths,E indicatestheexitposition,andX markstheouterboundaryframe. Thealgorithm
+prioritizescreatingenvironmentswithextendedsolutionsequencesandmultipledecisionpoints:
+• DistributedInitialization: MultiplestartingpointsS ={s ,s ,...,s }arestrategically
+1 2 j
+placedacrossthemazetoensurecomplexpathstructuresrequiringsustainedexploration,
+withj varyingbasedonmazesizeaccordingto:
+
+1 ifn<15
+
+j = 5 if15≤n<25
+9 ifn≥25
+• Entropy-EnhancedCarving: Fromeachstartingpoint,thealgorithmappliesrecursive
+backtrackingwithadead-endfactorδ ∈ [0.03,0.35]thatcontrolsthedensityofdecision
+pointsandbacktrackingrequirements. Pathcarvingcontinuesuntilconnectivityrequire-
+mentscreatesufficientlylongactionsequences.
+• QualityValidation: Generatedmazesundergomulti-criteriavalidationincludingconnec-
+tivityratioρ∈[0.10,0.95],minimumpathlengthrequirements,andShannoncomplexity
+thresholdstoensureextendedtaskhorizonsandmultiplesequentialdecisionpoints.
+A.9.2 ExitPlacementOptimization
+Exitpositionsareoptimizedusingamulti-objectivescoringfunctionthatmaximizestaskhorizon
+lengthanddecisioncomplexity:
+Score(p)=10·d (s,p)+5·d (s,p)+ϕ (p)+ϕ (p)+2·d (p,c)
+path Manhattan edge topology Manhattan
+where:
+• d (s,p)istheshortestpathdistancefromstartstopositionp
+path
+• d (s,p)=|s −p |+|s −p |
+Manhattan x x y y
+• ϕ (p)rewardsedgeproximity(15foredges,+25forcorners)
+edge
+• ϕ (p)rewardsdeadends(+30)andpenalizesjunctions(-10)
+topology
+• cisthemazecenter
+A.9.3 ShannonEntropy-BasedComplexityMeasures
+FollowingtheAMazeframework,weimplemententropy-basedmetricstoquantifylong-horizontask
+difficulty.
+SurprisingnessMetric ThesurprisingnessS(M)quantifiestheentropyofdirectionaldecisions
+alongtheoptimalpath:
+(cid:88)
+S(M)=− p(i)log p(i)
+2
+i∈{W,O,E,X}
+wherep(i)istheempiricalfrequencyofdirectioniintheoptimaltrajectory. Highervaluesindicate
+greaterplanningunpredictability.
+DeceptivenessMetric ThedeceptivenessD(M)capturestheentropyoftraptransitionsthatlead
+tosuboptimalpaths:
+(cid:88)(cid:88)
+D(M)= −p(s|c)log p(s|c)
+2
+c∈Cs∈T
+23
+whereCarecellsadjacenttotheoptimalpath,T aretrapstates,andp(s|c)isthetransitionprobability
+fromctos.
+TrapDetectionandQuantification Trapsaredefinedasextendeddead-endpathsthattestlong-
+horizonstrategyrecovery. Eachtraptischaracterizedby:
+• Depth: Lengthfrombranchtodeadend
+• BranchingFactor: Numberofbrancheswithinthetrap
+• Weight:
+w =1.0+0.5·depth+0.3·branches+0.2·dead_ends
+t
+Totaltrapcomplexityis:
+(cid:88)
+T = w
+c t
+t∈Traps
+A.9.4 ExperimentalMazeCollection
+Wegenerated15mazesacrossfourpre-setdifficultycategories. Weimplementedeasydifficultyas
+baselineonly,andomittedtheveryharddifficultyfortheanalysisofthispaper. Thefollowingsetup
+wasthenusedforexperiments.
+• 5xEasy: [10,30]difficulty=0.03,size12×12
+• 5xMedium: [30,60]difficulty=0.10,size18×18
+• 5xHard: [60,80]difficulty=0.25,size25×25
+• 0xVeryHard: [80,95]difficulty=0.35,size30×30
+Allmazespecifications,includingtopology,complexityscores,andoptimalpaths,areavailablein
+thesupplementaryrepository.
+24

@@ -1,0 +1,1010 @@
+M3ViT: Mixture-of-Experts Vision Transformer
+for Efficient Multi-task Learning
+with Model-Accelerator Co-design
+HanxueLiang1∗,ZhiwenFan1∗,RishovSarkar2,ZiyuJiang3,TianlongChen1,
+KaiZou4,YuCheng5,CongHao2,ZhangyangWang1
+1UniversityofTexasatAustin,2GeorgiaInstituteofTechnology
+3TexasA&MUniversity,4ProtagolabsInc,5MicrosoftResearch
+{haliang,zhiwenfan,tianlong.chen,atlaswang}@utexas.edu
+{rishov.sarkar,callie.hao}@gatech.edu,jiangziyu@tamu.edu
+kz@protagolabs.com,yu.cheng@microsoft.com
+Abstract
+Multi-tasklearning(MTL)encapsulatesmultiplelearnedtasksinasinglemodel
+andoftenletsthosetaskslearnbetterjointly. However,whendeployingMTLonto
+thosereal-worldsystemsthatareoftenresource-constrainedorlatency-sensitive,
+twoprominentchallengesarise: (i)duringtraining,simultaneouslyoptimizingall
+tasksisoftendifficultduetogradientconflictsacrosstasks,andthechallengeis
+amplifiedwhenagrowingnumberoftaskshavetobesqueezedintoonecompact
+model;(ii)atinference,currentMTLregimeshavetoactivatenearlytheentire
+modeleventojustexecuteasingletask. Yetmostrealsystemsdemandonlyoneor
+twotasksateachmoment,andswitchbetweentasksasneeded: thereforesuch“all
+tasksactivated”inferenceisalsohighlyinefficientandnon-scalable.
+Inthispaper,wepresentamodel-acceleratorco-designframeworktoenableef-
+ficienton-deviceMTL,thattacklesbothtrainingandinferencebottlenecks. Our
+framework,dubbedM3ViT,customizesmixture-of-experts(MoE)layersintoa
+visiontransformer(ViT)backboneforMTL,andsparselyactivatestask-specific
+experts during training, which effectively disentangles the parameter spaces to
+avoiddifferenttasks’trainingconflicts. Thenatinferencewithanytaskofinterest,
+thesamedesignallowsforactivatingonlythetask-correspondingsparse“expert”
+pathway,insteadofthefullmodel. Ournewmodeldesignisfurtherenhancedby
+hardware-levelinnovations,inparticular,anovelcomputationreorderingscheme
+tailoredformemory-constrainedMTLthatachieveszero-overheadswitchingbe-
+tweentasksandcanscaletoanynumberofexperts. Extensiveexperimentson
+PASCAL-Context[1]andNYUD-v2[2]datasetsatbothsoftwareandhardware
+levelsareconductedtodemonstratetheeffectivenessoftheproposeddesign.When
+executingsingle-taskinference,M3ViTachieveshigheraccuraciesthanencoder-
+focusedMTLmethods,whilesignificantlyreducing88%inferenceFLOPs. When
+implementedonahardwareplatformofoneXilinxZCU104FPGA,ourco-design
+frameworkreducesthememoryrequirementby2.40×, whileachievingenergy
+efficiencyupto9.23×higherthanacomparableFPGAbaseline.
+Codeisavailableat: https://github.com/VITA-Group/M3ViT.
+1 Introduction
+VisionTransformers(ViTs)[3,4,5,6],asthelatestperformantdeepmodels,haveachievedimpressive
+performanceonvariouscomputervisiontasks [7,8,9]. Thesemodelsarespeciallytrainedortested
+∗Equalcontribution
+36thConferenceonNeuralInformationProcessingSystems(NeurIPS2022).
+2202
+tcO
+62
+]VC.sc[
+1v39741.0122:viXra
+for only one or a few tasks; however, many real-world applications require one compact system
+thatcanhandlemanydifferenttasksefficiently,andoftenneedtoswiftlyswitchbetweentasksper
+demand.Forexample,anautonomousdrivingsystem[10]needstoperformandswitchbetweenmany
+taskssuchasdrivableareaestimation,lanedetection,pedestriandetection,andsceneclassification:
+apparentlybothsingletaskinferenceandcross-taskswitchingneedtohappenatultra-lowlatency.
+Asanotherexample,smart-homeindoorrobots[11]areexpectedtoaddresssemanticsegmentation,
+navigation,tracking,orothertasksinvaryingcontexts,withverylimitedon-boardresources. Multi-
+tasklearning(MTL)[12,13,14]solvesmultipletaskssimultaneouslywithinasinglemodelandlearns
+improvedfeaturerepresentations[15]sharedbyrelatedtasks[16,17]. Therefore,accomplishing
+realisticefficientMTLisbecomingakeyknobforbuildingreal-timesophisticatedAIsystems.
+Despite the promise, challenges persist to build an efficient MTL model suitable for real-world
+applications: (cid:202)duringtraining,priorworks[18,19,20]indicatethecompetitionofdifferenttasks
+intrainingmaydegradeMTL,sincethesameweightsmightreceiveandbeconfusedbyconflicting
+updatedirections. Specifically, [19]revealsthatnegativecosinesimilaritiesbetweendifferenttasks’
+gradientsaredetrimental. [21,22]confirmthatconflictinggradientsnotonlyslowdownconvergence
+butalsobiasthelearnedrepresentationsagainstsometasks. Thatisonlygettingworseoncompact
+modelsowingtotheirlimitedmodelingcapacity. Totacklethecross-taskconflicts,solutionshave
+beenproposedbyvaryinglearningratespeedsofdifferenttasks[20],using“cross-stitch”sharing[23],
+orre-balancingtaskgradients[19,24,20,25]. However,theyeitherrequiretask-specificdesignor
+significantlyincreasethemodelcomplexitywhichcontradictsourefficiencygoal. (cid:203)atinference,
+existingMTLregimestypicallyactivatetheentirebackbonemodelunconditionally. However,many
+realsystemsonlyneedtocallupononeorafewtasksateachmoment,hencethe“allactivated”
+inferenceisheavilyinefficientandnon-scalable. Forexample,currentregimes[14,23,26,27]have
+toactivatethewholegiganticResNet[28]encoderevenjusttoexecuteasinglemonoculardepth
+estimationtaskorso. Ifthenumberoftasksscaleup[29]andthebackbonekeepsgrowingbigger,
+the“pertask”inferenceefficiencyoftheresultantMTLmodelcouldbecomecatastrophicallypoor.
+To tackle these bottlenecks, we propose a model-accelerator co-design framework that enables
+efficienton-deviceMTL.Specifically,inthesoftwarelevel,weproposetoadaptmixtureofexperts
+(MoE)layers[30,31]intotheMTLbackbone,asMoEcanadaptivelydivide-and-conquertheentire
+modelcapacityintosmallersub-models[30,32]. Here,wereplacethedensefeed-forwardnetwork
+intheViTwithsparselyactivatedMoEexperts(MLPs). Atask-dependentgatingnetworkwillbe
+trainedtoselectthesubsetofexpertsforeachinputtoken,conditioningontasks. Duringtraining,
+thistask-dependentroutingprincipleeffectivelydisentanglestheparameterspaces,balancingfeature
+reuse and automatically avoiding different tasks’ training conflicts. Meanwhile, at the inference
+stagewithanytaskofinterest,thisdesignnaturallyallowsforsparseactivationofonlytheexperts
+correspondingtothetaskinsteadofthefullmodel,thusachievinghighlysparseandefficientinference
+forthespecifictask. Inthehardwarelevel,weproposeanovelcomputationreorderingmechanism
+tailoredformemory-constrainedMTLandMoE,whichallowsscalinguptoanynumberofexperts
+andalsoachieveszero-overheadswitchingbetweentasks. Specifically,basedonViT,wepushtokens
+toper-expertqueuestoenableexpert-by-expertcomputationratherthantoken-by-token. Wethen
+implementadouble-bufferedcomputationstrategythathidesthememoryaccesslatencyrequiredto
+loadeachexpert’sweightsfromoff-chipmemory,regardlessoftask-specificexpertselection. This
+designnaturallyincursnooverheadforswitchingbetweenframesortasksinFPGA.
+Tovalidatetheeffectiveness,weevaluateourperformancegainusingtheViT-smallbackboneon
+theNYUD-v2andPASCAL-Contextdatasets. OntheNYUD-v2datasetwithtwotasks,ourmodel
+achievescomparableresultswithencoder-focusedMTLmethodswhilereducing71%FLOPsfor
+single-taskexecution. WhenweevaluateonthePASCAL-Contextdatasetwithmoretasks,ourmodel
+achievesevenbetterperformance(2.71vs.0.60)andreduces88%inferenceFLOPs.
+WefoundtheMTLperformancegainbroughtbyMoElayersconsistentlyincreasesasthetaskcount
+grows. WhenimplementedonahardwareplatformofoneXilinxZCU104FPGA,ourco-design
+framework reduces the memory requirement by 2.40× while achieving energy efficiency (as the
+productoflatencyandpower)upto9.23×higherthancomparableFPGAbaselinesandupto10.79×
+higherthantheGPUimplementation. Ourcontributionsareoutlinedbelow:
+• We target the problem of efficient MTL, and adopt the morerealisticinferencesetting
+(activatingonetaskatatime,whileswitchingbetweentasks). WeintroduceMoEasthe
+unifiedtooltoattaintwogoals: bothresolvingcross-tasktrainingconflicts(betterMTL
+performance), and sparsely activating paths for single-task inference (better efficiency).
+2
+SpecificallyforMTL,theMoElayerisaccompaniedwithatask-dependentgatingnetwork
+tomakeexpertselectionsconditioningonthecurrenttask.
+• WeimplementtheproposedMTLMoEViTframeworkonahardwareplatformofoneXilinx
+ZCU104FPGA,whichenablesustoexploitamemory-efficientcomputationreordering
+schemethatconsolidatesper-expertMultiply-and-ACcumulate(MAC)operationssuchthat
+onlyoneexpert’sweightsareneededon-chipatatime. Ourdesignisscalabletoanynumber
+ofexpertswhilerequiringnoframe-switchingortask-switchingoverhead.
+• Weconductextensiveexperimentstojustifyitsinferenceeffectivenessinbothaccuracyand
+on-edgeefficiencymetrics. Ourframework,dubbedM3ViT,achieveshigheraccuraciesthan
+encoder-focusedMTLmethods, whilesignificantlyreducing88%inferenceFLOPs; on
+hardware,itreducesthememoryrequirementby2.40×andcostsupto9.23×and10.79×
+lessenergycomparedtotheFPGAandGPUbaselines,respectively.
+2 RelatedWorks
+Multi-taskLearning Thegenericmulti-tasklearningproblemhasbeenstudiedforalonghistory.
+Somenon-deeplearning-basedmethodsproposetousedistancemetric[33,34,35],probabilistic
+prior [36,37,38,39]tomodelthecommoninformationamongtasks. Withtheemergenceofthe
+deeplearningtechnique,MTL[14,40,23,41,42,43]isperformedtolearnsharedrepresentation
+amongtasks. TheemergenceofViTfurthermakesitpossibletoextendthetaskrangefromonly
+visiontaskstoothermodalitiestasks(e.g.,text,audio)[44,45,46,47,48]. CurrentMTLmodelscan
+beroughlycategorizedintotwotypesbasedonwherethetaskinteractionstakeplaceinthenetwork.
+Theencoder-focused architectures[23,40,26,27]onlyshareinformationintheencoder, before
+decodingeachtaskwithanindependenttask-specifichead.Cross-stitchnetworks[23]introducelinear
+combinationineachlayer. NDDR-CNN[26]improvesitbydimensionalreduction. MTAN[27]
+leverages an attention mechanism to learn between tasks. TAPS [49] adapts a base model to a
+new task by modifying a small task-specific subset of layers. The second type, decoder-focused
+models[42,43,50,51],makeinitialtaskpredictionsindecoderandthenleveragefeaturesfromthese
+initialpredictionstofurtherimproveoutput. Althoughtheyreporthigherperformance,theirmodels
+consumealargenumberofFLOPs,accordingto[14]. Thismakesitdifficulttodeploythemonto
+thosereal-worldsystemsthatareoftenresource-constrainedorlatency-sensitive. Andtheyneedto
+executeallthetasksforinitialprediction,whichisheavilyinefficientinthecommonscenariowhen
+onlyoneorfewtasksareneeded. Hence,wefocusonencoder-focusedarchitectureinthiswork.
+Manymethods[25,20,52,27]arealsoproposedtohandletheMTLtrainingconflictsproblem.
+Mixture of Experts (MoE) MoE contains a series of sub-models (i.e., experts) and performs
+conditional computation in an input-dependent fashion [53, 54, 55, 56, 57], based on learned or
+deterministicroutingpolicies[58,57]. ThetraditionaldenseMoEssufferfromintensivecompu-
+tational costs since they select all experts [59]. Recent studies [30, 60, 61] in natural language
+processing (NLP) propose sparse MoE that sparsely activates a few experts during both training
+and inference, thus substantially reducing the cost and allowing gigantic language models even
+withtrillionsofparameters[61]. Unfortunately,suchasparse-gatedmannerstillhaslimitationsof
+unstabletrainingandimbalancedselectionsamongexperts. Varioussolutionsareinventedfromregu-
+larization[62,60,61]andoptimization[63,64]perspectives. Moreover,MoEhasdrawnincreasing
+popularityincomputervision[59,65,66,67,68,69,70],whereitmainlyfocusesonconsiderably
+smallernetworkbackbonescomparedtotheonesinNLP.Forinstance,[67]and[68]formulatethe
+channelandkernelofconvolutionallayersasexpertsandestablishtheMoEframework. Several
+pioneer investigations also explore MoE for multi-task learning, which are related to this work.
+Particularly,[17,71,72]introducetask-specificgatingnetworkstochoosedifferentpartsofmodels
+forprocessinginformationfromeachtask. TheypresentcertainpossibilitiesofusingMoEtosolve
+MTL problems in some cases like classification for medical signals [71], digital number images
+(MNIST)[72],andrecommendationsystems[17]. WemakeafurtherattempttoadaptMoEintoa
+compactmodelfordensepredictionmulti-tasklearning,alongwithsoftware-hardwareco-design.
+VisionTransformer Therearegrowinginterestsinexploringtheuseoftransformers[73,3]for
+computervisiontaskssinceitssuccessinthenaturallanguageprocessing[73,74,75],includingimage
+generation[76,77],generativeadversarialnetworks[78,79],imageclassification[76,3,80,81,82,
+83,81,84],semanticsegmentation[8,85],objectdetection[6,86],3Ddataprocessing[87,88,89],
+novelviewsynthesis[90,91],andmanyothers[92,93,94,95].
+3
+Hardware FPGA acceleration of Transformer-based models has attracted increasing attention.
+Pioneeringworks[96,97,98,99]notethattransformersarecomputation-andmemory-intensive
+and are too large to fit on the FPGA. Therefore, various model compression methods have been
+proposed,suchasactivationquantization,tokenpruning,block-circulantmatrices(BCM)forweights,
+block-balanced weight pruning, and column-balanced block weight pruning. Such compression
+methodsarelossyandrequirecompression-awaretrainingtoregainaccuracy. Toourbestknowledge,
+thereisnoexistingFPGAacceleratorforMoEinaTransformer-basedmodel. TheMoEmechanism
+exposesgreatchallengestoFPGAsinceitrequiresswiftexpertswitchingbetweentokensandframes,
+whichmayintroducesignificantoverheadofmemoryandparameterloading. Inthiswork,however,
+weproposeanovelexpert-by-expertcomputation-reorderingapproachthatcanreducetheoverhead
+tonegligibledespitethenumberofexperts,anddoesnotrequiremodelcompressionorre-training.
+3 Method
+Overview WefirstdescribethestandardVisionTransformerandMoEs,andthenshowtheproposed
+MoEViTdesignforMTL.Toenabledynamicallyadaptingbetweendifferenttaskswithminimum
+overheadonFPGA,wedetailthehardwareimplementation. Figure1showsthewholeframework.
+(a) MoEViTDesign (b) HardwareDesign
+Task A Task B Both NotActivated Decoder A DecoderB
+Intermediate input Initial input
+Self-Attention
+GatingFunction
+…
+Load
+Parameters
+Compute
+Expert
+Intermediate
+Time
+output
+Finaloutput
+reyaL
+Experts
+token
+embedding … …
+LinearProjection
+Figure 1: The overall structure of the proposed M3ViT pipeline. The input image is split into
+fixed-sizepatches,embedded,andcombinedwithpositionembeddings. Intraining,theMTLMoE
+ViTadaptivelyactivatesthemodelbysparselyselectingrelevantexpertsusingitstask-dependent
+routers. During inference, only one task will be performed at a time. The hardware collects all
+patchesallocatedforeachexpertandprocessesthemexpert-by-expertwiththe“loadparameters”and
+“computeexpert”modules.
+Router Task-conditioned
+Task A Expert 1 embedding Router Expert 1
+L N a o y r e m r Attention L N a o y r e m r Exp … ert 2 L N a o y r e m r Attention L N a o y r e m r Ex … pert 2
+Router Expert N-1 Expert N-1
+Task B Expert N Expert N
+(a) Multi-gate MoElayer design. (b) Task-conditioned MoElayer design.
+Figure 2: The proposed two variants of MTL MoE layers. In the left figure, each task selects
+its experts using its own router. In the right one, all tasks share one router, while a task-specific
+embeddingisconcatenatedwiththetokenembeddingtoformulatetheinputofthesharedrouter.
+3.1 Task-dependentMoEViTDesign
+VisionTransformer TherepresentativeVisionTransformerarchitecture[3]firstsplitstheinput
+imageintonon-overlappedpatchesandprojectsthepatchestoahigherhiddendimensionusingone
+4
+convolutionallayer. Theprojectedpatches(a.k.a. tokens)arethenpassedthroughseveralconsecutive
+transformerlayers. Eachlayercontainsaself-attentionmoduleandafeed-forwardnetwork(MLPs).
+Theself-attentioniscomputedusingthescaled-dotproduct:
+(cid:32) (cid:33)
+QKT
+Attention(Q,K,V)=softmax √ V (1)
+C
+whereQ,K,V ∈RN×C arethequery,keyandvaluematricescomputedfrominputtokens;N and
+C indicatethetokennumberandthehiddendimension. Inourexperiments,weadopttheDeiT[4]as
+thebackboneencoder,whichisadata-efficientViTvariantthatdistillstokenstoensurethestudent
+learnsfromtheteacherthroughattention.
+Mixture of Experts Layer A Mixture of Experts (MoE) layer typically consists a group of N
+expertsf ,f ,··· ,f alongwitharouterR(orgatingnetwork)toselectthecorrespondingexperts.
+1 2 N
+Theexpertsnetworkstandsformulti-layerperceptrons[61,100]inViTs. TherouterRplaysakey
+rolewithinourMoEViTdesignasitdeterminestaskroutingsviaonlysparselyactivatingrelevant
+experts. Weadoptarepresentativeroutercalledtop-K gating[30]basedonViT.Withinputx,the
+resultantoutputofMoElayerscanbeformulatedasthesummationoftheselectedtopK experts
+fromN expertcandidatesusingarouter:
+K
+(cid:88)
+y = R(x) ·f (x), (2)
+k k
+k=1
+R(x)=TopK(softmax(G(x),K)), (3)
+(cid:26)
+v ifvisinthetopK elements
+TopK(v,K)= (4)
+0 otherwise
+whereG representsthelearnablenetworkwithintherouter,forwhichweemployasingle-layerMLP
+inpractice. Thesoftmax(·)togetherwithTopK(·,K)setsallelementsofthevectortozeroexcept
+theelementswiththelargestK values. Inpractice,wechooseK =4outofN =16expertcandidates.
+EachexpertiscomputedwithW σ (W x),whereσ istheGELUactivation[101]. W andW
+2 gelu 1 gelu 1 2
+aretwolearnableweightmatrices. Notethatwescaledowntheexpertsizebyfourtimescompared
+tothatinstandardViTMLPlayerstomakethecomputationFLOPsequivalent. Wealsoemploythe
+loadandimportantbalancinglosswiththeweightof0.01following[30]toavoidalwayspickingthe
+sameexpertswhileignoringothers. Thislosstermisalsoemployedforthetwotask-dependentMTL
+MoEdesignsthatweintroducenext.
+Multi-gateMoEViTforMTL MoEbringstrainingdynamicstobalancebetweenlargecapacity
+andefficiency,byselectingonlyasubsetofexpertsusingtherouter. ToadaptvanillaMoEintoour
+densepredictionMTLframework,wefirstproposetoassigneachdensepredictiontaskarouterR
+i
+tospecifyitsownexperts,denotedasmulti-gateMTLMoEViT:
+K
+(cid:88)
+y = Ri(x) ·f (x) (5)
+i k k
+k=1
+where i denotes task index. Expert candidates fk are shared across tasks. The flow chart of the
+multi-gatevariantis shownin Figure2(a); task-dependent routerstake asinputthe sharedtoken
+embeddinganddotheirexpertselections.
+Task-conditioned MoE ViT for MTL Conditional encoding has been widely applied to multi-
+modal[102]andmulti-task[103]models.Toachievetask-dependentroutingwithonegatingnetwork,
+weproposethetask-conditionedMTLMoEViTshowninFigure2(b). Specifically,supposewehave
+ntasksintraining. Wemanuallydefinean-dimensionalone-hottask-conditionedvector. Thevector
+isfedintoatwo-layerMLPtoextracta64-dimensionaltaskembedding,whichisthenconcatenated
+withtokenembeddingstoformthetask-dependentinputfortherouterintheMoElayer:
+K
+(cid:88)
+y = R(x,t ) ·f (x), (6)
+i i k k
+k=1
+t =ReLU(T(x,e )) (7)
+i i
+whereT indicatesthetwo-layerMLPstoextracttask-conditionedembeddings,e ∈{0,1}n,and
+i
+(cid:80)n
+e = 1. We denote this conditional design as task-conditionedMTLMoEViT, in which
+j=1 j
+backbonemodelparametersdonotproportionallyincreaseifweincludemoretasksintraining.
+5
+6
+Layer Norm ViTLayer
+1 2 Load Weights
+Self-Attention 3
+Compute Fully-Connected Layer
+Head 1 Compute QKV Q ×K M So a f x t ×V 4 GELU 5
+Linear MoELayer
+Head 12 Compute QKV⋮ Q ×K M So a f x t ×V Projection 3 F G un a c ti t n io g n Comp L u o t a e d E E x x p p er e t rt GELU 5 P C E e o r x m T pe o b r k i t n e s e n L ty a p y e e ? r
+4
+Figure 3: Hardware implementation of a ViT block of M3ViT. The hardware implementation
+consistsofalayernormunit,aself-attentionunitcontaining12independentheadsfollowedbya
+linearprojection,aunittocomputethefully-connectedlayersofastandardViTlayer,andaunitto
+selectandcomputetheexpertsinanMoElayer. Numericalindicatorswithinthefigureindicatethe
+paththroughwhichdataflowsduringthecomputationofasinglelayerofM3ViT,eitheraViTlayer
+oranMoElayer. Thishardwareissharedacrossallblocks.
+3.2 Circuit-levelImplementation
+Weco-designthehardwaretosupportMTLMoEViT.Wedesignalayer-wiseimplementationof
+M3ViTonaXilinxZCU104FPGA,adiagramofwhichisshowninFigure3. Thedesigncomputes
+layers sequentially but parallelizes computation steps within each layer. By proposing a novel
+computationreorderingscheme,ourhardwaredesignfeaturesmemory-efficientexpertcomputation
+thatalsoachieveszero-overheadtaskswitchingandframeswitching.
+ChallengesofNaiveMethod Astraightforward(butnaive)implementationwouldcomputethe
+outputforeachtokenintheorderitappearsintheinputsequence: alltokenschooseanyK experts
+outoftheN candidates,soostensiblytheonlywaytoavoiddataloadingoverheadwouldbetokeep
+weightsofallN expertson-chipatalltimes. However,thisrequiresextremeon-chipmemoryusage,
+scalingwithO(N)andtypicallyexceedingFPGAon-chipmemorycapacityunlessN isverysmall.
+ChallengesofCache-basedMethod Wecanadoptacachetostoreseveralexpertson-chipatany
+giventime. However,thison-demandapproachincurslongdelaysfromoff-chipDRAMaccesses
+wheneverthecacheneedstoberepopulatedwithanexpert’sweights. Further,weexperimentally
+foundthatallexpertsarelikelytobeactivatedatleastonceacrossalltokens,exhibitingacache-
+unfriendlyaccesspattern. Therefore,althoughacache-baseddesignalleviatesmemoryinefficiency,
+itincursseveredelaysbyfrequentlyloadingtheweightsofexperts.
+ProposedSolution:Memory-efficientComputationReordering Thecruxoftheproblemliesin
+theunpredictabilityofthesetofexpertsthatwillbeneededbytokensatanygiventime. Weaddress
+thisproblematitsrootbydesigninganovelcomputationreorderingschemethatflipsthecompute
+patternonitshead: ratherthancomputingtheMoElayertoken-by-token, weinsteadcomputeit
+expert-by-expert. TheoverallflowchartofthereorderingschemeisshowninFigure4.
+Expert selection Computation reordering Double-buffering and pre-fetching
+Token Experts Reorder Expert Tokens ([ ]) 1. Compute partial
+1 results forall tokens
+1 3 1
+that use expert 1
+1 2 2 ⋯ 3. Swap between iterations
+2. Meanwhile, load
+2 4 3 ⋯ 2 [ ] the parameters for
+Prefetch Buffer the nextexpert 2
+⋯
+Figure 4: The computation reordering flow used by M3ViT for hardware memory efficiency.
+⋮ ⋮ ⋮ ⋮
+TheMoEgatingfunctionselectsK expertsforeachtoken,whichareusedtoroutetokenstoper-
+expertqueues. Thisisfollowedbyadouble-bufferedcomputationflowthatcomputesoneexpert’s
+resultsonitsentiretokenqueuewhileloadinganotherexpert’sparameters,swappingbuffersbetween
+iterations.
+6
+Table1: Comparisonswithencoder-focusedMTLarchitecturesonthePASCAL-Contextdataset.
+Seg. Norm. H.Parts Sal. Edge ∆ FLOPSEnergy
+Model Backbone m
+(mIoU↑)(mErr)↓(mIoU)↑(mIoU)↑(odsF)↑(%)↑ (G)↓ (W·s)↓
+STL-B ResNet-18 66.2 13.9 59.9 66.3 68.8 0.00 167 1.029
+MTL-B ResNet-18 63.8 14.9 58.6 65.1 69.2 −2.86 167 1.029
+Uncertainty[25](MTL-B) ResNet-18 65.4 16.5 59.2 65.6 68.6 −4.60 167 1.029
+DWA [52](MTL-B) ResNet-18 63.4 14.9 58.9 65.1 69.1 −2.94 167 1.029
+GradNorm[20](MTL-B) ResNet-18 64.7 15.4 59.0 64.5 67.0 −3.97 167 1.029
+MGDA [27](MTL-B) ResNet-18 64.9 15.6 57.9 62.5 61.4 −6.81 167 1.029
+MTAN[27] ResNet-18 63.7 14.8 58.9 65.4 69.6 −2.39 212 5.306
+Cross-Stitch[23] ResNet-18 66.1 13.9 60.6 66.8 69.9 +0.60 647 6.001
+NDDR-CNN[26] ResNet-18 65.4 13.9 60.5 66.8 69.8 +0.39 747 5.034
+M-ViT(MTL-B) ViT-small 70.7 15.5 58.7 64.9 68.8 −1.77 83 3.062
+M2ViT(+MoE) MoEViT-small 72.8 14.5 62.1 66.3 71.7 +2.71 84 7.446
+M3ViT(+MoE+Codesign)MoEViT-small 72.8 14.5 62.1 66.3 71.7 +2.71 84 0.690
+Specifically, we propose to add each token to a queue for its selected top-K experts, instead of
+computingthetokenoutputimmediately.
+Ourhardwarethenmakesuseoftheper-expertqueuesviaadouble-bufferedcomputationflow,also
+knownasping-pongbuffering: onebufferisfilledwithanexpert’sweightsfromoff-chipmemory
+accesses,whileanotheralready-loadedbufferisusedtocomputeanotherexpert’sresultsforitsentire
+tokenqueue. Afterbothoperationsfinish,thebuffersareswapped,andtheprocessrepeats.
+ScalabilityandEfficiency Ourapproachhidesnearlyalllatencyfromoff-chipmemoryaccesses
+toloadexpertweights,anditusesO(1)on-chipmemorywithrespecttoK andN,makingitscalable
+toanynumberofexperts. Additionally,ourmethod’sefficiencydoesnotrelyonanyspecificusage
+patternofexpertsforagivenframeoragiventask,sowenaturallyachievezero-overheadswitches
+betweenframesandbetweentasks. Taskswitchesandframeswitchesinourhardwaredesigndonot
+changeourcomputationflowatall,andthereisnospecificsteptakentoexecutetheswitch.
+4 Experiments
+4.1 ExperimentSetup
+To evaluate the propose method, we conduct experiments on two popular dense labeling MTL
+benchmarks,i.e. NYUD-v2[2]andPASCAL-Context[1]. Bothdatasetsaredescribedbelow.
+Datasets ThePASCAL-Context[1]containsatotalof10,103images,forthefivetasksofedge
+detection(Edge),semanticsegmentation(Seg.),humanpartssegmentation(H.Parts),surfacenormals
+(Norm.),andsaliencydetection(Sal.). TheNYUD-v2dataset[2]isanindoordatasetwhichconsists
+ofRGB-Dimagesof464indoorscenes. Thereare795imagesfortrainingand654imagesfortesting,
+bothwithannotationforsemanticsegmentation(Seg.) andmonoculardepthestimation(Depth).
+EvaluationMetrics Forsoftwarelevelevaluation,weadoptthestandardevaluationmetricsfollow-
+ing[14,104,50].Particularly,weusemeanintersectionoverunion(mIoU)forsemanticsegmentation,
+human parts segmentation, and saliency; mean error (mErr) for surface normals estimation, root
+meansquareerror(rmse)fordepthestimation;andoptimaldatasetF-measure(odsF)[105]foredge
+detection. Following[14],weuse∆ toevaluateaMTLmodelmastheaveragepertaskdropwith
+m
+respecttotheSTLmodelboveralltasks: ∆
+m
+=
+T
+1 (cid:80)T
+i
+(−1)li(M
+m,i
+−M
+b,i
+)/M
+b,i
+,whereM
+m,i
+andM arethemetricsoftaskiforthemodelmandbrespectively,andl = 1ifalowervalue
+b,i i
+meansbetterperformance.
+Toevaluateourmodel-acceleratordesign,weconsiderlatency,energyusage(astheproductoflatency
+andpower),andon-chipmemoryusageforsingle-taskinferenceusingabatchsizeof1.
+NetworkConfigurationandImplementationDetails Weevaluateourmodelbasedonseveral
+versionsofViTbackbone[4]includingViT-tiny,ViT-small,andViT-base.
+OurFPGAdesignstargettheXilinxZCU104FPGAata300MHzclockfrequency,consuming10W
+ofpower. TheGPUbaselinesaremeasuredontheNVIDIAQuadroRTX8000.
+7
+B
+-L
+T
+M
+T
+iV
+-M
+T
+iV
+3M -
+B
+-L
+T
+M
+T
+iV
+-M
+T
+iV
+3-
+M
+Figure5: QualitativeresultonPASCAL-Context. WecomparebetweenvanillaMTL-B,M-ViT
+andM2ViTmodels,andourmodeloutperformsbaselineonedgedetection,semanticsegmentation
+andhumanpartssegmentationandsaliencydetection.
+Table2: Comparisonswithencoder-focusedMTLarchitecturesontheNYUD-v2dataset.
+Seg. Depth ∆ FLOPS Energy
+Model Backbone m
+(mIoU)↑ (rmse)↓ (%)↑ (G)↓ (W·s)↓
+STL-B ResNet-50 43.9 0.585 0.00 192 2.145
+MTL-B ResNet-50 44.4 0.587 +0.41 192 2.145
+Uncertainty[25](MTL-B) ResNet-50 44.0 0.590 −0.23 192 2.145
+DWA [52](MTL-B) ResNet-50 44.1 0.591 −0.28 192 2.145
+GradNorm[20](MTL-B) ResNet-50 44.2 0.581 +1.45 192 2.145
+MGDA [27](MTL-B) ResNet-50 43.2 0.576 +0.02 192 2.145
+MTAN[27] ResNet-50 45.0 0.584 +1.32 320 5.036
+Cross-Stitch[23] ResNet-50 44.2 0.570 +1.61 310 4.221
+NDDR-CNN[26] ResNet-50 44.2 0.573 +1.38 340 4.244
+M-ViT(MTL-B) ViT-small 40.9 0.631 −6.27 100 2.097
+M2ViT(+MoE) MoEViT-small 45.6 0.589 +1.59 100 8.189
+M3ViT(+MoE+Co-design) MoEViT-small 45.6 0.589 +1.59 100 0.845
+TheresultsreportedbelowarebasedonViT-small. Pleaserefertothesupplementarymaterialsfor
+trainingsetup,moredetailsonnetworkconfiguration,resultsonViT-tinyandViT-base,anddetailsof
+ourtargethardwareplatforms.
+4.2 ComparisonwithState-of-the-artDensePredictionMTL
+AswetargetanefficientMTLsystemunderthesingle-taskinferencesetting,weconductexperiments
+onencoder-focusedarchitectures(moredetailsinSection2). MTL-B[14]isavanillamulti-task
+learningbaselinemodelwhichiscomposedofasharedbackboneincombinationwithtask-specific
+heads. Severalstate-of-the-art(SoTA)encoder-focusedMTLmodels,includingMTAN[27],Cross-
+Stitch[23]andNDDR-CNN[26], improveMTL-Bbyproposingfeaturesharingmethodsinthe
+encoder. OurmethodsareallconductedonvanillaMTL-B,namely,applyingMTLonViT(M-ViT),
+8
+Table 3: Effect of task-dependent MoE design. M3ViT-Single, M3ViT-Multi., and M3ViT-Task-
+cond.refertotheMTLMoEmodelwithsinglerouter,multirouters,andtask-conditionedrouter,
+respectively.
+Seg. Norm. H.Parts Sal. Edge ∆ FLOPS
+PASCAL-Context m
+(mIoU↑) (mErr)↓ (mIoU)↑ (mIoU)↑ (odsF)↑ (%)↑ (G)↓
+STL-B 66.2 13.9 59.9 66.3 68.8 0.00 167
+M-ViT(MTL-B) 70.7 15.5 58.7 64.9 68.8 −1.76 83
+M3ViT-Single 71.5 14.8 61.2 65.9 71.5 +1.40 84
+M3ViT-Multi. 72.8 14.5 62.1 66.3 71.7 +2.71 84
+M3ViT-Task-cond. 72.0 14.4 61.3 65.8 71.8 +2.22 85
+Seg. Depth ∆ FLOPS
+NYUD-v2 – – – m
+(mIoU)↑ (rmse)↓ (%)↑ (G)↓
+STL-B 43.9 0.585 – – – 0.00 192
+M-ViT(MTL-B) 40.9 0.631 – – – −6.27 100
+M3ViT-Single 45.3 0.600 – – – +0.31 100
+M3ViT-Multi. 45.6 0.589 – – – +1.59 100
+M3ViT-Task-cond. 45.3 0.595 – – – +0.74 101
+addingtask-dependentMoEdesign(M2ViT),andaddinghardwareco-designonFPGA(M3ViT).
+Wealsocomparewithpreviousworksthathandlethemulti-tasktrainingconflictsproblem,including
+uncertaintyweighting[25],GradNorm[20],DWA[52],andMGDA[27],andtheyareevaluated
+on MTL-B. Single task learning baseline (STL-B) is used for MTL performance evaluation ∆ .
+m
+Asmulti-gateMoEshowsbetterperformancethantask-conditionedMoE,thereportedM2ViTand
+M3ViTresultsarebasedonthemulti-gatedesign.
+ResultsonPASCAL-ContextDataset AsshowninTable1,evenusingavanillaMTL-Bframe-
+work, introducingMoE(M2ViT)canachievethehighestperformanceoverallpreviousencoder-
+focusedworks(+2.71%MTLperformance); meanwhile,itsignificantlyreducestheirsingletask
+inferenceFLOPs(particularly,reducingCross-Stitchby88%). ComparingagainstUncertainty[25],
+DWA[52],GradNorm[20],andMGDA[27],thesuperiorperformanceofM2ViTdemonstratesits
+strongcapacityinhandlingtrainingconflict. Moreover,leveragingtheModel-Acceleratorco-design
+helpsustoconsumelessthanone-tenththeenergycostwhendeployingourmodelonFPGA.Some
+qualitativeresultsareshowninFigure5.
+Results on NYUD-v2 Dataset On this dataset, M2ViT can reduce previous SoTA’s inference
+FLOPsby68%whileachievingcomparableMTLperformance. IntroducingMoEtoM-ViThelpsto
+enlargethemodelcapacitywithoutincreasinginferenceFLOPs,whichresultsinaMTLperformance
+boostfrom−6.27%to+1.59%. WithourModel-Acceleratorco-design,wealsoseeanearlytenfold
+increaseinenergyefficiency. ResultsareshowninTable2.
+4.3 EffectofTask-dependentMoEDesign
+Toevaluatetheeffectivenessofourtask-dependentMoEdesign,wecomparebetweenseveralmodels
+inTable3includingSTL-B,MTLViT(M-ViT),M3ViTwithonegatingfunctionforallthetasks,
+M3ViTwithmultigates,andM3ViTwithtask-conditionedtokeninput. ResultsonbothPASCAL-
+ContextandNYUD-v2datasetsshowthataddingMoElayersintoViTwithonlyonegatingfunction
+for all tasks can already improve the M-ViT model. Making MoE selection task-dependent can
+furtherimprovetheperformance,wheremulti-gatingperformsbetterthantask-conditionedgating
+design. Particularly,comparingourmodelperformancewithSTL-BaswellaspreviousSoTAsin
+Table1and2,wefindthatourMoEmodelbetterdemonstratesitseffectivenesswhenmoretasks
+needtobeencapsulatedinthesystem. Moreresultsaboutourmodel’sperformanceondifferent
+numbersoftaskscanbefoundinthesupplement.
+4.4 HardwarePerformanceResults
+ResultscomparinghardwareperformancemetricsonFPGAandGPUareshowninTable4. Wefirst
+discussourmemoryefficiency. ThenaiveapproachdescribedinSection3.2wouldrequire11.610
+MiB ofon-chip memory(too muchfor ourFPGA platform), butour compute-reorderingdesign
+9
+Table4: QuantitativecomparisonsofhardwaremetricsbetweenFPGAandGPUimplementations.
+CRindicatesusageofourmemory-efficientcomputationreorderingmethod(Section3.2).
+Memory PASCAL-Context NYUD-v2
+Platform Backbone CR
+(MiB) Latency(ms) Energy(W·s) Latency(ms) Energy(W·s)
+GPU ResNet-18 – 21.336 3.489 1.029 – –
+GPU ResNet-50 – 44.939 – – 7.270 2.145
+GPU ViT-small – 42.058 10.381 3.062 7.110 2.097
+GPU MoEViT-small – 82.747 25.239 7.446 27.760 8.189
+FPGA ViT-small – 4.828 68.931 0.689 84.418 0.844
+FPGA MoEViT-small (cid:55) 4.840 637.478 6.375 750.557 7.506
+FPGA MoEViT-small (cid:51) 4.840 69.033 0.690 84.538 0.845
+achievesthesameresultusingonly4.840MiB,demonstratinga2.40×reduction. Moreover,when
+comparingagainstamemory-constrainedMoEViTonFPGAwithoutourcompute-reorderingmethod
+(usingthecache-basedmethoddescribedinSection3.2),weseethatourmethodtakes9.23×less
+latencyandenergyonthePASCAL-Contextdatasetand8.88×lesslatencyandenergyonNYUD-v2.
+Ourcompute-reorderingM3ViTonFPGAalsobeatsallGPUbaselinesinenergyefficiency;e.g.,it
+beatsMoEViTonGPUby10.79×onPASCAL-Contextandby9.69×onNYUD-v2. Fordiscussion
+onthelatencybreakdownofM3ViT,pleaserefertothesupplement.
+5 Conclusion,DiscussionofLimitationandBroaderImpact
+Inthispaper,weproposeamodel-acceleratorco-designforefficienton-deviceMTL.Bycustomizing
+MTLmixture-of-expertslayersintoaViTbackbone,wesparselyactivatetask-specificexpertsin
+trainingtomitigateMTLgradientconflicts. Forinference,wecanactivateonlythesparse“expert”
+pathwayrelevanttothetaskofinterestforefficiency,andcanfurtherachievezero-overheadswitching
+betweentaskswithourhardware-levelco-design. ExtensiveexperimentsthatshowM3ViTsurpasses
+thetop-performingencoder-focusedMTLmethods,reduces88%FLOPs,andsavesmorethan8×
+energyoverourbaseline. ThelimitationofourworkisthatM3ViTissofarmainlyevaluatedon
+academicdatasets;wewilltryrealapplicationslikeautonomousdrivinginthefuture. Forbroader
+impact,ourworkcanreducetheresourceandenergyconsumptionneededforMTLregimes,while
+stillmaintainingSOTAperformance,whichcaneffectivelyservethegoalofGreenAI.
+Acknowledgment
+ZhiwenFan,RishovSarkar,CongHaoandZhangyangWangareinpartsupportedbytheDARPA
+In-PixelIntelligentProcessing(IP2)program.
+References
+[1] RoozbehMottaghi,XianjieChen,XiaobaiLiu,Nam-GyuCho,Seong-WhanLee,SanjaFidler,
+Raquel Urtasun, and Alan Yuille. The role of context for object detection and semantic
+segmentationinthewild. InProceedingsoftheIEEEconferenceoncomputervisionand
+patternrecognition,pages891–898,2014.
+[2] Nathan Silberman, Derek Hoiem, Pushmeet Kohli, and Rob Fergus. Indoor segmentation
+andsupportinferencefromrgbdimages. InEuropeanconferenceoncomputervision,pages
+746–760.Springer,2012.
+[3] AlexeyDosovitskiy,LucasBeyer,AlexanderKolesnikov,DirkWeissenborn,XiaohuaZhai,
+ThomasUnterthiner,MostafaDehghani,MatthiasMinderer,GeorgHeigold,SylvainGelly,
+etal. Animageisworth16x16words: Transformersforimagerecognitionatscale. arXiv
+preprintarXiv:2010.11929,2020.
+[4] HugoTouvron,MatthieuCord,MatthijsDouze,FranciscoMassa,AlexandreSablayrolles,and
+HerveJegou. Trainingdata-efficientimagetransformers&distillationthroughattention. In
+InternationalConferenceonMachineLearning,volume139,pages10347–10357,July2021.
+10
+[5] ZeLiu,YutongLin,YueCao,HanHu,YixuanWei,ZhengZhang,StephenLin,andBaining
+Guo.Swintransformer:Hierarchicalvisiontransformerusingshiftedwindows.InProceedings
+oftheIEEE/CVFInternationalConferenceonComputerVision,pages10012–10022,2021.
+[6] NicolasCarion,FranciscoMassa,GabrielSynnaeve,NicolasUsunier,AlexanderKirillov,and
+SergeyZagoruyko. End-to-endobjectdetectionwithtransformers. InEuropeanconferenceon
+computervision,pages213–229.Springer,2020.
+[7] RenéRanftl,AlexeyBochkovskiy,andVladlenKoltun. Visiontransformersfordensepredic-
+tion. InProceedingsoftheIEEE/CVFInternationalConferenceonComputerVision,pages
+12179–12188,2021.
+[8] EnzeXie,WenhaiWang,ZhidingYu,AnimaAnandkumar,JoseMAlvarez,andPingLuo.
+Segformer:Simpleandefficientdesignforsemanticsegmentationwithtransformers.Advances
+inNeuralInformationProcessingSystems,34,2021.
+[9] WenhaiWang,EnzeXie,XiangLi,Deng-PingFan,KaitaoSong,DingLiang,TongLu,Ping
+Luo,andLingShao. Pyramidvisiontransformer: Aversatilebackbonefordenseprediction
+withoutconvolutions. InProceedingsoftheIEEE/CVFInternationalConferenceonComputer
+Vision,pages568–578,2021.
+[10] Dong-Gyu Lee. Fast drivable areas estimation with multi-task learning for real-time au-
+tonomousdrivingassistant. AppliedSciences,11(22):10713,2021.
+[11] WonsukKimandJunheeSeok. Indoorsemanticsegmentationforrobotnavigatingonmobile.
+In2018TenthInternationalConferenceonUbiquitousandFutureNetworks(ICUFN),pages
+22–25.IEEE,2018.
+[12] KazumaHashimoto,CaimingXiong,YoshimasaTsuruoka,andRichardSocher. Ajointmany-
+taskmodel:Growinganeuralnetworkformultiplenlptasks.arXivpreprintarXiv:1611.01587,
+2016.
+[13] SebastianRuder. Anoverviewofmulti-tasklearningindeepneuralnetworks. arXivpreprint
+arXiv:1706.05098,2017.
+[14] SimonVandenhende,StamatiosGeorgoulis,WouterVanGansbeke,MarcProesmans,Dengxin
+Dai, and Luc Van Gool. Multi-task learning for dense prediction tasks: A survey. IEEE
+transactionsonpatternanalysisandmachineintelligence,2021.
+[15] KevinSwersky,JasperSnoek,andRyanPAdams.Multi-taskbayesianoptimization.Advances
+inneuralinformationprocessingsystems,26,2013.
+[16] AmirRZamir,AlexanderSax,WilliamShen,LeonidasJGuibas,JitendraMalik,andSilvio
+Savarese. Taskonomy: Disentangling task transfer learning. In Proceedings of the IEEE
+conferenceoncomputervisionandpatternrecognition,pages3712–3722,2018.
+[17] JiaqiMa, ZheZhao, XinyangYi, JilinChen, LichanHong, andEdHChi. Modelingtask
+relationshipsinmulti-tasklearningwithmulti-gatemixture-of-experts. InProceedingsofthe
+24thACMSIGKDDInternationalConferenceonKnowledgeDiscovery&DataMining,pages
+1930–1939,2018.
+[18] EmilioParisotto,JimmyLeiBa,andRuslanSalakhutdinov. Actor-mimic: Deepmultitaskand
+transferreinforcementlearning. arXivpreprintarXiv:1511.06342,2015.
+[19] TianheYu,SaurabhKumar,AbhishekGupta,SergeyLevine,KarolHausman,andChelsea
+Finn. Gradientsurgeryformulti-tasklearning. AdvancesinNeuralInformationProcessing
+Systems,33:5824–5836,2020.
+[20] ZhaoChen,VijayBadrinarayanan,Chen-YuLee,andAndrewRabinovich. Gradnorm: Gra-
+dientnormalizationforadaptivelossbalancingindeepmultitasknetworks. InInternational
+ConferenceonMachineLearning,pages794–803.PMLR,2018.
+[21] ZhaoChen,JiquanNgiam,YanpingHuang,ThangLuong,HenrikKretzschmar,YuningChai,
+andDragomirAnguelov. Justpickasign: Optimizingdeepmultitaskmodelswithgradient
+signdropout. AdvancesinNeuralInformationProcessingSystems,33:2039–2050,2020.
+11
+[22] Zirui Wang, Yulia Tsvetkov, Orhan Firat, and Yuan Cao. Gradient vaccine: Investigating
+and improving multi-task optimization in massively multilingual models. arXiv preprint
+arXiv:2010.05874,2020.
+[23] IshanMisra,AbhinavShrivastava,AbhinavGupta,andMartialHebert. Cross-stitchnetworks
+formulti-tasklearning. InProceedingsoftheIEEEconferenceoncomputervisionandpattern
+recognition,pages3994–4003,2016.
+[24] MichelleGuo,AlbertHaque,De-AnHuang,SerenaYeung,andLiFei-Fei. Dynamictask
+prioritizationformultitasklearning. InProceedingsoftheEuropeanconferenceoncomputer
+vision(ECCV),pages270–287,2018.
+[25] AlexKendall,YarinGal,andRobertoCipolla. Multi-tasklearningusinguncertaintytoweigh
+lossesforscenegeometryandsemantics. InProceedingsoftheIEEEconferenceoncomputer
+visionandpatternrecognition,pages7482–7491,2018.
+[26] YuanGao,JiayiMa,MingboZhao,WeiLiu,andAlanLYuille. Nddr-cnn: Layerwisefeature
+fusinginmulti-taskcnnsbyneuraldiscriminativedimensionalityreduction. InProceedingsof
+theIEEE/CVFConferenceonComputerVisionandPatternRecognition,pages3205–3214,
+2019.
+[27] Shikun Liu, Edward Johns, and Andrew J Davison. End-to-end multi-task learning with
+attention. In Proceedings of the IEEE/CVF conference on computer vision and pattern
+recognition,pages1871–1880,2019.
+[28] KaimingHe,XiangyuZhang,ShaoqingRen,andJianSun. Deepresiduallearningforimage
+recognition.InProceedingsoftheIEEEconferenceoncomputervisionandpatternrecognition,
+pages770–778,2016.
+[29] Introducing Pathways: A next-generation AI architecture. https://blog.google/
+technology/ai/introducing-pathways-next-generation-ai-architecture/.
+[30] NoamShazeer,AzaliaMirhoseini,KrzysztofMaziarz,AndyDavis,QuocLe,GeoffreyHinton,
+andJeffDean. Outrageouslylargeneuralnetworks: Thesparsely-gatedmixture-of-experts
+layer. arXivpreprintarXiv:1701.06538,2017.
+[31] Sebastian Jaszczur, Aakanksha Chowdhery, Afroz Mohiuddin, Lukasz Kaiser, Wojciech
+Gajewski,HenrykMichalewski,andJonniKanerva. Sparseisenoughinscalingtransformers.
+AdvancesinNeuralInformationProcessingSystems,34:9895–9907,2021.
+[32] YoshuaBengio. Deeplearningofrepresentations: Lookingforward. InInternationalconfer-
+enceonstatisticallanguageandspeechprocessing,pages1–37.Springer,2013.
+[33] Ya Xue, Xuejun Liao, Lawrence Carin, and Balaji Krishnapuram. Multi-task learning for
+classificationwithdirichletprocesspriors. JournalofMachineLearningResearch,8(1),2007.
+[34] LaurentJacob,Jean-philippeVert,andFrancisBach. Clusteredmulti-tasklearning: Aconvex
+formulation. Advancesinneuralinformationprocessingsystems,21,2008.
+[35] Jiayu Zhou, Jianhui Chen, and Jieping Ye. Clustered multi-task learning via alternating
+structureoptimization. Advancesinneuralinformationprocessingsystems,24,2011.
+[36] KaiYu,VolkerTresp,andAntonSchwaighofer. Learninggaussianprocessesfrommultiple
+tasks. In Proceedings of the 22nd international conference on Machine learning, pages
+1012–1019,2005.
+[37] Su-InLee,VassilChatalbashev,DavidVickrey,andDaphneKoller. Learningameta-level
+priorforfeaturerelevancefrommultiplerelatedtasks. InProceedingsofthe24thinternational
+conferenceonMachinelearning,pages489–496,2007.
+[38] Hal Daumé III. Bayesian multitask learning with latent hierarchies. arXiv preprint
+arXiv:0907.0783,2009.
+[39] AbhishekKumarandHalDaumeIII.Learningtaskgroupingandoverlapinmulti-tasklearning.
+arXivpreprintarXiv:1206.6417,2012.
+12
+[40] SebastianRuder,JoachimBingel,IsabelleAugenstein,andAndersSøgaard. Latentmulti-
+taskarchitecturelearning. InProceedingsoftheAAAIConferenceonArtificialIntelligence,
+volume33,pages4822–4829,2019.
+[41] LiyanSun,ZhiwenFan,XinghaoDing,YueHuang,andJohnPaisley. Jointcs-mrireconstruc-
+tionandsegmentationwithaunifieddeepnetwork. InInternationalconferenceoninformation
+processinginmedicalimaging,pages492–504.Springer,2019.
+[42] Dan Xu, Wanli Ouyang, Xiaogang Wang, and Nicu Sebe. Pad-net: Multi-tasks guided
+prediction-and-distillationnetworkforsimultaneousdepthestimationandsceneparsing. In
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pages
+675–684,2018.
+[43] ZhenyuZhang,ZhenCui,ChunyanXu,YanYan,NicuSebe,andJianYang. Pattern-affinitive
+propagationacrossdepth,surfacenormalandsemanticsegmentation. InProceedingsofthe
+IEEE/CVFConferenceonComputerVisionandPatternRecognition,pages4106–4115,2019.
+[44] LukaszKaiser,AidanNGomez,NoamShazeer,AshishVaswani,NikiParmar,LlionJones,
+andJakobUszkoreit. Onemodeltolearnthemall. arXivpreprintarXiv:1706.05137,2017.
+[45] Xiaodong Liu, Pengcheng He, Weizhu Chen, and Jianfeng Gao. Multi-task deep neural
+networksfornaturallanguageunderstanding. arXivpreprintarXiv:1901.11504,2019.
+[46] JiasenLu,VedanujGoswami,MarcusRohrbach,DeviParikh,andStefanLee. 12-in-1: Multi-
+taskvisionandlanguagerepresentationlearning. InProceedingsoftheIEEE/CVFConference
+onComputerVisionandPatternRecognition,pages10437–10446,2020.
+[47] Ronghang Hu and Amanpreet Singh. Unit: Multimodal multitask learning with a unified
+transformer. InProceedingsoftheIEEE/CVFInternationalConferenceonComputerVision,
+pages1439–1449,2021.
+[48] LuYuan,DongdongChen,Yi-LingChen,NoelCodella,XiyangDai,JianfengGao,Houdong
+Hu,XuedongHuang,BoxinLi,ChunyuanLi,etal. Florence: Anewfoundationmodelfor
+computervision. arXivpreprintarXiv:2111.11432,2021.
+[49] MatthewWallingford,HaoLi,AlessandroAchille,AvinashRavichandran,CharlessFowlkes,
+RahulBhotika,andStefanoSoatto. Taskadaptiveparametersharingformulti-tasklearning.
+InProceedingsoftheIEEE/CVFConferenceonComputerVisionandPatternRecognition,
+pages7561–7570,2022.
+[50] Zhenyu Zhang, Zhen Cui, Chunyan Xu, Zequn Jie, Xiang Li, and Jian Yang. Joint task-
+recursive learning for semantic segmentation and depth estimation. In Proceedings of the
+EuropeanConferenceonComputerVision(ECCV),pages235–251,2018.
+[51] SimonVandenhende, StamatiosGeorgoulis, andLucVanGool. Mti-net: Multi-scaletask
+interactionnetworksformulti-tasklearning. InEuropeanConferenceonComputerVision,
+pages527–543.Springer,2020.
+[52] OzanSenerandVladlenKoltun.Multi-tasklearningasmulti-objectiveoptimization.Advances
+inneuralinformationprocessingsystems,31,2018.
+[53] Robert A Jacobs, Michael I Jordan, Steven J Nowlan, and Geoffrey E Hinton. Adaptive
+mixturesoflocalexperts. Neuralcomputation,3(1):79–87,1991.
+[54] MichaelIJordanandRobertAJacobs. Hierarchicalmixturesofexpertsandtheemalgorithm.
+Neuralcomputation,6(2):181–214,1994.
+[55] KeChen,LeiXu,andHuishengChi. Improvedlearningalgorithmsformixtureofexpertsin
+multiclassclassification. Neuralnetworks,12(9):1229–1252,1999.
+[56] SenihaEsenYuksel,JosephN.Wilson,andPaulD.Gader. Twentyyearsofmixtureofexperts.
+IEEETransactionsonNeuralNetworksandLearningSystems,23(8):1177–1193,2012.
+13
+[57] StephenRoller,SainbayarSukhbaatar,ArthurSzlam,andJasonEWeston. Hashlayersfor
+large sparse models. In A. Beygelzimer, Y. Dauphin, P. Liang, and J. Wortman Vaughan,
+editors,AdvancesinNeuralInformationProcessingSystems,2021.
+[58] DheeruDua,ShrutiBhosale,VedanujGoswami,JamesCross,MikeLewis,andAngelaFan.
+Tricksfortrainingsparsetranslationmodels. arXivpreprintarXiv:2110.08246,2021.
+[59] DavidEigen,Marc’AurelioRanzato,andIlyaSutskever. Learningfactoredrepresentationsin
+adeepmixtureofexperts. arXivpreprintarXiv:1312.4314,2013.
+[60] Dmitry Lepikhin, HyoukJoong Lee, Yuanzhong Xu, Dehao Chen, Orhan Firat, Yanping
+Huang,MaximKrikun,NoamShazeer,andZhifengChen. Gshard: Scalinggiantmodelswith
+conditionalcomputationandautomaticsharding. arXivpreprintarXiv:2006.16668,2020.
+[61] William Fedus, Barret Zoph, and Noam Shazeer. Switch transformers: Scaling to trillion
+parametermodelswithsimpleandefficientsparsity. arXivpreprintarXiv:2101.03961,2021.
+[62] JakobVogdrupHansen. Combiningpredictors: comparisonoffivemetamachinelearning
+methods. InformationSciences,119(1-2):91–105,1999.
+[63] Mike Lewis, Shruti Bhosale, Tim Dettmers, Naman Goyal, and Luke Zettlemoyer. Base
+layers: Simplifyingtrainingoflarge,sparsemodels. InInternationalConferenceonMachine
+Learning,pages6265–6274.PMLR,2021.
+[64] Aidan Clark, Diego de las Casas, Aurelia Guy, Arthur Mensch, Michela Paganini, Jordan
+Hoffmann,BogdanDamoc,BlakeHechtman,TrevorCai,SebastianBorgeaud,etal. Unified
+scalinglawsforroutedlanguagemodels. arXivpreprintarXiv:2202.01169,2022.
+[65] KarimAhmed,MohammadHarisBaig,andLorenzoTorresani. Networkofexpertsforlarge-
+scaleimagecategorization. InEuropeanConferenceonComputerVision, pages516–532.
+Springer,2016.
+[66] SamGross,Marc’AurelioRanzato,andArthurSzlam. Hardmixturesofexpertsforlargescale
+weaklysupervisedvision. InProceedingsoftheIEEEConferenceonComputerVisionand
+PatternRecognition,pages6865–6873,2017.
+[67] XinWang,FisherYu,LisaDunlap,Yi-AnMa,RuthWang,AzaliaMirhoseini,TrevorDarrell,
+andJosephEGonzalez. Deepmixtureofexpertsviashallowembedding. InUncertaintyin
+artificialintelligence,pages552–562.PMLR,2020.
+[68] BrandonYang,GabrielBender,QuocVLe,andJiquanNgiam. Condconv: Conditionally
+parameterizedconvolutionsforefficientinference. AdvancesinNeuralInformationProcessing
+Systems,32,2019.
+[69] AlhabibAbbasandYiannisAndreopoulos. Biasedmixturesofexperts: Enablingcomputer
+vision inference under data transfer limitations. IEEE Transactions on Image Processing,
+29:7656–7667,2020.
+[70] SvetlanaPavlitskaya,ChristianHubschneider,MichaelWeber,RubyMoritz,FabianHuger,
+Peter Schlicht, and Marius Zollner. Using mixture of expert models to gain insights into
+semanticsegmentation. InProceedingsoftheIEEE/CVFConferenceonComputerVisionand
+PatternRecognitionWorkshops,pages342–343,2020.
+[71] RaquelAoki,FrederickTung,andGabrielLOliveira. Heterogeneousmulti-tasklearningwith
+expertdiversity. arXivpreprintarXiv:2106.10595,2021.
+[72] Hussein Hazimeh, Zhe Zhao, Aakanksha Chowdhery, Maheswaran Sathiamoorthy, Yihua
+Chen,RahulMazumder,LichanHong,andEdChi. Dselect-k: Differentiableselectioninthe
+mixtureofexpertswithapplicationstomulti-tasklearning. AdvancesinNeuralInformation
+ProcessingSystems,34,2021.
+[73] Yankai Lin, Shiqi Shen, Zhiyuan Liu, Huanbo Luan, and Maosong Sun. Neural relation
+extractionwithselectiveattentionoverinstances. InProceedingsofthe54thAnnualMeeting
+oftheAssociationforComputationalLinguistics(Volume1: LongPapers),pages2124–2133,
+2016.
+14
+[74] Ankur P Parikh, Oscar Täckström, Dipanjan Das, and Jakob Uszkoreit. A decomposable
+attentionmodelfornaturallanguageinference. arXivpreprintarXiv:1606.01933,2016.
+[75] AshishVaswani,NoamShazeer,NikiParmar,JakobUszkoreit,LlionJones,AidanNGomez,
+Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. In Advances in neural
+informationprocessingsystems,pages5998–6008,2017.
+[76] Mark Chen, Alec Radford, Rewon Child, Jeffrey Wu, Heewoo Jun, David Luan, and Ilya
+Sutskever. Generative pretraining from pixels. In International Conference on Machine
+Learning,pages1691–1703.PMLR,2020.
+[77] NikiParmar,AshishVaswani,JakobUszkoreit,LukaszKaiser,NoamShazeer,AlexanderKu,
+andDustinTran. Imagetransformer. InInternationalConferenceonMachineLearning,pages
+4055–4064.PMLR,2018.
+[78] YifanJiang,ShiyuChang,andZhangyangWang. Transgan: Twopuretransformerscanmake
+onestronggan,andthatcanscaleup. AdvancesinNeuralInformationProcessingSystems,34,
+2021.
+[79] Kwonjoon Lee, Huiwen Chang, Lu Jiang, Han Zhang, Zhuowen Tu, and Ce Liu. Vitgan:
+Trainingganswithvisiontransformers. arXivpreprintarXiv:2107.04589,2021.
+[80] HugoTouvron,MatthieuCord,MatthijsDouze,FranciscoMassa,AlexandreSablayrolles,and
+HervéJégou. Trainingdata-efficientimagetransformers&distillationthroughattention. In
+InternationalConferenceonMachineLearning,pages10347–10357.PMLR,2021.
+[81] TianlongChen,YuCheng,ZheGan,LuYuan,LeiZhang,andZhangyangWang. Chasing
+sparsityinvisiontransformers: Anend-to-endexploration. AdvancesinNeuralInformation
+ProcessingSystems,34:19974–19988,2021.
+[82] XiangxiangChu,BoZhang,ZhiTian,XiaolinWei,andHuaxiaXia.Dowereallyneedexplicit
+positionencodingsforvisiontransformers? arXive-prints,pagesarXiv–2102,2021.
+[83] KaiHan,AnXiao,EnhuaWu,JianyuanGuo,ChunjingXu,andYunheWang. Transformerin
+transformer. arXivpreprintarXiv:2103.00112,2021.
+[84] PeihaoWang,WenqingZheng,TianlongChen,andZhangyangWang. Anti-oversmoothing
+in deep vision transformers via the fourier domain analysis: From theory to practice. In
+InternationalConferenceonLearningRepresentations,2022.
+[85] SixiaoZheng,JiachenLu,HengshuangZhao,XiatianZhu,ZekunLuo,YabiaoWang,Yanwei
+Fu,JianfengFeng,TaoXiang,PhilipHSTorr,etal. Rethinkingsemanticsegmentationfrom
+a sequence-to-sequence perspective with transformers. In Proceedings of the IEEE/CVF
+conferenceoncomputervisionandpatternrecognition,pages6881–6890,2021.
+[86] JoshBeal,EricKim,EricTzeng,DongHukPark,AndrewZhai,andDmitryKislyuk. Toward
+transformer-basedobjectdetection. arXivpreprintarXiv:2012.09958,2020.
+[87] KevinLin,LijuanWang,andZichengLiu. End-to-endhumanposeandmeshreconstruction
+with transformers. In Proceedings of the IEEE/CVF Conference on Computer Vision and
+PatternRecognition,pages1954–1963,2021.
+[88] HengshuangZhao,LiJiang,JiayaJia,PhilipHSTorr,andVladlenKoltun. Pointtransformer.
+InProceedingsoftheIEEE/CVFInternationalConferenceonComputerVision,pages16259–
+16268,2021.
+[89] Meng-HaoGuo,Jun-XiongCai,Zheng-NingLiu,Tai-JiangMu,RalphRMartin,andShi-Min
+Hu. Pct: Pointcloudtransformer. ComputationalVisualMedia,7(2):187–199,2021.
+[90] Kai-En Lin, Lin Yen-Chen, Wei-Sheng Lai, Tsung-Yi Lin, Yi-Chang Shih, and Ravi Ra-
+mamoorthi. Visiontransformerfornerf-basedviewsynthesisfromasingleinputimage. arXiv
+preprintarXiv:2207.05736,2022.
+[91] MukundVarmaT,PeihaoWang,XuxiChen,TianlongChen,SubhashiniVenugopalan,and
+ZhangyangWang. Isattentionallnerfneeds? arXive-prints,pagesarXiv–2207,2022.
+15
+[92] Fuzhi Yang, Huan Yang, Jianlong Fu, Hongtao Lu, and Baining Guo. Learning texture
+transformernetworkforimagesuper-resolution. InProceedingsoftheIEEE/CVFconference
+oncomputervisionandpatternrecognition,pages5791–5800,2020.
+[93] WenqingZheng,QiangqiangGuo,HaoYang,PeihaoWang,andZhangyangWang. Delayed
+propagationtransformer: Auniversalcomputationenginetowardspracticalcontrolincyber-
+physicalsystems. AdvancesinNeuralInformationProcessingSystems,34,2021.
+[94] HaoTanandMohitBansal. Lxmert: Learningcross-modalityencoderrepresentationsfrom
+transformers. arXivpreprintarXiv:1908.07490,2019.
+[95] Yunhao Ge, Jiashu Xu, Brian Nlong Zhao, Laurent Itti, and Vibhav Vineet. Dall-e for
+detection: Language-driven context image synthesis for object detection. arXiv preprint
+arXiv:2206.09592,2022.
+[96] Mengshu Sun, Haoyu Ma, Guoliang Kang, Yifan Jiang, Tianlong Chen, Xiaolong Ma,
+ZhangyangWang, andYanzhiWang. Vaqf: Fullyautomaticsoftware-hardwareco-design
+frameworkforlow-bitvisiontransformer. arXivpreprintarXiv:2201.06618,2022.
+[97] Bingbing Li, Santosh Pandey, Haowen Fang, Yanjun Lyv, Ji Li, Jieyang Chen, Mimi Xie,
+LipengWan,HangLiu,andCaiwenDing. Ftrans: energy-efficientaccelerationoftransform-
+ersusingfpga. InProceedingsoftheACM/IEEEInternationalSymposiumonLowPower
+ElectronicsandDesign,pages175–180,2020.
+[98] PanjieQi,YuhongSong,HongwuPeng,ShaoyiHuang,QingfengZhuge,andEdwinHsing-
+MeanSha. Accommodatingtransformerontofpga: Couplingthebalancedmodelcompression
+andfpga-implementationoptimization. InProceedingsofthe2021onGreatLakesSymposium
+onVLSI,pages163–168,2021.
+[99] HongwuPeng,ShaoyiHuang,TongGeng,AngLi,WeiwenJiang,HangLiu,ShusenWang,
+and Caiwen Ding. Accelerating transformer-based deep learning models on fpgas using
+columnbalancedblockpruning. In202122ndInternationalSymposiumonQualityElectronic
+Design(ISQED),pages142–148.IEEE,2021.
+[100] CarlosRiquelme,JoanPuigcerver,BasilMustafa,MaximNeumann,RodolpheJenatton,André
+SusanoPinto,DanielKeysers,andNeilHoulsby. Scalingvisionwithsparsemixtureofexperts.
+AdvancesinNeuralInformationProcessingSystems,34,2021.
+[101] Dan Hendrycks and Kevin Gimpel. Gaussian error linear units (gelus). arXiv preprint
+arXiv:1606.08415,2016.
+[102] ChaoXiong, XiaoweiZhao, DanhangTang, KarlekarJayashree, ShuichengYan, andTae-
+KyunKim. Conditionalconvolutionalneuralnetworkformodality-awarefacerecognition.
+InProceedingsoftheIEEEInternationalConferenceonComputerVision,pages3667–3675,
+2015.
+[103] JonathanPilault,AmineElhattami,andChristopherPal. Conditionallyadaptivemulti-task
+learning:Improvingtransferlearninginnlpusingfewerparameters&lessdata. arXivpreprint
+arXiv:2009.09139,2020.
+[104] GuoleiSun,ThomasProbst,DandaPaniPaudel,NikolaPopovic´,MenelaosKanakis,Jagruti
+Patel,DengxinDai,andLucVanGool. Taskswitchingnetworkformulti-tasklearning. In
+ProceedingsoftheIEEE/CVFInternationalConferenceonComputerVision,pages8291–8300,
+2021.
+[105] DavidRMartin,CharlessCFowlkes,andJitendraMalik. Learningtodetectnaturalimage
+boundaries using local brightness, color, and texture cues. IEEE transactions on pattern
+analysisandmachineintelligence,26(5):530–549,2004.
+[106] Liang-ChiehChen,GeorgePapandreou,IasonasKokkinos,KevinMurphy,andAlanLYuille.
+Deeplab: Semantic image segmentation with deep convolutional nets, atrous convolution,
+andfullyconnectedcrfs. IEEEtransactionsonpatternanalysisandmachineintelligence,
+40(4):834–848,2017.
+16
+[107] Trevor Standley, Amir Zamir, Dawn Chen, Leonidas Guibas, Jitendra Malik, and Silvio
+Savarese. Whichtasksshouldbelearnedtogetherinmulti-tasklearning? InInternational
+ConferenceonMachineLearning,pages9120–9132.PMLR,2020.
+17
+A ImplementationDetails
+A.1 Scale-upOurModel
+FortheMTLencoder,weevaluateourmodelbasedonseveralvariantsofViTfollowingDeiT[4],
+includingViT-tiny,ViT-small,andViT-base. ThefinalViTblock’soutputfeaturewillbefedinto
+decodersformulti-taskpredictions. WeembedMoEexpertlayersonceineverytwoViTblocks.
+Therouterisasingle-layerMLPwhichmapstokenembeddingtoexperts’selectionprobability. In
+task-conditionedMoEViT,thetaskembeddingnetworkT isatwo-layerMLPofdimensions64and
+64. AsforMLPdecoder,thepreviousSoTAworks [27,23,26]usesDeeplab[106]asthedecoder
+foraResNetbackbone. However,DeeplabisdefinedforConvbackboneandnotsuitableforViT
+encoderoutput. Therefore,wefollowthepriorwork[85]anduseaPUP [85]asdecoder,which
+isaprogressiveupsamplingstrategythatalternatesconvlayersandupsamplingoperations. Each
+decodercontainsfiveconvlayers(thefirstfourofdimension256andthefinaloneofdimension
+correspondingtotaskprediction)andfourupsamplinglayers. Thisdecoderisoflighterweightand
+consumesfewerFLOPsthanDeeplab. Theoutputfeatureoflastandsecondlastconvlayerswillalso
+beusedinamulti-tasksfeaturedistillationmodule. Thedistillationmodulewillonlybeusedduring
+trainstageanddeactivatedduringinferencestage,thusaddingnoextraFLOPstothewholenetwork.
+A.2 TrainingSetup
+Pre-training on ImageNet During the MTL pre-train stage, all the encoder backbones will be
+pre-trainedonImageNetandthedecoderwillberandomlyinitialized. IntheM-ViTmodels,weuse
+thepre-trainedweightsprovidedbyDeiT[4]toinitializeallthetransformerlayersandtheinput
+linearprojectionlayerintheencoder. IntheMoEViTmodels,wepre-trainourencoderonImageNet
+followingthesamestrategyasitscounterpartDeiTViTencoderin[4].
+MTLTraining ForbothNYUD-v2andPASCAL-Contextdatasets,weadoptapolynomiallearning
+ratedecayscheduleandemploySGDastheoptimizerwithinitiallearningrate0.002. Momentum
+andweightdecayaresetto0.9and0.0001,respectively. Thebatchsizeis16.
+A.3 HardwareDetails
+PlatformSpecifications OurtargetedFPGA,theXilinxZCU104FPGA,has1,728DSPs,504K
+LUTs,461Kregisters,11MbitblockRAM,and27MbitUltraRAM.OurGPUusedforbaseline
+measurements, the NVIDIA Quadro RTX 8000, has 4,608 CUDA cores and 48 GB of GDDR6
+memory. Itrunsataclockfrequencyof1,395MHzandconsumes295Wofpower.
+B MoreExperimentResults
+B.1 AdditionalExperimentsonViT-tinyandViT-base
+WefurtherevaluateM3ViTondifferentvariantsofViTincludingViT-tinyandViT-base;resultsare
+showninTable5. WecompareagainstSTL-B,MTL-B,andSoTAencoder-focusedMTLmodel
+TAPS[49], Cross-Stitch [23]. For TAPS, we adopt joint MTL strategy for comparable training
+longitude. ItcanbeobservedthatMoEViT-baseincreasestheSoTAperformancebyalargemargin,
+achieving+4.00%onPASCAL-Contextand+8.32%onNYUD-v2. Meanwhile,italsoconsumes
+lowerFLOPscomparedtopreviousResNet-basedmethods. MoEViT-tinyconsumesmuchfewer
+FLOPsthanallpreviousmethods(inparticular,lessthan1/10FLOPsofthepreviousSoTAmethod
+Cross-Stitch). Additionally,ourhardwareco-designofMoEViT-tinyachievesenergyconsumption
+anorderofmagnitudelowerthanCross-Stitch.
+B.2 AdditionalExperimentsonDifferentNumbersofTasks
+Toevaluatetheperformanceofourmodel, wefurtherconductexperimentsondifferentlevelsof
+MTLdifficultieswithdifferentnumbersoftasks. WecomparebetweenSTL-B,MTL-B,SoTAwork
+Cross-Stitch [23], MTL-B with ViT-small (M-ViT), and MTL-B with MoE ViT-small (M3ViT);
+resultsareshowninTable6. ItcanbeobservedthatM3ViTconsistentlyoutperformsMTL-Bwith
+18
+Table5: PerformanceofM3ViTonViT-tinyandViT-base
+Seg. Norm. H.Parts Sal. Edge ∆ FLOPSEnergy
+PASCAL-Context Backbone m
+(mIoU↑)(mErr)↓(mIoU)↑(mIoU)↑(odsF)↑(%)↑ (G)↓ (W·s)↓
+STL-B ResNet-18 66.2 13.9 59.9 66.3 68.8 0.00 167 1.029
+MTL-B ResNet-18 63.8 14.9 58.6 65.1 69.2 −2.86 167 1.029
+Cross-Stitch[23] ResNet-18 66.1 13.9 60.6 66.8 69.9 +0.60 647 6.001
+M3ViT MoEViT-tiny 65.3 15.2 57.9 64.2 68.5 −3.53 62 0.265
+M3ViT MoEViT-base 75.2 14.8 64.5 66.1 72.6 +4.00 161 2.325
+Seg. Depth ∆ FLOPSEnergy
+NYUD-v2 Backbone – – – m
+(mIoU)↑(rmse)↓ (%)↑ (G)↓ (W·s)↓
+STL-B ResNet-50 43.9 0.585 – – – 0.00 192 2.145
+MTL-B ResNet-50 44.4 0.587 – – – +0.41 192 2.145
+TAPS[49] ResNet-50 44.5 0.581 – – – +1.05 192 2.312
+Cross-Stitch[23] ResNet-50 44.2 0.570 – – – +1.61 310 4.221
+M3ViT MoEViT-tiny 40.3 0.643 – – – −9.05 74 0.351
+M3ViT MoEViT-base 49.1 0.557 – – – +8.32 191 2.798
+lesscomputationalFLOPsondifferentnumbersoftasksonbothNYUD-v2andPASCAL-Context.
+ComparedtoSoTAencoder-focusedworkCross-Stitch,althoughM3ViTperformsslightlylower
+onNYUD-v2withtwotasks,itachievesbetterperformanceonalltheothersettings. Inparticular,
+it surpasses Cross-Stitch on NYUD-v2 when the number of tasks increases to four (−0.91% vs.
+−3.26%),whichdemonstratesthestrongcapacityofourmodelonhandlingmoretasks. OnPASCAL-
+Contextdataset,introducingMoE(M3ViT)canachievemuchbetterperformancethanCross-Stitch.
+NoticingthatM3ViTperformsslightlyworseonnormalestimationandsaliencydetectiontasks,we
+speculatethatitisbecausethesetwotasksrequirearelativelysmallreceptivefieldtoretainadetailed
+estimation,andCross-Stitchallowstouselimitedlocalinformation(i.e.,smallreceptivefield)when
+fusingtheactivationsfromthedifferentsingle-tasknetworks. Butforothertasksthatrequirelarger
+receptivefields,ourmodelperformssignificantlybetterthanCross-Stitch,sinceourtask-dependent
+MoEdesignhelpseffectivelyavoiddifferenttasks’trainingconflict. Meanwhile,M3ViTconsumes
+muchlesscomputationalpowerthanpreviousmethods.
+Furthermore,weconductexperimentsbychoosingtasksfromthelarge-scaleTaskonomydataset
+[16]. Like our main manuscript, we use MTL-ViT-small as the baseline model and MTL-MoE-
+ViT-smallforourmodel. Weincreasethenumberoftasksfromthreetonineandperformdetailed
+evaluations. Followingthesamedatapre-processingandevaluationmethod[107], wereportthe
+relativeperformanceimprovementfromM³ViToverthebaselineMTL-ViT.AsshownintheTable7,
+M³ViTdemonstratesevenstrongersuperiorityasthenumberoftasksincreases.
+B.3 ComparisonswithDecoder-focusedMethods
+Decoder-focusedarchitecturestypicallyrequireinitialpredictionsorintermediatefeaturesofallthe
+tasks,bothintrainingandinference,toimprovethepredictions. However,activatingalltasksin
+inferenceviolatesourmotivation: sparselyactivatingthenetworktoachieveefficientMTLinference.
+Moreover, those models consume a large number of FLOPs [14], which makes them difficult to
+deployontoreal-worldedgedeviceswithresourceandlatencyconstraints. Thisisbecausetheyneed
+higherparallelismfactors,moreresources,orclevertrickstohitthedesiredlatencyrequirement,
+whichisoutofscopeofthediscussionofthispaper.
+Ignoring the previously mentioned efficiency and memory bottleneck, we conduct comparisons
+betweenourM3ViT-basemodelanddecoder-focusedworkPAD-Net[42],whichhavesimilarFLOPs
+(PAD-Net: 212 GFLOPs vs. Ours: 191 GFLOPs). Our MoE ViT-base model achieves higher
+performance than PAD-Net on both the PASCAL Context dataset (Ours: +4.0% vs. PAD-Net:
+-4.41%)andtheNYUD-V2dataset(Ours: +8.32%vs. PAD-Net: +7.43%).
+C LatencyBreakdownofOurModel
+OurFPGAimplementationofM3ViTusingViT-smalltakes84.538msforinferenceontheNYUD-
+v2dataset,whichissplitbetweenpatchembedding,ViTlayers,andMoElayersasshowninthe
+19
+Table6: Performanceondifferentnumbersoftasks
+Seg. Norm. H.Parts Sal. Edge ∆ FLOPS
+PASCAL-Context Backbone m
+(mIoU↑) (mErr)↓ (mIoU)↑ (mIoU)↑ (odsF)↑ (%)↑ (G)↓
+STL-B ResNet-18 66.2 13.9 59.9 66.3 68.8 0.00 167
+MTL-B ResNet-18 60.8 14.5 – – – −6.23 167
+Cross-Stitch[23] ResNet-18 65.4 14.2 – – – −1.68 647
+M-ViT MoEViT-small 65.3 15.6 – – – −6.79 83
+M3ViT MoEViT-small 72.7 14.4 – – – +3.11 84
+MTL-B ResNet-18 63.8 14.9 58.6 65.1 69.2 −2.86 167
+Cross-Stitch[23] ResNet-18 66.1 13.9 60.6 66.8 69.9 +0.60 647
+M-ViT MoEViT-small 70.7 15.5 58.7 64.9 68.8 −1.76 83
+M3ViT MoEViT-small 72.8 14.5 62.1 66.3 71.7 +2.71 84
+Seg. Depth Norm. Edge ∆ FLOPS
+NYUD-v2 Backbone – m
+(mIoU)↑ (rmse)↓ (mErr)↓ (odsF)↑ (%)↑ (G)↓
+STL-B ResNet-50 43.9 0.585 19.8 68.4 – 0.00 192
+MTL-B ResNet-50 44.4 0.587 – – – +0.41 192
+Cross-Stitch[23] ResNet-50 44.2 0.570 – – – +1.61 310
+M-ViT MoEViT-small 40.9 0.631 – – – −6.27 100
+M3ViT MoEViT-small 45.6 0.589 – – – +1.59 100
+MTL-B ResNet-50 41.9 0.618 21.3 69.0 – −4.22 192
+Cross-Stitch[23] ResNet-50 42.2 0.629 20.1 68.3 – −3.26 310
+M-ViT MoEViT-small 40.9 0.636 21.5 65.0 – −7.28 100
+M3ViT MoEViT-small 44.8 0.612 20.1 68.6 – −0.91 100
+Table7: PerformanceondifferentnumbersoftasksonTaskonomydataset
+Tasks Depth Norm. Seg. Edge Occ. Reshad. Key2d. Curvature Autoenc. Average
+3tasks 3.33% 0.44% 7.74% – – – – – – 3.84%
+6tasks 4.68% 2.58% 10.36% 0.80% 3.28% 8.20% – – – 4.98%
+9tasks 5.41% 1.58% 7.67% 0.34% 4.34% 5.06% 7.83% 0.26% 15.01% 5.28%
+breakdowninFigure6. Asshowninthisfigure,thetimerequiredtocomputeallexpertsintheMoE
+layers(18.567ms)isnearlyequaltothetimerequiredtocomputethefully-connectedlayerswithin
+theViTlayers(18.447ms). Thisaffirmsthatourhardwarecomputationreorderingmechanismis
+abletomaintainmemoryefficiencywithnear-zeroimpactonlatency.
+Total: 84.538 ms
+Patch embedding: Standard ViT layers: MoE layers:
+0.768 ms 41.825 ms 41.945 ms
+Self-attention: Fully-connected layers: Self-attention: Experts computation:
+23.378 ms 18.447 ms 23.378 ms 18.567 ms
+Figure 6: A breakdown of the FPGA inference latency on the NYUD-v2 dataset. The total
+latencycanbesplitintothepatchembeddingstep, thesixstandardViTlayers, andthesixMoE
+layersinthebackbone. TheViTandMoElayerscanfurtherbedividedintoself-attention,which
+isidenticalforbothtypesoflayers,andeithertheViTfully-connectedMLPsortheMoEexperts
+computation.
+20

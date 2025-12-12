@@ -1,0 +1,797 @@
+Real-World Robot Control by Deep Active Inference
+with a Temporally Hierarchical World Model
+Kentaro Fujii1 and Shingo Murata1
+Abstract—Robotsinuncertainreal-worldenvironmentsmust model, and an abstract world model. The world model
+perform both goal-directed and exploratory actions. However, learns hidden state transitions to represent environmental
+most deep learning-based control methods neglect exploration
+dynamicsfromhuman-collectedrobotactionandobservation
+and struggle under uncertainty. To address this, we adopt
+data [14]–[16]. The action model maps a sequence of actual
+deep active inference, a framework that accounts for human
+goal-directed and exploratory actions. Yet, conventional deep actions to one of a learned set of abstract actions, each cor-
+active inference approaches face challenges due to limited responding to a meaningful behavior (e.g., moving an object
+environmental representation capacity and high computational from a dish to a pan) [17]. The abstract world model learns
+cost in action selection. We propose a novel deep active
+the relationship between the state representations learned
+inference framework that consists of a world model, an action
+by the world model and the abstract action representations
+model,andanabstractworldmodel.Theworldmodelencodes
+environmental dynamics into hidden state representations at learned by the action model [18]. By leveraging the abstract
+slow and fast timescales. The action model compresses action world model and the abstract action representations, the
+sequences into abstract actions using vector quantization, and framework enables efficient active inference.
+theabstractworldmodelpredictsfutureslowstatesconditioned
+To evaluate the proposed method, we conducted robot
+on the abstract action, enabling low-cost action selection. We
+experiments in real-world environments with uncertainty.
+evaluate the framework on object-manipulation tasks with a
+real-worldrobot.Resultsshowthatitachieveshighsuccessrates We investigated whether the framework could reduce com-
+across diverse manipulation tasks and switches between goal- putational cost, enable the robot to achieve diverse goals
+directed and exploratory actions in uncertain settings, while involving the manipulation of multiple objects, and perform
+making action selection computationally tractable. These find-
+exploratory actions to resolve environmental uncertainty.
+ings highlight the importance of modeling multiple timescale
+dynamics and abstracting actions and state transitions. II. RELATEDWORK
+I. INTRODUCTION A. Learning from Demonstration (LfD) for Robot Control
+Withrecentadvancesindeeplearning-basedrobotcontrol LfD is a method to train robots by imitating human
+methods, there is growing expectation for the realization of experts,providingsafe,task-relevantdataforlearningcontrol
+robots capable of achieving a wide range of human-like policies[19]–[24].Akeyadvancementcontributingtorecent
+goals [1]–[3]. In real-world environments, the presence or progress in LfD for robotics is the idea of generating multi-
+arrangementofobjectsrequiredforataskisoftenuncertain, step action sequences, rather than only single-step actions
+andcurrentrobotsstruggletocopewithsuchuncertainty[4]. [1]–[3],[17],[25].However,amajorchallengeinLfDisthe
+In contrast, humans can not only act toward achieving goals difficulty of generalizing to environments with uncertainty,
+but also explore to resolve environmental uncertainty—e.g., evenwhentrainedonlargeamountsofexpertdemonstrations
+by searching for the location of an object—thereby adapting [4]. In this work, we focus on the approach that uses
+effectively to uncertain situations [5], [6]. quantizedfeaturesextractedfromactionsequences[17],and
+To realize robots capable of both goal-directed and ex- treattheextractedfeaturesasabstractactionrepresentations.
+ploratory actions, we focus on deep active inference [7]–
+B. World Model
+[10]—a deep learning-based framework grounded in a com-
+putational theory that accounts for various cognitive func- A world model captures the dynamics of the environment
+tions [5], [11], [12]. However, deep active inference faces by modeling the relationship between data (observations),
+two key challenges: (1) its performance heavily depends on their latent causes (hidden states), and actions. They have
+the capability of the framework to represent environmental recently attracted significant attention in the context of
+dynamics[13],and(2)thecomputationalcostisprohibitively model-based reinforcement learning [14], [15], especially in
+high [9], making it difficult to apply to real-world robots. artificial agents and robotics [26]. However, when robots
+To address these challenges, we propose a deep active learn using a world model, their performance is constrained
+inference framework comprising a world model, an action bythemodel’scapabilitytorepresentenvironmentaldynam-
+ics [27], [28]. In particular, learning long-term dependencies
+*This work was supported by JST PRESTO (JPMJPR22C9), JSPS
+in the environment remains a challenge. One solution is
+KAKENHI (JP24K03012), Mori Manufacturing Research and Technology
+Foundation. to introduce temporal hierarchy into the model structure
+1Kentaro Fujii and Shingo Murata are with [27],[29]–[31].Furthermore,byincorporatingabstractaction
+Graduate School of Integrated Design Engineering,
+representations that capture slow dynamics, the model can
+Keio University oakwood.n14.4sp@keio.jp,
+murata@elec.keio.ac.jp more efficiently predict future observations and states [18].
+©2025IEEE.PermissionfromIEEEmustbeobtainedforallotheruses,inanycurrentorfuturemedia,includingreprinting/republishingthismaterialforadvertisingor
+promotionalpurposes,creatingnewcollectiveworks,forresaleorredistributiontoserversorlists,orreuseofanycopyrightedcomponentofthisworkinotherworks.
+Thefinalversionofthispaperisavailableat:https://doi.org/10.1109/LRA.2025.3636032
+5202
+ceD
+1
+]OR.sc[
+1v42910.2152:viXra
+𝒂𝒕"𝟏 𝒂
+𝒛𝐬 𝒛𝐬 𝒕 Action Model 𝐴
+𝒕$𝟏 𝒕 !
+World Model Abstract
+𝒛 𝒕 𝐟 $𝟏 𝒛 𝒕 𝐟 World 𝒅 𝒕 𝐬 #𝒉
+Model
+𝒐 𝒕 𝒂 𝑻 𝒛 𝒕 𝐟 𝒛 𝒕 𝐬
+・・・
+𝒂$
+𝒕
+𝒂$ 𝑻
+・・・
+1. World and action model learning 2. Abstract world model learning
+𝐴
+!
+Fig. 1. The overview of the proposed framework. The framework comprises a world model, an action model, and an abstract world model. Here, key
+variables are visualized: observation ot and action at are processed by the world model to infer hierarchical hidden states z
+t
+s, z
+t
+f. The action model
+compressesactionsequencesintoabstractactionsAt.TheabstractworldmodelusesAt topredictthefutureslowdeterministicstateds
+t+h
+.
+Temporal hierarchy can be introduced by differentiating 𝒅𝒕 𝐬 "𝟏 𝒅𝒕 𝐬 𝒅𝒕 𝐬 ’𝟏
+state update frequencies [27], [29], [30] or modulating time
+c w o e ns a t d a o n p ts t t o h f e s l t a a t t t e er tr t a o n b si e t t i t o e n r s re [ p 1 r 6 e ] s , e [ n 3 t 2 s ] l , o [ w 33 d ] y . n I a n m t i h c i s s i w n o o r u k r , 𝒔’ 𝒕 𝐬 "𝟏 𝒔𝒕 𝐬 "𝟏 𝒂𝒕"𝟏 𝒔’𝒕 𝐬 𝒔𝒕 𝐬 𝒂𝒕 𝒔’ 𝒕 𝐬 ’𝟏 𝒔𝒕 𝐬 ’𝟏 𝒂𝒕’𝟏
+world model [31].
+𝒅𝒕 𝐟 "𝟏 𝒅𝒕 𝐟 𝒅𝒕 𝐟 ’𝟏
+III. THEFORMULATIONOFACTIVEINFERENCE
+The free-energy principle [5], [6], [11] is a computational 𝒔’ 𝒕 𝐟 " 𝟏 𝒔𝒕 𝐟 " 𝟏 𝒔’𝒕 𝐟 𝒔𝒕 𝐟 𝒔’ 𝒕 𝐟 ’ 𝟏 𝒔𝒕 𝐟 ’ 𝟏
+principle that accounts for various cognitive functions. Ac-
+cordingtothisprinciple,humanobservationsoaregenerated
+byunobservablehiddenstatesz,whichevolveinresponseto
+𝒐𝒕"𝟏 𝒐&𝒕"𝟏 𝒐𝒕 𝒐&𝒕 𝒐𝒕’𝟏 𝒐&𝒕’𝟏
+actions a, following a partially observable Markov decision
+Fig. 2. The world model. It consists of a dynamics model, an encoder,
+process [5]. The brain is assumed to model this genera-
+andadecoder.Thedynamicsmodelhastwodifferenttimescales.
+tive process with the world model. Under the free-energy
+principle, human perception and action aim to minimize
+the surprise −logp(o). However, since directly minimizing mutual informationbetween the statez and theobservation
+τ
+surprise is intractable, active inference instead minimizes its o .Thistermencouragesexploratorypoliciesthatreducethe
+τ
+tractable upper bound, the variational free energy [5], [6]. uncertainty in the prior belief q(z |π). On the other hand,
+τ
+Perception can be formulated as the minimization of the thesecondtermreferredtoastheextrinsicvalueencourages
+followingvariationalfreeenergyattimestept[9],[34],[35]: goal-directed policies. Therefore, selecting a policy π that
+F(t)=D [q(z )∥p(z )]−E [logp(o |z )] minimizes the EFE can account for both exploratory and
+KL t t q(zt) t t
+(1) goal-directed actions [5], [6], [38].
+≥−logp(o ).
+t ConventionalactiveinferencerequirescalculatingtheEFE
+Here, q(z ) denotes the approximate posterior over the hid- over all possible action sequences during task execution,
+t
+den state z , D [q(·)||p(·)] is the Kullback–Leibler (KL) which is intractable for real-world action spaces [6]. Recent
+t KL
+divergence. Note that the first line of (1) is equivalent to the workshaveaddressedthisbyusingtheEFEasalossfunction
+negative evidence lower bound [36], [37]. for training of action generation models [7]–[9], but often
+Actioncanbeformulatedastheminimizationofexpected ignored exploration capability. In this work, we propose a
+free energy (EFE), which extends variational free energy to novel framework focusing on both goal-achievement perfor-
+account for future states and observations. Let τ > t be a mance and exploration capability tractably calculating the
+future time step, The EFE is defined as follows [35]: EFE during task execution.
+G(τ)≈−E [logq(z |o ,π)−logq(z |π)]
+q(oτ,zτ|π) τ τ τ IV. METHOD
+(cid:124) (cid:123)(cid:122) (cid:125)
+Epistemicvalue (2) A. Framework
+−E [logp(o |o )].
+q(oτ|π) τ pref
+We propose a framework based on deep active inference
+(cid:124) (cid:123)(cid:122) (cid:125)
+Extrinsicvalue that enables both goal achievement and exploration. The
+Here, the expectation is over the observation o because the proposed framework consists of a world model, an action
+τ
+future observation is not yet available [35], and π indicates model, and an abstract world model (Fig. 1).
+the policy (i.e. an action sequence). The variable o is 1) WorldModel: Theworldmodelcomprisesadynamics
+pref
+referred to as a preference, which encodes the goal, and the model, an encoder, and a decoder, all of which are trained
+distribution p(o | o ) is called the prior preference. In simultaneously (Fig. 2). As the dynamics model, we utilize
+τ pref
+(2), the first term referred to as the epistemic value is the a hierarchical model [39], which consists of the slow and
+fast states as the hidden states z ={zs,zf} for time step t. Here, for the KL divergence calculation, we use the KL
+t t t
+Both deterministic d and stochastic s states are defined for balancing technique with a weighting factor w [40].
+each of the slow and fast states zs ={ds,ss},zf ={df,sf}, 2) ActionModel: Theactionmodelconsistsofanencoder
+t t t t t t
+respectively. These hidden states are calculated as follows: E and a decoder D composed of multilayer perceptron
+ϕ ϕ
+(MLP),aswellasaresidualvectorquantizer[17],[41],[42]
+Slow dynamics
+Q with N = 2 layers. First, the encoder E embeds the
+Deterministic state: ds =fs(cid:0) zs (cid:1) ϕ q ϕ
+t θ t−1 action sequence a of length h into a low-dimensional
+t:t+h
+Prior: sˆs ∼ps (ss |ds) featureA .Next,thefeatureA isquantizedintoAˆ usingthe
+t θ t t t t t
+Approximate posterior: ss ∼qs(cid:0) ss |ds,df (cid:1) . residual vector quantizer Q ϕ . The residual vector quantizer
+t θ t t t−1
+includes codebooks {C }Nq , each containing K learnable
+Fast dynamics i i=1
+codes {c }K . Specifically, the quantized vector at layer
+Deterministic State: df =ff(cid:0) ss,zf ,a (cid:1) i,j j=1
+t θ t t−1 t−1 i is the code c having the smallest Euclidean distance to
+i,k
+Prior: sˆf ∼pf (cid:0) sf |df(cid:1) the input at layer i. The quantized feature Aˆ is the sum of
+t θ t t t
+Approximate posterior: sf t ∼q θ f (cid:0) sf t |df t ,o t (cid:1) (3) o F u in tp a u ll t y s , f th ro e m de e c a o c d h er q D uant r i e z c a o ti n o s n tru la c y ts er th { e Aˆ q t u ,i a } n N i= ti q 1 ze = df (cid:80) ea N i tu q re c i A , ˆ k .
+ϕ t
+Here, o is the observation and a is the action at the into the action sequence aˆ . In summary, the procedure
+t t−1 t:t+h
+previoustimestep.Theapproximateposteriorofthefastdy- of the action model is described as follows:
+namics qf is conditioned on the observation o by receiving
+θ t A t =E ϕ (a t:t+h )
+its features extracted by the encoder.
+The slow and fast deterministic states ds and df are Aˆ t =Q ϕ (A t ) (5)
+t t
+computed by multiple timescale recurrent neural network aˆ =D (Aˆ ).
+t:t+h ϕ t
+parameterized with a time constant [32]. When the time
+We treat the feature Aˆ , obtained by the action model, as an
+constant is large, the state tends to evolve slowly compared t
+abstract action representing the action sequence a .
+to when the time constant is small. Therefore, by setting the t:t+h
+The encoder E and decoder D of the action model are
+time constant for the slow layer larger than one for the fast ϕ ϕ
+trained by minimizing the following objective:
+layer, the dynamics model represent a temporal hierarchy.
+The slow and fast stochastic states ss,sˆs and sf,sˆf are L = λ ∥a −aˆ ∥2
+t t t t ϕ MSE t:t+h t:t+h 2
+representedasone-hotvectorssampledfromanapproximate (cid:13) (cid:13)2 (6)
+posteriororaprior,definedbycategoricaldistributions[40]. +λ commit ΣN i= q 1 (cid:13) (cid:13) (A t −Σ i (Aˆ t,i−1 ))−sg(c i,k )(cid:13) (cid:13)
+2
+The decoder is employed to reconstruct the observation
+o t from the hidden state z t , modeling likelihood p θ (o t |z t ). where we assume Aˆ t,0 = 0. Moreover, λ MSE and λ commit
+Simultaneously, a network p θ (df t | z t s) that predicts the fast are coefficients for the reconstruction loss L MSE and the
+deterministic state dˆf from the slow hidden state zs is also commitment loss L commit , respectively. The learning of the
+trained. The predicte t d deterministic state dˆf t is then t used to codebooks {C i }N i= q 1 of the residual vector quantizer Q ϕ is
+sample the fast stochastic state. By combining both slow performed using exponential moving averages [17], [41].
+and predicted fast hidden states as inputs to the decoder, 3) Abstract World Model: The abstract world model W ψ
+thedynamicsmodelcanrepresenttheobservationlikelihood learns a mapping from the current world model state z t and
+p θ (o t |z t s) 1 based on only the slow hidden state z t s. an abstract action A t to the future slow deterministic state
+The world model is trained by minimizing the variational ds t+h .Inotherwords,itprovidesanabstractrepresentationof
+free energy F(t). Here, since the fast deterministic state df state transitions. The model W ψ is composed of MLP and
+t
+canberegardedasanobservationfortheslowdynamics,the takes the abstract action A t and the current world model
+variational free energies F s (t) and F f (t) can be computed state z t as inputs to predict the slow deterministic state
+separately for the slow and fast layers, respectively. Further- ds t+h . Here, the input abstract action A t to W ψ can be
+more, we also minimize, as an auxiliary task, the negative any of the KNq combinations of learned codes from the
+log-likelihood of observation o t given the slow hidden state
+actionmodel,denotedas{Aˆ
+n
+}K
+n=
+N
+1
+q.Accordingly,foragiven
+z t s, denoted as logp θ (o t | z t s). In summary, the variational currenthiddenstatez t ,theabstractworldmodelW ψ predicts
+free energy F(t) in this work is described as follows: KNq possible future slow deterministic states {ds }KNq:
+t+h,n n=1
+F(t)=F s (t)+F f (t)−logp θ (o t |z t s) {dˆs t+h,n }K n= N 1 q =W ψ (z t ,{Aˆ n }K n= N 1 q). (7)
+F (t)= D [sg(qs(cid:0) ss |ds,df (cid:1) )∥ps (ss |ds)]
+s KL θ t t t−1 θ t t The abstract world mode is trained by minimizing the
+−logp θ (df t |z t s) (4) following objective:
+F (t)= D [sg(qf (cid:0) sf |df,o (cid:1) )∥pf (cid:0) sf |df(cid:1) ]
+f KL θ t t t θ t t KNq
+−logp θ (o t |z t )]. L ψ = K 1 Nq (cid:88) ∥dˆs t+h,n −ds t+h,n ∥2 2 . (8)
+n=1
+(cid:82) ov p e 1 r θ C t o ( h o r e r t e f c | a t z s ly t t , ) st p a f θ t t e h (cid:0) s i s s z f t t f | d w d i f t i s t (cid:1) t h r p ib a θ u s (cid:0) ti i d o n f t n gl | e z M i t s s (cid:1) o d n z t w e t f r . C it W t a e r n e lo a s p a a p m s ro p x le i p m . θ a ( te ot th | e z t s m ) argin = al H {d e s t r + e h , ,n t } o K n= N o 1 q b , ta w in e u th ti e lize ta l r a g t e e t nt s i l m ow agin d a e t t i e o r n mi o n f ist t i h c e w st o a r te ld s
+model [15]. To this end, the action sequences {aˆ }KNq V. EXPERIMENTS
+0:h,n n=1
+are generated from the code combinations {Aˆ n }K n= N 1 q using A. Environment Setup
+thedecoderD oftheactionmodel.Then,byleveragingthe
+ϕ To investigate whether the proposed framework enables
+prior distribution over the fast states, the slow deterministic
+both goal achievement and exploration in real-world envi-
+states {ds }KNq at h steps ahead are obtained.
+t+h,n n=1 ronments—where multiple objects can be manipulated and
+uncertainty arises from their placement—we conducted an
+B. Action Selection experiment using a robot shown in Fig. 4 (left) [43], [44].
+The robot had six degrees of freedom, one of which is the
+To make the EFE G(τ) calculation tractable, our frame-
+gripper. A camera (RealSense Depth Camera D435; Intel)
+work leverages a learned, finite set of abstract actions
+was mounted opposite to the robot to capture a view of both
+{Aˆ }KNq, instead of considering all possible (and thus
+n n=1 the robot and its environment. From the viewpoint of the
+infinite) continuous action sequences.
+camera, a simple dish, a pot, and a pan were placed on the
+First, we reformulate (2) in accordance with our world
+right, center, and left, respectively, and a pot lid was placed
+model (for a detailed derivation, see Appendix I):
+closer to the camera than the center pot. Additionally, the
+environmentwas configuredsuch thata blueball, ared ball,
+G(τ)=−E [logq (z |o ,π)−logq (z |π)]
+qθ(oτ,zτ|π) θ τ τ θ τ or both could be present. Note that, therefore, uncertainty
+−E qθ(oτ|π) [logp(o τ |o pref )] arosewhenthelidwasclosed,asthepotmightormightnot
+≈−E [logq (sf |zs,o )−logq (sf |zs)] contain a blue or red ball in this environment.
+qθ(oτ,zτ|π) θ τ τ τ θ τ τ
+−E [logp(o |o )]. As training data, we collected object manipulation data
+qθ(oτ,zτ|π) τ pref
+(9) by demonstrating the predetermined eight patterns of poli-
+Here,thejointdistributionq (o ,z |π)canbedecomposed cies (Fig. 4(right)). Each demonstration consists of a se-
+θ τ τ
+as q (o ,z | π) = p (o | z )q (zf | zs)q (zs | π) in quence of two patterns of policies. For all valid combi-
+θ τ τ θ τ τ θ τ τ θ τ
+our proposed framework. Note that, given the distribution nations—excluding those in which the policy would result
+q (zs | π) over the slow states, all distributions required in no movement (e.g., performing action 3 twice in a
+θ τ
+to compute the EFE G(τ) can be obtained using the world row)—we collected five demonstrations per combination by
+model,andthusG(τ)becomescomputable.Here,wereplace teleoperating the robot in a leader–follower manner. There
+the policy π with an abstract action Aˆ ∈ {Aˆ }KNq, and are36validactioncombinationsforenvironmentscontaining
+n n=1
+express the distribution q (zs |π) as follows: either a blue ball or a red ball, and 72 combinations for
+θ τ
+environments containing both. Each sequence contains 100
+q (zs |π)≈q (ss |ds,Aˆ)q (ds |Aˆ). (10) time steps of joint angles and camera images recorded at
+θ τ θ τ τ ψ τ
+5 Hz. Therefore, each pattern of policies had roughly 50
+In this way, we can use the abstract world model W to time steps. The original RGB images were captured, resized
+ψ
+predict the slow deterministic state ds at τ = t+h from and clipped to 64×80. In this experiment, the robot action
+τ
+theabstractaction Aˆ.Usingthepredicted deterministic state a t is defined as the absolute joint angle positions, and the
+ds τ , we can obtain the slow prior q θ (z τ s | π) and compute observation o t is defined as the camera image.
+the EFE. When computing the EFE, the prior preference
+B. Interpretation of the Model Components
+p(o | o ) is assumed to follow a Gaussian distribution
+τ pref In this experiment, we expected the slow hidden states
+N(o ,σ2) with mean o and variance σ2. Therefore, the
+pref pref zs to represent the overarching progress of the task, such
+EFE can be written as follows: t
+as where the balls and the lid were placed. In contrast, we
+G(τ)≈−E qθ(oτ,zτ|π) [logq θ (sf τ |z τ s,o τ )−logq θ (sf τ |z τ s)] e
+tr
+x
+a
+p
+n
+e
+s
+c
+ie
+te
+n
+d
+t
+t
+i
+h
+n
+e
+fo
+f
+r
+a
+m
+st
+a
+h
+ti
+i
+o
+d
+n
+d
+.
+en
+O
+s
+n
+ta
+t
+t
+h
+e
+e
+sz
+o
+t f
+th
+re
+e
+p
+r
+r
+h
+es
+a
+e
+n
+n
+d
+t
+,
+s
+w
+m
+e
+or
+e
+e
+x
+i
+p
+m
+e
+m
+cte
+e
+d
+dia
+a
+t
+b
+e
+-
+,
+−E [−γ(o −o )2],
+qθ(oτ,zτ|π) τ pref stract actions A to represent a meaningful behavior learned
+(11) t
+whereγ =1/2σ2isthepreferenceprecision,whichbalances from the demonstration data. In an ideal case, an abstract
+actioncorrespondstooneoftheeightpolicypatternsinFig.
+theepistemicandextrinsicvalues,andtheexpectationsinthe
+4(right), such as moving the ball from the dish to the pan.
+EFE are approximated via Monte Carlo sampling [38].
+To generate actual robot actions, we first use the abstract C. Experimental Criteria
+world model W to predict the slow deterministic states
+ψ Capability of abstract world model: We evaluated the
+{ds
+t+h,n
+}K
+n=
+N
+1
+q athstepsintothefutureforallabstractactions
+capability of the abstract world model. First, we compared
+{Aˆ }KNq, given the current world model state z . Next, thecomputationtimeofourproposedframeworkagainstthat
+n n=1 t
+we predict slow hidden states {zs }KNq based on the of conventional deep active inference approaches [9], [13],
+t+h,n n=1
+predicted slow deterministic states by using (10). Then, for [38], which predicts future states with the world model by
+each predicted state, we compute the EFE and select the sequentiallyinputtingtheactionsequenceaˆ reconstructed
+0:h
+abstract action that yields the minimum EFE. The selected from an abstract action Aˆ via the action model.
+abstractactionisthendecodedintoanactionsequenceaˆ Second,weevaluatedwhetherdifferentpredictionscanbe
+t:t+h
+by the action model, and the robot executes this sequence. generated from the same initial state for each abstract action
+𝐴"
+𝒢
+$
+𝐴"
+# 𝐴"
+!
+𝐴"
+#
+Action
+Abstract 𝒛 𝒕 𝐬 "𝒉,𝟎 Model
+World 𝒛𝐬
+𝒕"𝒉,𝟏
+𝒛 𝒕 𝐟 𝒛 𝒕 𝒔 Model 𝒛 𝒕 𝒔 "𝒉,𝟐
+𝐴" 𝐴" 𝐴"
+$ # !
+Fig.3. ActionselectionbasedontheminimizationofEFE.First,futurestatesarepredictedformultipleabstractactions.Then,theEFEiscalculatedfor
+eachofthepredictedfuturestates.Finally,therobotexecuteactionsequencereconstructedfromtheabstractactionthatyieldsthelowestEFE.
+policy predicted a 48-step future actions based on the
+two most recent observations and a goal observation.
+8 7 To stabilize actions, we apply an exponential moving
+average of weight 0.7 to the generated actions.
+6 4
+• Non-hierarchical. As an ablation study, the world
+5 3 model is replaced by a non-hierarchical dynamics
+2 (cid:59063)
+model [40]. In this variant, the hidden state z
+t
+or consists of a single-level deterministic state d t and a
+stochastic state s , where the deterministic state is
+t
+Camera computed using a gated recurrent unit [46].
+• No abstract world model (AWM). As an ablation
+Fig.4. Experimentalenvironment(left)andpolicypatternsincludedinthe
+collecteddataset(right).Theenvironmentcontainseitherablueball,ared study, the robot does not use the abstract world model
+ball,orboth.Thedatasetincludesdemonstrationsofeightdifferentpolicy forplanning.Instead,itcalculatestheEFEdirectlyover
+patternsinvolvingthemovementofthelidandtheballs.
+actual action sequences decoded by the action model.
+We did not perform an ablation on the action model itself,
+learned by the action model. We also examined whether the asourframeworkreliesonittogeneratethesetofcandidate
+observed outcomes resulting from executing actual actions actions (either abstract or actual) for evaluation, making it a
+generated from a specific abstract action are consistent with core, indispensable component.
+the predictions made by the abstract world model.
+Goal achievement performance: VI. RESULTS
+We evaluated the success rate on ball- (140 trials) and
+A. Capability of abstract world model
+lid-manipulation (24 trials) tasks with varying object config-
+urations, such as moving a particular ball or manipulating a Our proposed framework required only 2.37 ms to eval-
+lid.Atrialwasconsideredsuccessfulifthetargetobjectwas uate all candidate abstract actions, in contrast to 71.8 ms
+placed in its specified goal position within 50 time steps. forasequential evaluationofconventionaldeep activeinfer-
+Environment exploration: We evaluated whether the enceapproaches.Thisdemonstratesthehighercomputational
+proposed framework can generate not only goal-directed tractability of our proposed framework.
+actions but also exploratory actions from an uncertain initial As shown in Fig. 5, different abstract actions lead to dis-
+situation. To this end, we set up a scenario in which the tinct predictions. Moreover, for example, by using an action
+blue ball is initially placed in the pan and the lid is closed, sequence generated from the abstract action represented by
+creating uncertainty about whether the red ball is present c +c , the ball was successfully moved from the dish
+1,2 2,7
+inside the pot. In this scenario, when taking an exploratory to the pan, consistent with the predicted observation (Fig.
+action, it was expected that the robot would open the lid to 5). These results suggest that the abstract world model has
+resolve the uncertainty. learned the dependency between abstract actions and the
+resulting state transitions, even without directly referring to
+D. Baseline and Ablation
+actual action sequences. However, the prediction associated
+Inthegoal-achievementperformanceexperiment,wecom- with the abstract action Aˆ represented by Aˆ=c +c in
+1,8 2,8
+pared our proposed framework with a baseline and two Fig. 5 shows red balls placed on both the dish and the pan,
+ablations described as follows: whichisinconsistentwiththeinitialconditioninwhichonly
+• Goal-conditioned diffusion policy (GC-DP). As a a blue ball was present. This abstract action corresponded to
+baseline, we implemented a diffusion policy with a U- movingaballfromthecenterpottothepan.Sincethisaction
+Net backbone [1], [45]. In our implementation, this was not demonstrated when the pot was empty, the abstract
+A. Predictions by the abstract world model ×10!
+Initial All predictions 15
+𝑐
+!,!
+10
+𝑐
+!,#
+Consistent 𝑐
+!,$
+𝑐 !,% Abstract action index
+z
+Prediction with
+𝑐
+!,& Initial Goal minimum EFE
+𝑐
+!,’
+Inconsistent 𝑐 !,(
+𝑐
+!,)
+𝑐 𝑐 𝑐 𝑐 𝑐 𝑐 𝑐 𝑐
+#,! #,# #,$ #,% #,& #,’ #,( #,)
+B. Actual robot action (𝑐 !,# +𝑐 #,$ )
+Time 0 10 20 30 40 50
+Fig.5. Exampleofpredictedobservationsusingtheabstractworldmodel
+andactualrobotactions.(A)Predictedobservationsforeachabstractaction.
+Here,eachci,j denotesthej-thcodeinthei-thlayeroftheactionmodel.
+Theyellowboxhighlightsanexamplepredictionthatisconsistentwiththe
+initialobservation,whiletheredboxindicatesaninconsistentprediction.(B)
+Actual observations corresponding to the action sequence generated from
+theabstractactionAˆrepresentedbyAˆ=c1,2+c2,7 ateachtimestep.
+TABLEI
+SUCCESSRATE(%).
+Ball Lid
+Manipulationtarget Total
+Red Blue Opening Closing
+Proposed 61.4 74.3 75.0 100.0 70.7
+GC-DP 18.6 25.7 25.0 50.0 24.4
+Non-hierarchical 41.4 51.4 75.0 58.3 51.2
+NoAWM 40.0 21.4 83.3 66.7 37.2
+world model may have learned incorrect dependencies for
+unlearned action–environment combinations.
+B. Goal achievement performance
+Table I shows the success rates of our proposed frame-
+work on goal-directed action generation, evaluated on tasks
+involving specific ball and lid manipulations. The proposed
+method outperformed the baseline and the ablations across
+all goal conditions except the Lid-Opening goal, achieving a
+totalsuccessrateofover70%.Asaqualitativeexample,Fig.
+6illustratestheEFEcalculationforascenariowherethegoal
+is to move a ball from a dish to a pan. The abstract action
+with the lowest EFE correctly predicts the desired outcome,
+and executing the actual actions derived from this abstract
+action led to successful task completion. This overall result
+confirms that selecting abstract actions by minimizing the
+EFE is effective for goal achievement.
+The failures in our framework were mainly due to in-
+consistent world model predictions, which misled the robot
+into believing an inappropriate action would succeed. For
+example, the proposed framework selected actions to grasp
+nothing but place the (non-grasped) target object at the ap-
+EFE
+5
+0
+0 63
+Fig. 6. Example of EFE computed for each abstract action. Top: EFE
+valuescomputedforall64abstractactions.TheactionwiththelowestEFE
+ishighlightedasayellowbar.Bottom:Fromlefttoright,theimagesshow
+the initial observation, goal, and predicted observation resulting from the
+abstractactionwiththelowestEFE.
+TABLEII
+EFEVALUESFORTWOREPRESENTATIVEABSTRACTACTIONS
+(GOAL-DIRECTEDANDEXPLORATORY)INTHEUNCERTAINSCENARIO.
+Preferenceprecision Goal-directed Exploratory
+γ=102 4.21×104 14.5×104
+γ=10−4 −4.67×100 −6.11×100
+propriate location. In contrast, the GC-DP, Non-hierarchical,
+and No AWM all exhibited lower success rates. The GC-
+DP frequently failed in grasping and placing objects. Both
+ablations suffered from more prediction inconsistencies than
+ourfullmodel,highlightingtheimportanceoftemporalhier-
+archyandaction/stateabstraction.Thelowerperformanceof
+the No AWM ablation suggests that action abstraction was
+a particularly critical component for success.
+C. Environment exploration
+For simplicity, we computed the EFE for two abstract
+actions:movingtheblueballfromthepantothedish(goal-
+directed), and opening the lid (exploratory), as summarized
+in Table II. When preference precision γ was set to 102,
+the EFE for the goal-directed action became lower, and
+thus the robot moved the blue ball from the pan to the
+dish. In contrast, when preference precision γ was set to
+10−4, the EFE for the exploratory action became lower, and
+thus the robot opened the lid. These results indicate that
+the proposed framework can assign high epistemic value to
+exploratory actions that provide new information, and that
+exploratoryactionscanbeinducedbyappropriatelyadjusting
+the preference precision γ.
+VII. CONCLUSIONS
+Inthiswork,weintroducedadeepactive-inferenceframe-
+work that combines a temporally-hierarchical world model,
+anactionmodelutilizingvectorquantization,andanabstract
+worldmodel.Bycapturingdynamicsinatemporalhierarchy
+andencodingactionsequencesasabstractactions,theframe-
+work makes the action selection based on active inference
+TABLEIII
+computationallytractable.Real-worldexperimentsonobject- SUCCESSRATEINCALVINENVIRONMET(%).
+manipulation tasks demonstrated that the proposed frame-
+task Slider Drawer Lightbulb LED Total
+work outperformed the baseline in various goal-directed
+Proposed 43.8 93.8 0.0 11.8 37.5
+settings, as well as the ability to switch from goal-directed GC-DP 1.6 68.3 52.6 16.7 34.8
+to exploratory actions in uncertain environments.
+Despitethesepromisingresults,severalchallengesremain: TABLEIV
+1) The action model used a fixed sequence length, which HYPERPARAMETERSOFOURPROPOSEDFRAMEWORK
+may not be optimal. 2) The model’s predictive capability
+Name Symbol Value
+decreases for action-environment combinations not present
+WorldModel
+in the dataset. 3) While we validated the capability to take Trainingdatasequencelength — 75
+exploratory actions, we did not evaluate their effectiveness Slowdynamics
+Deterministicstatedimensions — 32
+in solving tasks and the switching to exploratory behavior
+Stocahsticstatedimensions×classes — 4×4
+still relies on a manually tuned hyperparameter. Timeconstant — 32
+Future work will focus on extending the framework to Fastdynamics
+Deterministicstatedimensions — 128
+address these limitations. An immediate step is to evaluate
+Stocahsticstatedimensions×classes — 8×8
+ourframeworkinenvironmentsthatrequiremulti-stepaction Timeconstant — 4
+selectionandwhereexplorationisnecessarytosolvethetask. KLbalancing w 0.8
+ActionModel
+Other promising directions include developing a mechanism
+LayersofMLP — 2
+foradaptiveswitchingbetweengoal-directedandexploratory
+HiddendimensionsofMLP — 128
+modes,andextendingtheactionmodeltorepresentvariable- Actionsequencelength h 50
+length action sequences. Ultimately, this work represents a Codebooksize K 8
+Abstractactiondimensions — 32
+significant step toward the long-term goal of creating more
+Learningcoefficients λ MSE ,λ commit 1.0,5.0
+capable robots that can operate effectively in uncertain real- AbstractWorldModel
+world environments such as household tasks by leveraging LayersofMLP — 2
+HiddendimensionsofMLP — 512
+both goal-directed and exploratory behaviors.
+APPENDIXI
+EFEDERIVATION andturn on/off led(LED).Atrialwasconsideredsuccessful
+ifthetaskwascompletedwithin150timesteps.Ourproposed
+WeshowthedetailedderivationofEFEinourframework:
+frameworkusedthesamehyperparametersasinourprimary
+G(τ)=−E [logq (z |o ,π)−logq (z |π)]
+qθ(oτ,zτ|π) θ τ τ θ τ experiments,buttheGC-DPwastrainedtopredicta28-step
+−E qθ(oτ,zτ|π) [logp(o τ |o pref )] future action sequence from a four-step observation history
+=−E [logq (zf |zs,o )q (zs |π) and re-planned every 16 steps.
+qθ(oτ,zτ|π) θ τ τ τ θ τ
+As shown in Table III, our proposed method consistently
+−logq (zf |zs)q (zs |π)]
+θ τ τ θ τ outperformedGC-DPontheSliderandDrawertasks,aswell
+−E [logp(o |o )]
+qθ(oτ,zτ|π) τ pref as on the average success rate across all tasks. These results
+=−E [logq (zf |zs,o )−logq (zf |zs)] suggest that our approach, which leverages a temporally
+qθ(oτ,zτ|π) θ τ τ τ θ τ τ
+−E [logp(o |o )] hierarchical world model and abstract actions, is robust and
+qθ(oτ,zτ|π) τ pref
+effective not only in our primary setup but also in more
+=−E [logq (sf |df,o )q (df |zs)
+qθ(oτ,zτ|π) θ τ τ τ θ τ τ complex, long-horizon manipulation scenarios.
+−logq (sf |df)q (df |zs)]
+θ τ τ θ τ τ
+−E [logp(o |o )] APPENDIXIII
+qθ(oτ,zτ|π) τ pref
+≈−E [logq (sf |zs,o )−logq (sf |zs)] HYPERPARAMETERS
+qθ(oτ,zτ|π) θ τ τ τ θ τ τ
+−E [logp(o |o )]. WeshowhyperparametersinourexperimentsinTableIV.
+qθ(oτ,zτ|π) τ pref
+(12)
+APPENDIXII
+REFERENCES
+ADDITIONALEXPERIMENTS
+To validate the scalability of our framework, we further [1] C.Chi,Z.Xu,S.Feng,E.Cousineau,Y.Du,B.Burchfiel,R.Tedrake,
+and S. Song, “Diffusion policy: Visuomotor policy learning via ac-
+evaluatedourframeworkontheCALVINDbenchmark[47],
+tion diffusion,” The International Journal of Robotics Research, p.
+which provides various unstructured human data. Although 02783649241273668,2023.
+this environment can serve language goal conditioning, we [2] H.Etukuru,N.Naka,Z.Hu,S.Lee,J.Mehu,A.Edsinger,C.Paxton,
+S.Chintala,L.Pinto,andN.M.M.Shafiullah,“Robotutilitymodels:
+used only image-based goal conditioning.
+Generalpoliciesforzero-shotdeploymentinnewenvironments,”arXiv
+For this environment, we compared our proposed preprintarXiv:2409.05865,pp.1–28,2024.
+framework with the GC-DP. The evaluation was con- [3] K. Black, N. Brown, D. Driess, A. Esmail, M. Equi, C. Finn,
+ducted on eight tasks: move slider left/right (Slider), open/-
+N. Fusai, L. Groom, K. Hausman, B. Ichter, et al., “π0: A vision-
+language-actionflowmodelforgeneralrobotcontrol,”arXivpreprint
+close drawer (Drawer), turn on/off lightbulb (Lightbulb), arXiv:2410.24164,pp.1–17,2024.
+[4] C. Lynch, A. Wahid, J. Tompson, T. Ding, J. Betker, R. Baruch, predictive coding for cognitive and developmental robotics: frontiers
+T.Armstrong,andP.Florence,“Interactivelanguage:Talkingtorobots and challenges,” Advanced Robotics, vol. 37, no. 13, pp. 780–806,
+inrealtime,”IEEERoboticsandAutomationLetters(RA-L),pp.1–8, 2023.
+2023. [27] W.Cai,T.Wang,J.Wang,andC.Sun,“Learningaworldmodelwith
+[5] K. Friston, F. Rigoli, D. Ognibene, C. Mathys, T. FitzGerald, and multitimescalememoryaugmentation,”IEEETransactionsonNeural
+G.Pezzulo,“Activeinferenceandepistemicvalue,”CognitiveNeuro- NetworksandLearningSystems,pp.1–10,2022.
+science,vol.6,no.4,pp.187–214,2015. [28] F. Deng, J. Park, and S. Ahn, “Facing off world model backbones:
+[6] K.Friston,T.FitzGerald,F.Rigoli,P.Schwartenbeck,andG.Pezzulo, Rnns, transformers, and s4,” Advances in Neural Information Pro-
+“Activeinference:Aprocesstheory,”NeuralComputation,vol.29,pp. cessingSystems,vol.36,pp.1–27,2024.
+1–49,2017. [29] T. Kim, S. Ahn, and Y. Bengio, “Variational temporal abstraction,”
+[7] B. Millidge, “Deep active inference as variational policy gradients,” Advances in Neural Information Processing Systems, vol. 32, pp. 1–
+JournalofMathematicalPsychology,vol.96,p.102348,2020. 10,2019.
+[8] Z. Fountas, N. Sajid, P. Mediano, and K. Friston, “Deep active [30] V. Saxena, J. Ba, and D. Hafner, “Clockwork variational autoen-
+inference agents using monte-carlo methods,” Advances in Neural coders,”AdvancesinNeuralInformationProcessingSystems,vol.34,
+InformationProcessingSystems,vol.33,pp.11662–11675,2020. pp.29246–29257,2021.
+[9] P. Mazzaglia, T. Verbelen, and B. Dhoedt, “Contrastive active infer- [31] K. Fujii and S. Murata, “Hierarchical latent dynamics model with
+ence,”inAdvancesinNeuralInformationProcessingSystems,vol.34, multiple timescales for learning long-horizon tasks,” in 2023 IEEE
+2021,pp.13870–13882. InternationalConferenceonDevelopmentandLearning(ICDL),2023,
+[10] K.Fujii,T.Isomura,andS.Murata,“Real-worldrobotcontrolbased pp.479–485.
+on contrastive deep active inference with demonstrations,” IEEE [32] Y. Yamashita and J. Tani, “Emergence of functional hierarchy in a
+Access,vol.12,pp.172343–172357,2024. multiple timescale neural network model: A humanoid robot exper-
+[11] K.Friston,“Thefree-energyprinciple:aunifiedbraintheory?”Nature iment,” PLoS Computational Biology, vol. 4, no. 11, p. e1000220,
+reviewsneuroscience,vol.11,no.2,pp.127–138,2010. 2008.
+[12] P. Schwartenbeck, J. Passecker, T. U. Hauser, T. H. FitzGerald, [33] A. Spieler, N. Rahaman, G. Martius, B. Scho¨lkopf, and A. Levina,
+M. Kronbichler, and K. J. Friston, “Computational mechanisms of “The expressive leaky memory neuron: an efficient and expressive
+curiosityandgoal-directedexploration,”Elife,vol.8,p.e41703,2019. phenomenologicalneuronmodelcansolvelong-horizontasks.”inThe
+[13] N.Sajid,P.Tigas,A.Zakharov,Z.Fountas,andK.Friston,“Explo- TwelfthInternationalConferenceonLearningRepresentations,2024,
+ration and preference satisfaction trade-off in reward-free learning,” pp.1–25.
+arXivpreprintarXiv:2106.04316,pp.1–23,2021. [34] P.Mazzaglia,T.Verbelen,O.C¸atal,andB.Dhoedt,“Thefreeenergy
+[14] D.HaandJ.Schmidhuber,“Recurrentworldmodelsfacilitatepolicy principle for perception and action: A deep learning perspective,”
+evolution,” in Advances in Neural Information Processing Systems, Entropy,vol.24,no.2,p.301,2022.
+S.Bengio,H.Wallach,H.Larochelle,K.Grauman,N.Cesa-Bianchi, [35] R. Smith, K. J. Friston, and C. J. Whyte, “A step-by-step tutorial
+andR.Garnett,Eds.,vol.31,2018,pp.1–13. on active inference and its application to empirical data,” Journal of
+[15] D. Hafner, T. Lillicrap, I. Fischer, R. Villegas, D. Ha, H. Lee, and
+MathematicalPsychology,vol.107,p.102632,2022.
+J.Davidson,“Learninglatentdynamicsforplanningfrompixels,”in [36] D.P.KingmaandM.Welling,“Auto-encodingvariationalbayes,”pp.
+International Conference on Machine Learning, vol. 97. PMLR, 1–14,2013.
+2019,pp.2555–2565. [37] D.J.Rezende,S.Mohamed,andD.Wierstra,“Stochasticbackprop-
+agation and approximate inference in deep generative models,” in
+[16] A.AhmadiandJ.Tani,“Anovelpredictive-coding-inspiredvariational
+International Conference on Machine Learning. PMLR, 2014, pp.
+rnnmodelforonlinepredictionandrecognition,”NeuralComputation,
+1278–1286.
+vol.31,no.11,pp.2025–2074,2019.
+[38] K. Igari, K. Fujii, G. W. Haddon-Hill, and S. Murata, “Selection of
+[17] S. Lee, Y. Wang, H. Etukuru, H. J. Kim, N. M. M. Shafiullah, and
+exploratoryorgoal-directedbehaviorbyaphysicalrobotimplement-
+L. Pinto, “Behavior generation with latent actions,” arXiv preprint
+ing deep active inference,” in 5th International Workshop on Active
+arXiv:2403.03181,pp.1–18,2024.
+Inference,2024,pp.1–14.
+[18] C. Gumbsch, N. Sajid, G. Martius, and M. V. Butz, “Learning
+[39] K. Fujii and S. Murata, “Hierarchical latent dynamics model with
+hierarchical world models with adaptive temporal abstractions from
+multiple timescales for learning long-horizon tasks,” in 2023 IEEE
+discretelatentdynamics,”inTheTwelfthInternationalConferenceon
+InternationalConferenceonDevelopmentandLearning(ICDL),2023,
+LearningRepresentations,2024.
+pp.479–485.
+[19] H.Ravichandar,A.S.Polydoros,S.Chernova,andA.Billard,“Recent
+[40] D. Hafner, T. P. Lillicrap, M. Norouzi, and J. Ba, “Mastering atari
+advances in robot learning from demonstration,” Annual Review of
+withdiscreteworldmodels,”inInternationalConferenceonLearning
+Control, Robotics, and Autonomous Systems, vol. 3, pp. 297–330,
+Representations,2021,pp.1–26.
+2020.
+[41] A. Van Den Oord, O. Vinyals, et al., “Neural discrete representa-
+[20] A.CorreiaandL.A.Alexandre,“Asurveyofdemonstrationlearning,”
+tion learning,” Advances in Neural Information Processing Systems,
+RoboticsandAutonomousSystems,vol.182,p.104812,2024.
+vol.30,pp.1–10,2017.
+[21] M.Zare,P.M.Kebria,A.Khosravi,andS.Nahavandi,“Asurveyof
+[42] N. Zeghidour, A. Luebs, A. Omran, J. Skoglund, and M. Tagliasac-
+imitationlearning:Algorithms,recentdevelopments,andchallenges,”
+chi, “Soundstream: An end-to-end neural audio codec,” IEEE/ACM
+IEEE Transactions on Cybernetics, vol. 54, no. 12, pp. 7173–7186,
+Transactions on Audio, Speech, and Language Processing, vol. 30,
+2024.
+pp.495–507,2021.
+[22] P.Florence,C.Lynch,A.Zeng,O.A.Ramirez,A.Wahid,L.Downs,
+[43] A. Koch, “Low-cost robot arm,” https://github.com/
+A. Wong, J. Lee, I. Mordatch, and J. Tompson, “Implicit behavioral
+AlexanderKoch-Koch/lowcostrobot,2024.
+cloning,”inConferenceonRobotLearning. PMLR,2022,pp.158–
+[44] R. Cadene, S. Alibert, A. Soare, Q. Gallouedec, A. Zouitine, and
+168.
+T. Wolf, “Lerobot: State-of-the-art machine learning for real-world
+[23] P.Lancaster,N.Hansen,A.Rajeswaran,andV.Kumar,“Modem-v2:
+roboticsinpytorch,”https://github.com/huggingface/lerobot,2024.
+Visuo-motorworldmodelsforreal-worldrobotmanipulation,”in2024
+[45] O. Ronneberger, P. Fischer, and T. Brox, “U-Net: Convolutional
+IEEEInternationalConferenceonRoboticsandAutomation(ICRA),
+NetworksforBiomedicalImageSegmentation,”inInternationalCon-
+2024,pp.7530–7537.
+ference on Medical Image Computing and Computer-Assisted Inter-
+[24] E. Jang, A. Irpan, M. Khansari, D. Kappler, F. Ebert, C. Lynch,
+vention. Springer,2015,pp.234–241.
+S. Levine, and C. Finn, “Bc-z: Zero-shot task generalization with
+[46] J.Chung,C.Gulcehre,K.Cho,andY.Bengio,“Empiricalevaluation
+roboticimitationlearning,”inConferenceonRobotLearning. PMLR,
+ofgatedrecurrentneuralnetworksonsequencemodeling,”inNeural
+2022,pp.991–1002.
+Information Processing Systems 2014 Workshop on Deep Learning,
+[25] T.Z.Zhao,V.Kumar,S.Levine,andC.Finn,“Learningfine-grained
+2014,pp.1–9.
+bimanual manipulation with low-cost hardware,” in ICML Workshop
+[47] O. Mees, L. Hermann, E. Rosete-Beas, and W. Burgard, “Calvin: A
+onNewFrontiersinLearning,Control,andDynamicalSystems,2023,
+benchmarkforlanguage-conditionedpolicylearningforlong-horizon
+pp.1–22.
+robotmanipulationtasks,”IEEERoboticsandAutomationLetters(RA-
+[26] T.Taniguchi,S.Murata,M.Suzuki,D.Ognibene,P.Lanillos,E.Ugur, L),vol.7,no.3,pp.7327–7334,2022.
+L.Jamone,T.Nakamura,A.Ciria,B.Lara,etal.,“Worldmodelsand

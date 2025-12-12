@@ -1,65 +1,73 @@
 # Meta-Analysis Summary Report
 
-**Generated**: 2025-12-12T11:43:26.734289
+**Generated**: 2025-12-12T12:09:38.112133
 
 ---
 
 ## Executive Summary
 
-- **Total Papers Analyzed**: 55
-- **Year Range**: 2012 - 2025
-- **Average Publications per Year**: 3.93
+- **Total Papers Analyzed**: 461
+- **Year Range**: 2006 - 2025
+- **Average Publications per Year**: 23.05
 
 ---
 
 ## Temporal Trends
 
-- **Peak Publication Year**: 2022 (14 papers)
+- **Peak Publication Year**: 2025 (107 papers)
 
 ### Publications by Year
 
 | Year | Count |
 |------|-------|
-| 2012 | 1 |
-| 2017 | 2 |
-| 2019 | 2 |
-| 2020 | 6 |
-| 2021 | 7 |
-| 2022 | 14 |
-| 2023 | 5 |
-| 2024 | 6 |
-| 2025 | 6 |
+| 2006 | 1 |
+| 2009 | 1 |
+| 2010 | 2 |
+| 2011 | 3 |
+| 2012 | 3 |
+| 2014 | 3 |
+| 2015 | 4 |
+| 2016 | 3 |
+| 2017 | 10 |
+| 2018 | 16 |
+| 2019 | 20 |
+| 2020 | 40 |
+| 2021 | 53 |
+| 2022 | 62 |
+| 2023 | 60 |
+| 2024 | 69 |
+| 2025 | 107 |
 
 ---
 
 ## Keyword Analysis
 
-- **Total Unique Keywords**: 2090
+- **Total Unique Keywords**: 6473
 
 ### Top Keywords
 
 | Rank | Keyword | Frequency |
 |------|---------|-----------|
-| 1 | free | 97 |
-| 2 | energy | 97 |
-| 3 | principle | 91 |
-| 4 | inference | 29 |
-| 5 | model | 29 |
-| 6 | theory | 23 |
-| 7 | systems | 22 |
-| 8 | variational | 21 |
-| 9 | learning | 20 |
-| 10 | between | 20 |
-| 11 | dynamics | 20 |
-| 12 | states | 20 |
-| 13 | under | 19 |
-| 14 | brain | 18 |
-| 15 | bayesian | 18 |
-| 16 | active | 18 |
-| 17 | information | 16 |
-| 18 | using | 15 |
-| 19 | state | 15 |
-| 20 | system | 15 |
+| 1 | inference | 584 |
+| 2 | active | 549 |
+| 3 | free | 316 |
+| 4 | model | 312 |
+| 5 | energy | 311 |
+| 6 | learning | 254 |
+| 7 | based | 219 |
+| 8 | principle | 218 |
+| 9 | framework | 187 |
+| 10 | using | 181 |
+| 11 | models | 176 |
+| 12 | paper | 158 |
+| 13 | approach | 156 |
+| 14 | information | 153 |
+| 15 | systems | 151 |
+| 16 | agent | 149 |
+| 17 | action | 148 |
+| 18 | agents | 148 |
+| 19 | show | 143 |
+| 20 | such | 141 |
 
 ---
 
@@ -73,102 +81,102 @@
 
 | Rank | Venue | Publications |
 |------|-------|--------------|
-| 1 | arXiv | 48 |
+| 1 | arXiv | 456 |
 | 2 | biorxiv preprint | 1 |
 
 ### Authors
 
-- **Total Unique Authors**: 97
+- **Total Unique Authors**: 982
 
 #### Top Authors
 
 | Rank | Author | Publications |
 |------|--------|--------------|
-| 1 | Karl Friston | 10 |
-| 2 | Lancelot Da Costa | 4 |
-| 3 | Beren Millidge | 3 |
-| 4 | Dalton A R Sakthivadivel | 3 |
-| 5 | Chang Sub Kim | 3 |
-| 6 | Conor Heins | 3 |
-| 7 | Chris Fields | 3 |
-| 8 | Adam Safron | 2 |
-| 9 | Casper Hesp | 2 |
-| 10 | Mahault Albarracin | 2 |
+| 1 | Karl Friston | 38 |
+| 2 | Tim Verbelen | 30 |
+| 3 | Bart Dhoedt | 21 |
+| 4 | Lancelot Da Costa | 18 |
+| 5 | Beren Millidge | 16 |
+| 6 | Christopher L. Buckley | 16 |
+| 7 | Pablo Lanillos | 15 |
+| 8 | Jun Tani | 14 |
+| 9 | Conor Heins | 14 |
+| 10 | Thomas Parr | 14 |
 
 ### Data Availability
 
-- **Papers with DOI**: 18 (32.7%)
-- **Papers with PDF**: 51 (92.7%)
+- **Papers with DOI**: 106 (23.0%)
+- **Papers with PDF**: 453 (98.3%)
 
 ---
 
 ## PCA Interpretation
 
-- **Total Variance Explained**: 18.11%
+- **Total Variance Explained**: 7.89%
 
 ### Principal Components
 
 #### PC1
 
-- **Variance Explained**: 4.42%
+- **Variance Explained**: 2.40%
 
 **Top Contributing Words**:
-- learning (loading: 0.2149)
-- markov (loading: -0.2136)
-- aguilera (loading: -0.1661)
-- brain (loading: 0.1540)
-- particular (loading: -0.1523)
+- energy (loading: 0.3003)
+- free energy (loading: 0.2953)
+- free (loading: 0.2869)
+- fep (loading: 0.2593)
+- principle (loading: 0.2580)
 
 #### PC2
 
-- **Variance Explained**: 3.87%
+- **Variance Explained**: 1.75%
 
 **Top Contributing Words**:
-- fep (loading: 0.3729)
-- 2025 (loading: -0.2693)
-- entropy (loading: -0.1859)
-- systems (loading: 0.1374)
-- brain (loading: 0.1343)
+- active inference (loading: 0.2894)
+- inference (loading: 0.2701)
+- active (loading: 0.2699)
+- free (loading: 0.2273)
+- energy (loading: 0.2246)
 
 #### PC3
 
-- **Variance Explained**: 3.37%
+- **Variance Explained**: 1.30%
 
 **Top Contributing Words**:
-- 2025 (loading: 0.3051)
-- fep (loading: 0.1784)
-- active (loading: -0.1676)
-- active inference (loading: -0.1628)
-- entropy (loading: -0.1569)
+- control (loading: 0.3467)
+- navigation (loading: -0.1934)
+- agents (loading: -0.1909)
+- exploration (loading: -0.1742)
+- agent (loading: -0.1646)
 
 #### PC4
 
-- **Variance Explained**: 3.25%
+- **Variance Explained**: 1.25%
 
 **Top Contributing Words**:
-- estimation (loading: 0.3308)
-- control (loading: 0.2655)
-- state (loading: 0.2205)
-- noise (loading: 0.1972)
-- 2025 (loading: -0.1686)
+- learning (loading: 0.1975)
+- model (loading: 0.1861)
+- fep (loading: 0.1688)
+- bayesian (loading: -0.1499)
+- navigation (loading: 0.1492)
 
 #### PC5
 
-- **Variance Explained**: 3.20%
+- **Variance Explained**: 1.19%
 
 **Top Contributing Words**:
-- entropy (loading: 0.2241)
-- principles (loading: 0.1944)
-- 2025 (loading: -0.1930)
-- local (loading: 0.1925)
-- estimation (loading: -0.1701)
+- ai (loading: 0.3946)
+- intelligence (loading: 0.1915)
+- systems (loading: 0.1896)
+- active inference (loading: 0.1692)
+- inference (loading: 0.1533)
 
 ---
 
 ## Key Observations
 
-- Peak publication activity occurred in 2022 with 14 papers.
-- Strong publication activity with an average of 3.9 papers per year.
-- Most frequent keyword: 'free' (appears 97 times).
+- Peak publication activity occurred in 2025 with 107 papers.
+- Strong publication activity with an average of 23.1 papers per year.
+- Most frequent keyword: 'inference' (appears 584 times).
 
 ---

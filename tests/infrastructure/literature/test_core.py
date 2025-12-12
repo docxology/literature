@@ -24,32 +24,32 @@ def test_search_integration(mock_config):
 
 
 @pytest.mark.requires_network
+@pytest.mark.timeout(30)
 def test_download_paper(mock_config, sample_result, tmp_path):
     """Test paper download with real implementations."""
     searcher = LiteratureSearch(mock_config)
-
-    # Create a real test PDF file for download testing
-    test_pdf_path = tmp_path / "test.pdf"
-    test_pdf_content = b"%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\nxref\n0 1\ntrailer\n<<\n/Root 1 0 R\n>>\n%%EOF"
-    test_pdf_path.write_bytes(test_pdf_content)
-
-    # Test with a result that has a PDF URL
-    # If PDF URL exists, download will be attempted
-    # If network unavailable, test will skip
+    
+    # Skip if no PDF URL
+    if not sample_result.pdf_url:
+        pytest.skip("No PDF URL in sample result")
+    
+    # Try download with timeout handling
     try:
-        # For testing, we'll verify the download method exists and can handle the result
-        # Actual download requires network, so we test the method signature and error handling
-        if sample_result.pdf_url:
-            # Try download - may fail if network unavailable, which is expected
-            try:
-                path = searcher.download_paper(sample_result)
-                if path:
-                    assert path.exists()
-            except Exception:
-                # Network unavailable - skip test
-                pytest.skip("Network unavailable for PDF download")
+        path = searcher.download_paper(sample_result)
+        if path:
+            assert path.exists()
     except Exception as e:
-        pytest.skip(f"Download test requires network: {e}")
+        # Check if it's a timeout or network error
+        error_str = str(e).lower()
+        if "timeout" in error_str or "timed out" in error_str:
+            pytest.skip(f"Download timed out (network issue): {e}")
+        elif "network" in error_str or "connection" in error_str:
+            pytest.skip(f"Network unavailable: {e}")
+        elif "404" in error_str or "not found" in error_str or "does not exist" in error_str:
+            pytest.skip(f"PDF URL not found (expected for test fixture): {e}")
+        else:
+            # Re-raise unexpected errors
+            raise
 
 
 def test_add_to_library(mock_config, sample_result, tmp_path):

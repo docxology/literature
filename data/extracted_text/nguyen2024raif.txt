@@ -1,0 +1,1116 @@
+R-AIF: SOLVING SPARSE-REWARD ROBOTIC TASKS FROM
+PIXELS WITH ACTIVE INFERENCE AND WORLD MODELS
+VietDungNguyen ZhizhuoYang ChristopherL.Buckley
+RochesterInstituteofTechnology RochesterInstituteofTechnology VERSESAIResearchLab
+vn1747@rit.edu zy8981@rit.edu UniversityofSussex
+c.l.buckley@sussex.ac.uk
+AlexanderOrorbia
+RochesterInstituteofTechnology
+ago@cs.rit.edu
+ABSTRACT
+Althoughresearchhasproducedpromisingresultsdemonstratingtheutilityofactiveinference
+(AIF)inMarkovdecisionprocesses(MDPs),thereisrelativelylessworkthatbuildsAIFmodels
+inthecontextofenvironmentsandproblemsthattaketheformofpartiallyobservableMarkov
+decision processes (POMDPs). In POMDP scenarios, the agent must infer the unobserved
+environmental state from raw sensory observations, e.g., pixels in an image. Additionally,
+lessworkexistsinexaminingthemostdifficultformofPOMDP-centeredcontrol: continuous
+actionspacePOMDPsundersparserewardsignals. Inthiswork,weaddressissuesfacingthe
+AIF modeling paradigm by introducing novel prior preference learning techniques and self-
+revision schedules to help the agent excel in sparse-reward, continuous action, goal-based
+roboticcontrolPOMDPenvironments. Empirically,weshowthatouragentsofferimproved
+performanceoverstate-of-the-artmodelsintermsofcumulativerewards,relativestability,and
+successrate. Thecodeinsupportofthisworkcanbefoundathttps://github.com/NACLab/
+robust-active-inference.
+Keywords Activeinference·Freeenergyprinciple·Generativeworldmodels·Contrastive
+learning·PartiallyobservableMarkovdecisionprocesses
+1 Introduction
+Reinforcementlearning(RL)hasnotablybeenwidelyutilizedinroboticsystemstosolveavarietyofmanipulation
+andcontroltasks[67,35,51]usingmodel-freeRLalgorithmssuchasthesoftactorcritic[28,29]orthedeep
+Q-network[49]. Model-basedRL,ontheotherhand,predictsthedynamicsofaMarkovdecisionprocess(MDP)
+andutilizesthislearnedgenerativemodeltoplanausefulpolicy. Fromthe‘Dyna’framework[76],model-based
+RLhasevolvedintopowerfulmodern-daymodels,includinglatentdynamicsmodels[6],imagination-augmented
+RL[65],orrecurrent-basedstatedynamicsmodelscapableofplayingAtarigames[89]. Withinthisdomainof
+research, there exists a sub-field – formally known as active inference – that develops models that align with
+underlyingprinciplesofmodel-basedRL.Generally,anactiveinferenceagentmaintainsandadaptsabestestimate
+ofitsworld(generativeworldmodel). Itfurtheraimstotakeactionsthatleadtooutcomesthatarealignedwith
+its‘preferences’whileworkingtopredictandminimizethedegreeofsurpriseitwouldpotentiallyencounterin
+futureengagementswithinitsniche[61,15]. However,currentactiveinferenceresearchonlytacklesMDProbotics
+problems,withfarlessconsiderationforpixel-basedPOMDPtasksthatelicitsparserewardsignals;seeTable1.
+Inthiswork,wemakethefollowingkeycontributions. 1)Weproposeanovelcontrastiverecurrentstateprior
+preference(CRSPP)model,whichallowstheagenttolearnitsownpreferenceovertheworld’sstate(s)online.
+Thisonlinepreferencedynamicallyshapestheagent’spolicydistribution, improvinggeneralperformance. 2)
+Weproposeanewformulationofexpectedfreeenergyandoptimizeitusingtheactor-criticmethod,improving
+thestabilityoftheactionplannercomparedtootheractiveinferencebaselines. 3)Weproposeourrobustactive
+4202
+peS
+12
+]OR.sc[
+1v61241.9042:viXra
+Preprint
+AgentModel POMDP Sparse Var. Cont. Discrete
+Reward Goal Action Action
+[79,78] ✗ ✔ ✗ ✔ ✗
+[52] ✗ ✔ ✗ ✔ ✗
+[30,32,34] ✔ ✗a ✔ ✔ ✔
+[82] ✗b ✗ ✗ ✗ ✔
+[14] ✔ ✗ ✗ ✗ ✔
+[47] ✗ ✗ ✗ ✗ ✔
+[83] ✔ ✗ ✗ ✗ ✔
+[8],[9] ✔c ✔ ✗ ✗ ✔
+[45] ✔ ✔d ✗d ✔ ✔
+R-AIF(ours) ✔ ✔ ✔ ✔ ✔
+Table1: Features(“var.” for“variable”and“cont.” for“continuous”)ofdifferentmodel-basedreinforcement
+learninganddeepactiveinferenceresearchefforts.
+aDreamerisnotspecificallydesignedtoworkwithsparse-rewardproblems,butwasfoundinthisworktoberobustenoughto
+scoredecentlywell.
+bThismodelwasdesignedspecificallyfortheCartpoleenvironmentwithamodifiedobservationspace.Furthermore,theimage
+observationisstackedforfoursteps,makingitaMDP-likeproblem[50].
+cThisworkformsanon-pixel-levelPOMDPbyhidingthevelocitystate,onlypresentingthepositionofthemountaincaras
+theobservation(anddoesnotworkwithrawsensorydata).
+dAlthoughthisagentisdesignedforsparserewards,providingthegoalimageisnotpracticalforrobotenvironmentswith
+variedgoalstates(aswestudyinthiswork).
+inference(R-AIF)agentwithaself-revisionmechanism,demonstratingitspotentialtoimproveovergeneralRL
+methods,boostingthemodelconvergencerateinsparse-rewardtasks. Finally,4)Weprovideempiricalevidence
+thatourR-AIFagentconvergesfasterandismorestablethanastate-of-the-artmodel-basedreinforcementlearning
+baseline(DreamerV3[34])andpowerfulactiveinferencebaselines: DAIVPG[47]andtheagentin[82].
+2 RelatedWork
+Model-basedreinforcementlearning(MBRL)isapivotalapproachinreinforcementlearningthatcentersaround
+the ‘world model’, a concept that involves creating an internal model of the environment to guide the agent’s
+futureactions. Thisapproachisexemplifiedinworksrelatedtostatespacemodels[7],‘embedtocontrol’[85],
+‘Plan2Explore’[73],‘dreaming’[54],‘PlaNet’[31],‘Dreamer’[30],divergenceminimization[33],andperceptual
+uncertainty[62,74].
+Activeinference(AIF)isaframeworkincognitivescienceandneurosciencewhichcentersaroundthenotionof
+generativemodelswhich“understand”a“livedworld”[61,64]or(eco)niche. Importantly,AIFitselfisineffect
+acorollaryofthefreeenergyprinciple,whichpositsthatbiologicalsystemsminimizeaquantityknownasfree
+energyastheycontinuouslyworktopreservetheirexistence(self-evidence)andinteractwiththeirenvironments
+effectively. Formally,AIFinvolvesminimizingthequantityknownasvariationalfreeenergywhichisformally
+definedasfollows:
+F =E [lnQ(s)−lnP(o,s)] (1)
+Q(s)
+whereQ(s)istheapproximateposterioroverstatessandP(o,s)isthejointprobabilityofstatessandobservations
+o. ThisframeworkextendstomachineintelligencesinceitcaststheperceptionandplanningproblemasaBayesian
+inferenceproblemwhereanagentupdatesitsbeliefsaboutthesensoryinputsandselectsactionsthatleadtothe
+minimizationofexpectedfreeenergy(EFE):
+G(π)=E [lnQ(s,θ|π)−lnQ(o,s,θ|π)] (2)
+Q(s)
+whereθcontainsthemodelparameters,πistheplannedactiondistribution,Q(s,θ|π)istheapproximateposterior
+over state and model parameters given the agent’s actions, and Q(o,s,θ|π) is the approximate posterior over
+observation,state,andmodelparametersgiventheagent’sactions. TheEFEisoftenbrokendownintwokey
+terms: instrumentalandepistemic. Theinstrumentaltermdefineshowfutureestimatedstates/observationsalign
+withtheagent’spriorpreference(interest)givenitscurrentactionplan,whereastheepistemictermdescribesthe
+surprise/uncertaintylevelassociatedwiththeestimatedfuturestatesunderagivenplannedpolicy. Generally,this
+AIFframingoffersaprincipledbasisforRLmodelsthatlearnandactbyreducingthemismatchbetweenpredicted
+andobserveddata. Deepactiveinferenceseekstoutilizethetoolsofdeeplearning,e.g,. deepneuralnetworksand
+2
+Preprint
+Figure1: Demonstrationofdifferentabstracttrajectorieswithstate(y-axis)throughtime(x-axis). Behavior
+cloning trajectory diverges from the training trajectory due to small mistakes made by the agent as well as
+environmentalstochasticity(duetothei.i.dassumptionappliedtotheenvironment). Weinsteadwanttoestimate
+a“preferred”trajectorythatcloselymatchestheunderlyingdatadistribution. Asaresult,ourR-AIFagentcan
+“nudge” its trajectory toward its own prior preference. The dashed lines around the line R-AIF represents the
+epistemicsignaloftheagentthatfacilitatesintelligentexplorationwithinasaferange.
+backpropagationoferrors,tomakeestimation/productionofthecorevaluesinherenttoEFEeasiertosimulate
+efficiently;see[46]forareview.
+3 SolvingSparse-RewardPixelRoboticTasks
+Inordertotacklearobotictaskwithacontinuousactionspace,variedgoals,andsparserewardsignals,wefirst
+re-formulatetheconstructionoftheAIF/MBRLagent’sgenerativeworldmodel[27,18]inSection3.1(while
+Section3.2introducesournovelcontrastiverecurrentstatepriorpreferencemodel). Weproposetherobustactive
+inference1(R-AIF)agentinSection3.3,whichutilizesactor-criticmethodology[77]inordertooptimizetheaction
+‘planner’,ultimatelyseekingtominimizebothinstrumentalandepistemicsignalsfromitslearnedworldmodel.
+Our agent operates on standard POMDPs, in discrete time, where the interaction between the agent and the
+environmentisformallyexpressedasM = (S,A,O,p,E,r,g). S isthesetofallenvironmentstates(hidden
+fromtheagent), O isthesetofobservations, E(o |s )isanemissionfunctionwhichproducestheobservable
+t t
+signalo conditionedontheunobservedstatedistributions . Additionally,wehavetheactionspaceA,thereward
+t t
+functionr :S×A→R,andthetransitionprobabilityp(s |s ,a )[77]. Finally,wealsoconsiderthefunction
+t+1 t t
+g :S →{0,1}indicatingwhethertheagenthasachieveditsgoal(ornot)inaparticulartimestep.
+3.1 TheGenerativeWorldModel
+Activeinferencepositsthatanagentfindsanactionsequencebasedonanestimatedfuturestatedistribution[22,
+75,21,86,16,48]. Toachievethis,wepredictthenextstates giventhecurrentstates andactiona ,along
+t+1 t t
+witharecurrentstateh thatservesastemporalmemory(z servingasthememory’soutput). Formodelingh ,we
+t t t
+employagatedrecurrentunit[11]followingtheapproachfrom[52,30,32,34]. Ingeneral,thisframingofthe
+temporalintegrationofinformationisreferredtoastherecurrentstatespacemodel(RSSM)[31],whichbuildson
+conceptsfromthestatespacemodelliterature[7,27,38,13]. TheRSSMformulationcanformallybeexpressedas
+1Implementationdetailsavailableathttps://github.com/NACLab/robust-active-inference
+3
+Preprint
+follows:
+Latentdynamicsmodel: f (z ,h |s ,a ,h )
+θR t t t−1 t−1 t−1
+Approx. posterior(encoder): q (s |o ,h )
+θE t t t
+Prior(transition): p (s |z ) (3)
+θT t t
+Likelihood(decoder): q (o |s ,h )
+θD t t t
+Reward(decoder): q (r |s ,h ).
+θr t t t
+Throughoutthiswork,unlessstatedotherwise,everyposteriorq(·)andpriorp(·)estimatorthatisparameterizedby
+anartificialneuralnetwork(ANN)willbeequippedwitharecurrentneuralnetwork(RNN),i.e.,alatentdynamics
+model. Forclarityandsimplicity, wehaveomittedtheRNNandthemoduleletter(i.e., E forencoder)inthe
+notation;thisleavesuswiththeencoderq (s |o ),transitionp (s |s ,a ),decoderq (o |s ),andthereward
+θ t t θ t t−1 t−1 θ t t
+predictorq (r |s ).
+θ t t
+Astheagentseekstominimizeitssurprise,itcontinuouslychangesitsbelief(s)overhiddenstatestomatchits
+priorwhilemaximizingthelikelihoodofobservation[75];thisisdonebymaximizingtheevidencelowerbound
+(ELBO)[39]employedinvariationalinference. Theposterioroverhiddenstateq(s )canthenbeoptimizedby
+t
+treatingtheagent’s(free)energyfunctionintermsofagradientdescentobjective[42,26]. Minimizingthefree
+energybasedonbothobserveddatao andthepriortransitionedstatep(s |s ,a )isoftenknownasmarginal
+t t t−1 t−1
+freeenergyminimization[60],closelyrelatedtothemechanismsofvariationalautoencoders[39]andstochastic
+variationalinferenceprocedures[37]:
+argminL (θ)=D [q (s |o )∥p (s |s ,a )]
+t KL θ t t θ t t−1 t−1
+θ (cid:124) (cid:123)(cid:122) (cid:125)
+complexity
+(4)
++E [−ln(q (o |s ))].
+qθ(st|ot) θ t t
+(cid:124) (cid:123)(cid:122) (cid:125)
+accuracy
+Minimizingthecomplexity(term)aidstheagentinclosingthegapbetweenitsprioranditsapproximateposterior,
+whereasminimizingtheaccuracy(term)improvesthemodel’sfutureobservationestimation. Weutilizetheworld
+model, whichhasadiscretizedstatespace[32]whereeachhiddenstateisrepresentedbyavectorofdiscrete
+distributionsinsteadofavectorofGaussiandistributionalparameters(asisdoneinotherdeepactiveinference
+formulations). WealsoemploytheKLbalancingtrick[32]andapplythe“symlog”functiontoinputs[34]for
+numericalstability.
+3.2 ContrastiveRecurrentStatePriorPreference(CRSPP)
+Inactiveinference,theagenttakestheactionsthatitbelieveswouldleadtoitspreferredoutcomes(i.e. using
+the instrumental signal) [68, 48, 23, 22, 21, 18]. To construct this prior preference, past work has provided a
+goalstate/observation(s)directlytotheagent[45]ormanuallycraftedapriorpreferencedistribution[18,86].
+However, thefirstapproachsuffersfromsparsityoverthepreferencespacewhilethesecondisimpracticalin
+morerealisticPOMDPs. Totacklethis,weleverageasmallquantityofseedimitationdatatolearnanANNthat
+dynamicallyproducesthepreferenceoverstatesateachtimestep;thiseffectivelyprovidesaneasily-generated
+dense instrumental/goal signal. Concretely, we design the agent such that it moves according to a trajectory
+that is shaped towards its own estimation of future preferred states, “nudging” its own trajectory toward the
+imitation/positivedatadistribution(seeFigure1).
+DynamicPriorPreferenceModelFormulation. Inthiswork,weconsiderapriorpreferencemodelthattakes
+in the image observation o ∈ O and produces a posterior estimate over state s ∈ S. Based on this latent
+t t
+representation,themodelthenestimates–or“imagines”–thefuturelatentrepresentationthathasahighpreference
+values˜ overatimehorizonH.Toachievethis,weconstructanRSSMwithoutactionencodedintothetransition
+τ:H
+prior. Our model can then be further parameterized with an encoder posterior q (s |o ) and a transition prior
+ϕ t t
+p (s |s )(seeFigure2).
+ϕ t t−1
+Goal-OrientedCreditAssignmentandPriorSelf-Revision. Assumingthatthetrajectoriescollectedthroughout
+the R-AIF agent’s learning process form a set E = {e ,e ,...}, if we follow the conventions of contrastive
+0 1
+learningmethodology[41,36,80], wepartitionthissetofexperiencesintotwoportionsbasedonthesuccess
+statusofeachexperience,i.e. P(E)=({e },{e })where{e }=E\{e }. Intuitively,weaimtolearnaprior
++ − − +
+preferencemodelwhichestimatesthepreferredstates˜thatiscloserto(positive)statess∈e whilepushings˜
++
+awayfroms∈e (negativestates). Specifically,tolearnamodelthatperformsroll-outsoverafinitehorizonwith
+−
+onlypreferredstates,onecanmaximizethesimilarityofstatesbetweenthepriorpreferencemodelandtheactual
+generativeworldmodel–where“reachedgoalstates”areof“stronginterest”(yieldingapositivesignal)–while
+minimizingthissimilaritymeasurementforthesituationsthattheagentfailsthetaskwithinanepisode(yieldinga
+4
+Preprint
+Figure 2: The CRSPP learning framework. CRSPP learns by optimizing the KL divergence between its
+approximateposteriorandprioronlywhenastateis“desired”,i.e. ρ >0. Italsolearnstopredictnextpreferred
+t
+statesusingadynamiccontrastivelossbasedonρ (whichfocusesonnarrowingthegapbetweentheestimated
+t
+preferredstatedistributionandtheactualapproximateposteriorproducedbytheRSSM).
+negativesignal). Weconsiderapriorpreferencerateρ ,ateverytimestep,thatispositively-signedinsuccessful
+t
+episodes, and negatively-signed otherwise. This signal is decayed backward from the end of the trajectory in
+ordertoreward/penalizetheimmediateactionsthatledtosuccess/failurewithinthetask. Notethatwesetρ atits
+t
+highestvalueateachsuccessfulstateanddecaythisbackward. Incontrast,whentheepisodefails,theagentonly
+needstodecaynegativelybackwardfromtheendoftheepisode. Wecallthiscomputationofρtheself-revision
+mechanism2andusethisrateasascalarforthecontrastiveobjective–facilitatingaformofdynamiccontrastive
+learning–whenoptimizingtheCRSPP.Asaresult,ourpositive/negativescoringmechanismputsmoreweighton
+thestatesthatarenearthegoalstate,whichpartlyresembleshindsightexperiencereplay[1].
+Notethatwemaylearnthepriorpreferencemodelusinganycontrastiveobjectivethatisconditionedonthisprior
+preferencerate. Additionally,weminimizetheKLdivergencebetweenthepriorandtheposteriorsuchthatthe
+priorpreferencemodelpossessesanaccuratepositive(sample)imagination. Inourwork,weusecosinesimilarity,
+e.g.,sim(A,B)= A·B ,tooptimizetheCRSPPmodel:
+∥A∥∥B∥
+(cid:0) (cid:1)
+argminL (ϕ)= max 0,sgn(ρ ) ×
+t t
+ϕ (5)
+D [q (s |o )∥p (s |s )]−ρ sim(sˆ,s )
+KL ϕ t t ϕ t t−1 t t t
+(cid:0) (cid:1)
+wheresˆ ∼q (s |o ),s ∼sg q (s |o ) ,‘sg’isthestopgradientfunction,‘sgn’isthesignfunction,andρ is
+t ϕ t t t θ t t t
+thepriorpreferenceratecomputedattheendofeachepisodeusingtheself-revisionmechanism(seeSection3.2).
+Ingeneral,theKLtermhelpsinestimatingthenextpreferredstatepriormoreaccurately,andthesimilarityterm
+helpstodynamicallypushorpullthestatespaceofthepriorpreferencemodelinrelationtotheworldmodel
+basedonρ . Asaresult,thepriorpreferencemodelistrainedtoonlyproducethenextsetofpreferredstates/latent
+t
+dynamics(withoutproducingthefailingstates)basedonρ . Notethatwefurtherusetheworldmodel’sdecoderon
+t
+thepreferredstatetoproducetheagent’sgoalimageateachtimestep(seeFigure3). Beingabletoproducegoals
+dynamicallyateachtimestephelpstoshapethelocalpriorpreferencetowardsanoptimaltrajectory,servingasa
+precursortooptimizingtheactionplanner(whileutilizingthegradientofthecontrastivemodel).
+3.3 R-AIFAgentBehavioralLearning
+Inactiveinference,theagentestimatesbothfuturestatesandobservationsandthenplansactionsequencesbased
+on the expected free energy computed from these future ‘imagined realities’ [24, 19, 18, 14]. Although one
+canestimatebothstatesandobservationswithrespectto‘imaginationspace’,forpracticalmodelinference,it
+is alsopossible to roll-out onlythe latent dynamicsinto the future [31, 54, 66]; in this work, we roll outonly
+latentstates. Formally,withtheplanningtimestepτ andimaginationhorizonH,weestimatethefuturestate
+s ∼p (s |s ,a )usingthe(estimated)actiona ∼π (a |s ).Wetraintheagenttominimizetheexpected
+τ θ τ τ−1 τ−1 τ ψ τ τ
+freeenergybasedonthese“imagined”futurestates. Similarlyto[34],weconstructapolicynetworkπ (a |s )
+ψ τ τ
+2Seefootnote1fordetails.
+5
+Preprint
+Figure3: Actualobservation(toprow)versusthepriorpreferenceestimation(bottomrow)acrosstime(horizontal
+axis)ofthemountaincarproblem(topimagegroup)andtheMeta-World‘buttonpresswall’task(bottomimage
+group). WeseethatCRSPPproducesagoaldynamicallyateachtimestep.
+thatmaximizestheestimatedadvantagefromthevaluefunctionf (v |s )suchthat:
+χ τ τ
+t+H
+(cid:88)
+f (v |s )≈ γt−τ(r +sim(s ,sˆ )−IG ) (6)
+χ τ τ τ τ τ τ
+t=τ
+wheretheactiona isatanh-normalizedsampledfromtheGaussiandistributionwithameanµ andstandard
+τ ψ
+deviationσ producedbythepolicynetwork.Thevaluefunctionisthentrainedtoestimatetherewardr ,similarity
+ψ τ
+betweentheestimatedfuturestates andtheimaginedpriorpreferencesˆ ,andthenegativeinformationgain
+τ τ
+−IG .
+τ
+ExpectedFreeEnergy. R-AIF’sbehaviorallearninginvolvestrainingthepolicynetworktotakeactionsthat
+minimizetheexpectedfreeenergy[72,18]. Weconstructourformulationoftheexpectedfreeenergyasbelow:
+G (π )= −H[E Q(π |o ,s )] (7a)
+τ ψ Q(oτ,sτ) ψ τ τ
++H[E Q(s |θ,π )]−E H[Q(s |θ,π )] (7b)
+Q(θ,πψ) τ ψ Q(θ|πψ) τ ψ
+−E H[Q(s |θ,π )] (7c)
+Q(θ|πψ) τ ψ
+−r − sim(s ,sˆ ). (7d)
+τ τ τ
+FollowingAIFprocesstheory,weaimtotrainourpolicynetworkπ tominimizetheexpectedfreeenergyG (π),
+ψ τ
+includingtheinstrumentalandepistemicsignals. Fortheinstrumentalsignal,thepolicyistrainedtomaximizethe
+expectedfutureestimatedrewardandthesimilaritybetweenstatesandtheagent’spriorpreference(Equation7d).
+Fortheepistemicsignal,thepolicynetworkisprovidedwith“incentives”whenenteringastatewithhigherpolicy
+entropy(Equation7a),similartotheprocessesusedinthesoftactor-criticframeworks[28].Furthermore,thepolicy
+networkistrainedtoreducethemodelparameter’suncertainty(Equation7b)orinformationgain(IG)[43,44].
+Thismeansthattheagenttakesmorecertainactionstomaintain“homeostasis”[20,56]. Similarto[79,74],an
+ensembleofANNsisutilizedtocomputedIG(Equation7b). Thefinalepistemicsignalprovidestheagentwithan
+intrinsicrewardwhenevertheagententersunknownstateswithahighentropyoverfuturestatepredictions(in
+otherwords,generativeworldmodelentropy;Equation7c). Maximizingthisuncertaintyaboutfuturestatesis
+equivalenttoprovidingadditionalmotivation[3,58,12]forstateexploration.
+TrainingValueFunction. Wetrainthevaluenetworkbyminimizingthemeansquarederror(MSE)betweenthe
+outputofthevaluenetworkandthetargetvaluecomputedateachtimestep. Thetargetvalueiscomputedfromthe
+discountedcumulativerewardsandinformationgainthroughgeneralizedadvantageestimate[70]andtemporal
+difference[77]methods,theuseofwhichresemblessophisticatedinference[17,63]. Specifically,assumingthat
+theagentisrolled-outoverastatespacewithhorizonH andafuturetimestepτ,thetargetλ-return(value)forthe
+advantageG iscomputedasfollows:
+(cid:16) (cid:16) (cid:17) (cid:17)
+G = r +sim s ,sˆ −IG
+τ τ τ τ τ
+(8)
+(cid:16) (cid:17)
++γc (1−λ)f (v |s )+λG
+τ χ τ τ τ+1
+6
+Preprint
+Figure4: Cumulativereward(y-axis)trend throughenvironmenttimesteps (x-axis)of differentagents. Pink
+dashedlinesareaveragerewardoftheexpertintheMDPversionofthetask.
+(cid:0) (cid:1)
+wherer ∼ q (r |s ),s ∼ p (s |s ,a ),sˆ ∼ sg p (s |s ) . G = v = f (v |s ) ,andγ isthe
+τ θ τ τ τ θ τ τ−1 τ−1 τ ϕ τ τ−1 H H χ τ τ H
+discountfactor. Similarto[34],c isanestimatedbooleanvaluethatspecifieswhetherornotanepisodewill
+τ
+continue. Wecanthenoptimizetheλ-valueestimatorbyminimizingtheMSEbetweenitsestimationandthetarget
+asfollows:
+argminL (χ)=E
+τ pθ(sτ|sτ−1,aτ−1)πψ(aτ−1|sτ−1)
+χ (9)
+[f (v |s )−sg(G )]2.
+χ τ τ τ
+BehavioralLearning. Inthiswork,wetrainthepolicynetworkbyminimizingitsEFEG (π ): maximizingthe
+τ ψ
+policyentropy(Equation7a),thegenerativeworldmodelentropy(Equation7c),andtheestimatedadvantagevalue
+ascomputedfromthevaluefunctionG ≈f (v |s ). Thisadvantagevalueiscomposedofaninstrumentalsignal
+τ χ τ τ
+–rewardandsimilarity(7d)–andthenegativeinformationgain(Equation7b). Additionally,wealsofoundthe
+integrationofan“actorrefresh”term[57],e.g.,−E ln(a∗),tobeusefulinensuringgoodperformance.
+πψ(aτ|sτ) τ
+Ingeneral,theagentlearnstoshiftitstrajectorytowardthepreferredstatedistribution,takingactionsthatitis
+confidentinwhileexploringuncertainstates(seeFigure1). Formally,weaimtomaximizetheactor’sobjective
+functionalasfollows:
+(cid:104)
+argmaxL (ψ)=E f (v |s )
+τ Q˜(a,s|ψ,θ) χ τ τ
+ψ (10)
+(cid:105)
++ζH[p (s |s ,a )]+ηH[π (a |s )]+ln(a∗)
+θ τ τ−1 τ−1 ψ τ τ τ
+whereQ˜(a,s|ψ,θ)=π (a |s )p (s |s ,a ). Thecoefficientsofthegenerativeworldmodel’sentropyζ
+ψ τ τ θ τ τ−1 τ−1
+andtheactordistributionentropyηaresetto3×10−4inordertoperformpercentileexponentialmovingaverage
+normalization(asin[34]). Generally,maximizingthisobjectiveisequivalenttominimizingEFE.Notethat,by
+default, the actor objective applies to continuous action spaces. For discrete action spaces, we may adapt the
+trainingofthepolicynetworkusingthestraight-throughgradientestimator[5],furthermotivatedbytheapproach
+takenin[32].
+4 ExperimentalResults
+Wecomparetheperformanceofouragentwithrelevantmodel-basedRLandAIFbaselines,namely: 1)Dream-
+erV3[34],2)ourgeneralizationofmodelin[47](DAIVPG-G),and3)themodelin[82](Himst-G).Additionally,
+wechangethearchitectureoftheactiveinferenceagentof[82]byreplacingthe3D-convolution(appliedover
+fourstackedframes)withthestatespacemodeltomaketheagentoperateproperlyinaPOMDPenvironment
+(e.g.,allowingittoprocessoneimage,insteadofstackedframes,ateachtime-step,whichwefoundimprovethe
+model’sperformanceandoverallstability). Foreachbaselineagentandbenchmarkenvironment,weruneach
+experiment/simulation for 4 uniquely seeded trials, simulating each agent for 1, 3, and 5 million steps on the
+mountaincar,Meta-World[87],androbosuite[88]environments,respectively. Agentperformanceisreported
+7
+Preprint
+asthemeanandstandarddeviationofthefollowingstatistics: 1)averagecumulativereward(ACR),2)relative
+stability(R-S)(proposedin[57],forcharacterizingthequalityofaroboticcontroller’sconvergenceability),and
+3) (task) success rate (SR). These statistics are computed from the last 100 recorded agent training episodes,
+yieldingusanestimateofitsonlinelearningperformance. Wealsotraintheexpert(usedforsimulatingcollected
+imitationdata)usingSAC[28](forrobosuite)andPPO[71](fortheotherproblems)intheMDPversionofeach
+environment. 10,000stepsofthesecollectedexpertdataareusedtoproduceameancumulativerewardupper
+boundfortheperformanceexpectedofexperimentalagents(seeFigure4). FortheR-AIFagent’sexpert/positive
+datacollection,werecordabout1,000stepsformountaincar(about22episodes),3,300stepsforMeta-World
+(about6episodes),and20,000stepsforrobosuite(about40episodes).
+EnvironmentSetup. Weperformexperimentsonthreemainproblemenvironments: mountaincar[77],Meta-
+World[87](tasksstartwith“M”),androbosuite[88](tasksstartwith“R”).Themountaincarproblemisasingle
+sparserewardtask,Meta-Worldcontains13differenttasks,androbosuitecontains2roboticcontroltasks. Forthe
+robotictasks,weutilizeacombinationof(camera)viewpointsastheimageobservation,includingatop-down
+view,anagentworkspace,afrontcameraview,andasideview(threeoftheseareavailableinMeta-World,allfour
+inrobosuite. Wealsomodifyallenvironmentssuchthattherewardsignalissparse: 0(1forrobosuite)isprovided
+whentheagentachievesthegoaland−1(0forrobosuite)everywhereelse.
+MountainCar ACR R-S SR
+R-AIF(Ours) −68.3±1.0 0.1±0.0 1.0±0.0
+DreamerV3 −79.7±12.4 0.4±0.2 0.9±0.1
+DAIVPG-G −200.0±0.0 0.7±0.5 0.0±0.0
+Himst-G −199.9±0.2 0.8±0.3 0.0±0.0
+MButtonPress ACR R-S SR
+R-AIF(Ours) −38.2±1.2 0.0±0.0 1.0±0.0
+DreamerV3 −37.2±1.9 0.0±0.0 1.0±0.0
+DAIVPG-G −477.3±3.3 0.9±0.0 0.0±0.0
+Himst-G −365.7±163.0 0.4±0.4 0.3±0.4
+MDrawerClose ACR R-S SR
+R-AIF(Ours) −18.3±0.3 0.0±0.0 1.0±0.0
+DreamerV3 −15.5±0.1 0.0±0.0 1.0±0.0
+DAIVPG-G −73.6±42.4 0.1±0.1 1.0±0.1
+Himst-G −45.0±11.6 0.3±0.4 0.7±0.4
+MWindowOpen ACR R-S SR
+R-AIF(Ours) −48.1±2.3 0.0±0.0 1.0±0.0
+DreamerV3 −44.8±2.0 0.0±0.0 1.0±0.0
+DAIVPG-G −354.2±69.0 0.7±0.2 0.4±0.2
+Himst-G −283.2±126.1 0.5±0.3 0.5±0.3
+MHandlePull ACR R-S SR
+R-AIF(Ours) −42.1±2.0 0.0±0.0 1.0±0.0
+DreamerV3 −145.4±193.8 0.2±0.3 0.7±0.4
+DAIVPG-G −416.9±72.4 0.8±0.1 0.3±0.3
+Himst-G −461.3±34.1 0.9±0.1 0.1±0.2
+MDoorClose ACR R-S SR
+R-AIF(Ours) −51.4±0.6 0.0±0.0 1.0±0.0
+DreamerV3 −50.7±0.2 0.0±0.0 1.0±0.0
+DAIVPG-G −161.6±66.2 0.2±0.1 0.9±0.1
+Himst-G −83.6±4.7 0.1±0.0 1.0±0.0
+MDoorOpen ACR R-S SR
+R-AIF(Ours) −62.5±0.6 0.0±0.0 1.0±0.0
+DreamerV3 −69.9±2.6 0.0±0.0 1.0±0.0
+DAIVPG-G −440.0±54.5 0.8±0.1 0.2±0.2
+Himst-G −481.0±0.0 0.7±0.2 0.0±0.0
+MPickPlace ACR R-S SR
+R-AIF(Ours) −462.4±38.8 0.9±0.1 0.1±0.1
+DreamerV3 −481.0±0.0 0.8±0.1 0.0±0.0
+DAIVPG-G −480.9±0.1 0.9±0.0 0.0±0.0
+Himst-G −481.0±0.0 0.3±0.4 0.0±0.0
+MPush ACR R-S SR
+8
+Preprint
+R-AIF(Ours) −403.1±43.4 0.8±0.1 0.6±0.3
+DreamerV3 −470.6±8.9 0.9±0.0 0.1±0.1
+DAIVPG-G −478.2±1.8 0.9±0.0 0.1±0.0
+Himst-G −481.0±0.0 0.6±0.4 0.0±0.0
+MReach ACR R-S SR
+R-AIF(Ours) −24.4±1.4 0.0±0.0 1.0±0.0
+DreamerV3 −27.1±10.4 0.0±0.0 1.0±0.0
+DAIVPG-G −426.6±44.4 0.8±0.1 0.6±0.2
+Himst-G −481.0±0.1 0.4±0.0 0.0±0.0
+MSoccer ACR R-S SR
+R-AIF(Ours) −332.7±57.8 0.6±0.1 0.5±0.2
+DreamerV3 −385.5±55.0 0.8±0.1 0.3±0.2
+DAIVPG-G −476.4±1.1 1.0±0.0 0.0±0.0
+Himst-G −479.7±1.8 1.0±0.0 0.0±0.0
+MPlateSlide ACR R-S SR
+R-AIF(Ours) −38.3±7.0 0.0±0.0 1.0±0.0
+DreamerV3 −114.7±136.7 0.2±0.3 0.8±0.3
+DAIVPG-G −481.0±0.0 0.6±0.4 0.0±0.0
+Himst-G −481.0±0.0 1.0±0.0 0.0±0.0
+MDisassemble ACR R-S SR
+R-AIF(Ours) −479.8±2.4 0.6±0.3 0.0±0.1
+DreamerV3 −481.0±0.0 0.5±0.3 0.0±0.0
+DAIVPG-G −480.8±0.2 0.8±0.1 0.0±0.0
+Himst-G −481.0±0.0 0.0±0.0 0.0±0.0
+MLeverPull ACR R-S SR
+R-AIF(Ours) −50.6±2.5 0.0±0.0 1.0±0.0
+DreamerV3 −161.3±184.8 0.1±0.1 0.7±0.4
+DAIVPG-G −480.6±0.1 0.6±0.1 0.1±0.0
+Himst-G −481.0±0.0 0.5±0.1 0.0±0.0
+RDoorOpen ACR R-S SR
+R-AIF(Ours) 425.8±10.0 0.1±0.0 1.0±0.0
+DreamerV3 0.0±0.0 0.0±0.0 0.0±0.0
+DAIVPG-G 0.0±0.0 0.0±0.0 0.0±0.0
+Himst-G 0.4±0.4 0.3±0.2 0.0±0.0
+RBlockLift ACR R-S SR
+R-AIF(Ours) 120.8±159.8 0.4±0.2 0.4±0.4
+DreamerV3 0.0±0.0 0.0±0.0 0.0±0.0
+DAIVPG-G 0.0±0.0 0.1±0.1 0.0±0.0
+Himst-G 0.1±0.1 0.0±0.0 0.0±0.0
+Table2: Tableshowsdifferentstatisticsforeachbaselineagentundereachbenchmarkrobotictasks.
+Results. Ingeneral,ourproposedR-AIFagentobtainsearlierconvergencethantheDreamerV3,DAIVPG-G,and
+Himst-Gmodels;seeFigure4. Formostofthetasks,theR-AIFagentexhibitsanabilitytoperformsuccessfully
+earlieron;wehypothesizethatthishappensbecausetheagent’sunderlyingpolicyistrainedto“shape”thetrajectory
+toonethattheCRSPPsub-module(prior)prefers. Furthermore,R-AIFalsoobtainsafinalcumulativerewardas
+wellasasuccessratethatishigherthanthethreebaselinealgorithmsformostofthetasks(seeTable2). Figure4
+andTable2alsodemonstratethattheproposedR-AIFmodelismorestableoverall,withastandarddeviationfor
+mosttasksthatislowerthantheotherthreebaselinemodels.
+Specifically,forthemountaincarenvironment,DreamerV3strugglestooptimizeeffectivelyintheearlierphases,
+and its performance improves only when enough successful experiences have been collected from its random
+exploration. For Meta-World tasks, all agents are able to achieve at least some degree of success over time.
+ObservethatourR-AIFagentlearnstoexcelatataskveryearlyon(utilizingonlyasmallportionofcollected
+expert/imitationexperiences)evenintaskswheretheexpertstrugglestosucceed(e.g.,MPush). Forrobosuite,the
+proposedR-AIFistheonlyagentthatcansolvethetaskssuccessfullycomparedtootherbaselines.
+9
+Preprint
+5 Conclusions
+Inthiswork,wecraftedwhatwecalledtherobustactiveinference(R-AIF)framework,whereagentsareengagedin
+thedynamic,activeperception,manipulatingtheirenvironmentswhiledrivenbyourproposedcontrastiverecurrent
+statepriorpreference. AnR-AIFagentlearnstotakeactionsbyutilizingapolicynetworkthatoptimizesthrougha
+generalizedadvantagevalueestimatedfromtheinstrumentalandepistemicsignalsderivedfromourexpectedfree
+energyobjective. Theinstrumental(goal-orienting)signalisconstructedfromthe(sparse)rewardandthedynamics
+oftheCRSPPmodelwhiletheepistemic(exploration-driving)signaliscomputedfromtheinformationgainand
+statisticsofagenerativeworldmodelandthepolicynetwork. Overall,weprovideempiricalresultsshowingthat
+ourR-AIFachievesgreaterperformancecomparedtootherbaselines:DreamerV3[34],DAIVPG[47],andHimst’s
+model[82]. Finally,ourresultsalsodemonstratethatR-AIFagentscanoperatewellinvariedgoal,sparse-reward
+POMDPenvironments. Futureworkcanconsiderimprovingthelatentstatespacemodelwithmethodssuchas
+variationaldynamics,discrete-variableautoencoders,andattention-weightingmodels[4,81,10,2,84]. Itwould
+also be useful to study the integration of R-AIF into physical (neuro)robotic systems, which would entail an
+embodied,enactive,andsurvival-orientedformulationofactiveperceptionandworldmodellearning[56]. syleacm
+References
+[1] ANDRYCHOWICZ, M., WOLSKI, F., RAY, A., SCHNEIDER, J., FONG, R., WELINDER, P., MCGREW,
+B., TOBIN, J., PIETER ABBEEL, O., AND ZAREMBA, W. Hindsightexperiencereplay. InAdvancesin
+NeuralInformationProcessingSystems(2017),I.Guyon,U.V.Luxburg,S.Bengio,H.Wallach,R.Fergus,
+S.Vishwanathan,andR.Garnett,Eds.,vol.30,CurranAssociates,Inc.
+[2] ANONYMOUS. Causallyalignedcurriculumlearning. InSubmittedtoTheTwelfthInternationalConference
+onLearningRepresentations(2023). underreview.
+[3] BARTO,A.,MIROLLI,M.,ANDBALDASSARRE,G. Noveltyorsurprise? FrontiersinPsychology4(2013).
+[4] BECKER,P.,ANDNEUMANN,G. Onuncertaintyindeepstatespacemodelsformodel-basedreinforcement
+learning. TransactionsonMachineLearningResearch(2022).
+[5] BENGIO,Y.,LÉONARD,N.,ANDCOURVILLE,A.C. Estimatingorpropagatinggradientsthroughstochastic
+neuronsforconditionalcomputation. ArXivabs/1308.3432(2013).
+[6] BISHOP,C.M. PatternRecognitionandMachineLearning(InformationScienceandStatistics). Springer-
+Verlag,Berlin,Heidelberg,2006.
+[7] BUESING, L., WEBER, T., RACANIÈRE, S., ESLAMI, S. M. A., REZENDE, D. J., REICHERT, D. P.,
+VIOLA, F., BESSE, F., GREGOR, K., HASSABIS, D., AND WIERSTRA, D. Learningandqueryingfast
+generativemodelsforreinforcementlearning. CoRRabs/1802.03006(2018).
+[8] ÇATAL,O.,NAUTA,J.,VERBELEN,T.,SIMOENS,P.,ANDDHOEDT,B. Bayesianpolicyselectionusing
+activeinference. CoRRabs/1904.08149(2019).
+[9] ÇATAL,O.,WAUTHIER,S.,DEBOOM,C.,VERBELEN,T.,ANDDHOEDT,B. Learninggenerativestate
+spacemodelsforactiveinference. FrontiersinComputationalNeuroscience14(2020),574372.
+[10] CHEN,T.Q.,LI,X.,GROSSE,R.,ANDDUVENAUD,D. Isolatingsourcesofdisentanglementinvariational
+autoencoders,2018.
+[11] CHUNG, J., ÇAGLAR GÜLÇEHRE, CHO, K., AND BENGIO, Y. Empiricalevaluationofgatedrecurrent
+neuralnetworksonsequencemodeling. ArXivabs/1412.3555(2014).
+[12] DECI, E.L.,ANDRYAN, R.M. IntrinsicMotivationandSelf-DeterminationinHumanBehavior. Springer
+US,1985.
+[13] DOERR,A.,DANIEL,C.,SCHIEGG,M.,DUY,N.-T.,SCHAAL,S.,TOUSSAINT,M.,ANDSEBASTIAN,T.
+Probabilisticrecurrentstate-spacemodels. InProceedingsofthe35thInternationalConferenceonMachine
+Learning(10–15Jul2018),J.DyandA.Krause,Eds.,vol.80ofProceedingsofMachineLearningResearch,
+PMLR,pp.1280–1289.
+[14] FOUNTAS,Z.,SAJID,N.,MEDIANO,P.,ANDFRISTON,K. Deepactiveinferenceagentsusingmonte-carlo
+methods. Advancesinneuralinformationprocessingsystems33(2020),11662–11675.
+[15] FRISTON,K. Learningandinferenceinthebrain. NeuralNetworks16,9(2003),1325–1352. Neuroinfor-
+matics.
+10
+Preprint
+[16] FRISTON,K. Lifeasweknowit. JournaloftheRoyalSociety,Interface/theRoyalSociety10(062013),
+20130475.
+[17] FRISTON, K., DA COSTA, L., HAFNER, D., HESP, C., AND PARR, T. Sophisticatedinference. Neural
+Computation33,3(032021),713–763.
+[18] FRISTON,K.,FITZGERALD,T.,RIGOLI,F.,SCHWARTENBECK,P.,ANDPEZZULO,G. Activeinference:
+aprocesstheory. Neuralcomputation29,1(2017),1–49.
+[19] FRISTON,K.,FITZGERALD,T.,RIGOLI,F.,SCHWARTENBECK,P.,PEZZULO,G.,ETAL. Activeinference
+andlearning. Neuroscience&BiobehavioralReviews68(2016),862–879.
+[20] FRISTON,K.,KILNER,J.,ANDHARRISON,L. Afreeenergyprincipleforthebrain. JournalofPhysiology-
+Paris100,1(2006),70–87. TheoreticalandComputationalNeuroscience: UnderstandingBrainFunctions.
+[21] FRISTON, K., RIGOLI, F., OGNIBENE, D., MATHYS, C., FITZGERALD, T., AND PEZZULO, G. Active
+inferenceandepistemicvalue. Cognitiveneuroscience(022015).
+[22] FRISTON,K.J. Thefree-energyprinciple: aunifiedbraintheory? NatureReviewsNeuroscience11(2010),
+127–138.
+[23] FRISTON, K. J., LIN, M., FRITH, C. D., PEZZULO, G., HOBSON, J. A., AND ONDOBAKA, S. Active
+Inference,CuriosityandInsight. NeuralComputation29,10(102017),2633–2683.
+[24] FRISTON,K.J.,PARR,T.,ANDDEVRIES,B. Thegraphicalbrain: beliefpropagationandactiveinference.
+NetworkNeuroscience1,4(2017),381–414.
+[25] GAL,Y.,ANDGHAHRAMANI,Z. Dropoutasabayesianapproximation: Representingmodeluncertaintyin
+deeplearning. InProceedingsofThe33rdInternationalConferenceonMachineLearning(NewYork,New
+York,USA,20–22Jun2016),M.F.BalcanandK.Q.Weinberger,Eds.,vol.48ofProceedingsofMachine
+LearningResearch,PMLR,pp.1050–1059.
+[26] GOODFELLOW, I., BENGIO, Y., AND COURVILLE, A. DeepLearning. MITPress,2016. http://www.
+deeplearningbook.org.
+[27] HA,D.R.,ANDSCHMIDHUBER,J. Worldmodels. ArXivabs/1803.10122(2018).
+[28] HAARNOJA,T.,ZHOU,A.,ABBEEL,P.,ANDLEVINE,S. Softactor-critic: Off-policymaximumentropy
+deepreinforcementlearningwithastochasticactor. InProceedingsofthe35thInternationalConferenceon
+MachineLearning,ICML2018,Stockholmsmässan,Stockholm,Sweden,July10-15,2018(2018),J.G.Dy
+andA.Krause,Eds.,vol.80ofProceedingsofMachineLearningResearch,PMLR,pp.1856–1865.
+[29] HAARNOJA, T., ZHOU, A., HARTIKAINEN, K., TUCKER, G., HA, S., TAN, J., KUMAR, V., ZHU, H.,
+GUPTA,A.,ABBEEL,P.,ANDLEVINE,S. Softactor-criticalgorithmsandapplications,2018.
+[30] HAFNER,D.,LILLICRAP,T.,BA,J., ANDNOROUZI,M. Dreamtocontrol: Learningbehaviorsbylatent
+imagination. InInternationalConferenceonLearningRepresentations(2020).
+[31] HAFNER, D., LILLICRAP, T. P., FISCHER, I., VILLEGAS, R., HA, D., LEE, H., AND DAVIDSON, J.
+Learninglatentdynamicsforplanningfrompixels. InProceedingsofthe36thInternationalConferenceon
+MachineLearning,ICML2019,9-15June2019,LongBeach,California,USA(2019),K.Chaudhuriand
+R.Salakhutdinov,Eds.,vol.97ofProceedingsofMachineLearningResearch,PMLR,pp.2555–2565.
+[32] HAFNER,D.,LILLICRAP,T.P.,NOROUZI,M.,ANDBA,J. Masteringatariwithdiscreteworldmodels. In
+InternationalConferenceonLearningRepresentations(2021).
+[33] HAFNER, D., ORTEGA, P. A., BA, J., PARR, T., FRISTON, K. J., AND HEESS, N. M. O. Actionand
+perceptionasdivergenceminimization. ArXivabs/2009.01791(2020).
+[34] HAFNER,D.,PASUKONIS,J.,BA,J.,ANDLILLICRAP,T. Masteringdiversedomainsthroughworldmodels.
+ArXivabs/2301.04104(2023).
+[35] HAN, D., MULYANA, B., STANKOVIC, V., AND CHENG, S. A survey on deep reinforcement learning
+algorithmsforroboticmanipulation. Sensors23,7(2023).
+[36] HE, K., FAN, H., WU, Y., XIE, S., AND GIRSHICK, R. Momentum contrast for unsupervised visual
+representationlearning. In2020IEEE/CVFConferenceonComputerVisionandPatternRecognition(CVPR)
+(2020),pp.9726–9735.
+[37] HOFFMAN,M.D.,BLEI,D.M.,WANG,C.,ANDPAISLEY,J. Stochasticvariationalinference. Journalof
+MachineLearningResearch14,40(2013),1303–1347.
+11
+Preprint
+[38] KARL,M.,SOELCH,M.,BAYER,J.,ANDVANDERSMAGT,P. Deepvariationalbayesfilters:Unsupervised
+learningofstatespacemodelsfromrawdata. InInternationalConferenceonLearningRepresentations
+(2017).
+[39] KINGMA, D.P.,ANDWELLING, M. Auto-encodingvariationalbayes. In2ndInternationalConferenceon
+LearningRepresentations,ICLR2014,Banff,AB,Canada,April14-16,2014,ConferenceTrackProceedings
+(2014).
+[40] KRAYANI, A., ALAM, A. S., MARCENARO, L., NALLANATHAN, A., AND REGAZZONI, C. A novel
+resourceallocationforanti-jammingincognitive-uavs: Anactiveinferenceapproach. IEEECommunications
+Letters26,10(2022),2272–2276.
+[41] LASKIN, M., SRINIVAS, A., AND ABBEEL, P. CURL: Contrastive unsupervised representations for
+reinforcementlearning. InProceedingsofthe37thInternationalConferenceonMachineLearning(13–18
+Jul2020), H.D.IIIandA.Singh, Eds., vol.119ofProceedingsofMachineLearningResearch, PMLR,
+pp.5639–5650.
+[42] LECUN,Y.,BENGIO,Y.,ANDHINTON,G. Deeplearning. Nature521(052015),436–44.
+[43] LINDLEY,D.V. OnaMeasureoftheInformationProvidedbyanExperiment. TheAnnalsofMathematical
+Statistics27,4(1956),986–1005.
+[44] MACKAY, D. J. C. Information Theory, Inference, and Learning Algorithms. Copyright Cambridge
+UniversityPress,2003.
+[45] MAZZAGLIA,P., VERBELEN,T.,ANDDHOEDT,B. Contrastiveactiveinference. InAdvancesinNeural
+InformationProcessingSystems(2021),A.Beygelzimer,Y.Dauphin,P.Liang,andJ.W.Vaughan,Eds.
+[46] MAZZAGLIA,P.,VERBELEN,T.,ÇATAL,O.,ANDDHOEDT,B. Thefreeenergyprincipleforperception
+andaction: Adeeplearningperspective. Entropy24,2(2022).
+[47] MILLIDGE,B. Deepactiveinferenceasvariationalpolicygradients. JournalofMathematicalPsychology96
+(2020),102348.
+[48] MILLIDGE,B.,TSCHANTZ,A.,ANDBUCKLEY,C. Whencetheexpectedfreeenergy? NeuralComputation
+33(012021),1–36.
+[49] MNIH, V., KAVUKCUOGLU, K., SILVER, D., GRAVES, A., ANTONOGLOU, I., WIERSTRA, D., AND
+RIEDMILLER,M.A. Playingatariwithdeepreinforcementlearning. CoRRabs/1312.5602(2013).
+[50] MNIH,V.,KAVUKCUOGLU,K.,SILVER,D.,RUSU,A.A.,VENESS,J.,BELLEMARE,M.G.,GRAVES,
+A., RIEDMILLER, M., FIDJELAND, A. K., OSTROVSKI, G., ET AL. Human-levelcontrolthroughdeep
+reinforcementlearning. nature518,7540(2015),529–533.
+[51] MORALES,E.F.,MURRIETA-CID,R.,BECERRA,I.,ANDESQUIVEL-BASALDUA,M.A. Asurveyon
+deeplearninganddeepreinforcementlearninginroboticswithatutorialondeepreinforcementlearning.
+Intell.Serv.Robot.14,5(nov2021),773–805.
+[52] NOEL, A. D., VAN HOOF, C., AND MILLIDGE, B. Online reinforcement learning with sparse rewards
+throughanactiveinferencecapsule. ArXivabs/2106.02390(2021).
+[53] NOZARI, S., KRAYANI, A., MARIN-PLAZA, P., MARCENARO, L., GÓMEZ, D. M., AND REGAZZONI,
+C. Active inference integrated with imitation learning for autonomous driving. IEEE Access 10 (2022),
+49738–49756.
+[54] OKADA,M.,ANDTANIGUCHI,T. Dreaming: Model-basedreinforcementlearningbylatentimagination
+withoutreconstruction. In2021IEEEInternationalConferenceonRoboticsandAutomation(ICRA)(2021),
+pp.4209–4215.
+[55] OLIVER, G.,LANILLOS, P., ANDCHENG, G. Anempiricalstudyofactiveinferenceonahumanoidrobot.
+IEEETransactionsonCognitiveandDevelopmentalSystems14,2(2022),462–471.
+[56] ORORBIA, A., AND FRISTON, K. Mortalcomputation: Afoundationforbiomimeticintelligence. arXiv
+preprintarXiv:2311.09589(2023).
+[57] ORORBIA,A.,ANDMALI,A. Activepredictivecoding: Brain-inspiredreinforcementlearningforsparse
+rewardroboticcontrolproblems. In2023IEEEInternationalConferenceonRoboticsandAutomation(ICRA)
+(2023),pp.3015–3021.
+[58] OUDEYER,P.-Y.,ANDKAPLAN,F. Whatisintrinsicmotivation? atypologyofcomputationalapproaches.
+FrontiersinNeurorobotics1(2007).
+12
+Preprint
+[59] PARR,T.,ANDFRISTON,K.J. Generalisedfreeenergyandactiveinference. Biologicalcybernetics113,5
+(2019),495–513.
+[60] PARR,T.,MARKOVIC´,D.,KIEBEL,S.J.,ANDFRISTON,K.J. Neuronalmessagepassingusingmean-field,
+bethe,andmarginalapproximations. ScientificReports9(2019).
+[61] PARR,T.,PEZZULO,G.,ANDFRISTON,K. ActiveInference: TheFreeEnergyPrincipleinMind,Brain,
+andBehavior. 012022.
+[62] PATHAK, D., AGRAWAL, P., EFROS, A. A., AND DARRELL, T. Curiosity-driven exploration by self-
+supervisedprediction. InInternationalconferenceonmachinelearning(2017),PMLR,pp.2778–2787.
+[63] PAUL,A.,SAJID,N.,COSTA,L.D.,ANDRAZI,A. Onefficientcomputationinactiveinference,2023.
+[64] PEZZULO, G., D’AMATO, L., MANNELLA, F., PRIORELLI, M., VAN DE MAELE, T., STOIANOV, I. P.,
+ANDFRISTON,K. Neuralrepresentationinactiveinference: Usinggenerativemodelstointeractwith—and
+understand—thelivedworld. AnnalsoftheNewYorkAcademyofSciences1534,1(2024),45–68.
+[65] RACANIÈRE, S., WEBER, T., REICHERT, D., BUESING, L., GUEZ, A., JIMENEZ REZENDE, D., PUIG-
+DOMÈNECH BADIA, A., VINYALS, O., HEESS, N., LI, Y., PASCANU, R., BATTAGLIA, P., HASSABIS,
+D., SILVER, D.,ANDWIERSTRA, D. Imagination-augmentedagentsfordeepreinforcementlearning. In
+AdvancesinNeuralInformationProcessingSystems(2017),I.Guyon,U.V.Luxburg,S.Bengio,H.Wallach,
+R.Fergus,S.Vishwanathan,andR.Garnett,Eds.,vol.30,CurranAssociates,Inc.
+[66] RAJESWAR, S., MAZZAGLIA, P., VERBELEN, T., PICHÉ, A., DHOEDT, B., COURVILLE, A., AND LA-
+COSTE,A. Masteringtheunsupervisedreinforcementlearningbenchmarkfrompixels. In40thInternational
+ConferenceonMachineLearning(2023).
+[67] RUSSELL,S.,ANDNORVIG,P. ArtificialIntelligence: AModernApproach,3ed. PrenticeHall,2010.
+[68] SAJID, N., BALL, P. J., PARR, T., AND FRISTON, K. J. Active inference: demystified and compared.
+Neuralcomputation33,3(2021),674–712.
+[69] SCHULMAN,J.,LEVINE,S.,ABBEEL,P.,JORDAN,M.,ANDMORITZ,P. Trustregionpolicyoptimization.
+InProceedingsofthe32ndInternationalConferenceonMachineLearning(Lille,France,07–09Jul2015),
+F.BachandD.Blei,Eds.,vol.37ofProceedingsofMachineLearningResearch,PMLR,pp.1889–1897.
+[70] SCHULMAN,J.,MORITZ,P.,LEVINE,S.,JORDAN,M.I.,ANDABBEEL,P. High-dimensionalcontinuous
+controlusinggeneralizedadvantageestimation. CoRRabs/1506.02438(2015).
+[71] SCHULMAN,J.,WOLSKI,F.,DHARIWAL,P.,RADFORD,A.,ANDKLIMOV,O. Proximalpolicyoptimiza-
+tionalgorithms. CoRRabs/1707.06347(2017).
+[72] SCHWARTENBECK,P.,PASSECKER,J.,HAUSER,T.U.,FITZGERALD,T.H.,KRONBICHLER,M.,AND
+FRISTON,K.J. Computationalmechanismsofcuriosityandgoal-directedexploration. eLife8(may2019),
+e41703.
+[73] SEKAR, R., RYBKIN, O., DANIILIDIS, K., ABBEEL, P., HAFNER, D., AND PATHAK, D. Planning to
+exploreviaself-supervisedworldmodels. InProceedingsofthe37thInternationalConferenceonMachine
+Learning (13–18 Jul 2020), H. D. III and A. Singh, Eds., vol. 119 of Proceedings of Machine Learning
+Research,PMLR,pp.8583–8592.
+[74] SHYAM, P., JAS´KOWSKI, W., AND GOMEZ, F. J. Model-based active exploration. In International
+ConferenceonMachineLearning(2018).
+[75] SMITH, R., FRISTON, K. J., AND WHYTE, C. J. A step-by-step tutorial on active inference and its
+applicationtoempiricaldata. JournalofMathematicalPsychology107(2022),102632.
+[76] SUTTON,R.S. Dyna,anintegratedarchitectureforlearning,planning,andreacting. SIGARTBull.2,4(jul
+1991),160–163.
+[77] SUTTON,R.S.,ANDBARTO,A.G. ReinforcementLearning: AnIntroduction,seconded. TheMITPress,
+2018.
+[78] TSCHANTZ, A., BALTIERI, M., SETH, A. K., AND BUCKLEY, C. L. Scalingactiveinference. In2020
+InternationalJointConferenceonNeuralNetworks(IJCNN)(2020),pp.1–8.
+[79] TSCHANTZ,A.,MILLIDGE,B.,SETH,A.K.,ANDBUCKLEY,C.L. Reinforcementlearningthroughactive
+inference. CoRRabs/2002.12636(2020).
+[80] VANDENOORD,A.,LI,Y.,ANDVINYALS,O. Representationlearningwithcontrastivepredictivecoding.
+CoRRabs/1807.03748(2018).
+13
+Preprint
+[81] VANDENOORD,A.,VINYALS,O.,ANDKAVUKCUOGLU,K. Neuraldiscreterepresentationlearning. In
+Proceedingsofthe31stInternationalConferenceonNeuralInformationProcessingSystems(RedHook,NY,
+USA,2017),NIPS’17,CurranAssociatesInc.,p.6309–6318.
+[82] VAN DER HIMST, O., AND LANILLOS, P. Deepactiveinferenceforpartiallyobservablemdps. InActive
+Inference(Cham,2020),T.Verbelen,P.Lanillos,C.L.Buckley,andC.DeBoom,Eds.,SpringerInternational
+Publishing,pp.61–71.
+[83] VANHOEFFELEN,N.,ANDLANILLOS,P. Deepactiveinferenceforpixel-baseddiscretecontrol: Evaluation
+on the car racing problem. In Machine Learning and Principles and Practice of Knowledge Discovery
+in Databases - International Workshops of ECML PKDD 2021, Virtual Event, September 13-17, 2021,
+Proceedings,PartI(2021),vol.1524ofCommunicationsinComputerandInformationScience,Springer,
+pp.843–856.
+[84] VASWANI, A.,SHAZEER, N.,PARMAR, N.,USZKOREIT, J.,JONES, L.,GOMEZ, A.N.,KAISER, L.U.,
+AND POLOSUKHIN, I. Attentionisallyouneed. InAdvancesinNeuralInformationProcessingSystems
+(2017),I.Guyon,U.V.Luxburg,S.Bengio,H.Wallach,R.Fergus,S.Vishwanathan,andR.Garnett,Eds.,
+vol.30,CurranAssociates,Inc.
+[85] WATTER,M.,SPRINGENBERG,J.,BOEDECKER,J.,ANDRIEDMILLER,M. Embedtocontrol: Alocally
+linearlatentdynamicsmodelforcontrolfromrawimages. InAdvancesinNeuralInformationProcessing
+Systems (2015), C. Cortes, N. Lawrence, D. Lee, M. Sugiyama, and R. Garnett, Eds., vol. 28, Curran
+Associates,Inc.
+[86] YANG,Z.,DIAZ,G.J.,FAJEN,B.R.,BAILEY,R.,ANDORORBIA,A.G. Aneuralactiveinferencemodel
+ofperceptual-motorlearning. FrontiersinComputationalNeuroscience17(2023),1099593.
+[87] YU,T.,QUILLEN,D.,HE,Z.,JULIAN,R.,HAUSMAN,K.,FINN,C.,ANDLEVINE,S. Meta-world: A
+benchmarkandevaluationformulti-taskandmetareinforcementlearning. InConferenceonRobotLearning
+(CoRL)(2019).
+[88] ZHU, Y., WONG, J., MANDLEKAR, A., MARTÍN-MARTÍN, R., JOSHI, A., NASIRIANY, S., AND ZHU,
+Y. robosuite: A modular simulation framework and benchmark for robot learning. In arXiv preprint
+arXiv:2009.12293(2020).
+[89] ŁUKASZKAISER,BABAEIZADEH,M.,MIŁOS,P.,OSIN´SKI,B.,CAMPBELL,R.H.,CZECHOWSKI,K.,
+ERHAN,D.,FINN,C.,KOZAKOWSKI,P.,LEVINE,S.,MOHIUDDIN,A.,SEPASSI,R.,TUCKER,G.,AND
+MICHALEWSKI,H. Modelbasedreinforcementlearningforatari. InInternationalConferenceonLearning
+Representations(2020).
+14
+Preprint
+Appendix: ImplementationDetailsDocumentation
+A RecurrentStateSpaceModelandWorldModel
+Temporal Information. In active inference, the hidden state inferred by the agent is often computed by a
+likelihoodmatrixRm×nwheremisthenumberofpossiblestatevaluesandnisthenumberofpossibleobservation
+values[18]. Asingleobservationfromtheenvironmentcanthenbedirectlymappedtoastateusingthisscheme.
+Similarly,intheamortizedinferencecontext,therecognitiondensityparameterizedbyanartificialneuralnetwork
+(ANN)isoftenusedtoestimatetheposteriorprobabilitydensityoverthehiddenstatesoftheenvironment[14].
+However,inthePOMDPsetting,anobservationfromasingletimestepwouldnotprovidesufficientinformation
+aboutthestateasisdoneinclassicactiveinferenceliteraturewithalikelihoodmatrix. Forexample,higher-order
+information,suchasvelocityandaccelerationofparticularvariables,cannotbecapturedinonesingleimagebut
+instead must be inferred from a sequence of images (or manually integrated [59]). Therefore, it is crucial for
+everyactiveinferencemodelinPOMDPenvironmentstomaintaintemporalinformationordeterministicbeliefs
+throughouttimeasadditionalinformationisinputintothegenerativemodelframework.
+Sinceactiveinferencepositsthatanagentfindsapolicy,i.e,asequenceofactions,basedontheestimatedfuture
+state distribution [22, 75, 21, 16, 48], one approach is to predict the next state s given the current state s
+t+1 t
+andactiona . WhenoperatinginPOMDPenvironments,thismethodologyinvolvespredictingthenextpartial
+t
+observation o given the previous partial observation o and the action a . In order to integrate temporal
+t+1 t t
+informationintothisgenerativemodel,wecanusethe‘carried-over’recurrentstateinsomeformsofRNNsuchas
+agatedrecurrentunit[11]aswasdonein[30,32,34,52]. Therefore,thepriorp(s)andposteriorq(s)distributions
+overstatesareabletoencapsulatethetemporalinformationhembodiedinpreviousobservations;seeFigure5for
+avisualrepresentationofthisprocess.
+B ImprovingNumericalStability
+Minimizingthecomplexity(term)aidstheagentinclosingthegapbetweenitsprioranditsapproximateposterior
+whereasminimizingtheaccuracy(term)improvesthemodel’sfutureobservationestimation. Weutilizetheworld
+model which has a discretized state space [32] where each hidden state is represented by a vector of discrete
+distributions instead of a vector of Gaussian distribution parameters as is done in other deep active inference
+formulations. WealsoemploytheKLbalancing[32]andapplying“symlog”functiontoinputs[34]fornumerical
+stability:
+D [q (s |o )∥p (s |s ,a )]←η D [q (s |o )∥sg(p (s |s ,a ))]
+KL θ t t θ t t−1 t−1 rep KL θ t t θ t t−1 t−1
+(11)
++η D [sg(q (s |o ))∥p (s |s ,a )]
+dyn KL θ t t θ t t−1 t−1
+where sg is the stop gradient operation, η and η are the coefficients for representation and dynamics KL
+rep dyn
+losses,respectively. WealsocliptheKLtermtoaminimumvalueoffreebits[30]andfinallyapplythesymlog
+function[34]onitsinputsfornumericalstability.
+C Thepriorpreferenceself-revisionmechanism
+Foreachstepinatrajectorye,werecordthefollowingstatistics:1)abooleanshowingwhetherthestepwascarried
+outbyanexpertp ornot,2)abooleanrepresentingwhethertheagentimmediatelyachievedthegoalatastepd ,
+t t
+and3)abooleanindicatingwhethertheagentsucceededinreachingitsgoalatleastonetimewithintheepisodek.
+Foreachtimestep,wewanttocraftadecayingsignalthatemphasizesthedegreeofpreferenceρ ∈[−1,1]. In
+t
+ordertodoso,weequiptheagentwithaself-revisionmechanismwhichallowstheagentto“lookback”onhow
+itperformedanddeterminewhetheracertainstateispreferredornot(seeAlgorithm1). Notethatwecomplete
+thefor-loopforpositivesamplesandsetthepreferenceatitshighestvalueatthestateanddecaythisbackward
+wheneverthereisasuccessfulstate. Incontrast,whentheepisodefails,theagentonlyneedstodecaynegatively
+backwardfromtheendoftheepisode.
+D ComputingtheInformationGainusingaNetworkEnsemble
+Takingactionsthatreducetheuncertaintyofmodelparametersrequiresestimatingtheuncertaintyinthefirstplace.
+OnecancomputesuchatermfromanexplicitANNensembleorbyusingMonteCarlodropout[25]tocompute
+informationgain[14];however,astheworldmodelgrowsinsize/complexity,itbecomesimpracticaltomaintaina
+collectionofmultipleworldmodelsortosamplefromalargestatedistribution. Therefore,weinsteadconstructa
+15
+Preprint
+Figure5: Thetemporalgenerativedynamicsmodel. AdepictionofthegenerativemodelthatR-AIFusesto
+makeuseofpastinformation;thisisequivalenttoaRSSMoperatinginlatentspace.
+separateensembleofsmallmulti-layerperceptrons(MLPs)[42,26]toestimatethenextstatebasedonthecurrent
+stateandaction–thisisthe“informationgainnetworkensemble.” Formally,welearnacollectionofN transition
+priormodels{p (s |s ,a )}N . Wenextoptimizethenetworkensemblebyminimizingthenegativelog
+ωi t t−1 t−1 i=1
+likelihoodbetweenthepredictedstatedistribution(Gaussian)andtheactualstateproducedbytheworldmodel. In
+essence,weengageinmaximumlikelihoodestimationandupdateensembleparametersbymaximizingGaussian
+likelihoodforapredictedstateGaussianwithµ ,σ ∈RD andanobservednextstates fromtheworldmodel.
+ωi ωi θ
+Thiscanbeformallystatedas:
+ 
+arg
+ω
+m
+i
+inL(ω
+i
+)=−− D
+2
+ln(2πσ
+ω
+2
+i
+)− (cid:88)
+j
+D
+=1
+(cid:18)
+(s θ,j
+2
+−
+σ ω 2
+µ
+i
+ωi
+)2(cid:19)
+. (12)
+Whentrainingtheactorπ andthevaluenetworkf ,wemaycomputetheinformationgainbycomputingthe
+ψ χ
+differencebetweentheentropyofthemixture-averageoftheunderlyingGaussianandtheaverageoftheentropyof
+allGaussianoutputsfromtheinformationgainnetworkensembleateachrolled-outstepτ inimaginationspace.
+Thisisalsothemainreasonwhyacollectionofmodelsareusedinsteadofasingleoneaswasdonein[74,79].
+GiventheGaussianentropyformulaent(σ)= ln(2πσ2) + 1,weformulatetheinformationgain(ortheuncertainty
+2 2
+associatedwithmodelparameters)estimatorinthefollowingway:
+IG=ent (cid:0) std (cid:0) {s }N (cid:1)(cid:1) −E [ent(σ )],s ∼N(µ ,σ ). (13)
+i i=1 i ωi i ωi ωi
+E UsingPercentageExponentialMovingAverage(PEMA)
+We introduce and set the coefficient of the generative world model entropy ζ and actor distribution entropy
+η = 3×10−4 andperformpercentileexponentialmovingaveragenormalizationasin[34]; thesecoefficients
+dependonboththerewardvalue[34]andmodelparameters,andtherefore,giventhattheywouldbeimpractical
+to dynamically adjust, we choose to keep ζ and η fixed and small enough for numerical stability. As a result,
+normalizingthereturntotherangebetween0and1canalignwithζandηrange[34].Wethendividethedifference
+betweenthereturnandthecomputedvaluebytherangeS asin[34]
+(cid:0) (cid:1) (cid:0) (cid:1)
+PEMA(G ,f (v |s ))= G −f (v |s ) /max 1,S , (14)
+τ χ τ τ τ χ τ τ
+whereS iscomputedusingpercentile(Per)exponentialmovingaverage(EMA)[34]:
+S =EMA(Per(G ,95)−Per(G ,5),99). (15)
+τ τ
+F R-AIFAgentAlgorithm
+SeeimplementationdetailsinAlgorithm2.
+16
+Preprint
+Algorithm1ThePriorSelf-RevisionMechanism(perEpisode)
+Initializepositiveandnegativepreferenceratearraysm+,m−. Prepareepisodedata:
+{p }T ←{p ⊙k}T ▷Ensuregoodexpertactions Successfulatleastoncebooleank.
+t i=1 t i=1
+//Computepositivepreferencerate Successfulstepbooleand .
+t
+c←max(p ,0) ▷Initializecarryvariable Stepistakenbytheexpertbooleanp .
+T t
+fort∈{T..1}do EpisodelengthT.
+c←max(c⊙α,d ) ▷Discountpositiverate
+t
+c←c⊙(c≥ϵ) ▷Quantizeto0ifsmallerthanϵ Hyperparameters:
+m+ ←{c}∪m+ ▷Appendtofront Successfuldiscountrateα.
+endfor Failuredecayrateβ.
+m+ ←{clip (cid:0) p+m+,0,1 (cid:1) }T ▷Valueexpertstatesmore Positivesignalquantizationthresholdϵ.
+t t=1
+//Computenegativepreferencerate
+c←−1/β ▷Initializecarryvariable
+fort∈{T..1}do
+c←c⊙β ▷Decaybackwardfromtheepisodeend
+m− ←{c}∪m− ▷Appendtofront
+endfor
+m− ←{m−⊙(1−k)}T ▷Nonegativeratewhensuccessful
+t t=1
+m− ←{m−⊙(1−p )}T ▷Nonegativerateinexpertsteps
+t t t=1
+ρ←{0}∪{clip (cid:0) m−+m+,0,1 (cid:1) }T ▷Firststateisneutral
+t t t=2
+returnρ
+Algorithm2R-AIFAgentAlgorithm
+Initializeθ,ϕ,ψ,χ,{ω }N Preparemodels’parameters:
+i i=1
+InitializeE,M,andM+ Generativeworldmodelθ.
+CollectasmallnumberofsuccessfultrajectoriesforM+ CRSPPmodelϕ.
+whiletotalenvironmentsteps<maxenvironmenttotalstepsdo Policynetworkψ.
+forenvironmentsteptin1..T do Valuefunctionχ.
+s ∼q (s |s ,a ,o ) Informationgainensemble{ω }N .
+t θ t t−1 t−1 t i i=1
+a ∼π (a |s )
+t ψ t t
+ifdonethen Prepareothercomponents:
+ComputeρfromAlgorithm1 EnvironmentE.
+M←M∪{(o ,a ,r ,ρ )}T MemorybufferM.
+t t t t t=1
+ifsuccessfulatleastoncestepthen PositivememorybufferM+.
+M+ ←M+∪{(o ,a ,r ,ρ )}T
+t t t t t=1
+endif Hyperparameters:
+endif GradientupdatestepsS.
+endfor ImaginationhorizonH.
+forgradientstepin1..S do BatchsizeB.
+ifi mod 2=0then SequencelengthL.
+{(o ,a ,r ,ρ )}t+L ∼M ▷Drawnormalbuffer Learningrateξ.
+t t t t t
+else EnsemblesizeN.
+{(o ,a ,r ,ρ )}t+L ∼M+ ▷Drawpositivebuffer
+t t t t t
+endif
+θ ←θ−ξ∇
+E(cid:2)
+L (θ)
+(cid:3)
+θ t
+ϕ←ϕ−ξ∇
+E(cid:2)
+L (ϕ)
+(cid:3)
+ϕ t
+{ω }N ←{ω −ξ∇ E(cid:2) L (ω ) (cid:3) }N
+i i=1 i ωi t i i=1
+Imaginetrajectories{(s ,a )}H fromeachs
+τ τ τ=t t
+Imaginepriorpreference{sˆ }H fromeachs
+τ τ=t t
+Predictq (r |s ),f (v |s )
+θ τ τ χ τ τ
+ComputeinformationgainIG
+τ
+ComputetargetadvantagevalueG
+χ←χ−ξ∇
+E(cid:2)
+L (χ)
+(cid:3) τ
+χ τ
+ψ ←ψ+ξ∇
+E(cid:2)
+L (ψ)
+(cid:3)
+ψ τ
+endfor
+endwhile
+17
+Preprint
+G Implementationofenvironments
+Pixel-levelMountainCar. Themountaincarenvironment[77]isastandardtestingprobleminreinforcement
+learninginwhichanagent(thecar)hastodriveuphill. Adifficultaspectofthisproblemisthatthegravitational
+forceisgreaterthanfullforcethatcanbeexertedbythecarsuchthatitcannotgouphillbysimplymovingforward.
+Theagenthastolearntobuildupthecar’spotentialenergybydrivingtotheoppositehill(behindit)inorderto
+createenoughaccelerationtoreachthegoalstateinfrontofit. Theoriginalmountaincarproblemwasproposed
+asanMDPwheretheenvironmentstateincludedtheexactpositionandvelocityofthecaratanystepintime.
+InthePOMDPextensionofthetask,agentsarenotpermittedtousethisstatedirectly. Instead,anagentmust
+userenderedpictures(height64, width64)asitsobservations(andmustinferusefulinternalstatesthataidit
+initscompletionofthetaks). Critically,therewardsignalprovidedbythistaskisverysparse,i.e.,itis−1for
+everystepand0whentheagentreachesthegoal,andtheactionspaceiscontinuous. Intheactualenvironment,
+wemodifyitslightlytoprovideadarkbackgroundandlightobjects,e.g.,whitecar,toimprovevisualizationfor
+humanexperimenters.
+Meta-World. Inthisenvironment,theagent(acontrollableroboticarm)hastocontroltheproprioceptivejoints
+(representedasavectorofcontinuousactions)inavelocity-basedcontrolsystem[87]. Sincetheworkspaceis
+3D,anobservationfromasingleviewpointmightcausetheagenttostrugglewheninferringenvironmenthidden
+states,e.g.,theheightofthegoalcanneverbeinferredfromthetop-downview. Therefore,weconstructaraw
+pixelobservationimageusingthreedifferent(camera)viewpoints: theseincludeatop-down,anagentworkspace,
+andasidecameraview. Furthermore,weensurethattherewardspaceforthetasksinthisenvironmentaresparse,
+similarinformtothesparsesignalsproducedbythemountaincarenvironmentwitharewardof0providedwhen
+theagentachievesthecontrolobjective(itreachesasuccessfulstate)and−1everywhereelse. Notethat,unlike
+themountaincar,theenvironmentsimulationcontinuesevenaftertheagentreachesthegoalstate.
+robosuite. SimilartotheMeta-Worldenvironment,robosuite[88]simulatesaroboticsenvironmentwherethe
+agentcontrolsdifferentjointsascontinuousactions. Sincetherobot’sworkspaceinrobosuiteislarger,weutilized
+four different camera viewpoints as streams of pixel observations for the agent instead of three as we did in
+Meta-World, namely: bird’s-eye view (similar to the top-down view in Meta-World), agent view (the agent’s
+perspectiveoftheworkspace),sideview,andfrontview. Additionally,wemodifiedtheenvironmenttohavea
+sparserewardsystem,yieldingarewardof1whentheagentsuccessfullyachievesthetaskgoal,and0otherwise.
+Finally,theenvironmentcontinuesevenaftertheagentsuccessfullyreachesthegoalstate.
+H TrainingR-AIFAgent
+Incontrasttoon-policylearningalgorithms[69,71],wetrainouragentinanoff-policyfashion(usingmemory
+buffers). Specifically,weutilizetworeplaybuffers: astandardreplaybufferMstoresallagent’sencountered
+transitions,andapositivereplaybufferM+ onlycontainsepisodeswithatleastonestepsuccessfully-reached
+goalstate. Whiletraining,wesamplefromthesebuffersequallyastrainingwithmoresuccessfulsamplesisfound
+toboosttheconvergenceofCRSPP.Wethensimulatetheagentintheenvironmentandtraintheworldmodel,
+CRSPP,informationgainensemble[79],policynetwork,andvaluefunctionperiodically(seeAlgorithm2for
+specificdetails).
+I DerivationofExpectedFreeEnergy
+Accordingto[72,14,23],theexpectedfreeenergygiventheplannedactiondistributionπcanbeformulatedas:
+G τ (π)=E Q˜ [lnQ(s τ ,θ|π)−lnQ(o τ ,s τ ,θ|π)] (16)
+withQ˜ = Q(o ,s ,θ|π)thejointprobabilityoffutureobservation,state,andmodelparametergivenplanned
+τ τ
+actionπ. Thisexpectedfreeenergyformulacanbefurtherdecomposedinto:
+G(π,τ)=E Q˜ [lnQ(θ|π)−lnQ(θ|o τ ,s τ ,π)]+E Q˜ [lnQ(s τ |θ,π)−lnQ(s τ |o τ ,π)]−E Q˜ [lnP(o τ )] (17)
+withthefirsttermisthemodelparameterexploration,denotingthemutualinformationbetweenthemodelparameter
+beforeandaftermakinganobservationandstate. Thesecondtermisthemutualinformationofagent’shidden
+statebeforeandaftermakinganewobservation. Thethirdtermisrealizingpreferencetermwheretheagenttries
+tocomputetheamountofinformationabouttheobservationthatmatchesitspriorpreference.
+18
+Preprint
+Foreaseofcomputation,wedecomposeeachtermsintoaformthatcouldbeimplementedpracticallybyouractive
+inferenceagent. Firstly,wecanfurtherdecomposetheparameterexplorationterm:
+E [lnQ(θ|π)−lnQ(θ|o ,s ,π)]=E [lnQ(θ|π)+lnQ(π|o ,s )+lnQ(o ,s )−lnQ(θ,π,o ,s )]
+Q˜ τ τ Q˜ τ τ τ τ τ τ
+=E [lnQ(π|o ,s )+lnQ(o ,s )−lnQ(o ,s |θ,π)−lnQ(π)]
+Q˜ τ τ τ τ τ τ
+=E [lnQ(π|o ,s )−lnQ(π)]+E [lnQ(o ,s )−lnQ(o ,s |θ,π)]
+Q˜ τ τ Q˜ τ τ τ τ
+=E [lnQ(π|o ,s )−lnQ(π)]
+Q˜ τ τ
++E [lnQ(o |s )−lnQ(o |s ,θ,π)]
+Q˜ τ τ τ τ
++E [lnQ(s )−lnQ(s |θ,π)]
+Q˜ τ τ
+=E [lnQ(π|o ,s )−E lnQ(π|o ,s )]
+Q(θ|oτ,sτ,π)Q(oτ,sτ|π) τ τ Q(oτ,sτ) τ τ
++E [E lnQ(o |s ,θ,π)−lnQ(o |s ,θ,π)]
+Q(oτ|sτ,θ,π)Q(sτ|θ,π)Q(θ|π) Q(θ,π) τ τ τ τ
++E [E lnQ(s |θ,π)−lnQ(s |θ,π)]
+Q(oτ|sτ,θ,π)Q(sτ|θ,π)Q(θ|π) Q(θ,π) τ τ
+=E H[Q(π|o ,s )]−H[E Q(π|o ,s )]
+Q(θ|oτ,sτ,π) τ τ Q(oτ,sτ) τ τ
++E H[E Q(o |s ,θ,π)]−E H[Q(o |s ,θ,π)]
+Q(sτ|θ,π) Q(θ,π) τ τ Q(sτ|θ,π)Q(θ|π) τ τ
++H[E Q(s |θ,π)]−E H[Q(s |θ,π)]
+Q(θ,π) τ Q(θ|π) τ
+≈E H[Q(π|o ,s )]−H[E Q(π|o ,s )]
+Q(θ|oτ,sτ,π) τ τ Q(oτ,sτ) τ τ
++H[E Q(s |θ,π)]−E H[Q(s |θ,π)]
+Q(θ,π) τ Q(θ|π) τ
+(18)
+where the term E H[lnQ(π|o ,s )] is defined as entropy of the predicted action distribution for
+Q(θ|oτ,sτ,π) τ τ
+each estimated future state and observation, whereas the term H[E Q(π|o ,s ) is defined as the en-
+Q(oτ,sτ) τ τ
+tropyofthepolicyintheGaussianmixtureaveragingallpossiblefutureobservationandstates. Inourexperi-
+ment, weminimize−H[E Q(π|o ,s )similartothereinforcementlearningliteraturewheretheagent
+Q(oτ,sτ) τ τ
+get some intrinsic reward when the policy entropy increases. The term E H[E Q(o |s ,θ,π)]−
+Q(sτ|θ,π) Q(θ,π) τ τ
+E H[Q(o |s ,θ,π)]is“theparameterexplorationoractivelearning”term[72,23]inpredictingthe
+Q(sτ|θ,π)Q(θ|π) τ τ
+futureobservation,andthetermH[E Q(s |θ,π)]−E H[Q(s |θ,π)]isthe“parameterexplorationor
+Q(θ,π) τ Q(θ|π) τ
+activelearning”terminpredictingfuturestates. Notethat,sincewedonotspecificallycompute/rolloutfuture
+observationsduetoimpracticality,theparameterexplorationoverfutureobservationisomitted.
+Secondly,wedecomposethesecondtermoftheexpectedfreeenergyfunctionasfollowed:
+E [lnQ(s |θ,π)−lnQ(s |o ,π)]=E [lnQ(s |θ,π)−lnQ(s |o ,π)]
+Q˜ τ τ τ Q(oτ,sτ,θ|π) τ τ τ
+=E H[Q(s |θ,π)]−E H[Q(s |o ,π)].
+Q(oτ|sτ,θ,π)Q(θ|π) τ Q(θ|oτ,sτ,π)Q(oτ|π) τ τ
+(19)
+Thistermcanbeexplainedasthe“hiddenstateexplorationoractiveinference”[72,23],whichcanbedefined
+astheentropyoffuturepriorstatedistributionrolledoutfromtheworldmodelminustheentropyoffuturestate
+posteriorestimatedfromfuturepredictedobservation. Inourexperiment,sinceweonlyroll-outfromthestate,and
+notobservation,wecanomittheterm−E H[Q(s |o ,π)]. Additionally,insteadofminimizing
+Q(θ|oτ,sτ,π)Q(oτ|π) τ τ
+theentropyoffuturestatesE H[Q(s |θ,π)],wemaximizeittobalancetheomittedtermandtogivethe
+Q(θ|π) τ
+agentmoreincentiveinexploringun-visitedstateswhichhashigherstateentropy. Thisisalsosimilartoproviding
+agentwithmoremotivation[3,58,12]whenthereisacertainlevelofuncertaintyestimatedtobeinfuturestates.
+The“hiddenstateexploration”canthenbeapproximatelyequalto−E H[Q(s |θ,π)].
+Q(θ|π) τ
+Lastly,forthethirdterm,wearemaximizingtheprobabilityoffuturepredictedobservationwhichmatchourprior
+preferenceatthesametimestep. Sincecloserstatess eventuallyleadstocloserobservationo ,wecanformulate
+τ τ
+thisinstrumentaltermas:
+lnP(o )≈r + sim(s ,sˆ ) (20)
+τ τ τ τ
+wherer isthepredictedfuturerewardobservation,andsim(s ,s∗)isthesimilaritymeasurethatwehavedefined
+τ τ τ
+inthemanuscript.
+Overall,wehavethefullformoftheexpectedfreeenergyformulagiventhepolicyπ:
+19
+Preprint
+G (π)= −H[E Q(π|o ,s )]
+τ Q(oτ,sτ) τ τ
++H[E Q(s |θ,π)]−E H[Q(s |θ,π)]
+Q(θ,π) τ Q(θ|π) τ
+(21)
+−E H[Q(s |θ,π)]
+Q(θ|π) τ
+−r − sim(s ,sˆ ).
+τ τ τ
+J Discussion
+Beingabletoestimateaparticulargoalorpreferredstateatanyparticulartimestepisveryusefulforcognitive
+controlagent. Asourresultsdemonstrate,theagentcanthenlearntoadapttotakeactionsthatleadfromaspecific
+statetoitsestimatedgoal(s). Incontrasttotheapproachestakenintheimitationlearningandbehaviorcloning
+literature,whichtraintheagent’spolicybasedonafixedcollectedexpertdataset,inourR-AIFframework,the
+expertsignal(thepreferredobservation)isestimateddynamicallythroughanadaptivepriorpreferencemodel,
+closingthedomaingapbetweentheactualtrajectoriesandthecollectedtrainingimitation(preferred)trajectories.
+Notethat,withrespecttoourCRSPPsub-module,ourmodelutilizescontrastiveobjectivetoadaptitsparameters
+(i.e.,itsolelylearnshowtoestimatetheworldmodel’sencodedstateswhilepushingitselfawayfromundesired
+worldmodelstates/trajectories)andthusdoesnotrequireorlearnanydecoder. Weonlymakeuseofthelearned
+decoderinthegenerativeworldmodeltovisualizethepreferredobservationfromtheestimatedCRSPP’sstates.
+Experimentally, we remark that using an auxiliary decoder proved useful for clearly visualizing the preferred
+observationoˆ giventheproducedpreferredstatesˆ ateachtimestep.
+t t
+Theoretically,behaviorcloningwillbeunabletoachieveagreatofsuccessinmulti-goalenvironmentsduetoits
+relianceonafixed,finite-sizeimitationsamplepool. Theexperttrajectoriesinthisfixedpoolmightfurtherdiffer
+fromtheactualtrajectoriesthattheagentneedstotaketosolvetheproblemathand,i.e.,thereisadistributional
+gapinobservations,andthereforerequiredifferentsetsofactionstobetaken. Ontheotherhand,CRSPPlearnsto
+produceadynamicgoalstatewhilejointlytrainingtheagent’scorepolicytoreachtaskgoalstates. Therefore,as
+weempiricallyconfirmedinsimulation,R-AIFdoesnotsufferfromgoal-mismatchprobleminthetrainingphase
+thatotherAIFschemeswould.
+BroaderImpacts. Inlinewithactiveinferenceprocesstheory’sfocusonoptimizingapolicythatminimizesfuture
+expectedfreeenergy,R-AIFagentsdosobytakingactionsthattheyareabletopredictwillleadtotheirpreferences
+(inlineAIF’sinstrumentalsignal),whilealsojointlytakingactionsthattheyaremostlysureaboutandworkingto
+reduceuncertaintybytakingintelligentexplorativeactionsoftheirniches(inlinewithAIF’sepistemicsignals).
+Thisispracticalfordifferentrobotictasks,particularlythosewithpotentialdangersintheiroperation/functioning
+(i.e.,whenhumansafetymustbeconsidered). Forexample,aself-drivingcaragentcantaketheactionsthatit
+issuretobesaferatherthanfocusingexploringwildly(asrandomexplorationpoliciesencourage,potentially
+causingtrafficaccidents. Furthermore,theR-AIFframeworkcouldproveusefultotheimitationlearningresearch
+community,asitsabilitytooptimizeapolicythatachievesdynamicgoalsasproducedfromanadaptiveprior
+preferencemodelwasfoundtobequiteusefulforthemorecomplexPOMDPtaskswesoughttosolveinthiswork.
+Thiscarrieswithitpossiblepositiveimplicationsforpracticalapplicationindownstreamtaskssuchasautonomous
+driving[53]andcomplexroboticcontrolandnavigation[40,55].
+20

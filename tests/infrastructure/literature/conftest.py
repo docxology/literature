@@ -16,6 +16,8 @@ def mock_config(tmp_path):
     config.semanticscholar_delay = 0.0  # Speed up tests
     config.retry_delay = 0.0  # Speed up tests
     config.retry_attempts = 1  # Speed up tests
+    config.timeout = 5.0  # Shorter timeout for faster test failures
+    config.pdf_download_timeout = 5.0  # Shorter PDF download timeout for tests
     return config
 
 @pytest.fixture
@@ -37,15 +39,21 @@ def sample_result():
 def ensure_ollama_available():
     """Ensure Ollama is available, skip test if not.
     
+    Uses test configuration from test_ollama_config.yaml.
+    
     Returns:
         LLMClient instance if Ollama is available.
     """
     from infrastructure.llm import LLMClient, is_ollama_running
+    from tests.test_config_loader import get_test_llm_config
     
     if not is_ollama_running():
         pytest.skip("Ollama not running - start with 'ollama serve'")
     
-    client = LLMClient()
+    # Use test configuration
+    config = get_test_llm_config()
+    client = LLMClient(config)
+    
     if not client.check_connection():
         pytest.skip("Ollama connection failed")
     

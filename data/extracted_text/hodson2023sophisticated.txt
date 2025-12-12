@@ -1,0 +1,1965 @@
+Sophisticated Learning: A novel algorithm for active learning during
+model-based planning
+Rowan Hodsona,∗, St John Grimblyb,∗, Evert A. Boonstrab, Bruce A. Bassettb,c, Charel van
+Hoofe, Benjamin Rosmanc, Mark Solmsb, Navid Hakimia, Jonathan P. Shockb,d,1, Ryan Smitha,1
+aLaureate Institute for Brain Research, Tulsa, OK, USA
+bUniversity of Cape Town, South Africa
+cMIND Institute and CSAM, University of the Witwatersrand, South Africa
+dINRS, Montreal, Canada
+eDelft University of Technology, Department of Cognitive Robotics
+Abstract
+We introduce Sophisticated Learning (SL), a planning-to-learn algorithm that embeds active pa-
+rameter learning inside the Sophisticated Inference (SI) tree-search framework of Active Inference.
+Unlike SI – which optimizes beliefs about hidden states – SL also updates beliefs about model
+parameters within each simulated branch, enabling counterfactual reasoning about how future
+observations would improve subsequent planning.
+We compared SL with Bayes-adaptive Reinforcement Learning (BARL) agents as well as with
+its parent algorithm, SI. Using a biologically inspired seasonal foraging task in which resources
+shift probabilistically over a 10×10 grid, we designed experiments that forced agents to balance
+probabilistic reward harvesting against information gathering.
+In early trials, where rapid learning is vital, SL agents survive, on average, 8.2 % longer than
+SI and 35% longer than Bayes-adaptive Reinforcement Learning. While both SL and SI showed
+equal convergence performance, SL reached this convergence 40% faster than SI. Additionally, SL
+showed robust out-performance of other algorithms in altered environment configurations.
+Ourresultsshowthatincorporatingactivelearningintomulti-stepplanningmateriallyimproves
+decision making under radical uncertainty, and reinforces the broader utility of Active Inference
+for modeling biologically relevant behavior.
+∗Corresponding authors.
+1Co-Senior Authors.
+Preprint submitted to Elsevier August 18, 2025
+5202
+guA
+41
+]IA.sc[
+2v92080.8032:viXra
+1. Introduction
+In both biological and artificial systems, decision-making involves a fundamental trade-off:
+whether to exploit current behavioral strategies or explore the possibility of better strategies.
+This dilemma is illustrated by animal foraging paradigms, where the choice between exploiting
+a current food source and exploring for potentially richer alternatives is critically informed by
+both environmental cues and past experience (Charnov, 1976, Stephens and Krebs, 1986, Webb
+et al., 2025). In this context, seeking information to optimize behavioral strategies is an important
+part of adaptive intelligence, enabling organisms and AI agents alike to reduce uncertainty about
+their environment. The systematic study of this drive to seek information dates back to early
+psychological research on curiosity. Berlyne (1966), for instance, introduced distinctions between
+different forms of curiosity and established the broader concept as a fundamental motivation for
+knowledge acquisition. His work demonstrated that organisms display an innate drive to resolve
+uncertainty and gather information, in some cases independently of primary rewards.
+There are now many lines of research on this general topic. For example, an emerging body of
+workhasbeguntouncoverneuralmechanismsassociatedwithexploratorybehavior,demonstrating
+how the brain may assign value to information and guide action selection accordingly (Gottlieb
+et al., 2013, Zajkowski et al., 2017, Chakroun et al., 2020, Tomov et al., 2020, Chou et al., 2024).
+Current work on reinforcement learning (RL) algorithms has also investigated several approaches
+to encourage information-seeking, from simple heuristics (e.g., initializing unvisited states at high
+values) to more sophisticated approaches based on upper confidence bounds (UCB), Thompson
+sampling,andotherBayesianprinciples(Jakschetal.,2010,Houthooftetal.,2016,Bellemareetal.,
+2016, Pathak et al., 2017, Russo et al., 2018). Building on this work, intrinsic motivation systems
+have been shown to successfully guide exploration and learning in both artificial and biological
+agents, particularly during developmental periods (Oudeyer and Smith, 2009). Additional active
+learning approaches have been surveyed elsewhere (Settles, 2009), each suggesting an agent should
+optimally be driven to infer and sample from sources of data that would most effectively resolve
+uncertainty. This is closely related to work on optimal experimental design (MacKay, 1992), which
+draws on information-theoretic principles for obtaining maximally informative observations.
+Active Inference (ActInf) is a more recently proposed framework for modeling decision-making
+under uncertainty. One differentiating feature of this framework is that the drive to resolve un-
+certainty emerges as an intrinsic feature of its value function, which is in turn derived from a
+biologically inspired set of first principles. ActInf shares many key features with other prominent
+frameworks, such as RL, but also differs in important ways. First, it intrinsically assumes partial
+observability within Markov decision processes, and employs variational inference approaches via
+variational free energy minimization to approximate Bayes optimality in state inference. Second,
+its objective function, expected free energy (EFE; denoted as G in the mathematical formalism),
+is itself derived from variational principles and naturally leads to both reward-seeking behavior
+and directed exploration (e.g., favoring choices with the greatest outcome uncertainty). Concep-
+tually, EFE quantifies the anticipated ‘surprise’ or uncertainty associated with future states and
+observations, conditioned on preferences and a particular course of action. Minimizing EFE thus
+drives agents to select actions that are expected to reduce uncertainty about the world (i.e., yield
+information), while also moving an agent to states that align with its preferences (defined more
+formally in Section 2.1). As mentioned, a key advantage of this formulation is that exploration
+emerges naturally from the underlying inference process, rather than requiring further additions
+to a value function. This allows ActInf agents to efficiently navigate uncertain environments by
+prioritizing actions that both maximize future goal-achievement (aligned with preferences) and
+2
+minimize uncertainty over states and model parameters.
+Inrecentyears,ActInfhasbeencomparedagainsttraditionaldecisionmodelswithinbenchmark
+machine learning environments (Friston, 2009, Sajid et al., 2021, Fountas et al., 2020a, Tschantz
+et al., 2020, Millidge, 2021). Although its performance in these environments has been context-
+dependent, on the whole it has been largely comparable to other algorithms. This overlap arises in
+partbecausethecoremotivationsbehindActInf-maximizingrewardandminimizinguncertainty-
+areconceptuallysimilartothosefoundinotheragent-basedmachinelearningframeworks. Inother
+words, while the implementation differs, particularly in how it unifies epistemic and instrumental
+imperatives within a single objective function, the underlying drives are not unique. Consistent
+with this, Sajid et al. (2021) demonstrated that ActInf aligns with Bayesian RL when exploration
+drives are removed. More generally, RL and other agent-based approaches tend to converge toward
+similar solutions when placed in partially observable environments that benefit from a combination
+ofepistemicdrivesandmodel-basedplanning. Alongtheselines,Chouetal.(2025)recentlyshowed
+that complexity-matched RL and ActInf models explained empirical choice behavior on a 3-armed
+bandit task with similar accuracy. Yet, Bayesian model selection consistently favored ActInf as
+the model for which the behavior provided the most evidence.
+Whilepromising,certainlimitationsincurrentimplementationsofActInfhavemotivatedefforts
+to improve both its performance and scalability. In particular, the computational costs associated
+with its current variational inference (i.e., message passing) and policy selection approaches would
+be prohibitive in most real-world applications. This has led to efforts to integrate ActInf with other
+approaches, including deep learning architectures (Çatal et al., 2020), Monte Carlo Tree Search
+(MCTS) (Fountas et al., 2020a), and policy gradient methods (Millidge, 2021).
+Another limitation is that standard ActInf does not achieve Bellman optimality for policy
+depths greater than one (Da Costa et al., 2023). To address this, a “Sophisticated Inference” (SI)
+algorithm was more recently developed. This algorithm is Bellman-optimal and solves multi-step
+planning tasks through a recursive tree search (Da Costa et al., 2023)2. However, SI has not
+yet been rigorously compared with other algorithms, and there are clear directions for further
+development, particularly with respect to active learning drives that have been central to the
+broader framework.
+In this paper, we build on previous work to achieve two main objectives. First, we compare
+SI to other leading algorithms designed to solve similar problems, including Bayes-adaptive RL
+(BARL) and a representative upper confidence bound (UCB) heuristic (Agrawal, 1995). Second,
+we introduce and evaluate an extension of SI that incorporates active learning, which we term
+Sophisticated Learning (SL).
+To demonstrate the unique planning processes and advantages offered by SL, we compare its
+performance against the aforementioned algorithms in a novel, biologically inspired environment
+designed to support multiple strategies for directed exploration. The results provide novel insights
+by highlighting the strengths and vulnerabilities of each algorithm. As shown in Section 4, SL
+significantly outperforms all other algorithms tested, and both SL and SI achieve better results
+than BARL, with or without the addition of UCB.
+2SI’s Bellman optimality is limited by the pruning necessary for good performance, as noted by Paul et al.
+(2023, Figure 1). Pruning terminates the tree search when the action probability falls below a threshold, but this
+approximation may cause the agent to miss preferred observations deeper in the tree.
+3
+2. Background
+In this section, we more thoroughly situate our approach within the broader landscape of prior
+work. We begin by examining the theoretical foundations of ActInf models, focusing on their
+relationship to established decision-making frameworks. We then explore SI as a key extension to
+standard ActInf, and discuss its relation to active learning and BARL. This sets the stage for the
+novel algorithm we propose (SL), which combines insights from each of these previous approaches.
+2.1. Formalism and Notation
+We start by establishing the common formalism underlying both ActInf and BARL. Each
+framework operates within partially observable Markov decision processes (POMDPs), where an
+agent must infer hidden states, update its beliefs, and select actions to optimize its objectives.
+While these approaches differ in several ways, they share a reliance on generative models that
+represent environmental dynamics.
+POMDPs and Generative Model Structure. In RL, a POMDP provides a formal framework for
+decision-making under uncertainty, where an agent must infer and reason about hidden states
+through observations. The framework is traditionally defined as a tuple:
+(S,O,U,B,A,D,E,R), (1)
+where each element characterizes a specific component of the model.
+The state space S consists of hidden states s ∈ S that evolve over discrete time steps. These
+t
+are the true states of the environment. The agent does not observe s directly, but infers it
+t
+from observations. Observations o ∈ O are drawn from the observation space O according to a
+t
+likelihood model A, such that
+p(o | s ,A) = Cat(A), (2)
+t t
+where Cat(A) denotes a categorical distribution parameterized by A, representing the probability
+of each possible observation given each possible state the agent might find itself in. Actions u ∈ U
+t
+are selected from the action space U and influence state transitions according to a transition model
+B. Transitions are governed by
+p(s | s ,u ,B) = Cat(B(s ⊗u )), (3)
+t t−1 t−1 t−1 t−1
+where ⊗ denotes the Kronecker product, used to construct the full transition matrix from state-
+action pairs.
+The model also includes a prior distribution D over initial states, p(s ) = D, and a prior E
+1
+encoding an initial bias over actions at t = 1, which can influence early decision-making. The
+reward function R is explicitly defined in conventional RL settings, but this is typically replaced
+by a preference distribution in the ActInf framework.
+In ActInf, this structure is reformulated as a generative model that captures the agent’s current
+beliefs about environmental dynamics. Following Paul et al. (2024), the reward function R is
+replaced by a preference distribution over observations p(o|C) for a finite time horizon T ∈ N+.
+Thus, for ActInf, the tuple becomes (S,O,U,B,A,D,E,T,C).
+The structure of this generative model leads to the following joint probability:
+T T
+(cid:89) (cid:89)
+p(o ,s ,u ) = p(A)p(B)p(D)p(E) p(o | s ,A) p(s | s ,u ,B), (4)
+1:T 1:T 1:T t t t t−1 t−1
+t=1 t=2
+where priors over the model parameters and initial state are made explicit, and the agent’s prior
+over actions is encoded as p(E).
+4
+Belief Updating and Parameter Learning. Given this structure, the agent maintains a belief dis-
+tribution over states, which is updated recursively as new observations are received. Intuitively,
+this update combines the likelihood of current observations with predictions based on the previous
+state estimate. Under a Bayesian framework, this belief update follows:
+(cid:88)
+q(s ) ∝ p(o |s ,A) p(s |s ,u ,B)q(s ). (5)
+t t t t t−1 t−1 t−1
+st−1
+This approximate posterior distribution over states q(s ) represents the agent’s best estimate
+t
+of the hidden state given its past experience. Under the mean-field approximation, these posterior
+beliefs over states follow a more computationally tractable form:
+q(s ) = σ(logp(s )+log(o ·As )) (6)
+t t t t
+where σ represents the softmax function.
+Beyond state inference, an agent may also need to learn the transition model B and/or obser-
+vation model A, which are typically treated as latent variables. To do so, the agent maintains and
+updates two types of beliefs: beliefs over hidden states and beliefs over model parameters. Beliefs
+over states are represented using categorical distributions of the form q(s ) = Cat(s ), while beliefs
+t t
+about the parameters of the observation and transition models are represented using Dirichlet
+distributions,
+q(A) = Dir(a), q(B) = Dir(b), (7)
+where the concentration parameters a and b encode the agent’s beliefs about each of these mod-
+els, respectively. Learning then occurs through Bayesian updates to these Dirichlet-distributed
+parameters. As the agent observes state-action-state transitions (s,a,s′), it updates its beliefs
+incrementally:
+b′ = b +I[s = i,a = j,s = k], (8)
+ijk ijk t t t+1
+where b′ represents the updated count for transitioning from state i to state k under action j. An
+ijk
+analogous update rule applies to the parameters of the observation model (a), based on observed
+outcomes under approximate posteriors over states at each time point.
+The formalism presented above establishes how agents can maintain and update structured
+beliefs about their environment. Bayesian updating in this framework is the foundation for both
+ActInf and BARL. However, the two frameworks diverge in how these beliefs are used to guide
+behavior.
+ActInf frames decision-making as free energy minimization, selecting actions that minimize ex-
+pectedfreeenergy(EFE).Thisobjectiveinherentlybalancesgoal-directedbehaviorwithinformation-
+seeking, unifying exploration and exploitation within a single variational principle.
+By contrast, BARL formulates planning as inference in a belief-MDP, where the agent’s un-
+certainty over the environment is treated as part of an augmented state space. Exploration is
+typically implemented via explicit mechanisms, such as UCB methods, to balance the trade-off
+between exploration and exploitation.
+In the following sections, we examine these approaches in detail. We first explore how ActInf
+extends variational inference to incorporate future observations and policy selection. We then
+discuss how BARL constructs and solves belief-space MDPs to handle epistemic uncertainty in
+environmental dynamics.
+5
+2.2. Active Inference and Expected Free Energy
+ActInf, sometimes referred to as standard or vanilla Active Inference in the literature, proposes
+that agents in an environment with probabilistic state-observation mappings accomplish percep-
+tion, learning, and action selection through minimization of two related quantities: Variational
+Free Energy (F) and Expected Free Energy (G) (Friston et al., 2011, 2012). The Variational
+Free Energy (VFE) is equivalent to the negative Evidence Lower BOund (ELBO) in variational
+inference:
+(cid:20) (cid:21)
+q(s|o;ϕ)
+F = E ln −lnp(o;θ) = −ELBO (9)
+q(s)
+p(s|o;θ)
+Here, the value of F is minimized as the approximate posterior, q(s|o;ϕ), approaches the true
+posterior, p(s|o;θ), where ϕ and θ parameterize the approximate and true posterior respectively.
+Thus, the agent can approximate optimal state inference (i.e., perception) by finding the distribu-
+tion q that minimizes F. Note that F will also be minimized as the marginal likelihood, p(o;θ),
+approaches a value of one. Thus, the agent can also optimize its model (i.e., learning) by finding
+the parameters θ that minimize F.
+In contrast to perception, action selection in ActInf is guided by minimizing the expected free
+energy (G), an objective that extends variational free energy to future action sequences (policies;
+π) that treat observations as random variables (Parr and Friston, 2019, Sajid et al., 2021). While
+EFE is often presented as a straightforward extension of VFE, recent work suggests that their
+relationship is more nuanced. Specifically, when considering future states and observations, EFE
+incorporates terms that capture information-seeking (epistemic) and goal-directed (pragmatic)
+behavior. A common formulation of EFE is:
+(cid:20) (cid:21)
+q(s|π)
+G(π) = E ln −lnp(o)
+q(o,s|π)
+p(s|o)
+(10)
+= −E [lnp(o|s,π)−lnq(o|π)]]−E [lnp(o)].
+q(o,s|π) q(o|π)
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+epistemicvalue pragmaticvalue
+Intuitively, this formulation balances two key factors: (i) reducing uncertainty about states
+(epistemic value) and (ii) seeking preferred observations (pragmatic value, encoded in the form of
+fixedpriorsoverobservations; seebelow). Notethatalternativeformulationsexist, suchastheFree
+Energy of the Expected Future (Millidge et al., 2021), which differs in its specific implications for
+information-seeking behavior. This underscores the fact that EFE is not a uniquely defined objec-
+tive, but rather a family of functionals with varying interpretations and computational properties.
+Recent work also demonstrates that these formulations are not necessarily equivalent (Champion
+et al., 2024). We focus our review on the standard formulation of EFE.
+It is important to note that the first line of Equation 10 is nearly equivalent to F in Equation
+9. The difference is that observations have been included within the expectation. Thus, G cal-
+culates the variational free energy of expected future observations. In a POMDP, these expected
+observations depend on future states, and transitions between states are dependent on the selected
+policy. Thus, the agent selects actions that are expected to transition the environment into states
+that will yield observations that minimize G.
+The decomposition in Equation 10 makes explicit how EFE drives action selection. For ease of
+exposition, we will start by unpacking the second term in the second line of Equation 10, which is
+often referred to as the pragmatic term (Smith et al., 2022). As mentioned above, this term drives
+the agent to seek out the observations that it prefers, or finds most rewarding. This follows from a
+6
+unique approach to goal-directed choice within ActInf, in which the prior, lnp(o), is used to encode
+relative preferences (i.e., observations with higher “probability” are treated as more rewarding).
+To make this more explicit, it is sometimes shown as lnp(o|C), where C parameterizes this fixed
+set of preferences and is clearly distinct from expected observations under a policy, p(o|π). All else
+being equal, the agent can thus be thought of as finding a policy that is expected to minimize the
+difference between its goal (target) distribution and the state-observation pair forecast given its
+policy. This can be thought of as the agent considering: “Will this policy take me to states that
+will most likely generate the observations I want to receive?”
+The first term in the second line of Equation 10 , the epistemic value, instead quantifies how
+much an agent expects to learn about states under a given policy. Higher epistemic value corre-
+sponds to policies that are expected to lead to greater reductions in uncertainty, naturally leading
+to exploration. An interesting feature of ActInf is that the term is naturally derived from the
+free energy formulation. While this resembles directed exploration terms in RL (Mann and Choe,
+2013), it does not need to be added separately from the standard value function. Note also that
+this is more specifically a form of state exploration (Schwartenbeck et al., 2019). In other words,
+it drives agents to reduce uncertainty about states. This is distinct from active learning, which
+instead drives an agent to update beliefs about model parameters (sometimes called parameter
+exploration; discussed further below). This latter form of exploration is more analogous to that
+used in standard RL (e.g., taking actions to learn about reward probabilities), primarily due to
+the fact that RL is more often applied in fully observable environments (i.e., MDPs instead of
+POMDPs).
+To support active learning and parameter exploration (when generative model parameters are
+not known), the EFE can also be extended to consider beliefs about parameters. For example,
+when applied to parameters defining the likelihood function, θ, this would yield:
+(cid:20) (cid:21)
+q(s,θ|π)
+G(π) = E ln −lnp(o)
+q(o,s,θ|π)
+p(s,θ|o)
+= −E [lnp(o|s,π)−lnq(o|π)]−E [D (q(θ|o,s)||q(θ))]
+q(o,s|π) q(o,s|π) kl (11)
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+epistemicvalue novelty
+−E [lnp(o)].
+q(o|π)
+(cid:124) (cid:123)(cid:122) (cid:125)
+pragmaticvalue
+Here, a new term emerges, often called novelty, which measures the change in beliefs about
+model parameters that would result from expected observations under a policy. High novelty
+indicates that an observation is expected to significantly refine the agent’s beliefs about how
+hidden states in its environment generate observations, thereby driving parameter exploration. In
+practice, this encourages agents to sample from underexplored parts of the environment, making
+it functionally similar to intrinsic motivation mechanisms in RL that encourage diverse experience
+sampling.
+As touched upon above, beliefs about parameters in discrete settings are typically represented
+by Dirichlet distributions, allowing the agent to encode uncertainty via concentration parameter
+counts, α. This distribution is given by:
+k
+1 (cid:89)
+p(θ|α) = Dir(θ|α) = θαi−1, (12)
+B(α) i
+i=1
+where B(α) is the multivariate Beta function (which acts as a normalizing constant and is
+7
+defined using gamma functions). The term θ = (θ ,...,θ ) is a vector of parameters (e.g., prob-
+1 k
+abilities of outcomes for a categorical distribution) such that (cid:80)k θ = 1 and θ ≥ 0 for all i.
+i=1 i i
+The term k represents the number of possible discrete outcomes or categories for the variable
+whose probabilities are given by θ. The vector α = (α ,...,α ), with each α > 0, contains the
+1 k i
+concentration parameters. A higher value of α relative to other α indicates greater confidence
+i j
+or more evidence accumulated for the parameter θ . By updating these concentration parameters
+i
+with each observation, ActInf agents can dynamically adjust their learning process, balancing the
+trade-off between consolidating known information about parameters and seeking new experience
+to increase confidence in their true values.
+In summary, the EFE functional drives adaptive behavior by favoring policies that are ex-
+pected to simultaneously maximize reward (preferred observations) and increase confidence in
+both states and model parameters. Each of these drives is naturally and dynamically weighted by
+the magnitude of expected reward and the relative uncertainty about current states and environ-
+mental statistics. In practice, these components can also be independently weighted via separate
+constants to provide additional flexibility in behavior or to better explain sources of individual
+variability in studies of humans or other animals (Chou et al., 2025).
+While ActInf provides a principled framework for adaptive behavior, practical implementations
+face significant computational challenges. As touched on above, one key issue is the requirement to
+evaluate entire pre-specified action sequences (policies) in advance, which becomes infeasible due
+to the combinatorial explosion of possible policies as the planning horizon increases, and possible
+decision sequences grow. This is further exacerbated by the high computational cost of variational
+message passing to update beliefs over states in complex environments, and the reliance on hand-
+crafted generative models, which can be difficult to specify for real-world tasks. These scalability
+issues have motivated various extensions to ActInf, including deep learning-based approximations
+(Catal et al., 2020), Monte Carlo methods (Fountas et al., 2020b), and policy gradient techniques
+(Millidge, 2019). A particularly relevant extension is the SI algorithm mentioned above (Friston
+et al., 2021), which reformulates the EFE objective using recursive tree search to eliminate the
+need for exhaustive policy enumeration. SI dynamically refines policies by propagating future
+information back through a hierarchical planning structure, making it a promising approach for
+scaling ActInf in real-time decision-making. We now explore SI in more depth.
+2.3. Sophisticated Inference
+The SI algorithm extends ActInf to address key scalability challenges in planning by replacing
+pre-specified sets of possible policies with recursive belief propagation. In other words, unlike
+standard ActInf, which evaluates all possible action sequences upfront, SI dynamically constructs
+policies through a tree search process that incrementally propagates and evaluates beliefs about
+future states and observations.
+This recursive approach reframes the EFE minimization problem as a Bellman-like equation
+(Bellman, 1958), explicitly conditioning state inference on actions and observations rather than
+entire policies. Given an action u at time step t (omitting model parameter inference for clarity),
+t
+the recursive formulation of EFE is then:
+(cid:104)
+G(u ,s ) = E lnp(s | o ,u ,s )−lnq(s | u ,s )
+t t q(ot+1,st+1|ut,st) t+1 t+1 t t t+1 t t
+−E (cid:2) lnp(o ) (cid:3) (13)
+q(ot+1) t+1
+(cid:105)
++E (cid:2) G(u ,s ) (cid:3) .
+q(st+1,ut+1) t+1 t+1
+8
+This decomposition reveals two critical aspects of SI. The first three terms capture the local
+epistemic and pragmatic value of an action, quantifying expected information gain and expected
+reward at the current time step. In contrast, the fourth term recursively propagates future EFE
+across subsequent time steps, allowing the agent to evaluate the long-term consequences of its
+actions. BecauseSIiterativelybuildsasearchtreebyexpandinghigh-probabilitybelieftrajectories,
+this can be combined with specific pruning mechanisms that make deep planning computationally
+feasible while maintaining the primary objective function in standard ActInf.
+Tree Search and Belief Propagation. As mentioned above, recursive belief propagation in SI specif-
+ically constructs a tree-like structure in belief space, rather than state space, making it particularly
+well-suited for partially observable Markov decision processes (POMDPs). In more detail, given
+an initial belief over hidden states, SI considers each possible action u and generates hypothet-
+t
+ical future observations o under the agent’s generative model. Each resulting belief state,
+t+1
+q(s | u ,o ), is evaluated recursively via Eq. 13, forming a branching structure.
+t+1 t t+1
+To manage computational complexity, SI applies two key pruning mechanisms. First, branches
+are pruned if the prior probability of transitioning to a future belief state falls below a predefined
+threshold (e.g., p = 0.16 in the original formulation), ensuring that low-probability trajectories do
+not consume resources. Second, branches whose EFE is higher than alternatives (i.e. relatively less
+valuable) by a predefined threshold are discarded early in the search process, reducing the need
+to evaluate suboptimal paths in full. By iteratively pruning uninformative or suboptimal action
+sequences in this way, SI avoids exhaustive policy enumeration while still capturing long-horizon
+dependencies. This allows the agent to selectively explore policies that are likely to yield high
+epistemic or pragmatic value. These pruning mechanisms are not unique to SI and have been
+applied as solutions in both normal ActInf and other algorithms. However, combined with the
+recursive tree search approach, they offer useful advantages over the original ActInf formulation.
+At present, this approach remains largely untested against other similar algorithms.
+Interpreted psychologically, SI enables an agent to engage in hierarchical counterfactual reason-
+ing about future beliefs and observations. The agent implicitly considers the following sequence:
+Given my current beliefs over hidden states, if I took action u and transitioned to state
+t
+s , what possible observations o might I receive? How would this update my beliefs
+t+1 t+1
+about the true hidden state? Given this updated belief, what future observations would
+I expect if I then took action u , and how well would those observations align with
+t+1
+my preferences and reduce my uncertainty?
+Thisiterativebeliefupdateprocessappearstocapturethephenomenologyofmentalsimulation
+and prospective planning, where decisions are evaluated based on imagined future consequences
+at different time points in the future.
+Figure 1 illustrates this process: each branch corresponds to a candidate action sequence, while
+belief propagation refines the agent’s expectations about future states and observations.
+2.4. Other Extensions
+Of note, recent research has also explored various extensions to both standard ActInf and SI.
+For instance, Paul et al. (2023) have proposed the application of dynamic programming techniques
+to the EFE functional to improve computational efficiency. They also investigate how agents can
+learn dense preferences over states — representing desirability — by applying Z-learning (Todorov,
+2006) to a sparse target distribution. This approach enables agents to develop adaptive goal rep-
+resentations beyond predefined reward structures. It also allows the agent to adopt a hierarchical
+9
+Figure 1: A depiction of the branching recursive search used in Sophisticated Inference (SI). The tree structure
+shows how beliefs are propagated through sequences of actions (u) and observations (O), with pruning applied to
+maintain computational tractability.
+planning perspective, where state preferences emerge dynamically rather than being explicitly
+assigned. Conceptually, this aligns with intuitive heuristics such as:
+“This state will bring me closer to my goal; therefore, I generally prefer this state over
+the previous one.”
+However, learning preferences, as opposed to action-based value functions, remains an under-
+explored area in ActInf, offering new possibilities for adaptive and efficient decision-making.
+2.5. Bayes-Adaptive Reinforcement Learning
+While ActInf frames decision-making through the lens of EFE minimization, an alternative
+Bayesian approach to handling uncertainty in POMDPs has been described within RL. Specifi-
+cally, the Bayes-Adaptive Reinforcement Learning (BARL) framework directly extends the classic
+RL approach by incorporating explicit Bayesian reasoning about model uncertainty, treating the
+agent’s beliefs about environmental dynamics as part of an augmented state space.
+Building on the formalism established in Section 2.1, BARL also offers a principled approach
+to exploration by maintaining and updating beliefs over model parameters. Unlike ActInf, which
+derivesinformation-seekingbehaviorfromEFEminimization, BARLconstructsanexpandedMDP
+in belief space, allowing standard optimization techniques to naturally balance exploration and
+exploitation. This approach has proven particularly effective in scenarios where agents must learn
+environmental dynamics while maximizing expected rewards (Ross et al., 2007).
+10
+Theoretical Foundations. The BARL approach is situated within the broader field of Bayesian
+machine learning. To date, considerable work has been carried out in this field, leading to several
+effective methods for incorporating prior information when performing inference over unknown
+variables (Ghavamzadeh et al., 2015). These methods are often applied to problems involving
+uncertainty, where new information is combined with prior beliefs to formulate posterior beliefs
+aboutoneormoreunknownfactors. Ofparticularrelevancehere,thesemethodshavebeeneffective
+in navigating POMDPs of the same form assumed by ActInf (Poupart and Vlassis, 2008).
+BARL either frames POMDPs with respect to uncertainty over the solution-space (model-
+free), or uncertainty over the parameter-space (model-based). A significant advantage of framing
+such problems in a Bayesian framework is that it effectively side-steps the issue of exploration vs.
+exploitation. This is due to the fact that Bayesian methods have the capability of representing
+uncertainty over states/parameters/solutions as belief states, which can then be used to identify
+optimal solutions (Ghavamzadeh et al., 2015). One downside of this approach, however, is its
+sensitivity to initial priors, which fully determine belief states at the beginning of a task (Guez
+et al., 2012). Thus, an integral, and often difficult, aspect of BARL is the design and incorporation
+of effective prior information.
+Model-Based Bayes-Adaptive RL. Model-based BARL offers a particularly interesting approach
+to modeling uncertainty over parameters. For example, suppose the true transition probabilities
+p(s′|s,a,θ) governing the likelihood of reaching state s′ from state s after taking action a are
+unknown, due to uncertainty in model parameters θ. In this case, the Bayesian agent will maintain
+beliefs about the possible values of θ.
+Given b ∈ B, where B is the belief space and b(θ) = Pr(θ), the transition model becomes:
+(cid:90)
+p(s′|s,b,a) = p(s′|s,a,θ)b(θ)dθ. (14)
+θ
+Here, the expectation for θ with respect to belief b has been taken (i.e., maringalised over),
+and so θ does not appear in the resulting probability density. Thus, the model is effectively known
+with respect to belief b, and exploration of θ is not necessary.
+Beliefs themselves are updated upon receiving data (in this case, data about transitions):
+b′ = b(θ|s,a,s′). (15)
+With the model then framed as being known (with respect to b), the problem can be formulated
+as a Markov Decision Process (MDP), and the Bellman equation can be used to determine the
+optimal value function for each state-belief pair.
+(cid:88) (cid:104) (cid:105)
+υ∗(s,b) = argmax p(s′,r|s,a,b) r+γυ(s′,bs,a,s′) ∀s ∈ S, (16)
+a
+s′,r
+where γ is a discount factor ∈ (0,1] which discounts future rewards relative to present ones. As
+model-based BARL can be formulated as an MDP in this way, an associated algorithm for any
+normal model-based RL scheme can be constructed.
+Note that, when navigating a fully observable MDP, an agent can learn by registering and
+storing the number of times it has witnessed specific environmental dynamics. As is implied in
+equation15,thiscouldtaketheformofanagentincreasingitsbeliefthatsomestateswilltransition
+to another state s′ after observing the actual occurrence of this specific transition. Its confidence
+in this transition belief would then increase the more such observations are made. This increase in
+11
+confidence about a given transition can be represented by incrementing a count (ϕs′,) associated
+sa
+with the actual belief over parameters, which is implemented with a Dirichlet distribution using
+these counts as its concentration parameters. However, when operating within a POMDP, the
+agent does not fully observe the state-space. Thus, in many cases, it has uncertainty as to what
+transitions between states actually took place. This creates a scenario where learning is difficult,
+due to the agent often having inaccurate beliefs about the environmental dynamics underlying its
+observations. To take this uncertainty into account, the BARL approach to POMDPs incorporates
+the agent’s beliefs over model parameters into the hidden state, forming a hyper-state space, S∗ =
+(cid:10) S,T,O (cid:11), with the state-transition and state-observation counts given by ϕs′ and θz , respectively.
+sa sa
+Thus, the space of T and O is formally defined as:
+(cid:88)
+T = {ϕ ∈ N|S|2|A|,∀(s,a) ∈ S ×A, ϕs′},
+sa
+s′∈S
+(cid:88)
+O = {θ ∈ N|S|A|Z|,∀(s,a) ∈ S ×A, θz }.
+sa
+z∈Z
+Given the definitions Tsas′ = ϕs s ′ a and Os′az = θ s z a , the probabilistic dynamics are
+ϕ (cid:80) s̸=s′ϕs
+sa
+′ ϕ (cid:80) z′̸=s′ϕz
+sa
+′
+then:
+p(s′,ϕ′,θ′,z|s,ϕ,θ,a) = Tsas′Os′azI (U(ϕ,s,a,s′))I (U(θ,s′,a,z)), (17)
+ϕ θ {ϕ′} {θ′}
+whereU isafunctionthatincreasesthecountofϕandθ upontheagentreceivingnewobservations.
+Whiletheseequationsmightappearcomplex,theconceptissimple: Givenaninitialobservation
+and belief over counts ϕ and θ, the agent can, in theory, compute all (countably infinite) hyper-
+states conditioned on this initial belief. Thus, the model becomes known with respect to its priors,
+withO andT updatedeachtimetheagentreceivesnewdatafromtheenvironment. Itisimportant
+to note that, while this represents belief states within a POMDP in a mathematically precise way,
+convergence is only assured with respect to the agent’s initial priors (Katt et al., 2018). However,
+despite this limitation, the framework has shown good convergence properties in practice (Ross
+et al., 2007, Vargo and Cogill, 2015, Katt et al., 2018).
+Implementation Considerations. While several choices are possible, the specific BARL algorithm
+that we consider in simulations below uses online updating, consistent with the approach of Paquet
+et al. (2005). Specifically, this version of the algorithm processes data sequentially, updating its
+beliefs and adapting its strategy incrementally as new information becomes available, rather than
+requiring the entire dataset upfront. The planning structure (search algorithm) is identical to
+that used in the SI algorithm, with differences appearing only in the way the reward function is
+constructed. In general, for these recursive algorithms, search exactly equates to a directed value
+iteration approach over a subset of reachable states from the initial belief state.
+Algorithmically, the BARL method considered here also simulates searches over the aforemen-
+tioned hyper-states, which implicitly contain the agent’s uncertainty over model parameters. This
+means the concentration parameter update is performed at every recursive step of the forward tree
+search (planner), rather than only after every real time-step. For more detailed pseudocode, refer
+to Algorithm 3 in the appendix. Importantly, the concentration parameter updates during forward
+tree search are not carried over to the next real time-step - they exist only within the context of
+the recursive planning. As with SI, the Bayes-adaptive method also implements pruning for both
+states and actions.
+12
+Comparability of Exploratory Motivations. As mentioned above, information seeking in BARL
+follows implicitly from the drive to maximize reward. While this effect is also present in SI, the
+EFEobjectivewithinActInfcontainsthenovelty termaswell, whichprovidesafurtherexploration
+drive independent of expected reward (i.e., a type of intrinsic curiosity). For greater comparability
+to SI, BARL can also be supplemented with an explicit directed exploration term. Toward this
+end, we therefore add a commonly used directed exploration term - an upper confidence bound
+(UCB) - to BARL in some simulations shown below. Here, UCB takes the form of an algorithmic
+heuristic that encodes a count over states that an agent has transitioned to up until the current
+time-point. This can be represented by an expression added to the reward function as follows:
+(cid:115)
+ln(t)
+reward+c . (18)
+N (a)
+t
+13
+3. Methods
+3.1. Sophisticated Learning
+We now detail construction of the SL algorithm, which integrates SI with insights from active
+learning and Bayes-adaptive RL. Recall that SI incorporated the first two terms within the EFE
+decomposition shown in Section 2.3 within its recursive tree search (i.e., driving state exploration
+and reward seeking, respectively), but it did not include the third (novelty) term, which serves
+to motivate parameter exploration. The SL algorithm was specifically constructed to build on SI
+by incorporating this additional feature, allowing the agent to engage in simulations of potential
+parameter updates. This specifically allows the agent to reason prospectively about how different
+future actions are expected to refine its model parameters - thereby improving its ability to learn
+in dynamic environments.
+SL unifies SI and Bayes-adaptive methods, leveraging their respective strengths. As shown
+below (Section 4), both SI and BARL show comparatively poor performance in scenarios requiring
+complex, adaptive learning. While SI has not been widely tested in such environments (Friston
+et al., 2021), it is well documented that BARL approaches to POMDPs are highly dependent
+on well-specified prior beliefs to facilitate effective learning (Ross et al., 2007, Katt et al., 2018).
+This limitation often constrains their applicability in highly uncertain, non-stationary settings,
+consistent with the results presented here.
+By propagating parameter updates within the recursive tree search itself, similar to Bayes-
+adaptive methods, SL enables an agent to anticipate how its beliefs will evolve over time, rather
+than treating them as static. This allows the agent to select actions not only for immediate goal
+optimization but also to maximize its future learning potential. In effect, SL empowers agents to
+perform counterfactual reasoning about their own epistemic progress, thereby making proactively
+self-improving decisions that accelerate model convergence and adaptability.
+In more detail, the SL algorithm updates concentration parameter counts after every simulated
+time step, in the same manner as in BARL. These updated concentration parameters are then
+propagated forward and used to construct (via normalization) the transition and/or likelihood
+functions, which are used in subsequent steps of recursive search. The SL algorithm can therefore
+consider how model parameters would change along its forward tree search if it were to take one
+action sequence versus another. This is important, as it more adequately represents a simulation
+of the way an actual real-time trajectory would unfold if the agent were to take a particular
+set of actions and, in doing so, update its model parameters after every real time step. Note
+that simulating how states and model parameters change in this way is necessarily based on the
+agent’s prior beliefs over states and model parameters, which can result in incorrect and biased
+assumptions about the environment. However, such techniques have nonetheless shown good
+convergence properties (Ross et al., 2007).
+Inadditiontothismethodofcounterfactualsearch,SLalsoimplementsa“backward-smoothing”
+function - a feature previously suggested (in a more limited scope) in the original presentation of
+SI (Friston et al., 2021). This backward-smoothing function backtracks from the current evaluated
+time step to adjust its posterior beliefs over states at previous time steps. This is particularly
+useful in the case of learning, as it allows for retrospective assignment of observations to posteriors
+over states, which can result in more accurate updates to the associated Dirichlet concentration pa-
+rameter counts. Importantly, this backward smoothing function is implemented at each evaluated
+future time step within the agent’s planning horizon, as well as at each real time step.
+In summary, there are two key differences between SL and the original SI scheme. The first
+is the addition of propagating parameter learning through forward-looking simulations. The sec-
+14
+ond is simulated backward smoothing of parameter learning at every step in this forward search.
+Psychologically, one could therefore consider an SL agent reasoning as follows:
+If I were to take an action, receive an observation, and transition to a new state, how
+would I then update my posterior beliefs over states for this time-step and for previous
+time-steps? Based on these posterior updates, how would I then change my current
+model?
+Thismethodofmulti-levelcounterfactualthinkingprovesparticularlybeneficialwhentheagent
+needs to learn the likelihood function while the state-transition function is known, as described in
+our primary algorithm comparisons below (Section 3.3.2).
+While the principle of backward smoothing to refine posteriors over past states exists in other
+inferenceschemes,thedistinctadvantageofSLliesinitsproactiveintegrationofthisprocesswithin
+itsforwardplanning. Specifically, thesearchmechanismwithinSLevaluatesandprioritizesactions
+not only on immediate outcomes but also on the anticipated information gain about parameters
+that would be achieved through subsequent backward smoothing. It therefore more highly values
+trajectoriesleadingtostatesfromwhichbackwardinferencewillyieldmorepreciseandinformative
+updates to past beliefs, and consequently to the model parameters themselves. As we demonstrate
+below, this strategic emphasis on future epistemic refinement via backward smoothing contributes
+to more accurately revised historical beliefs, which in turn supports robust future decision-making
+and accelerates learning in uncertain environments.
+Initialise beliefs and parameters
+Iterate time steps (t+1 to τ)
+Compute cumulative transition probabilities
+Iterate over all states
+Yes
+Update beliefs using simulated observations Normalise updated belief distribution
+No
+More timesteps? Return smoothed beliefs
+Figure2: FlowchartrepresentationoftheBackwardSmoothingAlgorithm. Thealgorithmbeginsbyinitializingthe
+posteriorbeliefdistributionLandatransitionprobabilityaccumulatorp. Ititeratesoverfuturetimestepst+1toτ,
+updatingpusingthetransitionfunctionp←b(action_history(timestep−1))×p. Foreachstate,beliefsareupdated
+according to the likelihood of the observations and transitions as L(state) ← L(state)×observation(timestep)×
+a×p(state). If there are more time steps to process, the loop continues. Otherwise, the updated belief distribution
+is normalized and returned as the final smoothed beliefs. Pseudocode is available in the appendix.
+3.2. The Foraging Grid-World Environment
+ToevaluatetherelativeperformanceofSL,SI,andBARL,wedesignedachallenginggrid-world
+environment to test multi-step planning where strategic exploration is essential for maximizing
+15
+long-termreward. WhileotherenvironmentshavebeenusedtocompareActInftodifferentmachine
+learning algorithms (Sajid et al., 2021, Millidge, 2021), they often isolate specific behaviors like
+exploration or model learning. Our environment integrates these demands, requiring agents to
+dynamically balance exploration, parameter learning, and reward optimization while forecasting
+probabilistic changes in the world. This design was motivated by common biological challenges:
+managing distinct and growing needs (e.g., hunger, thirst), avoiding critical survival thresholds,
+and locating resources whose availability changes over time, necessitating epistemic foraging.
+3.2.1. Environment Details and Agent Model
+The environment is a 10-by-10 grid containing three non-depleting resources which are nomi-
+nally labeled food, water, and sleep (see Figure 3). At each time step, an agent can move up,
+down, left, right, or remain in place. Positional transitions are deterministic and known to the
+agent.
+Figure 3: An example 10-by-10 grid world in one of four different contexts (with different colors representing
+different seasonal contexts) defining resource locations.
+The core challenge posed by this environment lies in its partially observable nature. The loca-
+tions of the resources depend on hidden context states which change probabilistically over time.
+For conceptual purposes, we labeled these context states as seasons (i.e., Spring, Summer, Autumn,
+Winter). The agent could not directly observe season states. However, it could temporarily reveal
+the current season by visiting a specific cue location we refer to as the Hill state (i.e., as if provid-
+ing an overview of the environment). However, visiting the hill state did not reveal the resource
+locations themselves. Thus, the agent was still required to learn the mapping between seasons and
+resource locations through exploration. This setup created an explicit explore-exploit dilemma in
+which the agent was required to choose between: 1) exploring new locations to find resources, 2)
+16
+visiting the hill to reduce uncertainty about the current season, or 3) exploiting current beliefs and
+moving toward locations with previously observed resources.
+The agent’s state space was formally defined as:
+position×food ×water ×sleep ×context
+t t t
+Here, food , water , and sleep are internal states tracking the time steps since each resource was
+t t t
+last acquired. These functioned as homeostatic needs that grew over time, where each resource
+level was known to the agent with certainty3.
+Formally, the agent had two observation modalities. The first pertained to resources within
+a grid state, with four possible outcomes: Empty, Food, Water, or Sleep. The second modality
+provided information about the context. Namely, if at the hill state, the agent observed the cur-
+rent context (e.g., Winter), while all other grid locations provided a non-informative No Context
+observation.
+3.2.2. Dynamic Multi-Objective Preferences
+Asmentionedabove, preferencesinthisenvironmentwerenotstatic; theyweredeterminedbya
+dynamic, multi-objective reward function that reflected the agent’s current internal resource needs
+(Algorithm 1). The preference for a given resource increased as the time since its last acquisition
+grew. If any resource timer exceeded a predefined limit, the agent incurred a large penalty and
+the trial ended. In some ways, this outcome could be thought of as an agent’s ‘death’ (although,
+as described below, learning was allowed to carry over between trials for evaluative purposes).
+This structure, inspired by homeostatic regulation, forced the agent to balance multiple competing
+objectives to ensure survival, a design that follows classical approaches in reinforcement learning
+(Sutton and Barto, 2018).
+Algorithm 1 Multi-objective reward function
+function Preferences(resources , resources , penalty)
+t L
+empty ← -1
+p
+for each resource in [water, food, shelter] do
+resources ← resource
+p t
+if resource ≥ resources then
+p L
+empty ← penalty
+p
+resources ̸= resource ← penalty
+p L
+end if
+end for
+return [empty ,resources ]
+p p
+end function
+The agent’s dynamic preference structure was a key feature of this task. Unlike typical ActInf
+implementations with static or solely time-dependent preferences (Tschantz et al., 2020, Sajid
+et al., 2021, Friston et al., 2021, Smith et al., 2022), here the agent’s preferences were a function
+of its own policy. Namely, the actions an agent took determined its future internal states, which
+in turn defined its future preferences. This created a circular dependency in which the agent was
+required to identify a policy that best satisfied the very preferences induced by that policy.
+3One might consider making internal need states uncertain as well, which we note as an interesting possible
+direction for future work.
+17
+Start: Set penalties
+Iterate over resources
+Is resource sufficient? Apply penalty
+Next resource
+Return values
+Figure4: Flowchartforthemulti-objectiverewardfunction,whichsetsanagent’spreferencesattimet. Theprocess
+starts by setting penalties. It then iterates over all resources (water, food, sleep). For each resource, the algorithm
+checks if it meets the required threshold. If it does not, a penalty is applied. The process continues to the next
+resource, and after processing all resources, it returns the final values.
+3.2.3. Illustrative Task Example
+The design of this environment enabled nuanced, non-trivial strategies for uncertainty reduc-
+tion. While much of the extant work on epistemic behavior has focused on bandit tasks (Averbeck,
+2015, Marković et al., 2021), our environment instead allowed for long-term sequential planning.
+For example, an agent could infer the current context in two distinct ways: directly, by visiting the
+hill, or indirectly, by visiting a location where a resource was known to exist in a specific context.
+Observing the resource confirmed the context, while its absence implied the context had changed.
+To illustrate, consider the scenario in Figure 5. In this example, the transition probabilities
+betweenseasonswereknown, butthemappingsbetweengridlocationsandresourcesineachseason
+(i.e., thelikelihoodfunction)neededtobelearned. Att = 0, thissimulationassumedtheagentwas
+at the hill state and observed the context was Winter. It also assumed the agent had previously
+learned through experience that Food was likely at grid position 2 in Winter. The agent therefore
+moves for two time steps to reach position 2.
+If the probability that the season would remain Winter was 0.95 per time step, the probability
+of it still being Winter upon arrival would be 0.95 × 0.95 = 0.9025. Thus, the agent remains
+fairly confident the season has remained stable. However, when the agent arrives at position 2, it
+finds that food is absent. This allows the agent to confidently infer the season had changed. As
+the agent knows the transition probabilities between seasons, it could also reason about the most
+likely context transition when updating its beliefs (e.g., a single transition to Spring vs. a double
+transition to Summer). This example highlights how optimal behavior requires an agent to rely on
+its model of the world to guide belief updating and guide action selection toward exploratory or
+reward-seeking choices.
+3.3. Experiment Setup and Details
+For our primary simulations below, the hill state was kept at position 55 (center of the grid)
+to ensure it was generally within the planning horizon (search-depth) of the agent from all points
+18
+Figure 5: Illustration of an agent’s reasoning scenario within a 5×5 grid-world. (A) The agent starts at the hill
+(position 12) at t=0. (B) The agent moves to position 7 at t=1. (C) The agent then reaches position 2 at t=2.
+At this position, it expects to find food if the context remains Winter. The absence of food allows the agent to
+infer that a probabilistic transition has occurred between seasons, guided by its model of cyclic seasonal change.
+in the grid. Resource locations were also chosen heuristically, fixed within each season to ensure
+points of interest were mostly within a reasonable search depth of each other and could effectively
+contribute to learning. Specifically, depending on the season, Food, Water, and Sleep, were
+respectively placed in the following positions: Spring = 71, 73, 64; Summer = 43, 33, 44, Autumn
+= 57, 48, 49, and Winter = 78, 67, 59. Seasonal context transitions remained stable with a 0.95
+probability, or transitioned to the adjacent context with a 0.05 probability. The initial context was
+uniformly sampled at the start of each trial with the agent having a uniform belief over contexts
+at the first time step. Note that, while we focus on the specific configuration described here for
+detailed illustration, each algorithm was also tested on several other configurations (i.e., choice
+of resource locations) to ensure the generalizability of our results. The results of these further
+confirmatory analyses are provided in appendix Section 6.3.
+Each trial began with the agent at a fixed initial position (state 51). Survival thresholds for
+food, water, and sleep were set at 22, 20, and 25 time steps, respectively, below which the agent
+would die (ending the trial). These time-step limits were chosen heuristically to allow the agent
+sufficient time to learn the model while also mimicking the fact that different resources deplete
+at different rates in true biological organisms. These limits also prevented selection of behaviors
+that, while intelligent, were problematic for the questions we aimed to answer (e.g., if too long,
+the agent would simply wait in one location the entire time until the season would return where
+a known resource was present). The preference structure assigned values to observations based
+on these resource timers, scoring empty states at -1 and resource states positively according to
+elapsed depletion times (food , water , sleep ). Preferences uniformly shifted to a large negative
+t t t
+penalty (-500) for all observations upon exceeding any resource threshold.
+We defined a trial as a single ‘run-through’ of the agent in the environment. Each trial was
+terminated either upon resource depletion (agent death) or at a specified maximum number of
+time steps (100 in the case of our experiments). Several trials were conducted in sequence, where
+any learning in a given trial was carried over to the start of the next trial. We refer to each
+of these sequences of trials as an evaluation. Unlike commonly presented implementations in
+which parameter values are updated after each full trial (Friston et al., 2021), our implementation
+performed these updates after every time step. This was necessary for the agent to solve the
+problems posed by this environment. Thus, all algorithms here operate in a dynamic, ‘online’
+manner.
+19
+3.3.1. Analysis of Search Heuristic and Horizon Depth
+As a baseline characterization of performance, we first analyzed both SI and BARL in a setting
+where all elements of the environment were known—that is, where the model was equipped with
+full knowledge of transition probabilities between seasons, resource positions, and the location of
+each resource in each season.
+Note that because model parameters are fixed in this setting and no learning is required, SL
+collapses to SI and would not offer additional insights if tested in this setting. BARL also collapses
+to standard Bayesian RL.
+For further insights, simulations within a known environment were also carried out under dif-
+ferent planning horizons (from 1-9 steps) and with three different tree-search heuristics. This
+allowed us to identify theoretically optimal depth and search strategies when model learning was
+not required. Specifically, we evaluated SI under (i) depth-limited recursive search with memo-
+ization, (ii) Monte Carlo roll-outs (with random action selection) and (iii) a hybrid scheme that
+applied recursive tree-search with memoization to the first h steps and Monte Carlo rollouts to
+the remaining m steps (with h + m = 6). While memoization accelerates inference by caching
+estimates for previously visited state configurations, it can also sometimes introduce inaccurate
+cached values. Monte Carlo approaches help to avoid this bias by drawing independent roll-outs
+(100 in these evaluations) from each leaf node at the expense of greater computational cost. The
+hybrid approach trades off these properties by reusing exact sub-trees early in the search while
+relying on unbiased roll-outs deeper in the horizon. Note that this hybrid approach is similar to a
+partially observable monte-carlo planning approach (Silver and Veness, 2010).
+3.3.2. Primary Algorithm Comparisons
+After completing the above-mentioned baseline performance characterizations, our primary
+analysescomparedSLtoSIandBARL(bothwithandwithoutUCB).Here, wefocusedonthecase
+where the likelihood (i.e., the resource positions within each context) needed to be learned and the
+transition probabilities between seasons were known. The number of time steps an agent survived
+in each trial, and how this changed across trials in each evaluation, were taken as our primary
+performance measures. Performance comparisons were initially conducted with 200 sequential
+trials per evaluation. This length was selected as a computationally reasonable upper bound that
+allowed for sufficient exploration. These simulations were carried out using a fixed horizon of 9 and
+afull-depthtreesearchwithmemoization. Thischoicewasmotivatedinpartbyinitialresultsofthe
+analyses described in the previous section (for results, see 4.1), which indicated that performance
+continued to improve up to this horizon. We were also primarily interested in comparison between
+algorithms when minimally constrained by limitations of choice of search strategy.
+To provide a generalizable characterization of performance, we carried out 500 evaluations of
+these trial sequences (with 500 random seeds). Following convergence analyses, which indicated
+that average performance results typically stabilized around 100 trials, evaluations were reduced to
+120trials. Thisshortertrialnumberwaschosenasitstillcapturedthecorelearningdynamicspost-
+convergence while significantly reducing computational demands of simulation. This permitted an
+increase to 2000 seeds for these more extensive analyses to ensure greater statistical confidence
+and thorough exploration of the patterns of behavior shown by each algorithm.
+To better quantify algorithm performance, we fit Linear Mixed-Effects models (LMEs) using
+trial, algorithm, and their interaction as predictors of survival time:
+Survival ∼ Trial+Algorithm+Trial×Algorithm+(1|Id)
+To evaluate early learning dynamics, we ran these LMEs separately for two key trial intervals:
+a Ramp-up Phase (Trials 1–20) and an Active Learning Phase (Trials 21–60). These models
+20
+allowed us to estimate both learning rates (slopes) and performance levels (based on estimated
+marginal means [EMMs]). As an auxiliary feature, to better understand how learning was shaped
+during experiments, we measured the extent to which SL’s model deviated or adhered to the true
+environment, via KL-divergence analyses.
+Additional experiments across varied grid configurations (appendix Section 6.3) were subse-
+quently carried out to more thoroughly compare each of the four algorithms (SL, SI, and BARL
+with and without UCB). These evaluations were conducted over 200 trials each to maintain con-
+sistency with the initial longer runs in our main simulations and provide a comparable basis for
+assessing performance across different algorithmic approaches. For these multi-algorithm compar-
+isons, 200 seeds per condition were utilized, chosen as a practical balance between computational
+resources and the need for reliable comparative data across the varied configurations (i.e., varied
+resource locations by season).
+21
+4. Results
+Below we present the results of our two main experiments, along with analysis of major behav-
+ioral patterns and underlying mechanisms.
+4.1. Analysis of Search Heuristic and Horizon Depth
+Figure 6 displays the results of simulations across different planning horizons and search heuris-
+ticswhenboththelikelihoodandtransitionprobabilitieswereknown(i.e., servingasanassessment
+of each algorithm’s maximum performance level). Findings indicated that the non-memoization
+approach outperformed the memoization approach at a horizon of 5 and above, as it avoided the
+use of potentially inaccurate cached values, albeit at a substantially higher computational cost
+(approximately 28 times greater than that of the memoization condition at horizon 5). The hybrid
+search method showed better performance at shorter horizons. However, its relatively inefficient
+sample usage rendered it less computationally feasible.
+One interesting observation was that BARL showed better performance than SI, with the
+most notable differences occurring in earlier trials. This was most likely driven by SI’s use of the
+epistemic value term within EFE, which encouraged moving to the hill more frequently. While
+this can be beneficial during learning, it may detract from reward maximization behavior when
+the environment is fully known (as in these simulations).
+4.2. Relative Performance under Model Uncertainty
+Figure 7 shows average survival curves across 120 trials in our main simulations where the
+likelihood model needed to be learned. These results highlighted clear differences in learning
+trajectories between algorithms. Most notably, SL improved in performance more quickly than
+each of the other algorithms and maintained a slight but consistent advantage in later trials.
+Phase 1: Ramp-up (Trials 1–20)
+During the initial 20 trial phase (Figure 8), the LME model revealed significant main effects
+of Trial (F(1,157993) = 280.15, p < .0001) and Algorithm (F(3,157993) = 122.01, p < .0001),
+as well as a robust Trial × Algorithm interaction (F(3,157993) = 186.59, p < .0001), indicating
+differential early learning rates.
+Post-hoc contrasts (Table 2) confirmed these results were accounted for by faster learning in
+SL than in all other algorithms. Namely, the slope for SL (0.266 ± 0.007 SE) exceeded that of
+SI (0.107 ± 0.007), BARL (0.113 ± 0.007), and BARL-UCB (0.050 ± 0.007), with all pairwise
+comparisons significant at p < .0001.
+By the end of this phase (Table 3), SL had also already established a lead in average survival
+(EMM = 27.42±0.08), outperforming SI (24.80±0.08), BARL (26.18±0.08), and BARL-UCB
+(24.85±0.08), with all differences significant (p < .0001).
+One other notable observation was that BARL algorithms performed slightly better in initial
+trials, particularly in trials 1-5. This was most likely due to the fact that SI/SL algorithms
+prioritized the hill state to a greater degree. In earlier trials, while this benefited learning (and
+thusledtobetterperformanceinlatertrials)itwasnotnecessarilybetterforsurvivalwhenstarting
+with no prior knowledge about the environment.
+22
+Figure6: Analysestestingeffectsofplanninghorizonandpossibletree-searchstrategies. AandBshowtheaverage
+number of time steps survived and posterior calculations, respectively, for the Sophisticated Inference algorithm
+when both likelihood and transition probabilities were known. C and D show similar plots for the Bayesian RL
+algorithm. Here, ‘Memory’ indicates the use of memoization caching of previously calculated values, ‘No Memory’
+indicates the absence of any memoization, ‘Monte Carlo’ indicates the use of Monte Carlo (MC) sampling instead
+of recursive search, and ‘Hybrid’ indicates the combined use of recursive search and MC sampling. For the hybrid
+algorithm, combinations of recursive search + MC roll-outs were tested, each with a combined horizon of 6. In
+other words, this hybrid plot shows the search depth with memoization from 1 (search depth of 1, MC roll-out of
+5) to 6 (search depth of 6, MC roll-out of 0).
+23
+Phase 2: Active Learning (Trials 21–60)
+In the subsequent phase (Figure 9), the Trial × Algorithm interaction remained highly signifi-
+cant (F(3,317993) = 2183.01, p < .0001), reflecting continued divergence in learning trajectories.
+Both SL and SI displayed steep positive slopes, with SI marginally outpacing SL (0.623±0.006
+vs. 0.601 ± 0.006; difference = 0.022 ± 0.008, z = 2.72, p = 0.0334). This was likely due to the
+early success of SL, causing it to have a higher base performance from the start of phase 2 (i.e.,
+the slope for SI reflected the fact that it was catching up to performance levels of SL). However,
+the difference between these algorithms was small in magnitude, and both far outperformed BARL
+and BARL-UCB (Table 4).
+Despite the slightly higher slope shown by SI in this phase, SL nonetheless maintained and
+expandeditsperformancelead. AtTrial40(midpointofthisphase), theEMMforSL(40.78±0.08)
+remained significantly above that of SI (37.68±0.08), with a difference of 3.10±0.09 (z = 33.18,
+p < .0001), confirming the enduring benefit of faster initial learning in SL.
+Table 1: Estimated Mean Survival (EMM ±SE) at Trial 40 (Midpoint of Active Learning Phase, Trials 21–60).
+Contrasts are SL vs. Other Algorithms.
+Algorithm EMM Survival SE ∆ (SL - Comparison) SE z p-value
+EMM EMM contrast
+SL 40.78 0.08 – – – –
+SI 37.68 0.08 3.10 0.09 33.18 < .0001
+BARL 30.31 0.08 10.47 0.09 112.03 < .0001
+BARL-UCB 27.61 0.08 13.17 0.09 140.93 < .0001
+Note: EMMs derived from LME model for trials 21–60. SE is the associated standard error. ∆ is the
+EMM EMM
+estimated difference between SL and the comparison algorithm in question. SE is the standard error of this
+contrast
+difference.
+4.3. Additional Behavioral Patterns
+Single-trial simulations of the two ActInf algorithms (SI and SL) also revealed interesting
+patterns of behavior and dependence on choice of preference precision. As this precision effectively
+down-weights exploratory drives in the EFE, we found that it controlled the total number of time
+steps the agent spent at the hill (i.e., resolving uncertainty). For these single-trial simulations, we
+also examined cases in which resource locations were known but season transitions were not, as
+we found they provided additional insights regarding parameter dependence. For example, Figure
+13 (C) shows a case in which the preference precision was high (c = 1), the likelihood function
+was known, but the transition function was unknown. In this case, both SI and SL agents, despite
+lacking information about the current context, initially ignored the hill and attempted to infer
+the current season by visiting the resource positions they knew were associated with a particular
+context (due to having a precise likelihood model). This was because the epistemic term had
+a proportionally lower impact when compared to the agent’s preferences. Thus, these agents’
+behavior was driven by the drive to meet their multi-objective preferences, rather than to seek
+information in the form of large posterior updates to their beliefs about hidden states. This is
+in line with the classic risk-seeking behavior previously described in the ActInf literature (Smith
+et al., 2022). For the SI algorithm, similar behavior was seen when the epistemic term was omitted,
+regardless of the preference precision.
+24
+Recall that, when full knowledge of the environment (transition and likelihood functions) was
+available, all algorithms, showed greater similarity in performance. When analyzed at the single-
+trial level, each would often initially move to the hill before proceeding to a resource location (with
+SL doing so more frequently due to its additional epistemic drive, as mentioned above). This
+highlights a core similarity between ActInf and BARL. That is, both approaches are Bayes-optimal
+with respect to their prior beliefs, meaning that, given an initial belief state and a mechanism to
+calculate the value of some subset of additional belief states (for example, all belief states reachable
+from the initial belief state up to some horizon, as is the case in these implementations), each agent
+will optimally calculate the value of each of these belief states. Given a deterministic and greedy
+policy construction procedure, an optimal policy will then be chosen that maximizes expected
+value. The major difference then arises when active learning is required to resolve uncertainty
+about contingencies within the environment.
+Another important consideration is that the accuracy with which each algorithm calculates
+the value of belief states is entirely predicated on the initial belief state. Thus, if the initial
+belief state is inaccurate, the calculation and evaluation of subsequent belief states will also be
+inaccurate. Therefore, insimulationswherethetransitionmodelwasknown, buttheinitialcontext
+was unknown, the agent knew that transitions were relatively static (95% chance to remain in the
+same context and 5% chance to transition to the next context) and so often viewed visiting the hill
+asoptimal-asitwasthestatethatwouldmostpreciselyupdateitsbeliefaboutthecurrentseason.
+Due to the nature of the counterfactual trajectory planning these agents implement, they search
+through all possible belief trajectories up to the set planning horizon, and thus calculate, ahead
+of time, the optimal set of subsequent actions for whatever observation the hill state provides.
+Planning trajectories then calculate that the hill will provide precise context information, and for
+each observation the hill could provide, the optimal trajectory following on from that time point
+is calculated. These belief trajectories thus have high precision compared to those that do not
+include the hill.
+As briefly mentioned above, some initial exploratory analyses also showed interesting ways in
+which behavioral patterns were influenced by time limits to reach each resource. For example, if
+one increased these time limits compared to the main simulations shown above (i.e., to 30 time
+steps without reaching a resource), all agents would initially ignore the hill and simply guess at
+the context. This was because the agent did not believe it would incur the penalty of reaching
+the time limit. Thus, it would lose little by guessing at contexts, even if its guesses were wrong.
+In these scenarios, the agent would often initially move toward resources based on a guess about
+the context, and only move to the hill if it believed that subsequent guessing would have a higher
+chance of incurring death. Mathematically, this is due to the agent precisely following the actions
+it believed would yield the largest return in the expectation, as is the case with all Bayes-optimal
+algorithms.
+In combination, the analyses above highlight ways in which fixed parameters (i.e., preference
+precision, initial belief states, expected resource time limits, planning horizon) influence decision-
+making in specific ways. This opens up the possibility of using such models in future studies to
+capture (and mechanistically explain) individual differences in human cognition and behavior, and
+potentially their biological basis. This therefore represents one important research direction going
+forward.
+4.4. Summary
+The experimental results presented in this section provide clear insights into the comparative
+performance and adaptability of SL, SI, and BARL under different levels of environmental uncer-
+25
+tainty. SL consistently outperformed SI and BARL across varying conditions in our novel testing
+environment, particularly in versions requiring long-term planning that took information value
+into consideration.
+The inclusion of a UCB-style exploration bonus in BARL improved its adaptability, but re-
+mained less effective than the intrinsic epistemic and novelty-driven exploration shown by SL.
+Namely, while the UCB term enabled more directed likelihood learning, it did not fully replicate
+thestructured, hierarchicalsearchmechanismsandstateexplorationdriveinherentinActInf-based
+methods.
+Tree-search depth and memoization significantly impacted performance trade-offs, particularly
+for SI. While deeper tree search improved long-term planning, computational costs increase non-
+linearly. Memoization appeared to offer a practical solution by caching intermediate search results,
+but its high memory requirements would need to be carefully managed in large-scale applications.
+26
+1
+esahP
+fo
+dnE
+)02
+lairT(
+2
+esahP
+fo
+dnE
+)06
+lairT(
+80
+60
+40
+20
+0 25 50 75 100 125
+Trial
+spetS
+lavivruS
+egarevA
+Average Learning Curves by Algorithm
+Algorithm BARL BARLUCB SI SL
+Figure 7: Mean survival per trial across 120 trials by algorithm (shaded bands show 95% CIs, aggregated over up
+to 2000 seeds). Vertical dashed lines delineate Phase 1 (Trials 1–20), Phase 2 (Trials 21–60), and Phase 3 (Trials
+61–120).
+28
+27
+26
+25
+24
+23
+5 10 15 20
+Trial
+spetS
+lavivruS
+egarevA
+Phase 1: Ramp−up (Trials 1−20) − Observed Data
+50
+45
+40
+35
+30
+25
+20 30 40 50 60
+Trial
+Algorithm BARL BARLUCB SI SL
+Figure 8: Phase 1: Ramp-up (Trials 1–20). Mean ob-
+served survival with 95% CIs.
+spetS
+lavivruS
+egarevA
+Phase 2: Active Learning (Trials 21−60) Linear Model Fit
+Data Type Model Fit Observed Mean Algorithm BARL BARLUCB SI SL
+Figure 9: Phase 2: Active Learning (Trials 21–60). Ob-
+served means with LME model fits and 95% CIs.
+27
+5. Discussion
+This study aimed to (1) compare the performance of Sophisticated Inference (SI) with Bayes-
+adaptive reinforcement learning methods (BARL), and (2) introduce and evaluate Sophisticated
+Learning (SL), an extension of SI that integrates active learning into recursive planning. Our
+simulations, conducted in a novel, biologically inspired grid-world task, provide key insights into
+the behavior and comparative strengths and weaknesses of these algorithms.
+5.1. Key Findings and General Contribution
+SL outperformed SI and BARL (with and without an upper confidence bound [UCB] heuristic
+promoting directed exploration) across all simulations where model-learning was required. Here,
+performance was measured by the number of time steps survived per trial, which inherently relies
+on an agent’s ability to learn an accurate model. Trial-by-trial variance was observed due to
+the inherent difficulty of the task, but on average, SL demonstrated superior performance. This
+reflected its novel ability to strategically revisit states based on anticipated future observations,
+balancing exploration and exploitation over multiple future time steps.
+Unlike BARL algorithms, which focus on maximizing expected cumulative rewards, SL lever-
+ages expected information gain to guide behavior. In particular, the SL agent used forward-looking
+strategies, simulating how future observations would update its beliefs about earlier states and
+state-outcome mappings. A notable pattern emerged: upon discovering a resource, the SL agent
+often revisited a state that disambiguated the current context (the hill). This behavior exemplifies
+the ability of SL to link observations across time to improve its contextual understanding, a feature
+absent from the other algorithms.
+Putting a psychological gloss on this mechanism, an agent employing this algorithm might
+engage in the following thought process:
+I have now discovered a state where a food resource is located. I am unsure of what
+season I am in at this point, but if I were to move from here and visit the hill state, it
+would tell me what season I am in. Then, given my transition model, I would be able to
+work backwards and retrospectively figure out what season I was most likely in when I
+was at the position of the food. Although not maximally precise, visiting the hill would
+allow me to do this with more precision than moving to some other state that would
+not improve my knowledge of what context I am in. This, in turn, would allow me to
+assign a context to that specific position of the food, which I can exploit in the future.
+This highlights the ability of SL to anticipate how future observations will update posterior
+beliefs about the past, thereby optimizing exploration toward states that improve contextual un-
+derstanding. In this way, SL offers a more strategic, nuanced form of directed exploration, focusing
+notjustonvisitingnewstates, butonthoseexpectedtoimprovecurrentbeliefsaboutpastrewards.
+5.2. Exploration Strategies: SI vs. SL vs. RL
+Inlinewiththedescriptionabove, theadvantagesofSLoverSIthereforeappeartobeduetoits
+capacity for backward counterfactual reasoning — anticipating the benefit of future observations
+in refining past beliefs. While SI displayed strong performance through a more classic form of
+directed exploration (e.g., seeking unvisited states), it lacked the ability to leverage beliefs about
+howfuture observationscould be strategically used toupdate contextualunderstandingof previous
+observations.
+28
+While the performance differences between SL and SI were relatively small, the common el-
+ements of their exploratory strategies led to much larger performance advantages over BARL.
+Adding UCB-based directed exploration to BARL also did not improve its relative performance.
+Instead, it led to over-exploration of states with low epistemic affordances. This ultimately re-
+duced efficiency, as the hill state was not weighted any differently in its epistemic evaluation than
+any other unvisited state. These findings highlight the difference between intrinsic curiosity about
+state-outcome mappings in UCB, the further curiosity about current contextual states in SI, and
+the strategic, goal-directed exploration shown by SL.
+5.3. Mechanisms of suboptimal performance
+Despite the high performance of SL relative to comparison agents, it nonetheless frequently
+failed to converge onto optimal policies, leading to high variance in performance across trial se-
+quences. Understanding these failures highlighted core challenges in learning under uncertainty,
+but also illuminated issues that may be less general and contingent on the specific environment
+and implementation being considered.
+In some of our supplementary analyses (14), a common failure mode we observed arose from
+earlyepistemiccommitmentsinSL.Inparticular, whileSLagentsuserecursiveplanningtoproject
+belief updates forward, this mechanism is only as reliable as the evidence received. During early
+learning, incorrect associations between contexts and resource locations (e.g., from low-probability
+observations) can become entrenched, as Dirichlet counts accumulate in favor of incorrect likeli-
+hoods. Once an incorrect model is strongly reinforced, the agent tends to commit to poor policies
+- such as moving toward an expected resource that is, in fact, absent. Because the agent’s own
+model can be misleading in such cases, and survival windows are limited, these trajectories often
+preclude the opportunity to learn a more accurate model. This form of self-confirming bias is
+particularly problematic in sparse-reward or high-penalty environments, such as the one tested
+here.
+This effect is visible in appendix Figure 14, where belief distributions in Season 3 diverge over
+time from the true Sleep resource locations. Rather than improving, the model degrades due to
+a reinforcing loop between inaccurate inference and maladaptive behavior. Notably, this issue is
+not due to insufficient planning depth, but rather to incorrect parameter learning that remains
+uncorrected.
+Another interesting aspect of this stems from the backward smoothing mechanism used within
+SL(seeSection3.1andAppendix6.1.3). Thismechanismisintendedtoreviseposteriorbeliefsover
+states from earlier time steps in light of new observations. In principle, this should allow agents to
+forget and/or correct past inferences and improve parameter learning, even after delayed evidence
+is received. However, the divergence patterns shown in Figure 14 suggest that these mechanisms
+are not always sufficient. Once strong - but incorrect - beliefs are established, even recursive
+smoothing may be unable to dislodge them, particularly in regimes with ambiguous feedback.
+However, itshouldbenotedthatthisfailuremodeisnotintrinsictoSLinparticular, butrather
+reflects the interaction between priors, environmental structure, and chosen hyperparameters (e.g.,
+learning rate, planning depth, initial Dirichlet counts) that can be present in any Bayesian agent.
+The agent’s initial uncertainty, the rate at which beliefs are updated, and the asymmetry of risks
+across contexts all shape learning trajectories. SL, like any Bayesian learner, is sensitive to its
+initial conditions. Thus, these observed failures - while instructive - should not be over-interpreted
+as a major limitations of the SL algorithm per se.
+Indeed, when the agent is provided with a correct generative model (Section 4.1), performance
+improves markedly, confirming that accurate beliefs are the primary bottleneck to adaptive be-
+29
+havior. Additionally, the KL-divergence measures of learning in each context shown in 14 revealed
+that certain resources or seasons are harder to learn, most likely due to their statistical properties
+or positional inaccessibility.
+Future work could explore mechanisms for meta-inference - enabling the agent to represent and
+revise its confidence in its own beliefs - or explore the use of other forgetting strategies, such as
+‘belief resets’ upon persistent mismatch between predicted and real observations.
+5.4. Limitations and Future Directions
+While SL demonstrates clear advantages in this specific environment, several caveats should be
+considered. First, the grid-world environment was chosen to test the expected advantages of SL;
+thus, future research will be needed to determine the extent to which the benefits of SL generalize
+to other environments. Here, we would expect SL to excel in tasks requiring deep planning and
+strategicexploration, butitsrelativeperformanceacrossawidevarietyofmoretraditionalRL-style
+benchmarks remains uncertain.
+Another consideration involves the optimization of parameter values. For example, the optimal
+value for preference precision in SL may vary across tasks. Some tuning is likely to be required
+to balance the epistemic and novelty terms in the EFE for different problems. This sensitivity to
+parameterization will be an important practical factor when applying SL in diverse environments.
+A further limitation concerns computational efficiency. Like other ActInf algorithms, SL relies
+on recursive tree search, which can become computationally expensive in real-world environments.
+Scaling SL to such domains will likely require the integration of other heuristic approaches, more
+efficient pruning techniques, or other machine learning approximations. Future research should
+therefore focus on developing methods to enhance the scalability of SL while maintaining its
+strategic advantages.
+30
+6. Conclusion
+In this study, we used a challenging, dynamic environment requiring complex planning and
+strategic information-seeking to compare Active Inference and Bayesian reinforcement learning
+algorithms. We first showed that a recent ‘Sophisticated Inference’ algorithm within the Active
+Inference framework outperformed Bayesian reinforcement learning in this environment (both with
+and without the addition of a common directed exploration term). Second, we proposed and tested
+a novel ‘Sophisticated Learning’ algorithm—combining insights from Sophisticated Inference and
+Bayesian Reinforcement Learning—and demonstrated further advantages it may offer. This al-
+gorithm demonstrated greater performance than either of the other algorithms tested. It also
+exhibited qualitatively distinct, strategic patterns of behavior in which it gathered information
+to improve its understanding of past observations. The associated backward reasoning strate-
+gies employed by Sophisticated Learning represent a novel advance in simulating intelligent agent
+behavior.
+These promising results suggest that Sophisticated Learning may offer new insights into both
+machine learning and cognitive science. Future work should assess the generalizability of the
+strategies that emerge from this algorithm in other machine learning contexts and investigate
+whether it might capture unique patterns observed in animal and human behavior, contributing
+to ongoing research in cognitive and computational neuroscience.
+31
+Acknowledgment
+SJG is supported by funding from the Oppenheimer Memorial Trust. EAB is supported by the
+Dutch Research Council (NWO), grant number 019.223SG.002. R.S. is supported by the Laureate
+Institute for Brain Research. Computations were performed, in part, using facilities provided by
+the University of Cape Town’s ICTS High Performance Computing team: hex.uct.ac.za. Travel
+and additional compute for this work has been funded by Conscium Ltd.
+Code and Data Availability
+All code for reproducing and customizing the simulations reported in this manuscript can be
+found at: https://github.com/sgrimbly/Sophisticated-Learning.
+References
+Abiodun, O.I., Jantan, A., Omolara, A.E., Dada, K.V., Mohamed, N.A., Arshad, H., 2018. State-
+of-the-art in artificial neural network applications: A survey. Heliyon 4.
+Agrawal, R., 1995. Sample mean based index policies by o (log n) regret for the multi-armed
+bandit problem. Advances in applied probability 27, 1054–1078.
+Averbeck, B.B., 2015. Theory of choice in bandit, information sampling and foraging tasks. PLoS
+computational biology 11, e1004164.
+Bellemare, M., Srinivasan, S., Ostrovski, G., Schaul, T., Saxton, D., Munos, R., 2016. Unifying
+count-based exploration and intrinsic motivation. Advances in neural information processing
+systems 29.
+Bellman, R., 1958. Dynamic programming and stochastic control processes. Information and
+Control 1, 228–239. doi:10.1016/s0019-9958(58)80003-0.
+Berlyne, D.E., 1966. Curiosity and exploration 153, 25–33. URL: https://www.jstor.org/
+stable/1719694, doi:10.1126/science.153.3731.25, arXiv:1719694.
+Catal, O., Verbelen, T., Nauta, J., De Boom, C., Dhoedt, B., 2020. Learning perception and
+planning with deep active inference, in: ICASSP 2020 - 2020 IEEE International Conference on
+Acoustics, Speech and Signal Processing (ICASSP), IEEE. p. 3952–3956. URL: http://hdl.
+handle.net/1854/LU-8662308, doi:10.1109/ICASSP40776.2020.9054364. 00044.
+Çatal, O., Wauthier, S., Verbelen, T., De Boom, C., Dhoedt, B., 2020. Deep active inference for
+autonomous robot navigation. arXiv preprint arXiv:2003.03220 .
+Chakroun, K., Mathar, D., Wiehler, A., Ganzer, F., Peters, J., 2020. Dopaminergic modulation of
+the exploration/exploitation trade-off in human decision-making. Elife 9, e51260.
+Champion, T., Bowman, H., Marković, D., Grześ, M., 2024. Reframing the expected free
+energy: Four formulations and a unification. URL: https://arxiv.org/abs/2402.14460,
+arXiv:2402.14460.
+Charnov,E.L.,1976. Optimalforaging,themarginalvaluetheorem. Theoreticalpopulationbiology
+9, 129–136.
+32
+Chou, K.P., Hakimi, N., Hsu, T.Y., Smith, R., 2025. A systematic empirical comparison of active
+inferenceandreinforcementlearningmodelsinaccountingfordecision-makingunderuncertainty.
+Available at SSRN 5174669 .
+Chou, K.P., Wilson, R.C., Smith, R., 2024. The influence of anxiety on exploration: A review of
+computational modeling studies. Neuroscience & Biobehavioral Reviews , 105940.
+Da Costa, L., Sajid, N., Parr, T., Friston, K., Smith, R., 2023. Reward maximization through
+discrete active inference. Neural Computation 35, 807–852. doi:10.1162/neco_a_01574.
+Fountas, Z., Sajid, N., Mediano, P., Friston, K., 2020a. Deep active inference agents using monte-
+carlo methods. Advances in neural information processing systems 33, 11662–11675.
+Fountas, Z., Sajid, N., Mediano, P.A.M., Friston, K., 2020b. Deep active inference agents using
+monte-carlo methods URL: http://arxiv.org/abs/2006.04176, doi:10.48550/arXiv.2006.
+04176. arXiv:2006.04176 [q-bio].
+Friston, K., 2009. The free-energy principle: a rough guide to the brain? Trends in Cognitive
+Sciences 13, 293–301. doi:10.1016/j.tics.2009.04.005.
+Friston, K., Ao, P., et al., 2012. Free energy, value, and attractors. Computational and mathe-
+matical methods in medicine 2012.
+Friston, K., Costa, L., Hafner, D., Hesp, C., Parr, T., 2021. Sophisticated inference. Neural
+Computation 33, 713–763.
+Friston, K., Mattout, J., Kilner, J., 2011. Action understanding and active inference. Biological
+Cybernetics 104, 137–160. doi:10.1007/s00422-011-0424-z.
+Ghavamzadeh, M., Mannor, S., Pineau, J., Tamar, A., 2015. Bayesian reinforcement learning: A
+survey. Found. Trends Mach. Learn 8, 359–483.
+Gottlieb, J., Oudeyer, P.Y., Lopes, M., Baranes, A., 2013. Information seeking, curiosity and
+attention: Computational and neural mechanisms 17, 585–593. URL: https://www.ncbi.nlm.
+nih.gov/pmc/articles/PMC4193662/, doi:10.1016/j.tics.2013.09.001, arXiv:24126129.
+Guez, A., Silver, D., Dayan, P., 2012. Scalable and efficient bayes-adaptive reinforcement learning
+based on monte-carlo tree search. Journal of Artificial Intelligence Research 48, 841–883. doi:10.
+1613/jair.4117.
+Houthooft, R., Chen, X., Duan, Y., Schulman, J., De Turck, F., Abbeel, P., 2016. Vime: Varia-
+tional information maximizing exploration. Advances in neural information processing systems
+29.
+Jaksch, T., Ortner, R., Auer, P., 2010. Near-optimal regret bounds for reinforcement learning. J.
+Mach. Learn. Res. 11, 1563–1600.
+Katt, S., Oliehoek, F., Amato, C., 2018. Bayesian reinforcement learning in factored pomdps.
+arXiv preprint arXiv:1811.05612 .
+MacKay, D.J.C., 1992. Information-based objective functions for active data selection 4, 590–604.
+URL: https://doi.org/10.1162/neco.1992.4.4.590, doi:10.1162/neco.1992.4.4.590.
+33
+Mann,T.A.,Choe,Y.,2013. Directedexplorationinreinforcementlearningwithtransferredknowl-
+edge, in: Proceedings of the Tenth European Workshop on Reinforcement Learning, PMLR. pp.
+59–76.
+Marković, D., Stojić, H., Schwöbel, S., Kiebel, S.J., 2021. An empirical evaluation of active
+inference in multi-armed bandits. Neural Networks 144, 229–246.
+Millidge, B., 2019. Deep active inference as variational policy gradients URL: http://arxiv.org/
+abs/1907.03876, doi:10.48550/arXiv.1907.03876. arXiv:1907.03876 [cs].
+Millidge, B., 2021. Applications of the free energy principle to machine learning and neuroscience.
+arXiv preprint arXiv:2107.00140 .
+Millidge, B., Tschantz, A., Buckley, C., 2021. Whence the expected free energy. Neural Computa-
+tion 33, 447–482.
+Oudeyer, P.Y., Smith, L.B., 2009. How Evolution May Work Through Curiosity-Driven Develop-
+mental Process .
+Paquet, S., Tobin, L., Chaib-Draa, B., 2005. An online pomdp algorithm for complex multiagent
+environments, in: ProceedingsofthefourthinternationaljointconferenceonAutonomousagents
+and multiagent systems, pp. 970–977.
+Parr, T., Friston, K., 2019. Generalised free energy and active inference. Biological Cybernetics
+113, 495–513. doi:10.1007/s00422-019-00805-w.
+Pathak, D., Agrawal, P., Efros, A.A., Darrell, T., 2017. Curiosity-driven exploration by self-
+supervised prediction, in: Precup, D., Teh, Y.W. (Eds.), Proceedings of the 34th International
+Conference on Machine Learning, PMLR. pp. 2778–2787. URL: https://proceedings.mlr.
+press/v70/pathak17a.html.
+Paul, A., Isomura, T., Razi, A., 2024. On predictive planning and counterfactual learning in active
+inference URL: http://arxiv.org/abs/2403.12417.
+Paul, A., Sajid, N., Da Costa, L., Razi, A., 2023. On efficient computation in active inference.
+doi:10.48550/arXiv.2307.00504, arXiv:2307.00504.
+Poupart, P., Vlassis, N., 2008. Model-based bayesian reinforcement learning in partially observable
+domains, in: Proc Int. Symp. on Artificial Intelligence and Mathematics„ pp. 1–2.
+Ross, S., Chaib-draa, B., Pineau, J., 2007. Bayes-adaptivepomdps. Advancesinneuralinformation
+processing systems 20.
+Russo, D.J., Van Roy, B., Kazerouni, A., Osband, I., Wen, Z., 2018. A tutorial on thompson
+sampling. Found.TrendsMach.Learn.11,1–96. URL:https://doi.org/10.1561/2200000070,
+doi:10.1561/2200000070.
+Sajid, N., Ball, P., Parr, T., Friston, K., 2021. Active inference: Demystified and compared. Neural
+Comput 33, 674–712. doi:10.1162/neco_a_01357.
+34
+Schwartenbeck, P., Passecker, J., Hauser, T.U., FitzGerald, T.H., Kronbichler, M., Friston, K.J.,
+2019. Computational mechanisms of curiosity and goal-directed exploration. eLife 8, e41703.
+URL: https://doi.org/10.7554/eLife.41703, doi:10.7554/eLife.41703.
+Settles, B., 2009. Active learning literature survey .
+Silver, D., Veness, J., 2010. Monte-carlo planning in large pomdps. Advances in neural information
+processing systems 23.
+Smith, R., Friston, K.J., Whyte, C.J., 2022. A step-by-step tutorial on active inference and
+its application to empirical data. Journal of Mathematical Psychology 107, 102632. URL:
+https://www.sciencedirect.com/science/article/pii/S0022249621000973, doi:https://
+doi.org/10.1016/j.jmp.2021.102632.
+Stephens, D.W., Krebs, J.R., 1986. Foraging theory. volume 6. Princeton university press.
+Sutton, R., Barto, A., 2018. Reinforcement learning: An introduction.
+Todorov,E.,2006. Linearly-solvablemarkovdecisionproblems,in: AdvancesinNeuralInformation
+Processing Systems, MIT Press. URL: https://proceedings.neurips.cc/paper/2006/hash/
+d806ca13ca3449af72a1ea5aedbed26a-Abstract.html.
+Tomov, M.S., Truong, V.Q., Hundia, R.A., Gershman, S.J., 2020. Dissociable neural correlates of
+uncertainty underlie different exploration strategies. Nature communications 11, 2371.
+Tschantz, A., Millidge, B., Seth, A., Buckley, C., 2020. Reinforcement learning through active
+inference. arXiv preprint arXiv:2002.12636 .
+Vargo, E.P., Cogill, R., 2015. Expectation-maximization for bayes-adaptive pomdps. Journal of
+the Operational Research Society 66, 1605–1623.
+Webb,J.,Steffan,P.,Hayden,B.Y.,Lee,D.,Kemere,C.,McGinley,M.,2025. Foraginganimalsuse
+dynamic bayesian updating to model meta-uncertainty in environment representations. PLOS
+Computational Biology 21, e1012989.
+Zajkowski, W.K., Kossut, M., Wilson, R.C., 2017. A causal role for right frontopolar cortex in
+directed, but not random, exploration. Elife 6, e27430.
+Zhou, K., Liu, Z., Qiao, Y., Xiang, T., Loy, C.C., 2022. Domain generalization: A survey. IEEE
+Transactions on Pattern Analysis and Machine Intelligence , 1–20URL: http://dx.doi.org/
+10.1109/TPAMI.2022.3195549, doi:10.1109/tpami.2022.3195549.
+35
+Appendix
+This appendix offers more detailed explanations of the algorithms and experimental environ-
+ment used in this study, as well as additional analyses supporting findings reported in the main
+text.
+6.1. Detailed Algorithmic Specifications
+In this section, we elaborate on the core algorithms discussed in the main paper. While the
+main text provides an overview of Active Inference (ActInf), Sophisticated Inference (SI), Bayes-
+Adaptive Reinforcement Learning (BARL), and our proposed Sophisticated Learning (SL) algo-
+rithm (as discussed in Sections 2.3 and 3.1), the following subsections offer detailed pseudocode.
+This level of detail is provided for reproducibility and for readers interested in the specific compu-
+tational steps involved in the recursive tree search and learning mechanisms that were utilized.
+6.1.1. Sophisticated Inference (SI) Tree Search
+The SI algorithm, introduced in Section 2.3 of the main text, extends ActInf by employing a
+recursivetreesearchtoevaluatepoliciesbasedontheirExpectedFreeEnergy(EFE).Thisapproach
+dynamically constructs policies rather than relying on a pre-specified policy space. The EFE
+calculation, as formulated, balances exploration (information gain about states and parameters)
+and exploitation (receipt of preferred observations). Algorithm 2 details the associated forward
+tree search mechanism.
+The SI search algorithm forms the basis from which SL was developed. Understanding this
+search process is therefore crucial for appreciating the extensions introduced in SL. In particular, it
+underlies the way SL incorporates active learning by simulating model parameter updates within
+the associated recursive structure (see Section 3.1 in the main text). Both algorithms also employ
+the same pruning mechanisms for tractability. These are implicitly handled within the ‘ViableAc-
+tions‘ and ‘LikelyStates‘ components of the following pseudocode, which present the SI tree search
+process in detail.
+6.1.2. Bayes-Adaptive Reinforcement Learning (BARL) Tree Search
+Forcomparativeanalyses, weimplementedtheBARLmethod(Rossetal.,2007). Theplanning
+structure for this agent also utilized a recursive tree search, analogous to SI. However, BARL aims
+to maximize an explicit reward function integrated over the belief space of model parameters,
+rather than minimizing EFE. Algorithm 3 provides the pseudocode.
+The key distinction here is use of an explicit reward function (based on the time since each
+resource) with no intrinsic exploration component and direct updating of model parameters (con-
+centration parameters a,b) within each recursive step of the planning phase. In some simulations,
+an Upper Confidence Bound (UCB) term was also incorporated into the ‘Reward‘ calculation step
+for BARL to encourage directed exploration by adding a bonus for less visited state-action pairs,
+using counts N . The addition of UCB provided a closer comparison to the ActInf algorithms, as
+t
+performance within the testing environment benefited from their directed exploratory behavior.
+The following pseudo-code depiction of the BARL algorithm shows UCB included, with Nt
+representing the number of visits to each state up until the current time point.
+6.1.3. Sophisticated Learning (SL) Tree Search and Backwards Smoothing
+The SL algorithm detailed in Section 3.1 of the main text extends SI by integrating active
+learning into the planning process using insights from BARL. This is achieved by allowing the
+agent to counterfactually reason about how its model parameters would evolve based on future
+36
+Algorithm 2 Sophisticated Inference Tree Search
+function ForwardTreeSearch(posterior, A, a, b, observation, t , t, true_t, T, W,
+resources
+h)
+if t > true_t then
+posterior = CalculatePosterior(posterior, b, a, observations)
+t ← NewTimeSinceResources(posterior(t), resource_locations)
+resources
+end if
+for each action do
+Q(action) = b(posterior(t), action)
+predicted_observations ← a(Q(action)
+G(action) ← ExpectedFreeEnergy(predicted_observations, t , W)
+resources
+end for
+if t < h then
+actions ← ViableActions(G)
+for action in actions do
+posterior(t+1) ← Q(action)
+states ← Q(action)
+states ← LikelyStates(states)
+for state in states do
+observation ← SampleObservation(state, a)
+[G, posterior] ← ForwardTreeSearch(posterior, a, b,
+observation, t , t+1, true_t, T, W, h)
+resources
+S ← softmax(G) * G
+K(state) ← S
+end for
+G(action) ← K(states)*states
+end for
+end if
+return [G, posterior]
+end function
+hypothetical observations and then refining its understanding of past states through backward
+smoothing.
+Backward Smoothing Mechanism. Backward smoothing was conceptually introduced in Section 2.3
+and depicted in the flowchart within Figure 2. This mechanism allows the agent to retrospectively
+adjust its posterior beliefs over states at previous time steps within a simulated trajectory, given a
+sequence of actions and subsequent (hypothetical) observations. Algorithm 4 details this process.
+37
+Algorithm 3 Bayes-Adaptive Tree Search
+function ForwardTreeSearch(posterior, A, a, b, observation, t , t, true_t, T, h, N )
+resources t
+if t > true_t then
+posterior = CalculatePosterior(posterior, b, a, observations)
+t ← NewTimeSinceResources(posterior(t), resource_locations)
+resources
+end if
+a,b ← UpdateConcentrationParameters(posterior, a, b observation)
+for each action do
+Q(action) = b(posterior(t), action)
+predicted_observations ← a(Q(action)
+R(action) ← Reward(predicted_observations, t , N , Q(action))
+resources t
+end for
+if t < h then
+actions ← ViableActions(R)
+for action in actions do
+posterior(t+1) ← Q(action)
+states ← Q(action)
+states ← LikelyStates(states)
+for state in states do
+N ← UpdateStateVisits(N , state)
+t t
+observation ← SampleObservation(state, a)
+[R, posterior] ← ForwardTreeSearch(posterior, a, b,
+observation, t , t+1, true_t, T, h, N )
+resources t
+S ← softmax(R) * R
+K(state) ← S
+end for
+R(action) ← K(states)*states
+end for
+end if
+return [R, posterior]
+end function
+Algorithm 4 Backwards Smoothing
+1: function BackwardSmoothing(posterior, a, b, observation, action_history, t, τ)
+2: L ← posterior
+3: p ← 1
+4: for timestep = t+1 to τ do
+5: p ← b(action_history(timestep−1))×p
+6: for state in L do
+7: L(state) ← L(state)×observation(timestep)×a×p(state)
+8: end for
+9: end for
+return normalise(L)
+10: end function
+This smoothing procedure is particularly beneficial for learning the observation model (A),
+38
+and potentially for learning a transition model (B) as well (although we do not explicitly test
+transition learning here). By refining the posterior probability of having been in a particular
+state s given observations up to s (where t > t′), the agent can make more accurate updates
+t′ t
+to its Dirichlet concentration parameters. This allows observed outcomes to be better assigned
+to past grid positions within their respective latent contexts, especially in partially observable
+environments.
+Full Sophisticated Learning (SL) Tree Search. The full SL tree search algorithm synergistically
+combines recursive EFE-based planning in SI with further elements that facilitate active learning.
+As mentioned above, these elements include simulated updates to Dirichlet concentration param-
+eters (a,b), which represent beliefs about the observation and transition models, respectively, and
+backward smoothing of posterior state beliefs. Algorithm 5 outlines this process in full.
+The integration of ‘BackwardSmoothing’ and ‘UpdateConcentrationParameters’ within each
+recursive step (and the subsequent calculation of a ’W ’ term derived from the expected
+novelty
+change in model parameters) is what fundamentally distinguishes SL from SI. This allows SL to
+explicitly plan actions that are expected to yield high ‘novelty’ – i.e., actions that will maximally
+reduce uncertainty about the model parameters themselves. This forward simulation of possible
+learning trajectories enables the agent to make proactively self-improving decisions, going beyond
+simple state exploration to engage in true parameter exploration. The psychological interpretation
+of this process is discussed in the main text.
+6.2. Further Results
+Table 2 below displays the mean estimated survival slope fit for each algorithm for the first 20
+trials within LMEs. These results re-iterate the significant survival advantage SL had in earlier
+trials, leading to convergence 40% more quickly than SI.
+Table 2: Learning Rates (Mean Slope ±SE) in Ramp-up Phase (Trials 1–20). Contrasts are SL vs. Other Algo-
+rithms.
+Algorithm Mean Slope SE ∆ (SL - Comparison) SE z p-value
+slope slope contrast
+SL 0.266 0.007 – – – –
+SI 0.107 0.007 0.159 0.010 16.61 < .0001
+BARL 0.113 0.007 0.152 0.010 15.93 < .0001
+BARL-UCB 0.050 0.007 0.216 0.010 22.58 < .0001
+Note: Estimated marginal trends (slopes) derived from the LME model for trials 1–20. SE is the associated
+slope
+standard error. ∆ is the estimated difference between SL and the algorithm in question. SE is the
+slope contrast
+standard error of this difference.
+6.3. Robustness to Grid Reconfiguration
+While our main analyses (Section 4) compared SL, SI, and BARL on the specific configuration
+of the environment detailed in Section 3.2, an important consideration remains: how well do
+these algorithms generalize across changes in this configuration? A potential concern would be if
+performancedifferencesinonesettingmightreflectoverfittingratherthanageneralizabledifference
+between algorithms (Zhou et al., 2022). Since many algorithms are implicitly tuned to a particular
+structure, evaluating robustness under reconfiguration of resource locations is a simple way to
+validate our results.
+39
+Table 3: Estimated Mean Survival (EMM ±SE) at Trial 20 (End of Ramp-up Phase). Contrasts are SL vs. Other
+Algorithms.
+Algorithm EMM Survival SE ∆ (SL - Comparison) SE z p-value
+EMM EMM contrast
+SL 27.42 0.08 – – – –
+SI 24.80 0.08 2.62 0.11 24.64 < .0001
+BARL 26.18 0.08 1.24 0.11 11.68 < .0001
+BARL-UCB 24.85 0.08 2.57 0.11 24.18 < .0001
+Note: EMMsderivedfromtheLMEmodelfortrials1–20,evaluatedatTrial20. SE istheassociationstandard
+EMM
+error. ∆ is the estimated difference between SL and the comparison algorithm in question. SE is the
+EMM contrast
+standard error of this difference.
+Table 4: Learning Rates (Mean Slope ±SE) in Active Learning Phase (Trials 21–60). Key contrast is SI vs. SL.
+Algorithm Mean Slope SE ∆ (SL - Comparison) SE z p-value
+slope slope contrast
+SL 0.601 0.006 – – – –
+SI 0.623 0.006 0.022 0.008 2.72 0.0334
+BARL 0.186 0.006 -0.415 0.008 -51.29 < .0001
+BARL-UCB 0.118 0.006 -0.483 0.008 -59.75 < .0001
+Note: Displayes slopes (estimated marginal trends) within the LME model for trials 21–60. The contrast for SI is
+SI-SL. Other contrasts are Algorithm-SL. Thus, a positive value for SI-SL means SI had a steeper slope. SE
+slope
+is the standard error for each slope. ∆ is the estimated difference (Algorithm-SL). SE is the standard
+slope contrast
+error of this difference.
+40
+To explore this, we evaluated all four algorithms on a set of randomized grid configurations.
+These maintained the overall problem structure but varied the location of each resource in each
+season as well as the agent’s start position. This allowed us to test whether the performance advan-
+tages seen for SL were due to general adaptability or specific features of the original environment.
+We also systematically varied one key structural parameter: the maximum placement distance
+of resources from the hill. This distance, which we term the ‘Horizon‘, is defined by the Chebyshev
+distance (i.e., the maximum number of steps in any one cardinal or diagonal direction).
+We generated configurations with both a ‘Horizon‘ of 3 and a ‘Horizon‘ of 5. The ‘Horizon=5‘
+setting allowed resources to be placed anywhere on the 10x10 grid, while the ‘Horizon=3‘ setting
+constrained placement to a more local 7x7 area around the hill. Initial exploration revealed that
+configurations with the larger ‘Horizon=5‘ setting often resulted in less informative learning dy-
+namics, as some resource locations were too distant to be reliably discovered and exploited within
+the trial period. This aligns with the theoretical expectation that agents with finite planning
+depths perform better when key locations are within a reasonable proximity.
+Consequently, tocreateamorechallengingandmeaningfultestofadaptivelearning, wefocused
+our main robustness analysis on a dedicated set of 15 configurations where the ‘Horizon‘ was fixed
+at 3. This approach ensured that performance differences reflect the efficiency of each algorithm in
+exploring a structurally coherent, non-trivial environment. Our analysis was based on a complete
+dataset of 200 simulation seeds for both the SL and SI algorithms across all 15 of these ‘Horizon=3‘
+configurations, with each seed being evaluated for 120 trials. Table 5 details these configurations.
+Table 5: Details of Randomized Grid Configurations
+Grid Size Hill Start Food Water Sleep
+10×10 55 35 (84,24,33,75) (86,82,44,74) (22,62,64,66)
+10×10 55 78 (38,84,43,34) (32,85,57,76) (56,82,58,87)
+10×10 55 22 (62,38,68,34) (32,62,75,76) (23,74,66,67)
+10×10 55 67 (47,83,25,83) (78,57,38,82) (27,62,83,22)
+10×10 55 23 (53,42,36,74) (73,85,76,76) (35,82,62,88)
+10×10 55 44 (75,68,82,74) (66,26,88,23) (45,28,57,38)
+10×10 55 26 (47,46,73,78) (27,37,38,66) (87,44,74,36)
+10×10 55 46 (68,74,26,34) (25,63,22,65) (85,28,36,87)
+10×10 55 74 (48,58,33,86) (46,76,82,52) (22,68,38,27)
+10×10 55 37 (58,22,63,85) (86,32,87,77) (72,78,65,72)
+10×10 55 25 (36,22,67,37) (68,57,64,85) (75,53,77,82)
+10×10 55 74 (72,53,22,26) (42,86,52,43) (62,75,58,63)
+10×10 55 66 (43,87,46,22) (26,63,67,52) (58,35,23,35)
+10×10 55 34 (26,26,37,52) (24,54,66,54) (68,75,73,36)
+10×10 55 85 (47,67,75,52) (52,43,48,27) (63,46,73,37)
+6.4. Comparison of SI and SL on Selected Configurations
+To quantitatively assess the performance difference between the SL and SI algorithms, we
+conducted paired t-tests on their mean survival rates. This comparison was made at specific trial
+points and averaged across the three learning phases (Phase 1: trials 1–20, Phase 2: trials 21–60,
+and Phase 3: trials 61–120).
+41
+Table6: Pairedt-testresultscomparingmeansurvivalofSLandSIacross15randomizedgridconfigurations(N=15,
+df=14). Each condition included 200 agents. Trials 20, 40, and 110 correspond to early, mid, and late points in the
+experiment, respectively. Phase 1 spans Trials 1–20, Phase 2 spans Trials 21–60, and Phase 3 spans Trials 61–120.
+Cohen’s d quantifies effect size, where 0.2, 0.5, and 0.8 are conventionally interpreted as small, medium, and large
+effects, respectively.
+Comparison SL Mean SI Mean Diff. 95% CI t(14) p-value Cohen’s d
+Trial 20 23.71 23.08 +0.63 [0.26, 1.01] 3.63 0.003 0.94
+Trial 40 26.23 25.04 +1.19 [0.23, 2.16] 2.65 0.019 0.68
+Trial 110 29.25 29.35 -0.10 [-0.68, 0.48] -0.36 0.725 -0.09
+Phase 1 23.02 22.75 +0.27 [0.16, 0.38] 5.39 <0.001 1.39
+Phase 2 25.91 25.09 +0.82 [0.37, 1.28] 3.90 0.002 1.01
+Phase 3 28.91 28.67 +0.24 [-0.01, 0.48] 2.09 0.055 0.54
+As shown in Table 6, results from the 15 grid configurations demonstrate a clear and robust
+advantage for the SL algorithm, particularly in the initial and middle stages of learning. This
+overall effect is an average across configurations of varying difficulty; in the most challenging
+layouts where learning was arduous for both agents, the performance difference was naturally
+muted (e.g. Figure 12k). However, the data clearly show that where learning was more achievable,
+the advantages shown for SL became pronounced (e.g. Figure 12e). This is reflected in the
+aggregate statistics for Phase 1 (trials 1–20), where performance in SL was significantly higher
+than SI — a finding that was both statistically significant (p<0.001) and reflected a large effect
+size (Cohen’s d=1.39). This early advantage was sustained through Phase 2 (trials 21–60), which
+also showed a significant difference (p=0.002) with a large effect size (d=1.01).
+In later stages of training (Phase 3, trials 61–120), performance differences between the two
+algorithms narrowed considerably. The difference was no longer statistically significant at the
+conventional α = 0.05 level, but it remained noteworthy (p = 0.055). This indicated that while SI
+eventually catches up, SL may maintain a slight edge on average. These findings strongly suggest
+that the structured, active learning in SL confers a tangible and generalizable advantage in early-
+phase adaptation across unfamiliar environments. This is likely due to its intrinsic drive to revisit
+informative states (e.g., the hill) to rapidly build and refine its model. While both algorithms
+converge toward similar high-performance levels over extended training, SL consistently exhibited
+a faster and more efficient adaptation profile, consistent with our main results.
+These results are also in line with a broader theoretical argument that planning depth should
+interact with spatial structure. For example, in a 10×10 grid, the expected Manhattan distance
+between random points is about 6.6 steps:
+N2 −1
+E[d ] = 2· ≈ 6.6 when N = 10.
+Manhattan
+3N
+As discussed in Section 4.1, this limits the gains from planning beyond 4–6 steps, and algorithms
+that adapt within this horizon tend to perform best. SL addresses this constraint effectively; in
+contrast, SI and BARL lack explicit mechanisms to prioritize strategic information gathering and
+may therefore lag in early adaptation.
+6.5. Mechanisms of Differential Performance
+Further investigation clarified the mechanisms underlying differential performance between the
+four algorithms. Note that, in order to accurately learn the likelihood mapping, it is crucial that
+42
+the agent discover resource positions through random exploration, and then subsequently associate
+them with the correct context. In this case, the SL agent showed faster improvement over time
+because, unlike the other three algorithms, it would often immediately prioritize moving to the
+hill after discovering a resource. This allowed it to better connect the context (season) with the
+location of the resource (shown in Figure 13 A). SI learned at a somewhat slower rate, as it did not
+recognize the hill as a valuable state to visit after discovering a resource. While SI did value the hill
+state in these simulations, it only did so when either its beliefs about context became sufficiently
+imprecise or when the model was precise and the hill became a Bellman-optimal option. Thus, it
+would not necessarily do so after unexpectedly discovering a resource.
+Figure 13 B shows example behavior of an SI agent when finding a resource. Unlike SL, this
+agent does not prioritize moving to the hill. Instead, it continues to explore surrounding states
+that it has not yet visited. In general, it also visits the hill far less frequently. Learning in this way
+is relatively slower, as the SI agent, on average, has less precise beliefs about the context in which it
+has observed a resource. Both BARL algorithms showed very poor learning, as they did not value
+the hill when their models were imprecise. This is because they did not view the hill as providing a
+Bellman-optimal mechanism for moving to a resource (as they might if the environment was fully
+known). The logic here is that, if the agent had imprecise beliefs over which context mapped to
+which resource position, there was no point in learning what the context was before attempting
+to move to a resource. In the case of BARL without UCB, learning was primarily chance-based
+(i.e., when the agent randomly visited a resource location or visited the hill on the way to some
+other location it viewed as rewarding). The addition of UCB was also unhelpful. To see why,
+it is first useful to consider that, while UCB provided a directed exploration drive, this was not
+goal-directed in the manner displayed by SL. That is, while UCB-driven exploration was directed
+at states for which the agent had made few observation (i.e., and therefore not random), it was
+not driven like SL by the goal of precise ‘credit assignment’ of resource locations to a season (i.e.,
+its exploration heuristic did not encourage it to move to the hill to resolve context ambiguity upon
+discovering a resource). Rather, its exploration was entirely based on relative frequency of states
+visited over time. In the present environment, which had fairly sparse rewards, this resulted in
+somewhat wasteful over-exploration of states without resources or epistemic value (regarding the
+current season).
+6.5.1. Model Learning Analysis for SL
+Figure14showsfurtheranalysestobetterunderstandthelearningdynamicsinSLshownabove.
+Theseresultsindicatedthat,whenlearningwentpoorly,itwasoftencontext-andmodality-specific.
+For example, in the first season, SL showed accurate learning for all resource locations (based on
+the KL-divergence between posterior beliefs and ground truth), whereas the second season showed
+accurate learning for Sleep and Water, but inaccurate learning for Food locations.
+6.6. Memoization and Computational Efficiency
+TomitigatethecomputationalburdenoftherecursivetreesearchinherentinSIandSL,weem-
+ployed memoization. Memoization involves caching and retrieving the EFE (or reward, for BARL)
+values for previously encountered state-action pairs or sub-trees during the planning process. This
+technique involves storing previously calculated EFE values of a subset of search trajectories in
+memory, allowing reuse when future searches overlap with already-calculated subsets.
+While memoization significantly reduces the number of redundant computations, especially for
+deepersearchesinenvironmentswithoverlappingstatetrajectories(seehorizonanalysis, Figure6),
+it is not without caveats. For ActInf agents, caching EFE values based on a subset of state factors
+43
+can introduce inaccuracies if path-dependent components of belief (e.g., the history influencing
+current uncertainty about model parameters, which in turn affects the epistemic/novelty value)
+are not fully captured in the cache key. Furthermore, a notable drawback to memoization is
+the significant memory requirement to store these cached values. However, if needed for future
+applications, this memory burden could be mitigated via various approximation techniques, such
+as Coarse Coding (Sutton and Barto, 2018), a form of linear function approximation, or Artificial
+Neural Networks (Abiodun et al., 2018). The choice to use memoization represents a trade-off
+between computational efficiency, memory usage, and the precision of the EFE approximation.
+Our use of memoization was a pragmatic choice for managing the extensive simulations required.
+For the interested reader, below we show the number of recursive function calls made with vs.
+without memoization from t = 1. Results under different possible search depths are also included.
+Table 7: A comparison of the number of recursive function calls with and without memoization.
+Search Depth With Memoization Without Memoization
+0 1 1
+1 17 21
+2 53 421
+3 117 8421
+4 257 160421
+44
+Has agent
+moved
+in real time?
+Yes No
+Evaluate
+Update beliefs Future Actions
+Using EFE
+Evaluate
+Future Actions
+Within
+Using EFE
+horizon?
+Yes No
+Within Continue Return
+horizon? search evaluation
+Yes No
+Simulate future Return current
+outcomes estimate
+Continue
+search
+with updates
+Return optimal
+action
+Figure10: FlowchartrepresentationoftheSophisticatedInferenceTreeSearchalgorithminActInf. Thistreesearch
+process balances exploration (information gain about states and parameters) with goal-seeking behavior (reward
+value)byrecursivelyevaluatingactionsusingEFE.Thealgorithmbeginsbycheckingiftheagenthasmovedinreal
+time. Ifithas,itupdatesbeliefsviaVariationalFreeEnergy(VFE)minimizationandthenevaluatespossibleactions
+based on EFE. If the current time step is within the planning horizon, the system simulates likely future states
+and checks whether past evaluations exist in short-term memory. If the state has been previously explored, stored
+evaluations are retrieved to optimize search efficiency. If no prior evaluation exists, the tree search recursively
+expands, exploring deeper future states until the optimal action is determined. When recursion completes, the
+best action sequence is returned. If the agent has not moved in real time, actions are evaluated externally, and
+searchcontinueswithintheplanninghorizon. Thisprocessensuresthemodeldynamicallybalancesexplorationand
+exploitation in complex decision-making scenarios.
+45
+Within planning
+horizon?
+Yes No
+Evaluate actions Return current
+using EFE estimate
+Select likely
+states
+State previously
+evaluated?
+Yes
+No
+Expand tree Retrieve
+recursively stored value
+Return best
+action
+Figure 11: Tree search logic for Sophisticated Inference (SI). This tree search evaluates actions using EFE, selects
+likely states, and checks short-term memory for past evaluations. If a state has been visited previously, its stored
+evaluation is retrieved to optimize search efficiency. Otherwise, the search expands recursively until the optimal
+action is found. The recursion terminates when the planning horizon is reached.
+46
+Algorithm 5 Sophisticated Learning Tree Search
+function ForwardTreeSearch(posterior, A, a, b, observation, tResources, t, trueT, T, h,
+backwardsHorizon, actionHistory, resourceLocations)
+▷ Update posterior and resource timing if past the ground truth time
+if t > trueT then
+posterior ← CalculatePosterior(posterior, b, a, observations)
+tResources ← NewTimeSinceResources(posterior(t), resourceLocations)
+end if
+▷ Set the starting time for backward smoothing
+startTime ← max(1,t−backwardsHorizon)
+▷ Initialize novelty tracking
+novelty ← 0
+aPrior,bPrior ← a,b
+▷ Perform backward smoothing to update concentration parameters
+for τ = startTime to t do
+L ← BackwardSmoothing(posterior, a, observations, actionHistory, t, τ)
+a,b ← UpdateConcentrationParameters(L, b, observations, a)
+end for
+▷ Compute novelty weight based on parameter changes
+W ← CalculateNovelty(a,b,aPrior,bPrior)
+▷ Evaluate expected free energy (EFE) for each action
+for each action in A do
+Q(action) ← b(posterior(t),action)
+predictedObservations ← a(Q(action))
+G(action) ← ExpectedFreeEnergy(predictedObservations, tResources, N , Q(action))
+t
+end for
+▷ Perform recursive tree search if time step is within horizon
+if t < h then
+viableActions ← ViableActions(G)
+for action in viableActions do
+posterior(t+1) ← Q(action)
+likelyStates ← LikelyStates(Q(action))
+for state in likelyStates do
+observation ← SampleObservation(state, a)
+[G, posterior] ← ForwardTreeSearch(posterior, a, b,
+observation, tResources, t+1, trueT, T,
+h, backwardsHorizon, actionHistory, resourceLocations)
+S ← softmax(G) * G
+K(state) ← S
+end for
+G(action) ← Sum(K(likelyStates)·likelyStates)
+end for
+end if
+return [G, posterior]
+end function
+47
+32
+28
+24
+20
+10 20 T3r0ial 40 50 60
+lavivruS
+egarevA
+35
+30
+25
+20
+10 20 T3r0ial 40 50 60
+(a)Short-ID1
+lavivruS
+egarevA
+30
+25
+20
+10 20 T3r0ial 40 50 60
+(b)Short-ID2
+lavivruS
+egarevA
+(c)Short-ID3
+30
+27
+24
+21
+10 20 T3r0ial 40 50 60
+lavivruS
+egarevA
+50
+40
+30
+20
+10 20 T3r0ial 40 50 60
+(d)Short-ID4
+lavivruS
+egarevA
+28
+24
+20
+10 20 T3r0ial 40 50 60
+(e)Short-ID5
+lavivruS
+egarevA
+(f)Short-ID6
+50
+40
+30
+20
+10 20 T3r0ial 40 50 60
+lavivruS
+egarevA
+35
+30
+25
+20
+10 20 T3r0ial 40 50 60
+(g)Short-ID7
+lavivruS
+egarevA
+40
+30
+20
+10 20 T3r0ial 40 50 60
+(h)Short-ID8
+lavivruS
+egarevA
+(i)Short-ID9
+32
+28
+24
+20
+10 20 T3r0ial 40 50 60
+lavivruS
+egarevA
+40
+35
+30
+25
+20
+10 20 T3r0ial 40 50 60
+(j)Short-ID10
+lavivruS
+egarevA
+40
+30
+20
+10 20 T3r0ial 40 50 60
+(k)Short-ID11
+lavivruS
+egarevA
+(l)Short-ID12
+40
+30
+20
+10 20 T3r0ial 40 50 60
+lavivruS
+egarevA
+60
+50
+40
+30
+20
+10 20 T3r0ial 40 50 60
+(m)Short-ID13
+lavivruS
+egarevA
+30
+27
+24
+21
+18 10 20 T3r0ial 40 50 60
+(n)Short-ID14
+lavivruS
+egarevA
+(o)Short-ID15
+Figure 12: Early-phase survival curves for fifteen randomly sampled grid environments used in analyses of the
+robustness (generalizability) of observed performance differences between algorithms. Each plot shows the average
+survival across 60 trials for the SI and SL algorithms, aggregated over 200 random seeds per algorithm. Variability
+is visualized using standard deviation bands. Although the error bands could be further tightened with more runs,
+the observed early learning advantage — when interpreted alongside the statistical comparisons presented in the
+48
+main text — provides robust evidence for the effect.
+Figure 13: (A) The SL agent frequently visited the hill within a trial to contextualize the information it learned
+with greater accuracy (e.g., observing water and then quickly moving to the hill to figure out what the associated
+context was). (B) The SI agent did not see value in the hill with respect to parameter learning, and so did not
+frequently revisit this state to contextualize its prior observations. It instead continued to explore the state-space
+more broadly to seek out novel observations. (C) Supplementary demonstration of parameter dependence: Here we
+note that, if the precision of the preference distribution was sufficiently high, both SI and SL agents often ignored
+the hill and immediately attempted to guess where resources might be. This was because very high preference
+precision values effectively down-weight the other terms in the EFE and thereby deter exploration (see main text
+for details).
+49
+Figure14: KL divergence between the SL agent’s posterior beliefs and the true resource distributions,
+plottedover cumulativetime stepsaggregated acrossalltrials. Eachsubplotcorrespondstooneofthefour
+contexts (seasons), with separate curves for each resource modality (Food, Water, Sleep) and the ’No Resource’
+observation. A declining KL divergence indicates improved learning accuracy. While the agent achieves strong
+convergence in Season 1, learning remained unstable or incorrect in Seasons 2–4 with respect to some modalities
+(e.g., Food in Season 2, Sleep in Season 3), suggesting persistent belief miscalibration and context-specific learning
+failures.
+50

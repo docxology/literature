@@ -1,0 +1,1144 @@
+0202
+tcO
+22
+]CN.oib-q[
+2v67140.6002:viXra
+Deep active inference agents using Monte-Carlo
+methods
+ZafeiriosFountas∗ NoorSajid
+EmotechLabs& WCHN,UniversityCollegeLondon
+WCHN,UniversityCollegeLondon noor.sajid.18@ucl.ac.uk
+f@emotech.co
+PedroA.M.Mediano KarlFriston
+UniversityofCambridge WCHN,UniversityCollegeLondon
+pam83@cam.ac.uk k.friston@ucl.ac.uk
+Abstract
+Active inference is a Bayesian framework for understanding biological intelli-
+gence. The underlying theory brings together perception and action under one
+singleimperative:minimizingfreeenergy.However,despiteitstheoreticalutility
+inexplainingintelligence,computationalimplementationshavebeenrestrictedto
+low-dimensionalandidealizedsituations. Inthispaper,wepresentaneuralarchi-
+tectureforbuildingdeepactiveinferenceagentsoperatingincomplex,continuous
+state-spaces using multiple forms of Monte-Carlo (MC) sampling. For this, we
+introduce a number of techniques, novel to active inference. These include: i)
+selectingfree-energy-optimalpoliciesviaMCtreesearch,ii)approximatingthis
+optimalpolicydistributionviaa feed-forward‘habitual’network,iii)predicting
+future parameter belief updates using MC dropouts and, finally, iv) optimizing
+state transition precision (a high-end form of attention). Our approach enables
+agentstolearnenvironmentaldynamicsefficiently,whilemaintainingtaskperfor-
+mance, in relation to reward-based counterparts. We illustrate this in a new toy
+environment,basedonthedSpritesdata-set,anddemonstratethatactiveinference
+agentsautomaticallycreatedisentangledrepresentationsthatareaptformodeling
+statetransitions.InamorecomplexAnimal-AIenvironment,ouragents(usingthe
+sameneuralarchitecture)areabletosimulatefuturestatetransitionsandactions
+(i.e., plan), to evince reward-directednavigation- despite temporarysuspension
+ofvisualinput.Theseresultsshowthatdeepactiveinference–equippedwithMC
+methods– providesa flexibleframeworktodevelopbiologically-inspiredintelli-
+gentagents,withapplicationsinbothmachinelearningandcognitivescience.
+1 Introduction
+Acommongoalincognitivescienceandartificialintelligenceistoemulatebiologicalintelligence,
+togainnewinsightsintothebrainandbuildmorecapablemachines.Awidely-studiedneuroscience
+propositionforthisisthefree-energyprinciple,whichviewsthebrainasadeviceperformingvaria-
+tional(Bayesian)inference[1,2]. Specifically,thisprincipleprovidesaframeworkforunderstand-
+ingbiologicalintelligence,termedactiveinference,bybringingtogetherperceptionandactionunder
+asingleobjective: minimizingfreeenergyacrosstime[3–7]. However,despitethepotentialofac-
+tiveinferenceformodelingintelligentbehavior,computationalimplementationshavebeenlargely
+restrictedtolow-dimensional,discretestate-spacetasks[8–11].
+∗Correspondingauthor
+34thConferenceonNeuralInformationProcessingSystems(NeurIPS2020),Vancouver,Canada.
+Recentadvanceshaveseendeepactiveinferenceagentssolvemorecomplex,continuousstate-space
+tasks, including Doom [12], the mountain car problem [13–15], and several tasks based on the
+MuJoCo environment [16], many of which use amortization to scale-up active inference [13–15,
+17]. Acommonlimitationoftheseapplicationsisadeviationfromvanillaactiveinferenceintheir
+abilitytoplan. Forinstance,Millidge[17]introducedanapproximationoftheagent’sexpectedfree
+energy(EFE),thequantitythatdrivesactionselection,basedonbootstrapsamples,whileTschantz
+et al. [16] employed a reduced version of EFE. Additionally, since all current approaches tackle
+low-dimensionalproblems,itisunclearhowtheywouldscaleuptomorecomplexdomains. Here,
+weproposeanextensionofpreviousformulationsthatiscloselyalignedwithactiveinference[4,9]
+byestimatingallEFEsummandsusingasingledeepneuralarchitecture.
+Our implementation of deep active inference focuses on ensuring both scalability and biological
+plausibility. We accomplish this by introducingMonte-Carlo (MC) sampling – at several levels –
+into active inference. For planning, we propose the use of MC tree search (MCTS) for selecting
+a free-energy-optimalpolicy. This is consistent with planning strategies employed by biological
+agentsandprovidesanefficientwaytoselectactions(seeSec.5). Next, weapproximatetheopti-
+malpolicydistributionusingafeed-forward‘habitual’network.Thisisinspiredbybiologicalhabit
+formation,whenactinginfamiliarenvironmentsthatrelievesthecomputationalburdenofplanning
+in commonly-encounteredsituations. Additionally, for both biological consistency and reducing
+computationalburden, we predict model parameter belief updates using MC-dropouts, a problem
+previouslytackledwithnetworksensembles[16].Lastly,inspiredbyneuromodulatorymechanisms
+inbiologicalagents,weintroduceatop-downmechanismthatmodulatesprecisionoverstatetransi-
+tions,whichenhanceslearningoflatentrepresentations.
+Inwhatfollows, we brieflyreviewactiveinference. Thisis followedbya descriptionofourdeep
+active inference agent. We then evaluate the performance of this agent. Finally, we discuss the
+potentialimplicationsofthiswork.
+2 ActiveInference
+Agents defined under active inference: A) sample their environment and calibrate their internal
+generativemodeltobestexplainsensoryobservations(i.e.,reducesurprise)andB)performactions
+undertheobjectiveofreducingtheiruncertaintyabouttheenvironment. Amoreformaldefinition
+requires a set of random variables: s to represent the sequence of hidden states of the world
+1:t
+till time t, o as the corresponding observations, π = {a ,a ,...,a } as a sequence of actions
+1:t 1 2 T
+(typicallyreferredtoas‘policy’intheactiveinferenceliterature)uptoagiventimehorizonT ∈N+,
+andP (o ,s ,a )astheagent’sgenerativemodelparameterizedbyθ tilltimet. Fromthis,
+θ 1:t 1:t 1:t−1
+the agent’ssurprise at time t can be definedas the negativelog-likelihood−logP (o ). Through
+θ t
+slightabuseofnotation,P (.) denotesdistributionparameterisationbyθ andP(θ) denotesuse of
+θ
+thatparticulardistributionasarandomvariable. Seesupplementarymaterialsfordefinitions(Table
+1).
+ToaddressobjectiveA)underthisformulation,thesurpriseofcurrentobservationscanbeindirectly
+minimizedbyoptimizingtheparameters,θ,usingasalossfunctionthetractableexpression:
+−logP (o )≤E logQ (s ,a )−logP (o ,s ,a ) , (1)
+θ t Qφ(st,at)(cid:2) φ t t θ t t t
+(cid:3)
+whereQ (s ,a )isanarbitrarydistributionofs anda parameterizedbyφ. TheRHSexpression
+φ t t t t
+ofthisinequalityisthevariationalfreeenergyattimet. Thisquantityiscommonlyreferredtoas
+negativeevidencelowerbound [18] in variationalinference. Furthermore,torealize objectiveB),
+theexpectedsurpriseoffutureobservations−logP(o |θ,π)whereτ ≥ t−canbeminimizedby
+τ
+selectingthepolicythatisassociatedwiththelowestEFE,G[19]:
+G(π,τ)=E E logQ (s ,θ|π)−logP(o ,s ,θ|π) , (2)
+P(oτ|sτ,θ) Qφ(sτ,θ|π)(cid:2) φ τ τ τ
+(cid:3)
+Finally,theprocessofactionselectioninactiveinferenceisrealizedassamplingfromthedistribu-
+tion
+P(π)=σ −G(π) =σ − G(π,τ) , (3)
+(cid:0) (cid:1) (cid:16) X (cid:17)
+τ>t
+whereσ(·)isthesoftmaxfunction.
+2
+φ
+(cid:1) (cid:2)
+s
+(cid:3) (cid:3) (cid:2) (cid:2)
+-(cid:0)
+Α
+φ
+P
+θs
+P θo
+Generative model
+Inference model
+Top-down precision
+,θ
+o(H 1+t
+)
+,
+o|
+s(H
+1+t
+1+t
+Β
+s ~ P
+H(s | )
+(cid:3) t+1 (cid:3) (cid:2) (cid:2)+1
+(cid:1) (cid:2)+1 log P(o t+1 | )
+(cid:2)
+(s |s, )
+s t+1 t s ~ P
+(cid:1)
+Used in Eq. (8a) Used in Eq. (8c)
+Used in Eq. (8b) Used in Eq. (8)
+(s |s, )
+s t+1 t
+~ Q( | )
+)
+,s|
+o(H 1+t
+C
+(cid:3)
+(cid:2)
+1 4
+2 3
+(cid:3) (cid:3) (cid:3) (cid:3) (cid:2)+1 (cid:2)+1 (cid:2)+1 (cid:2)+1
+1 4 2 3
+(cid:3) (cid:3) (cid:3) (cid:3)
+(cid:2)+2 (cid:2)+2 (cid:2)+2 (cid:2)+2
+habitual prior
+Q φ
+Figure1:A:Schematicofmodelarchitectureandnetworksusedduringthelearningprocess.Black
+arrowsrepresentthegenerativemodel(P),orangearrowstherecognitionmodel(Q),andthegreen
+arrowthetop-downattention(ω ). B:RelevantquantitiesforthecalculationofEFEG, computed
+t
+by simulating the future using the generative model and ancestral sampling. Where appropriate,
+expectationsare taken with a single MC sample. C: MCTS scheme used for planningand acting,
+usingthehabitualnetworktoselectivelyexplorenewtreebranches.
+3 Deep ActiveInference Architecture
+Inthissection,weintroduceadeepactiveinferencemodelusingneuralnetworks,basedonamorti-
+zationandMCsampling.
+Throughoutthissection,wedenotetheparametersofthegenerativeandrecognitiondensitieswithθ
+andφ,respectively.Theparametersarepartitionedasfollows:θ ={θ ,θ },whereθ parameterizes
+o s o
+theobservationfunctionP (o |s ),andθ parameterizesthetransitionfunctionP (s |s ,a ). For
+θo t t s θs τ t t
+therecognitiondensity,φ = {φ ,φ },whereφ istheamortizationparametersoftheapproximate
+s a s
+posteriorQ (s ) (i.e., the state encoder),and φ the amortizationparametersof the approximate
+φs t a
+posteriorQ (a )(i.e.,ourhabitualnetwork).
+φa t
+3.1 Calculatingvariationalandexpectedfreeenergy
+First, we extend the probabilistic graphical model (as defined in Sec. 2) to include the action se-
+quencesπandfactorizethemodelbasedonFig.1A.Wethenexploitstandardvariationalinference
+machinerytocalculatethefreeenergyforeachtime-steptas:
+F =−E logP (o |s ) +D Q (s )kP (s |s ,a )
+t Qφs (st)(cid:2) θo t t
+(cid:3)
+KL
+(cid:2)
+φs t θs t t−1 t−1
+(cid:3) (4)
++E D Q (a )kP(a ) ,
+Qφs (st)(cid:2) KL
+(cid:2)
+φa t t
+(cid:3)(cid:3)
+where
+P(a)= P(π) (5)
+X
+π:a1=a
+isthesummedprobabilityofallpoliciesthatbeginwithactiona.
+Weassumethats isnormallydistributedando isBernoullidistributed,withallparametersgiven
+t t
+by a neuralnetwork, parameterizedby θ , θ , and φ for the observation, transition, and encoder
+o s s
+models,respectively(seeSec.3.2fordetailsaboutQ ). Withthisassumption,allthetermshere
+φa
+arestandardlog-likelihoodandKLtermseasytocomputeforGaussianandBernoullidistributions.
+TheexpectationsoverQ (s )aretakenviaMCsampling,usingasinglesamplefromtheencoder.
+φs t
+Next,weconsiderEFE.Attime-steptandforatimehorizonuptotimeT,EFEisdefinedas[4]:
+T T
+G(π)= G(π,τ)= E logQ(s ,θ|π)−logP˜(o ,s ,θ|π) , (6)
+X X Q˜h τ τ τ i
+τ=t τ=t
+where Q˜ = Q(o ,s ,θ|π) = Q(θ|π)Q(s |θ,π)Q(o |s ,θ,π) and P˜(o ,s ,θ|π) =
+τ τ τ τ τ τ τ
+P(o |π)Q(s |o )P(θ|s ,o ). Following Schwartenbeck et al. [20], the EFE of a single time in-
+τ τ τ τ τ
+3
+stanceτ canbefurtherdecomposedas
+G(π,τ)=−E logP(o |π) (7a)
+Q˜
+(cid:2)
+τ
+(cid:3)
++E logQ(s |π)−logP(s |o ,π) (7b)
+Q˜
+(cid:2)
+τ τ τ
+(cid:3)
++E logQ(θ|s ,π)−logP(θ|s ,o ,π) . (7c)
+Q˜
+(cid:2)
+τ τ τ
+(cid:3)
+Interestingly, each term constitutes a conceptually meaningful expression. The term (7a) corre-
+sponds to the likelihood assigned to the desired observations o , and plays an analogous role to
+τ
+thenotionofrewardinthereinforcementlearning(RL)literature[21]. Theterm(7b)corresponds
+to the mutual information between the agent’s beliefs about its latent representation of the world,
+beforeand after makinga new observation,and hence, it reflects a motivationto exploreareas of
+the environmentthat resolve state uncertainty. Similarly, the term (7c) describes the tendency of
+activeinferenceagentstoreducetheiruncertaintyaboutmodelparametersvianewobservationsand
+isusuallyreferredtointheliteratureasactivelearning[3],novelty,orcuriosity[20].
+However,twoofthethreetermsthatconstituteEFEcannotbeeasilycomputedaswritteninEq.(7).
+To makecomputationpractical, we will re-arrangethese expressionsandmakefurtheruse of MC
+samplingtorendertheseexpressionstractableandre-writeEq.(7)as
+G(π,τ)=−E logP(o |π) (8a)
+Q(θ|π)Q(sτ|θ,π)Q(oτ|sτ,θ,π)(cid:2) τ
+(cid:3)
++E E H(s |o ,π)−H(s |π) (8b)
+Q(θ|π)(cid:2) Q(oτ|θ,π) τ τ τ
+(cid:3)
++E H(o |s ,θ,π)−E H(o |s ,π), (8c)
+Q(θ|π)Q(sτ|θ,π) τ τ Q(sτ|π) τ τ
+wheretheseexpressionscanbecalculatedfromthedeepneuralnetworkillustratedinFig.1B.The
+derivationof Eq. (8) can be foundin the supplementarymaterial. To calculate the terms(8a) and
+(8b), we sample θ, s and o sequentially (through ancestral sampling) and then o is compared
+τ τ τ
+with thepriordistributionlogP(o |π). Theparametersoftheneuralnetworkθ aresampledfrom
+τ
+Q(θ)usingtheMCdropouttechnique[22]. Similarly,tocalculatetheexpectationofH(o |s ,π),
+τ τ
+thesamedrawnθisusedagainands isre-sampledforN timeswhile,forH(o |s ,θ,π),thesetof
+τ τ τ
+parametersθ isalsore-sampledN times. Finally,allentropiescanbecomputedusingthestandard
+formulasformultivariateGaussianandBernoullidistributions.
+3.2 Actionselectionandthehabitualnetwork
+In active inference, agents choose an action given by their EFE. In particular, any given action
+is selected with a probability proportionalto the accumulated negative EFE of the corresponding
+policiesG(π)(seeEq.(3)andRef.[19]). However,computingGacrossallpoliciesiscostlysince
+it involves making an exponentially-increasingnumber of predictions for T-steps into the future,
+andcomputingallthetermsinEq.(8). Tosolvethisproblem,weemploytwomethodsoperatingin
+tandem. First,weemploystandardMCTS[23–25],asearchalgorithminwhichdifferentpotential
+futuretrajectoriesofstates are exploredin the formofa search tree (Fig.1C), givingemphasisto
+themostlikelyfuturetrajectories. Thisalgorithmisusedto calculatethedistributionoveractions
+P(a ),definedinEq.(5),andcontroltheagent’sfinaldecisions.Second,wemakeuseofamortized
+t
+inferencethroughahabitualneuralnetworkthatdirectlyapproximatesthedistributionoveractions,
+whichweparameterizebyφ anddenoteQ (a )–similarlytoRefs.[26–28]. Inessence,Q (a )
+a φa t φa t
+actsasavariationalposteriorthatapproximatesP(a |s ),withapriorP(a ),calculatedbyMCTS
+t t t
+(see Fig. 1A). During learning, this network is trained to reproduce the last executed action a
+t−1
+(selectedbysamplingP(a ))usingthelaststates . Sincebothtasksusedinthispaper(Sec.4)
+t t−1
+havediscreteactionspacesA, wedefineQ (a )asaneuralnetworkwithparametersφ and|A|
+φa t a
+softmaxoutputunits.
+Duringthe MCTS process, the agentgeneratesa weightedsearch tree iterativelythatis later sam-
+pled during action selection. In each single MCTS loop, one plausible state-action trajectory
+(s ,a ,s ,a ,...,s ,a )–startingfromthepresenttime-stept –iscalculated. Forstatesthat
+t t t+1 t+1 τ τ
+are explored for the first time, the distribution P (s |s ,a ) is used. States that have been ex-
+θs t+1 t t
+plored are stored in the buffer search tree and accessed during later loops of the same planning
+process.TheweightsofthesearchtreeG˜(s ,a )representtheagent’sbestestimationforEFEafter
+t t
+takingactiona fromstates . AnupperconfidenceboundforG(s ,a )isdefinedas
+t t t t
+1
+U(s ,a )=G˜(s ,a )+c ·Q (a |s )· , (9)
+t t t t explore φa t t
+1+N(a ,s )
+t t
+4
+where N(a ,s ) is the number of times that a was explored from state s , and c a hyper-
+t t t t explore
+parameter that controls exploration. In each round, the EFE of the newly-explored parts of the
+trajectory is calculated and back-propagatedto all visited nodes of the search tree. Additionally,
+actions are sampled in two ways. Actions from states that have been explored are sampled from
+σ(U(a ,s ))whileactionsfromnewstatesaresampledfromQ (a ).
+t t φa t
+Finally,theactionsthatassembletheselectedpolicyaredrawnfromP(a ) = N(at,st) . Inour
+t P
+j
+N(aj,t,st)
+implementation, the planning loop stops if either the process has identified a clear option (i.e. if
+maxP(a )−1/|A|>T )orthemaximumnumberofallowedloopshasbeenreached.
+t dec
+ThroughthecombinationoftheapproximationQ (a )andtheMCTS,ouragenthasatitsdisposal
+φa t
+twomethodsofactionselection. WerefertoQ (a )asthehabitualnetwork,asitcorrespondsto
+φa t
+aformoffastdecision-making,quicklyevaluatingandselectingaaction;incontrastwiththemore
+deliberativesystemthatincludesfutureimaginationviaMCtreetraversals[29].
+3.3 Stateprecisionandtop-downattention
+OneofthekeyelementsofourframeworkisthestatetransitionmodelP (s |s ,a ),thatbe-
+longstotheagent’sgenerativemodel.Inourimplementation,wetakes ∼
+θs
+N(
+t
+µ,
+t
+σ
+−
+2
+1
+/ω
+t−
+),
+1
+wherethe
+t t
+multidimensionalµandσcomefromthelinearandsoftplusunits(respectively)ofaneuralnetwork
+with parametersθ appliedtos , and, importantly,ω isa scalar precisionfactor (c.f. Fig.1A)
+s t−1 t
+modulatingthe uncertaintyonthe agent’sestimate ofthehiddenstate of theenvironment[8]. We
+modeltheprecisionfactorasasimplelogisticfunctionofthebeliefupdateabouttheagent’scurrent
+policy,
+α
+ω = +d, (10)
+t 1+e− b−D
+c
+t−1
+where D = D Q (a ) k P(a ) and {α,b,c,d} are fixed hyper-parameters. Note thatω is
+t KL
+(cid:2)
+φa t t
+(cid:3)
+t
+amonotonicallydecreasingfunctionofD ,suchthatwhentheposteriorbeliefaboutthecurrent
+t−1
+policyissimilartotheprior,precisionishigh.
+In cognitive terms, ω can be thought of as a means of top-down attention [30], that regulates
+t
+which transitions should be learnt in detail and which can be learnt less precisely. This attention
+mechanism acts as a form of resource allocation: if D Q (a ) k P(a ) is high, then a habit
+KL
+(cid:2)
+φa t t
+(cid:3)
+has not yet been formed, reflecting a generic lack of knowledge. Therefore, the precision of the
+priorP (s |s ,a )(i.e.,thebeliefaboutthecurrentstatebeforeanewobservationo hasbeen
+θs t t−1 t−1 t
+received)islow,andlesseffortisspentlearningQ (s ).
+φs t
+Inpractice,theeffectofω istoincentivizedisentanglementinthelatentstaterepresentations –the
+t t
+precisionfactorω issomewhatanalogoustotheβparameterinβ-VAE[31],effectivelypushingthe
+t
+stateencoderQ (s )tohaveindependentdimensions(sinceP (s |s ,a )hasadiagonalco-
+φs t θs t t−1 t−1
+variancematrix).2 Astrainingprogressesandthehabitualnetworkbecomesabetterapproximation
+ofP(a ),ω isgraduallyincreased,implementinganaturalformofprecisionannealing.
+t t
+4 Results
+First,wepresentthetwoenvironmentsthatwereusedtovalidateouragent’sperformance.
+Dynamic dSprites We defined a simple 2D environmentbased on the dSprites dataset [32, 31].
+This was used to i) quantify the agent’s behavior against ground truth state-spaces and ii) evalu-
+ate the agent’s ability to disentangle state representations. This is feasible as the dSprites data is
+designedforcharacterizingdisentanglement,usingasetofinterpretable,independentground-truth
+latentfactors. Inthistask,whichwecallobjectsorting,theagentcontrolsthepositionoftheobject
+via4differentactions(right,left, upordown)andisrequiredtosortsingleobjectsbasedontheir
+shape(alatentfactor). Theagentreceivesrewardwhenitmovestheobjectacrossthebottombor-
+der,andtherewardvaluedependsontheshapeandlocationasdepictedinFig.2A.Fortheresults
+presentedinSection4,theagentwastrainedinanon-policyfashion,withabatchsizeof100.
+2Inessence,fortheparameterrangesofinterestω t inducesanear-linearmonotonicincreaseinD KL ,akin
+tothelinearincreaseinducedbyβinβ-VAE.
+5
+Bi Visible Blackout: Visual input is not provided
+Input
+Prediction
+Bii t=1 2 3 4 5 6
+Input
+Prediction
+Input
+Prediction
+t=1 3 6 9 12 15 18 21 24 27 30
+drawer
+A
+reward 1
+-1
+1 1
+-1 -1
+llaw llaw
+wall
+Figure2:A:TheproposedobjectsortingtaskbasedonthedSpritesdataset. Theagentcanperform
+4actions; changingthepositionoftheobjectinbothaxis. Rewardisreceivedifanobjectcrosses
+thebottomboarderanddiffersforthe3objectshapes.B:Predictionofthevisualobservationsunder
+motionifinputishiddeninboth(i)AnimalAIand(ii)dynamicdSpritesenvironments.
+Animal-AI Weusedavariationof‘preferences’taskfromtheAnimal-AIenvironment[33]. The
+complexity of this, partially observable, 3D environment is the ideal test-bed for showcasing the
+agent’sreward-directedexplorationoftheenvironment,whilstavoidingnegativerewardorgetting
+stuck in corners. In addition, to test the agent’s ability to rely on its internal model, we used a
+‘lights-off’ variant of this task, with temporary suspension of visual input at any given time-step
+with probability R. For the results presented in Section 4, the agent was trained in an off-policy
+fashionduetocomputationalconstraints. Thetrainingdataforthiswascreatedusingasimplerule:
+moveinthedirectionofthegreenestpixels.
+In the experimentsthat follow, we encode the actual reward from both environmentsas the prior
+distributionoffutureexpectedobservationslogP(o |π)or,inactiveinferenceterms,theexpected
+τ
+outcomes.Thisisappropriatebecausetheactiveinferenceformulationdoesnotdifferentiatereward
+fromothertypesofobservations,butitratherdefinescertain(future)observations(e.g. greencolor
+in Animal-AI) as more desirable given a task. Therefore, in practice, rewards can be encoded as
+observationswithhigherpriorprobabilityusinglogP(o |π).
+τ
+We optimized the networks using ADAM [34], with loss given in Eq. (4) and an extra regular-
+ization term D Q (s ) k N(0,1) . The explicit training procedure is detailed in the supple-
+KL
+(cid:2)
+φs t
+(cid:3)
+mentarymaterial. The completesource-code,data, andpre-trainedagents, isavailable onGitHub
+(https://github.com/zfountas/deep-active-inference-mc).
+4.1 Learningenvironmentdynamicsandtaskperformance
+We initially show – through a simple visual demonstration (Fig. 2B) – that agents learn the envi-
+ronmentdynamicswithorwithoutconsistentvisualinputforbothdynamicdSpritesandAnimalAI.
+Thisisfurtherinvestigated,forthedynamicdSprites,byevaluatingtaskperformance(Fig.3A-C),
+aswellasreconstructionlossforbothpredictedvisualinputandreward(Fig.3D-E)duringtraining.
+ToexploretheeffectofusingdifferentEFEfunctionalsonbehavior,wetrainedandcomparedactive
+inferenceagentsunderthreedifferentformulations,allofwhichusedthe implicitrewardfunction
+logP(o ), against a baseline reward-maximizingagent. These include i) beliefs about the latent
+τ
+states(i.e.,termsa,bfromEq.7),ii)beliefsaboutboththelatentstatesandmodelparameters(i.e.,
+complete Eq. 7) and iii) beliefs about the latent states, with a down-weightedreward signal. We
+foundthat, althoughall agentsexhibitsimilar performancein collecting rewards(Fig. 3B), active
+inferenceagentshaveacleartendencytoexploretheenvironment(Fig.3C).Interestingly,ourresults
+also demonstrate that all three formulations are better at reconstructing the expected reward, in
+comparison to a reward-maximizing baseline (Fig. 3D). Additionally, our agents are capable of
+6
+dnuor/draweR
+Learning iteration
+)ESM(
+noitcurtsnocer
+draweR
+)ESM(
+noitcurtsnocer
+lexip
+After 5 transitions
+Immediate
+Learning iteration Learning iteration
+dnuor/detisiv
+snoitisoP
+A B C
+a a+b a+b+c
+Learning iteration
+D E
+dnuor/draweR
+term 7a
+terms 7a+b
+terms 7a+b+c
+F
+term 7a
+terms 7a+b
+terms 7a+b+c terms 7a+b
+)s(Q
+fo
+noitalerroc
+latoT
+MCTS
+Agent with ω fixed
+VAE
+Learning iteration
+Figure3: Agent’sperformanceduringon-policytrainingintheobjectsortingtask. A:Comparison
+ofdifferentactionselectionstrategiesfortheagentdrivenbythefullEq. (8). B-C:Comparisonof
+agentsdrivenbydifferentfunctionals,limitedtostateestimationsofasinglestepintothefuture.In
+C,theviolinplotsrepresentbehaviordrivenbyP(a )(theplanner)andthegrayboxplotsdrivenby
+t
+thehabitualnetworkQ (a ). D-F:Reconstructionlossandtotalcorrelationduringlearningfor4
+φa t
+differentfunctionals.InA,BandD-F,theshadedareasrepresentthestandarddeviation.
+reconstructing the current observation, as well as predicting 5 time-steps into the future, for all
+formulationsofEFE,withsimilarlosswiththebaseline(Fig.3E).
+4.2 Disentanglementandtransitionlearning
+Disentanglementof latent spaces leads to lower dimensionaltemporaldynamicsthat are easier to
+predict[35]. Thus,generatingadisentangledlatentspacescanbebeneficialforlearningtheparam-
+eters of the transition function P (s |s ,a ). Due to the similarity between the precision term
+ω andthehyper-parameterβ in θ β s -va t+ ri 1 atio t nal t autoencoders(VAEs)[31]discussedinSec.3.3,we
+t
+hypothesizedthatω couldplayanimportantroleinregulatingtransitionlearning. Toexplorethis
+t
+hypothesis,wecomparedthetotalcorrelation(asametricfordisentanglement[36])oflatentstate
+beliefsbetweeni)agentsthathavebeentrainedwiththedifferentEFEfunctionals,ii)thebaseline
+(reward-maximizing)agent,iii)anagenttrainedwithouttop-downattention(althoughtheaverage
+valueofω wasmaintained),aswellasiv)asimpleVAEthatreceivedthesamevisualinputs. As
+t
+seen in Fig. 3F, all active inference agents using ω generated structures with significantly more
+t
+disentanglement(seetraversalsinsupp.material).Indeed,theperformancerankinghereisthesame
+as in Fig. 3D, pointing to disentanglementas a possible reason for the performancedifference in
+predictingrewards.
+4.3 Navigationandplanninginreward-basedtasks
+ThetrainingprocessinthedynamicdSpritesenvironmentrevealedtwotypesofbehavior. Initially,
+weseeepistemicexploration(i.e.,curiosity),thatisovertakenbyrewardseeking(i.e.,goal-directed
+behavior)oncetheagentisreasonablyconfidentabouttheenvironment. Anexampleofthiscanbe
+seen in the left trajectoryplotin Fig. 4Ai, wherethe untrainedagent– with no conceptofreward
+–deliberatesbetweenmultipleoptionsandchoosesthe path thatenablesitto quicklymoveto the
+nextround. The same agent, after 700learningiterations, cannow optimallyplan whereto move
+the current object, in order to maximize potential reward, logP(o |π). We next investigated the
+τ
+sensitivitywhendeciding,bychangingthethresholdT . We seethatchangingthethresholdhas
+dec
+clear implicationsforthe distributionofexploredalternativetrajectoriesi.e., numberofsimulated
+states (Fig. 4Aii). This plays an important role in the performance, with maximum performance
+foundatT ≈0.8(Fig.4Aiii).
+dec
+7
+Figure4:Agent’splanningperformance.A:DynamicdSprites. i)Exampleplannedtrajectoryplots
+withnumberofvisitsperstate (blue-pinkcolormap)andtheselectedpolicy(blacklines). ii)The
+effectofdecisionthresholdT onthenumberofsimulatedstatesandiii)theagent’sperformance.
+dec
+B:Animal-AI.i)SameasinA.ii)Systemperformanceoverhyper-parametersandiii)inthelights-
+off task. ErrorbarsinAiiidenotestandarddeviationandinBstandarderrorofthemean.
+Agents trained in the Animal-AI environment also exhibit interesting (and intelligent) behavior.
+Here, the agent is able to make complex plans, by avoiding obstacles with negative reward and
+approachingexpected outcomes (red and green objects respectively, Fig. 4Bi). Maximum perfor-
+mance can be found for 16 MCTS loops and T ≈ 0.1 (Fig. 4Bii; details in the supplementary
+dec
+material).Whendeployedinlights-off experiments,theagentcansuccessfullymaintainanaccurate
+representationofthe world state and simulatefutureplansdespite temporarysuspensionof visual
+input(Fig.2B).ThisisparticularlyinterestingbecauseP (s |s ,a )isdefinedasafeed-forward
+θs t+1 t t
+network,withouttheabilitytomaintainmemoryofstatesbeforet. Asexpected,theagent’sability
+tooperateinthisset-upbecomesprogressivelyworsethelongerthevisualinputisremoved,while
+shorterdecisionthresholdsarefoundtopreserveperformancelonger(Fig.4Biii).
+4.4 Comparisonwithmodel-freereinforcementlearningagents
+To assess the performance of the active inference agent with respect to baseline (model-free) RL
+agents, we employed OpenAI’s baselines [37] repository to train DQN [38], A2C [39] and
+PPO2[40]agentsontheAnimal-AIenvironment.TheresultingcomparisonisshowninFig.5. Our
+experimentshighlightthat,giventhesamenumberoftrainingepisodes(2Mlearningiterations),the
+activeinferenceagentperformsconsiderablybetterthanDQNandA2C,andiscomparabletoPPO2
+(allbaselinesweretrainedwith defaultsettings). Inaddition,notethatofthetwobest-performing
+agents(DAIMCandPPO2),DAIMChassubstantiallylessvarianceacrosstrainingruns,indicating
+amorestablelearningprocess. Nonetheless,thesecomparisonsshouldbetreatedasawayofillus-
+tratingtheapplicabilityoftheactiveinferenceagentoperatingincomplexenvironments,andnotas
+athoroughbenchmarkofperformancegainsagainststate-of-the-artRLagents.
+5 Concluding Remarks
+The attractiveness of active inference inherits from the biological plausibility of the frame-
+work[4,41,42]. Accordingly,wefocusedonscaling-upactiveinferenceinspiredbyneurobiologi-
+calstructureandfunctionthatsupportsintelligence. Thisisreflectedinthehierarchicalgenerative
+model,wherethehigher-levelpolicynetworkcontextualizeslower-levelstaterepresentations. This
+speakstoaseparationoftemporalscalesaffordedbycorticalhierarchiesinthebrainandprovidesa
+flexibleframeworktodevelopbiologically-inspiredintelligentagents.
+8
+Figure5: Comparisonoftheperformanceofouragent(DAIMC)withDQN,A2CandPPO2. The
+boldlinerepresentsthemean,andshadedareasthestandarddeviationovermultipletrainingruns.
+We introducedMCTSfor tacklingplanningproblemswith vast searchspaces[23, 43, 24, 44, 45].
+This approachbuilds upon Çatal et al.’s [46] deep active inferenceproposal, to use tree search to
+recursively re-evaluate EFE for each policy, but is computationally more efficient. Additionally,
+usingMCTSoffersanOccam’swindowforpolicypruning;thatis,westopevaluatingapolicypath
+ifitsEFEbecomesmuchhigherthanaparticularupperconfidencebound. Thispruningdrastically
+reducesthenumberofpathsonehastoevaluate.Itisalsoconsistentwithbiologicalplanning,where
+agents adopt brute force exploration of possible paths in a decision tree, up to a resource-limited
+finite depth [47]. This could be due to imprecise evidence about differentfuture trajectories [48]
+where environmental constraints subvert evaluation accuracy [49, 50] or alleviate computational
+load[51].Previousworkaddressingthedepthofpossiblefuturetrajectoriesinhumansubjectsunder
+changingconditionsshowsthatbothincreasedcognitiveload[50]andtimeconstraints[52,53,49]
+reduce search depth. Huys et al. [51] highlightedthat in tasks involvingalleviated computational
+load,subjectsmightevaluateonlysubsetsofdecisiontrees. Thisisconsistentwithourexperiments
+astheagentselectstoevaluateonlyparticulartrajectoriesbasedontheirpriorprobabilitytooccur.
+We haveshownthatthe precisionfactor, ω , canbe used toincorporateuncertaintyoverthe prior
+t
+and enhances disentanglement by encouraging statistical independence between features [54–57].
+Thisispreciselywhyithasbeenassociatedwithattention[58];asignalthatshapesuncertainty[59].
+Attention enables flexible modulation of neural activity that allows behaviorally relevant sensory
+datatobeprocessedmoreefficiently[60,61,30]. Theneuralrealizationsofthishavebeenlinked
+with neuromodulatory systems, e.g., cholinergic and noradrenergic [62–66]. In active inference,
+they have been associated specifically with noradrenaline for modulating uncertainty about state
+transitions [8], noradrenergic modulation of visual attention [67] and dopamine for policy selec-
+tion[4,67].
+AnimportantpieceoffutureworkistomorethoroughlycomparetheperformanceofDAIMCagent
+toreward-maximizingagents. Thatis,ifthespecificgoalistomaximizereward,thenitisnotclear
+whetherdeep active inference(i.e., fullspecification of EFE) has significantperformancebenefits
+oversimplerreward-seekingagents(i.e.,usingonlyEq.7a)orothermodel-basedRLagents[68,69]
+(c.f. Sec.4.4). Weemphasize,however,thattheprimarypurposeoftheactiveinferenceframework
+istoserveasamodelforbiologicalcognition,andnotasanoptimalsolutionforreward-basedtasks.
+Therefore, we have deliberately not focused on benchmarkingperformancegainsagainst state-of-
+the-artRLagents,althoughwehypothesizethatinsightsfromactiveinferencecouldproveusefulin
+complexenvironmentswhereeitherrewardmaximizationisn’ttheobjective,orininstanceswhere
+directrewardmaximizationleadstosub-optimalperformance.
+There are several extensions that can be explored, such as testing whether performancewould in-
+crease with more complex, larger neural networks, e.g., using LSTMs to model state transitions.
+One could also assess if including episodic memory would finesse EFE evaluation over a longer
+timehorizon,withoutincreasingcomputationalcomplexity. Futureworkshouldalsotesthowper-
+formanceshiftsiftheobjectiveofthetaskchanges.Lastly,itmightbeneurobiologicallyinteresting
+toseewhetherthegenerateddisentangledlatentstructuresareaptforunderstandingfunctionalseg-
+regationinthebrain.
+9
+6 Broader impact
+Ourdeepactiveinferenceagent–equippedwithMCmethods–providesaflexibleframeworkthat
+may help gain new insights into the brain by simulating realistic, biologically-inspiredintelligent
+agents. Generalcontributionsofthisframeworkincludehelpingbridgethegapbetweencognitive
+scienceanddeeplearningandprovidinganarchitecturethatwouldallowpsychologiststorunmore
+realisticexperimentsprobinghumanbehavior. Specifically,wehopethatsimulatingthisagentwill
+allowususetheneuralnetworkgradientstomakepredictionsabouttheunderlyingphysiologyasso-
+ciatedwithbehaviorsofinterestandformulateappropriatehypothesis. Webelievethisarchitecture
+mayalsohelpelucidatecomplexstructure-functionrelationshipsincognitivesystemsthroughma-
+nipulation of priors (under the complete class theorem). This would make it a viable (scaled-up)
+frameworkfor understandinghow brain damage(introducedin the generativemodelby changing
+thepriors)canaffectcognitivefunction,previouslyexploredindiscrete-stateformulationsofactive
+inference[67,70].
+Apotential(future)drawbackisthatthismodelcouldbeusedtoexploitpeople’sinherentcognitive
+biases, andas such couldpotentiallybe used bybad actorstryingto model(andthen profitfrom)
+humanbehavior.
+7 Acknowledgements
+The authorswould like to thank Sultan Kenjeyevfor his valuable contributionsand commentson
+early versions of the model presented in the current manuscript and Emotech team for the great
+supportthroughouttheproject. NSwasfundedbytheMedicalResearchCouncil(MR/S502522/1).
+PMandKJFwerefundedbytheWellcomeTrust(Ref: 210920/Z/18/Z-PM;Ref: 088130/Z/09/Z-
+KJF).
+References
+[1] Karl J Friston. The free-energy principle: A unified brain theory? Nature Reviews Neuro-
+science,11(2):127–138,2010.
+[2] Karl J Friston. A free energy principle for a particular physics. arXiv preprint
+arXiv:1906.10184,2019.
+[3] KarlJFriston,Thomas.FitzGerald,FrancescoRigoli,PhilippSchwartenbeck,JohnO’Doherty,
+andGiovanniPezzulo.Activeinferenceandlearning.Neuroscience&BiobehavioralReviews,
+68:862–79,2016.
+[4] Karl J Friston, Thomas FitzGerald, Francesco Rigoli, Philipp Schwartenbeck, and Giovanni
+Pezzulo. Activeinference:Aprocesstheory. NeuralComputation,29(1):1–49,2017.
+[5] KarlJFriston,ThomasParr,andBertdeVries. Thegraphicalbrain: Belief propagationand
+activeinference. NetworkNeuroscience,1(4):381–414,2017.
+[6] Giovanni Pezzulo, Francesco Rigoli, and Karl J Friston. Hierarchical active inference: A
+theoryofmotivatedcontrol. TrendsinCognitiveSciences,22(4):294–306,2018.
+[7] Lancelot Da Costa, Thomas Parr, Noor Sajid, Sebastijan Veselic, Victorita Neacsu, and
+Karl Friston. Active inference on discrete state-spaces: A synthesis. arXiv preprint
+arXiv:2001.07203,2020.
+[8] ThomasParrandKarlJFriston. Uncertainty,epistemicsandactiveinference. JournalofThe
+RoyalSocietyInterface,14(136):20170376,2017.
+[9] KarlJ Friston, Richard Rosch, ThomasParr, Cathy Price, and Howard Bowman. Deep tem-
+poral models and active inference. Neuroscience and BiobehavioralReviews, 90:486—501,
+2018.
+[10] Noor Sajid, Philip J Ball, and Karl J Friston. Active inference: Demystified and compared.
+arXivpreprintarXiv:1909.10863,2019.
+10
+[11] CasperHesp,RyanSmith,MicahAllen,KarlJFriston,andMaxwellRamstead. Deeplyfelt
+affect:Theemergenceofvalenceindeepactiveinference. PsyArXiv,2019.
+[12] Maell Cullen, Ben Davey, Karl J Friston, and Rosalyn J. Moran. Active inference in Ope-
+nAI Gym: A paradigm for computational investigations into psychiatric illness. Biological
+Psychiatry:CognitiveNeuroscienceandNeuroimaging,3(9):809–818,2018.
+[13] KarlJ Friston, Jean Daunizeau, and Stefan J Kiebel. Reinforcementlearningoractive infer-
+ence? PLoSONE,4(7):e6421,2009.
+[14] KaiUeltzhöffer. Deepactiveinference. BiologicalCybernetics,112(6):547–573,2018.
+[15] OzanÇatal,JohannesNauta,TimVerbelen,PieterSimoens,andBartDhoedt.Bayesianpolicy
+selectionusingactiveinference. arXivpreprintarXiv:1904.08149,2019.
+[16] AlexanderTschantz,ManuelBaltieri,AnilSeth,ChristopherLBuckley,etal. Scalingactive
+inference. arXivpreprintarXiv:1911.10601,2019.
+[17] BerenMillidge.Deepactiveinferenceasvariationalpolicygradients.JournalofMathematical
+Psychology,96:102348,2020.
+[18] David M Blei, Alp Kucukelbir, and Jon D McAuliffe. Variational inference: A review for
+statisticians. JournaloftheAmericanStatisticalAssociation,112(518):859–877,2017.
+[19] Thomas Parr and Karl J Friston. Generalised free energy and active inference. Biological
+Cybernetics,113(5-6):495–513,2019.
+[20] PhilippSchwartenbeck,JohannesPassecker,TobiasUHauser,ThomasHBFitzGerald,Martin
+Kronbichler, and Karl J Friston. Computational mechanisms of curiosity and goal-directed
+exploration. eLife,8:e41703,2019.
+[21] RichardSSuttonandAndrewGBarto. ReinforcementLearning:AnIntroduction. MITpress,
+2018.
+[22] YarinGalandZoubinGhahramani.DropoutasaBayesianapproximation:Representingmodel
+uncertaintyindeeplearning. InInternationalConferenceonMachineLearning,pages1050–
+1059,2016.
+[23] RémiCoulom. Efficientselectivityandbackupoperatorsinmonte-carlotreesearch. InInter-
+nationalConferenceonComputersandGames,pages72–83.Springer,2006.
+[24] CameronB Browne, Edward Powley, Daniel Whitehouse, Simon M Lucas, Peter I Cowling,
+PhilippRohlfshagen,StephenTavener,DiegoPerez,SpyridonSamothrakis,andSimonColton.
+A surveyof Monte Carlo tree search methods. IEEE Transactionson ComputationalIntelli-
+genceandAIinGames,4(1):1–43,2012.
+[25] DavidSilver,JulianSchrittwieser,KarenSimonyan,IoannisAntonoglou,AjaHuang,Arthur
+Guez,ThomasHubert,LucasBaker,MatthewLai,AdrianBolton,etal. Masteringthegame
+ofgowithouthumanknowledge. Nature,550(7676):354–359,2017.
+[26] AlexandrePiché,ValentinThomas,CyrilIbrahim,YoshuaBengio,andChrisPal. Probabilis-
+tic planningwith sequentialmonte carlo methods. In InternationalConference on Learning
+Representations,2018.
+[27] Alexander Tschantz, Beren Millidge, Anil K Seth, and Christopher L Buckley. Control as
+hybridinference. arXivpreprintarXiv:2007.05838,2020.
+[28] JosephMarinoandYisongYue.Aninferenceperspectiveonmodel-basedreinforcementlearn-
+ing. ICMLWorkshoponGenerativeModelingandModel-BasedReasoningforRoboticsand
+AI,2019.
+[29] Matthijs Van Der Meer, Zeb Kurth-Nelson, and A David Redish. Informationprocessingin
+decision-makingsystems. TheNeuroscientist,18(4):342–359,2012.
+11
+[30] AnnaByersandJohnT.Serences. Exploringtherelationshipbetweenperceptuallearningand
+top-downattentionalcontrol. VisionResearch,74:30–39,2012.
+[31] Irina Higgins, Loic Matthey, Arka Pal, Christopher Burgess, Xavier Glorot, Matthew
+Botvinick, Shakir Mohamed, and Alexander Lerchner. beta-vae: Learning basic visual con-
+ceptswithaconstrainedvariationalframework. InternationalConferenceonLearningRepre-
+sentations,2(5):6,2017.
+[32] LoicMatthey,IrinaHiggins,DemisHassabis,andAlexanderLerchner. dsprites: Disentangle-
+menttestingspritesdataset. https://github.com/deepmind/dsprites-dataset/,2017.
+[33] Matthew Crosby, Benjamin Beyret, and Marta Halina. The Animal-AI olympics. Nature
+MachineIntelligence,1(5):257–257,2019.
+[34] Diederik P Kingma and Jimmy Ba. Adam: A method for stochastic optimization. arXiv
+preprintarXiv:1412.6980,2014.
+[35] Jun-TingHsieh,BingbinLiu,De-AnHuang,LiFFei-Fei,andJuanCarlosNiebles. Learning
+to decompose and disentangle representations for video prediction. In Advances in Neural
+InformationProcessingSystems,pages517–526,2018.
+[36] Hyunjik Kim and Andriy Mnih. Disentangling by factorising. arXiv preprint
+arXiv:1802.05983,2018.
+[37] Prafulla Dhariwal, Christopher Hesse, Oleg Klimov, Alex Nichol, Matthias Plappert, Alec
+Radford, John Schulman, Szymon Sidor, YuhuaiWu, and Peter Zhokhov. Openaibaselines.
+https://github.com/openai/baselines,2017.
+[38] Volodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A Rusu, Joel Veness, Marc G
+Bellemare, Alex Graves, Martin Riedmiller, Andreas K Fidjeland, Georg Ostrovski, et al.
+Human-levelcontrolthroughdeepreinforcementlearning. nature,518(7540):529–533,2015.
+[39] VolodymyrMnih,AdriaPuigdomenechBadia,MehdiMirza,AlexGraves,TimothyLillicrap,
+TimHarley,DavidSilver,andKorayKavukcuoglu.Asynchronousmethodsfordeepreinforce-
+mentlearning. InInternationalconferenceonmachinelearning,pages1928–1937,2016.
+[40] JohnSchulman, Filip Wolski, Prafulla Dhariwal, Alec Radford,and OlegKlimov. Proximal
+policyoptimizationalgorithms. arXivpreprintarXiv:1707.06347,2017.
+[41] TakuyaIsomuraandKarlJFriston. Invitroneuralnetworksminimisevariationalfreeenergy.
+NatureScientificReports,8(1):1–14,2018.
+[42] RickAAdams,StewartShipp,andKarlJFriston.Predictionsnotcommands:Activeinference
+inthemotorsystem. BrainStructureandFunction,218(3):611–643,2013.
+[43] Levente Kocsis and Csaba Szepesvári. Bandit based Monte-Carlo planning. In European
+ConferenceonMachineLearning,pages282–293.Springer,2006.
+[44] Xiaoxiao Guo, Satinder Singh, Honglak Lee, Richard L Lewis, and Xiaoshi Wang. Deep
+learning for real-time Atari game play using offline Monte-Carlo tree search planning. In
+AdvancesinNeuralInformationProcessingSystems,pages3338–3346,2014.
+[45] David Silver, Aja Huang, Chris J Maddison, Arthur Guez, Laurent Sifre, George Van
+Den Driessche, Julian Schrittwieser, IoannisAntonoglou,Veda Panneershelvam,Marc Lanc-
+tot, etal. Masteringthegameofgowithdeepneuralnetworksandtreesearch. Nature, 529
+(7587):484,2016.
+[46] Ozan Çatal, Tim Verbelen, Johannes Nauta, Cedric De Boom, and Bart Dhoedt. Learning
+perception and planning with deep active inference. In IEEE International Conference on
+Acoustics,SpeechandSignalProcessing,pages3952–3956,2020.
+[47] JosephSnider,DongpyoLee,HowardPoizner,andSergeiGepshtein.Prospectiveoptimization
+withlimitedresources. PLoSComputationalBiology,11(9),2015.
+12
+[48] Alec Solway and Matthew M Botvinick. Evidence integration in model-based tree search.
+ProceedingsoftheNationalAcademyofSciences,112(37):11708–11713,2015.
+[49] BasvanOpheusden,GianniGalbiati,ZahyBnaya,YunqiLi,andWeiJiMa. Acomputational
+modelfordecisiontreesearch. InCogSci.,2017.
+[50] DennisHHolding.Countingbackwardduringchessmovechoice.BulletinofthePsychonomic
+Society,27(5):421–424,1989.
+[51] QuentinJMHuys,NeirEshel,ElizabethO’Nions,LukeSheridan,PeterDayan,andJonathanP
+Roiser. Bonsaitreesinyourhead:HowthePavloviansystemsculptsgoal-directedchoicesby
+pruningdecisiontrees. PLoSComputationalBiology,8(3),2012.
+[52] BruceDBurns. Theeffectsofspeedonskilledchessperformance. PsychologicalScience,15
+(7):442–447,2004.
+[53] Frenk Van Harreveld, Eric-Jan Wagenmakers, and Han LJ Van Der Maas. The effects of
+timepressureonchessskill: An investigationintofastandslow processesunderlyingexpert
+performance. PsychologicalResearch,71(5):591–597,2007.
+[54] EmileMathieu,TomRainforth,NSiddharth,andYeeWhyeTeh. Disentanglingdisentangle-
+mentinvariationalautoencoders. arXivpreprintarXiv:1812.02833,2018.
+[55] MinyoungKim,YutingWang,PritishSahu,andVladimirPavlovic. Bayes-Factor-VAE:Hier-
+archicalBayesiandeepauto-encodermodelsforfactordisentanglement.InIEEEInternational
+ConferenceonComputerVision,pages2979–2987,2019.
+[56] HadiFatemiShariatpanahiandMajidNiliAhmadabadi. Biologicallyinspiredframeworkfor
+learning and abstract representation of attention control. In Attention in Cognitive Systems.
+TheoriesandSystemsfromanInterdisciplinaryViewpoint,pages307–324,2007.
+[57] Alexander Mott, Daniel Zoran, Mike Chrzanowski, Daan Wierstra, and Danilo J Rezende.
+Towardsinterpretablereinforcementlearningusingattentionaugmentedagents. InAdvances
+inNeuralInformationProcessingSystems,pages12329–12338,2019.
+[58] Thomas Parr, David A. Benrimoh, Peter Vincent, and Karl J Friston. Precision and false
+perceptualinference. FrontiersinIntegrativeNeuroscience,12:39,2018.
+[59] PeterDayan,ShamKakade,andReadPMontague. Learningandselectiveattention. Nature
+Neuroscience,3(11):1218–1223,2000.
+[60] FarhanBaluchandLaurentItti. Mechanismsoftop-downattention. TrendsinNeurosciences,
+34(4):210–224,2011.
+[61] YukaSasaki,JoseENanez,andTakeoWatanabe. Advancesinvisualperceptuallearningand
+plasticity. NatureReviewsNeuroscience,11(1):53–60,2010.
+[62] Michael I Posner and Steven E Petersen. The attention system of the humanbrain. Annual
+ReviewofNeuroscience,13(1):25–42,1990.
+[63] PeterDayanandAngelaJYu. ACh,uncertainty,andcorticalinference.InAdvancesinNeural
+InformationProcessingSystems,pages189–196,2002.
+[64] QGu. Neuromodulatorytransmittersystemsinthecortexandtheirroleincorticalplasticity.
+Neuroscience,111(4):815–835,2002.
+[65] Angela J Yu and Peter Dayan. Uncertainty, neuromodulation,and attention. Neuron, 46(4):
+681–692,2005.
+[66] RosalynJMoran,PabloCampo,MkaelSymmonds,KlaasEStephan,RaymondJDolan,and
+KarlJFriston. Freeenergy,precisionandlearning: Theroleofcholinergicneuromodulation.
+JournalofNeuroscience,33(19):8227–8236,2013.
+[67] ThomasParr. TheComputationalNeurologyofActiveVision. PhDthesis,UniversityCollege
+London,2019.
+13
+[68] MatthewFellows,AnujMahajan,TimGJRudner,andShimonWhiteson. Virel: Avariational
+inferenceframeworkforreinforcementlearning. InAdvancesinNeuralInformationProcess-
+ingSystems,pages7122–7136,2019.
+[69] Sergey Levine. Reinforcementlearning and control as probabilistic inference: Tutorial and
+review. arXivpreprintarXiv:1805.00909,2018.
+[70] Thomas Parr and Karl J Friston. The computational anatomy of visual neglect. Cerebral
+Cortex,28(2):777–790,2018.
+14
+8 Supplementary material
+8.1 Expectedfreeenergyderivation
+Here,weprovidethestepsneededtoderiveEq.(8)fromEq.(7). Theterm(7b)canbere-writtenas:
+E logQ(s |π)−logQ(s |o ,π) =
+Q˜
+(cid:2)
+τ τ τ
+(cid:3)
+=E logQ(s |π)−logQ(s |o ,π)
+Q(θ|π)Q(sτ|θ,π)Q(oτ|sτ,θ,π)(cid:2) τ τ τ
+(cid:3)
+=E E logQ(s |π)−E logQ(s |o ,π)
+Q(θ|π)h Q(sτ|θ,π) τ Q(sτ,oτ|θ,π) τ τ i
+=E E H(s |o ,π)−H(s |π) ,
+Q(θ|π)h Q(oτ|θ,π) τ τ τ i
+wherewehaveonlyusedthedefinitionQ˜ = Q(o ,s ,θ|π),andthedefinitionofthestandard(and
+τ τ
+conditional)Shannonentropy.
+Next,theterm(7c)canbere-writtenas:
+E logQ(θ|s ,π)−logQ(θ|s ,o ,π) =
+Q˜
+(cid:2)
+τ τ τ
+(cid:3)
+=E logQ(o |s ,π)−logQ(o |s ,θ,π)
+Q(sτ,θ,oτ|π)(cid:2) τ τ τ τ
+(cid:3)
+=E logQ(o |s ,π)
+Q(sτ|π)Q(oτ|sτ,π) τ τ
+−E logQ(o |s ,θ,π)
+Q(θ|π)Q(sτ|θ,π)Q(oτ|sτ,θπ) τ τ
+=E H(o |s ,θ,π)−E H(o |s ,π),
+Q(θ|π)Q(sτ|θ,π) τ τ Q(sτ|π) τ τ
+wherethefirstequalityisobtainedviaanormalBayesinversion,andthesecondviathefactorization
+of Q˜. These two terms can be directly combinedto obtain Eq. (8). With this expressionat hand,
+theonlyproblemthatremainsisestimatingthesequantitiesfromtheoutputsofallneuralnetworks
+involved.Weprovidesomeinformationhere,inadditiontothatinSec.3.1.
+ForEq.(8b), H(s |π)isestimatedsamplingfromthetransitionnetwork,andH(s |o ,π)from
+τ τ τ
+the encodernetwork(bothparameterisedwith Gaussians, so entropiescanbe calculatedfromlog-
+variances). ForthefirstterminEq.(8c)wesampleseveralθfromtheMC-dropoutsandseverals
+τ
+fromthetransitionnetwork;thenaveragetheentropiesH(o |s ,θ,π)(whichareclosed-formsince
+τ τ
+o isBernoulli-distributed)overthe(θ,s )samples. Forthesecondterm,wefixtheθ andsample
+τ τ
+multiple s (so that, effectively, p(o|s) = p(o|s,θ)p(θ) is approximated with a single MC
+τ Pθ
+sample)andrepeattheprocedure.Althoughnoisy,thisestimatorwasfoundtobefastandsuitablefor
+training.Finally,notethatinbothcasesthequantitiescomputedcorrespondtoadifferencebetween
+the entropy of the average and the average of the entropies – which is the mutual information, a
+knownpartoftheEFE.
+15
+8.2 Glossaryoftermsandnotation
+Notation Definition
+S Setofallpossiblehiddenstates
+s Hiddenstateattimet,randomvariableoverS
+t
+s Sequenceofhiddenstates, s ,..,s , randomvari-
+1:t 1 t
+ableoverSt
+O Setofallpossibleobservations
+o Observationattimet,randomvariableoverO
+t
+o Sequence of observations, o ,..,o , random vari-
+1:t 1 t
+ableoverOt
+T Numberoftimestepsinepisode,positiveinteger
+U Setofallpossibleactions
+a Actionattimet,randomvariableoverU
+t
+Π Setofallallowablepolicies;i.e.,sequencesofac-
+tions,subsetofUt
+π Policyasdefinedby(a ,a ,...,a ),randomvari-
+1 2 T
+ableoverΠ
+P (s |s ,a ) Transitionfunction;parameterizedbyθ
+θs t t−1 t−1 s
+P (o |s ) Likelihood/observation function; parameterized
+θo t t
+byθ
+o
+P (s ,a ,o ) Generative model; factorized form P(a )P(s )
+θo,s 1:T 1:T−1 1:T 1 1
+T P (s |s ,a ) T P (o |s )
+Qt=2 θs t t−1 t−1 Qt=1 θo t t
+Q (a ) Approximate posterior over actions; parameter-
+φa t
+izedbyφ . Dependencyons hasbeendropped
+a t
+followingstandardvariationalinferencenotation.
+Q (s ) Approximateposterioroverhiddenstates;param-
+φs t
+eterized by φ . Dependency on o has been
+s t
+dropped following standard variational inference
+notation.
+Q (s ,a ) Approximate posterior over actions and
+φ 1:T 1:T−1
+hidden states with mean-field assumptions;
+T Q (s )Q (a )
+Qt=1 φs t φa t
+−logP (o ) Negativelog-likelihood;surprisalattimet
+θ t
+E logQ (s ,a )−logP (o ,s ,a ) Variationalfreeenergyorevidencelowerboundat
+Qφ(st,at)(cid:2) φ t t θ t t t
+(cid:3)
+time t. Thiscanbe decomposedto Eq.(5) using
+theappropriatefactorization.
+Q (s ,a ,o ) Approximate posterior with mean-field assump-
+φ 1:T 1:T−1 1:T
+tions; T Q (s )Q (a )P (o |s )
+E E logQ (s ,θ|π) Expec Q ted t= fr 1 ee φ en s erg t y,d φ e a fin t edo θ n o Π t ,fo t rsome
+P(oτ|sτ,θ) Qφ(sτ,θ|π)(cid:2) φ τ
+−logP(o ,s ,θ|π) future time–point τ. This is derived by taking
+τ τ
+(cid:3)
+an additional expectation P(o |s ,θ) where θ
+τ τ
+denotes random variable over learnt distribution
+P (.|π)
+θ
+σ Softmaxfunctionornormalizedexponential
+P(π) Posterior distribution about policies via softmax
+function of the summed (negative)expected free
+energyovertime;σ − G(π,τ)
+(cid:16) Pτ>t (cid:17)
+P(a ) Posterior distribution about actions via summed
+t
+probabilityofallpoliciesthatbeginwithapartic-
+ularaction,a
+t
+Table1:Glossaryoftermsandnotation
+16
+8.3 TrainingProcedure
+ThemodelpresentedherewasimplementedinPythonandthelibraryTensorFlow2.0.Weinitialized
+3differentADAMoptimizers,whichweusedinparallel,toallowlearningparameterswithdifferent
+rates. The networksQ ,P were optimizedusingan initiallearningrate of 10−3 and, as a loss
+φs θo
+function, the first two terms of Eq. (4). In experiments where regularization was used, the loss
+functionusedbythisoptimizerwasadjustedto
+L =−E logP(o |s ;θ ) +γD Q (s )kP(s |s ,a ;θ )
+φs,θo Q(st)(cid:2) t t o
+(cid:3)
+KL
+(cid:2)
+φs t t t−1 t−1 s
+(cid:3) (11)
++(1−γ)D Q (s )kN(0,1) ,
+KL
+(cid:2)
+φs t
+(cid:3)
+whereγ isa hyperparameter,startingwith value0andgraduallyincreasingto 0.8. Inourexperi-
+ments, we foundthatthe effectof regularizationis only to improvethe speed of convergenceand
+notthebehavioroftheagentand,thus,itcanbesafelyomitted.
+TheparametersofthenetworkP wereoptimizedusingarateof10−4 andonlythesecondterm
+θs
+ofEq.(4)asaloss. Finally,theparametersofQ wereoptimizedwithalearningrateof10−4and
+φa
+onlythefinaltermofEq.(4)asaloss. Forallpresentedexperimentsandlearningcurves,batchsize
+was set to 50. A learningiteration is defined as 1000optimizationsteps with new data generated
+fromthecorrespondingenvironment.
+In orderto learn to plan furtherinto the future,the agentswere trainedto maptransitionsevery5
+simulation time-steps in dynamic dSprites and 3 simulation time-steps in Animal-AI. Finally, the
+runtimeoftheresultspresentedhereisasfollows. FortheagentsinthedynamicdSpritesenviron-
+ment,trainingofthefinalversionoftheagentstookapproximately26hoursperversion(on-policy,
+700learningiterations)usinganNVIDIATitanRTXGPU.Producingthelearningandperformance
+curvesinFig.3,took10hoursperagentwhenthe1-stepandhabitualstrategieswereemployedand
+approximately4dayswhenthefullMCTSplannerwasused(Fig.3A).FortheAnimal-AIenviron-
+ment,off-policytrainingtookapproximately9hoursperagent,on-policytrainingtook8daysand,
+the results presented in Fig. 4 took approximately4 days, using an NVIDIA GeForce GTX 1660
+superGPU(CPU:i7-4790k,RAM:16GBDDR3).
+8.4 Trainingalgorithm
+The following algorithm is described for a single environment(batch = 1), to maintain notation
+consistencywiththemaintext,butcanalsobeappliedwhenbatch > 1. Thisalgorithmisexactly
+thesameforbothDynamicdSpritesandAnimal-AIenvironments. Finally,foreitheroff-policyor
+off-linetraining,the actionappliedtothe environment(line9)is drawnfroma differentpolicyor
+loadedfromapre-recordeddata-setrespectively.
+Algorithm1DAIMCon-policytraining
+1: fort=1,2,...,maxiterationsdo
+2: Randomizeenvironmentandsampleanewobservationo˜ t .
+3: RunplannerandcomputepriorpolicyP(a t ).
+4: ComputeQ φs (s t )usingo˜ t .
+5: ComputeQ φa (a t )usingasampledstates˜ t ∼Q φs (s t ).
+6: ComputeD t =D KL
+(cid:2)
+Q φa (a t )kP(a t )
+(cid:3)
+.
+7: Applyagradientsteponφ a usingD t asloss.
+8: Computeω t+1 fromEq.(10)usingD t .
+9: Applyactiona˜ t ∼P(a t )totheenvironmentandsampleanewobservationo˜ t+1 .
+10: Computeµ,σfromP θs (s t+1 |s˜ t ,a˜ t ).
+11: ComputeQ φs (s t+1 )usingo˜ t+1 .
+12: Applyagradientsteponθ s usingD KL
+(cid:2)
+Q φs (s t+1 )kN(µ,σ2/ω t )
+(cid:3)
+.
+13: Apply a gradient step on φ s , θ o using −E Q(st+1)(cid:2) logP θo (o t+1 |s t+1 )
+(cid:3)
++
+D Q (s )kN(µ˜,σ˜2/ω ) .
+KL
+(cid:2)
+φs t+1 t
+(cid:3)
+14: endfor
+17
+8.5 Modelparameters
+Inbothsimulatedenvironments,thenetworkstructureusedwasalmostidentical,consistingofcon-
+volutional,deconvolutional,fully-connectedanddropoutlayers(Fig.6). Inbothcases, the dimen-
+sionalityofthelatentspaceswas10. Forthetop-downattentionmechanism,theparametersused
+wereα = 2,b = 0.5,c = 0.1andd = 5fortheAnimal-AIenvironmentandα = 1,b = 25,c = 5
+andd = 1.5fordynamicdSprites. Theactionspacewas|A| = 3forAnimal-AIand|A| = 4for
+dynamicdSprites. Finally,withrespecttotheplanner,wesetc = 1inbothcases,T = 0.8
+explore dec
+(whenanothervalueisnotspecificallymentioned),thedepthofMCTSsimulationrolloutswasset
+to3,whilethemaximumnumberofMCTSloopswassetto300fordynamicdSpritesand100for
+Animal-AI.
+size: 31 x (cid:3) (cid:4) (cid:5) (cid:6) 2 kernel: 3
+strides:
+(cid:7)
+, 2)
+size: 15x15x32
+kernel: 3
+strides: (2, 2)
+size: 31x31x32
+kernel: 3
+strides: (2, 2)
+size: 7x7x64
+kernel: 3
+strides: (2, 2)
+size: 3x3x64
+kernel: 3
+strides: (2, 2)
+size: 256
+ULeR
+ULeR
+ULeR
+ULeR
+ULeR
+ULeR
+rate: 0.5
+size: 256
+ULeR
+rate: 0.5
+size: 256
+ULeR
+size: 256
+size: 16x16x64
+kernel: 3
+strides: (2, 2)
+size: 32x32x64
+kernel: 3
+strides: (2, 2) Conv2D
+size: 64x64x32
+kernel: 3 DeConv2D
+strides: (2, 2)
+rate: 0.5 Fully-connected
+size: 64x64x1
+kernel: 3
+strides: (2, 2)
+size: 10 + 10 Dropout
+ULeR
+ULeR
+ULeR
+ULeR
+rate: 0.5
+size: 256
+ULeR
+rate: 0.5
+size: 256
+ULeR
+size: 512
+rate: 0.5
+ULeR
+rate: 0.5
+size: 512
+ULeR
+rate: 0.5
+size: 512
+ULeR
+size: 128
+rate: 0.5
+size: 10+10
+ULeR
+size: 128
+size: 4
+ULeR
+size: 256
+ULeR
+Q(s): P(o|s): P(s|s,a): Q(a|s):
+input: 64x64x1 input: 10 input: 10+4 input: 10
+rate: 0.5
+Figure6:NeuralnetworkparametersusedforthedynamicdSpritesexperiments.FortheAnimal-AI
+experiments,theonlydifferencesare: i)theinputlayerofthenetworkusedforQ (s)andoutput
+φs
+layerforP (o |s )haveshape(32,32,3),ii)theinputlayerofP (s |s ,a )hasshape(10+3)
+θo t t θs t+1 t t
+andiii)theoutputlayerofQ (a )hasashapeof(3),correspondingtothethreeactionsforward,
+φa t
+leftandright.
+18
+8.6 Examplesofagentplans
+A) Learning iteration: 2
+B) Learning iteration: 700
+Figure7:ExamplesofconsecutiveplansinthedynamicdSpritesenvironmentduringasingleexper-
+iment.
+Figure8:ExamplesofplansinAnimal-AIenvironment.Exampleswerepickedrandomly.
+19
+8.7 Examplesoftraversals
+s
+i
+s
+i
+ycneuqerF
+Correlation
+Figure9:LatentspacetraversalsforthefullactiveinferenceagentoptimizedinthedynamicdSprites
+environment.Histogramsrepresentdistributionofvaluesfor1000randomobservations.Thegraphs
+ontherightcolumnrepresentcorrelationbetweeneachdimensionofsandthe6groundtruthfea-
+turesoftheenvironment.Thisincludesthe5featuresofthedSpritesdatasetandreward,encodedin
+thetoppixelsshownins .
+9
+20

@@ -1,0 +1,526 @@
+Active Preference Inference using Language Models
+and Probabilistic Reasoning
+WasuTopPiriyakulkij VolodymyrKuleshov KevinEllis
+CornellUniversity CornellTech CornellUniversity
+wp237@cornell.edu kuleshov@cornell.edu kellis@cornell.edu
+Abstract
+Actively inferring user preferences, for example by asking good questions, is
+importantforanyhuman-facingdecision-makingsystem. Activeinferenceallows
+suchsystemstoadaptandpersonalizethemselvestonuancedindividualpreferences.
+Toenablethisabilityforinstruction-tunedlargelanguagemodels(LLMs), one
+maypromptthemtoaskusersquestionstoinfertheirpreferences,transforming
+thelanguagemodelsintomorerobust,interactivesystems. However,outofthe
+box,thesemodelsarenotefficientatextractingpreferences: thequestionsthey
+generate are not informative, requiring a high number of user interactions and
+impedingtheusabilityofthedownstreamsystem. Inthiswork,weintroducean
+inference-timealgorithmthathelpsLLMsquicklyinferpreferencesbyusingmore
+informativequestions. Ouralgorithmusesaprobabilisticmodelwhoseconditional
+distributionsaredefinedbypromptinganLLM,andreturnsquestionsthatoptimize
+expectedentropyandexpectedmodelchange. Resultsinasimplifiedinteractive
+webshoppingsettingwithrealproductitemsshowthatanLLMequippedwithour
+entropyreductionalgorithmoutperformsbaselineswiththesameunderlyingLLM
+ontaskperformancewhileusingfeweruserinteractions.
+1 Introduction
+Foranydecision-makingAIsystem,knowingeachuser’staskpreferencesiscrucialforthesystemto
+bemosthelpfultoindividualusers. Ideally,inthecontextoflanguage-basedAIsystems,wemight
+naivelyhopeforuserstofullyspecifyataskinnaturallanguage. However,whilehumanspeakerscan
+beveryeffectiveatselectingtheirutterances[7],theyoftenfailtofullyspecifytheirtaskpreferences
+tohumanorAIlisteners. Designinglanguage-supportedAIsystemsthatcanactivelyinferusers’task
+preferences(e.g.,byaskingquestionswhentheyareuncertain)couldhelpmakethesetechnologies
+morealigned,morepersonalized,andultimatelymorebroadlyapplicable.
+Recently, large language models (LLMs) [2, 14], enhanced with instruction tuning [3, 11], have
+shownimpressiveperformanceatfollowingnaturallanguagetaskinstructions. WhileLLMsare
+not natively trained to be good active learners, we can prompt them, leveraging their in-context
+learningability,toaskusersquestionstoinfertheirpreferences. Concurrentwork[8]hasshown
+that prompting LLMs to elicit user preferences indeed helps improve performances over various
+tasks. Usinglanguagemodelstofirstelicituserpreferencesbeforecarryingoutthetasksprovidesa
+promisingpathtowardenablingthesemodelsindomainsthatrequirefine-grainedunderstandingof
+userpreferences.
+Nevertheless,asimpleconversationwiththeseoff-the-shelfLLMs(Figure4)revealstheirpoorability
+toefficientlylearnuserpreferencesfromfewquestions. AlthoughtheseLLMsareabletoaskrelevant
+questionswhenprompted,theydonotaskthemoreinformativequestions,giventhecurrentcontext.
+Thisincreasestheamountofmodel-humaninteractionneededtoinfertheuser’spreferences.
+FoundationModelsforDecisionMakingWorkshopatNeurIPS2023
+4202
+nuJ
+62
+]LC.sc[
+2v90021.2132:viXra
+I want to buy a hair growth serum oil
+Are you looking for a hair growth
+serum that contains ginger?
+I want to buy a hair growth serum oil
+Expected Entropy: 1.80 Are you looking for a hair growth
+serum that contains ginger?
+Do you want a product that
+Expected Entropy: 1.61 specifically targets damaged hair?
+Are you interested in a product that
+Expected Entropy: 1.98 also promotes eyelash growth?
+Do you want a product that
+specifically targets damaged hair?
+Figure1:(Top)Vanillainstruction-tunedLLMpromptedtobeahairgrowthserumoilseller.(Bottom)
+LLMwithinference-timeexpectedentropyreductionalgorithm.
+We propose an inference-time algorithm for active inference of user preferences by LLMs. Our
+algorithmismotivatedbytheobservationthatwhileout-of-the-boxLLMsaresuboptimalatinter-
+activelyinferring user preferences, theyare decent atgenerating diverse questions for extracting
+preferences,andcangenerateplausibleanswerstoeachsuchquestion. Moreover,givenanongoing
+interactionwithauser,LLMscanreasonablyscorehowlikelytheuserwillansweraquestionin
+certainways. Thus,wecanusetheLLM-definedscorestodefineafullprobabilisticgenerativemodel
+ofwhatquestiontoask,howtheusermightrespond,andhowthoseresponsesupdatethesystem’s
+probabilisticbeliefs. Concretely,ouralgorithmsamplesafinitesetofquestionsfromtheLLMand
+choosestheonethatmaximizesinformationgain.
+We evaluate our approach in a simplified web shopping setting using data from a realistic web
+shoppingbenchmark[16]. Eachtaskconsistsofalistofproducts,togetherwithauserwhohasa
+latentpreferenceforaspecifictargetproductfromthatlist.LLMswillaskaseriesofyes/noquestions
+toinferthetargetproduct. Wecompareourinference-timeactiveinferencemethodagainstavanilla
+instruction-tunedLLM[3,11]andReAct[17],findingthatourapproachoutperformsbothbaselines
+whileusingfewerquestions. Inlinewithrecentwork[5,20,6],ourresultsshouldbeseenasaway
+ofaugmentingLLMswithinference-timeprobabilisticreasoning.
+2 ActivePreferenceInference
+2.1 Taskformulation
+Wefirstintroducetheactivepreferenceinferenceformulation. Fordecision-makingtasks,human
+preferencescanbeviewedasrewardfunctionsthatmapdecisionstoascalar,R:X →RwhereX
+isthespaceofdecisions. Thehumanusercanbedescribedwitharewardfunctionandananswer
+model(R∗,p (a|q))whereq,a∈Σ∗. qandaareanaturallanguagequestionandanswer,and
+human
+Σ∗isthespaceofnaturallanguage. Activepreferenceinferencetaskboilsdowntoataskofaskinga
+seriesofquestionsq ,..,q ,towhichtheanswersa ∼p (a|q )willbegenerated,toinferthe
+1 k i human i
+unknowntargetrewardR∗.
+Activepreferenceinferenceresemblesactivelearningbutdiffersinafewkeyways. First,active
+preferenceinferenceseparatestheanswermodelp (a|q)fromtherewardfunctionR∗. This
+human
+formulation allows the flexibility of asking arbitrary questions to the user. We also note that the
+2
+Task-specificdatacollection Informative-question-askingability Inferencecost
+TraditionalinteractiveNLPsystem
+Required Optimizedduringtraining Low
+[12,18]
+LLMw/oprobabilisticreasoning
+Notrequired Notoptimized Medium
+[8]
+LLMw/probabilisticreasoning
+Notrequired Optimizedduringinference High
+(ours)
+Table1: Comparisonbetweendifferentexistingapproachesforactivepreferenceinference
+questionqcanbeoftheform"Isthefollowingexamplepositiveornegative: {example}",which
+meansactivepreferenceinferencecanbeseenasageneralizationofactivelearning. Second,active
+learningusuallyassumesaccesstounlabeleddatapointsthatanalgorithmcanquery,whileactive
+preferenceinferenceasksanalgorithmtogenerateitsownquestions.
+2.2 Existingapproaches
+PriortotheadventofLLMs,therewereattemptsattrainingNLPsystemsspecificallyforinteractive
+inference[12,18]. Althoughtheseworksdonotconsiderthequestionofhowtoinferthereward
+functionfromthefinalresultconversation,wecaneasilydefinethepredictedrewardfunctionas
+LLMconditionedwiththatconversation. Themaindownsideofthesemethods,however,isthatthey
+requireexpensivetask-specificdatacollectionfortraining. Havingtogatherdataforeverynewtask
+severelylimitstheusabilityofthesemethods.
+LLM-basedapproachestoactivepreferenceinferencepromisetobypassthedatacollectionprocess
+with its zero-shot learning capability. With instruction-tuned LLMs, we can directly prompt the
+modelstoaskusersquestionstoinferpreferences. However,asmentionedandconfirmedlaterinour
+experiments,thesemodelsturnouttobeineffectiveatpreferenceinferenceoff-the-shelfandrequire
+manyinteractionswiththeusersbeforearrivingatagoodpredictionoftherewardfunction.
+In this work, we equip LLMs with inference-time probabilistic reasoning algorithm defined in
+Section3toaddressthiscoreissue,extractingasmuchinformationfromtheuseraspossibleinas
+fewquestionsasneeded. Thisessentiallyminimizeshuman-usereffort,attheexpenseofmoreLLM
+computation. AsLLMsinferencewilllikelybecomecheaperinthefuture,webelievethisistheright
+tradeofftomake. Table1comparesothermethodsthatwithalternativetradeoffs.
+3 Inference-timeprobabilisticreasoningforaskinginformativequestion
+Inthissection, wedefinetherelevantmodelsandpresenttwomeasuresfromtheactivelearning
+literature[13]thatonemayusetopickaninformativequestion.
+3.1 Modeldefinition
+Todevelopourmodel,wemakeanassumptionthatthetargetrewardfunctionR∗isabinaryfunction
+thatis1onlyatthetargetdecisionx∗ ∈X and0everywhereelse. Withthisassumption,weonly
+needtoinferthetargetdecisionx∗toknowR∗.
+We define the joint distribution as p(x,q,a) = p(a|x,q)p(x)p(q). The distributions needed to
+computethejointaredefinedbypromptinganLLM:
+p(q)=Uniform(Σ∗)
+p(x)=Uniform(X)
+(cid:34) abinary0/1scoreoutputbypromptinganLLM (cid:35)
+p(a|x,q)= whethertheansweratothequestionqisconsistent
+withtheproductdescriptionofx
+Withthesedefineddistributions,weknowthatp(x|q,a)∝p(a|x,q)becausep(x|q)=p(x)=U(X).
+(cid:80)
+We can also easily calculate p(a|q) = p(a|x,q)p(x). In addition, we define a question
+x∈X
+proposal distribution r(q) by asking an LLM to generate a finite number of possible questions
+givenallproductinformationX. Promptsusedforobtainingp(a|x,q)andr(q)canbefoundedin
+AppendixA.3.
+3
+Figure2:(Left)Averageexpectedbinaryrewardatincreasingnumberofnumberofquestions.(Right)
+Averageexpectedsoftrewardatincreasingnumberofnumberofquestions.
+We can easily extend our model to the setting where we have multiple pairs of questions and
+answers. Let c denote a conversation containing a sequence of questions and answers c =
+{(q(c),a(c)),...,(q(c),a(c))}. Our model becomes p(x,c) = p(x) (cid:81) p(a(c)|x,q(c))p(q(c)). With
+1 1 m m i i i i
+thisnewmodel,p(x|c) ∝ (cid:81) p(a(c)|x,q(c)),andp(a|c,q) ∝ (cid:80) (p(a|x,q) (cid:81) p(a(c)|x,q(c))).
+i i i x∈X i i i
+Wealsomodifythepromptforr(q)totakeintoaccounttheconversation,notatedr(q|c).
+3.2 Objectivesforchoosinginformativequestions
+WiththedistributionsdefinedinSection3.1,wesampleafinitesetofquestionsfromtheproposal
+distributionr(q|c),calculatetheamountofinformationeachquestionwouldrevealinexpectation,
+andsubsequentlypickthequestionwiththehighestamountofexpectedinformation.Weconsidertwo
+objectives,commonlyusedintheactivelearningfield[13],tomeasurehowinformativeaquestionis:
+expectedentropyminimizationandexpectedmodelchangemaximization.
+ExpectedEntropyMinimization. Themostinformativequestioncouldbethoughtasthequestion
+whichreducesthemostamountofuncertaintyinexpectation. Thisnotioncanbecapturedwiththe
+expectedentropyminimizationobjective. Theobjectiveisasfollows:
+argminE [H(p(x|c,q,a)] (1)
+p(a|c,q)
+q∼r(q|c)
+ExpectedModelChangeMaximization. Anotherapproachistothinkaboutmodelparameter/be-
+liefandconsiderthemostinformativequestionasthequestionthatwouldmakethemostchangeto
+themodelparameter/belief. Forourtasks,wecanletbeliefbeadecisionx∈X,representingthe
+notionthatwebelievexisthedecisionwithapositivereward. WecanuseKLdivergencetomeasure
+thechangeinbelief. Theobjectiveisasfollows:
+argmaxE [D (p(x|c,q,a)||p(x|c))] (2)
+p(a|c,q) KL
+q∼r(q|c)
+Equivalencebetweenthetwoobjectives. Inourspecificsetting,itcanbeshownthatexpected
+entropyminimizationandexpectedmodelchangemaximizationareinfactequivalent. Thisisdueto
+thefactthattheexpectedcross-entropyE [E [−logp(h|c)]isthesameforallq,a
+pmodel(a|c,q) p(h|c,q,a)
+becausebyourdefinition,p(h|c,q,a)>0ifp(h|c)>0,andifp(h|c)>0,thenp(h|c)=f(c)is
+constanttoh. MoredetailscanbefoundedatAppendixA.1
+4 Experiments
+WeevaluateanLLMaugmentedwithourentropyreductionalgorithm(entropyreductionLLM)on
+150simplifiedwebshoppingtasks,eachtaskconsistingof10productitemsfromWebShop[16]. The
+productsineachtaskcomefromthesameproducttype,e.g.,hairgrowthserumoil,HDMIcable,
+phonecase,etc. Whilethegoalofactivepreferenceinferenceistoinferthetargetrewardfunction
+4
+R∗,itismorerealisticinweb-shoppingsettingstomakealgorithmsreturnasingleproductxˆand
+evaluatethembasedontherewardofthereturnedproductR∗(xˆ),soweemploythisevaluationin
+thiswork. ThisevaluationcanstillbeseenasimplicitlyinferringrewardfunctionRˆandthenreturn
+xˆ=argmax Rˆ(x). Weconsidertwotypesofrewardfunctions: binaryandsoftreward. Both
+x∈X
+areconstructedbasedonatargetproductx∗randomlychosenfromthetask’slistofproducts. More
+detailsontaskcreationcanbefoundatAppendixA.2. Wesimulatehumanusersp (a|q)with
+human
+GPT-4[10]byinputtingtargetproductx∗ intheprompt. Wemakeasimplifyingassumptionthat
+onlyyes/noquestionstousersareallowed.
+Two baselines we consider are vanilla instruction-tuned LLM [3, 11] and ReAct LLM [17]. All
+methodsusethesamep(x|q,a)tochooseaproductgivenquestionsandanswers;thedifferencesin
+thesemethodslieinthequestionstheychoosetoask. Vanillainstruction-tunedLLMispromptedto
+roleplaytobeaproductsellerandaskquestions. Ourentropyreductionmethodsamples8questions
+fromtheproposaldistributionr(q|c)butwouldreducedowntovanillainstruction-tunedLLMifwe
+onlysampleonequestionfromtheproposaldistribution. ReActisapromptingmethodforLLM
+Agentswherethinkingispartoftheactionspace. Inourquestion-askingscenario,askingaquestion
+canbeseenasanaction. Wewriteapromptthathasathinkingprocessonwhatquestionisbest
+to ask at each point. Prompts for both of these methods can be found at Appendix A.3. When
+morethanoneproducthaspositiveprobabilityp(x|q,a)attheendofthequestioning,weassume
+themethodsreturnthepositive-probabilityproductsatrandomandactuallycalculatetheexpected
+rewardonthem. TheunderlyingLLMforallmethodsisGPT-4. Wesampleatzerotemperature(For
+theproposaldistribution,weactuallypromptLLMtoreturnalistofdiversequestionsinsteadof
+samplingquestionsfromLLMwithpositivetemperature).
+4.1 BinaryReward
+First,weconsiderabinaryrewardsettingwhere
+therewardis1ifthetargetproductisretrieved
+and0otherwise. Thisbinaryrewardisconsis-
+tent with our modeling assumption. Figure 2
+(left) shows that entropy reduction LLM sig-
+nificantlyoutperformsbothbaselineswhenthe
+number of questions is greater than one. In
+fact, our algorithm after three questions even
+surpassesthetwobaselinesafterfourquestions.
+Figure 3 reports average information gain at
+each round of questioning. For the first three
+questions, we can see that entropy reduction
+LLM gains more information than both base-
+lines. At the last question, vanilla instruction-
+tunedLLMgetsmoreinformation,butallmeth-
+odsdonotreceivemuchinformationgainatthis Figure3: Averageinformationgainateachques-
+point. Thereare10productsinthelistofprod- tion. Confidenceintervalsarecomputedover150
+uctsforeachtask,andatthefourthquestion,not diffenttasks.
+much information is left to be extracted from
+humanusers.
+4.2 SoftReward
+Wealsoconsideramorerealistic, softrewardsetting. Inpracticalscenarios, itislikelythatuser
+preferencesforproductitemsarenotall-or-nothing,andusersatisfactionuponreceivingeachproduct
+itemasoutputismorefine-grained. WeadopttherewardusedintheWebshopbenchmark[16]. We
+excludeproductpriceandoptionsfromtheoriginalrewardcalculationastheyarenotrelevantin
+ourtasksetting. TherewardisthencalculatedbasedonWebshop’stextmatchingheuristicsandthe
+attributeoverlapbetweenthetargetproductandthereturnedproduct. Therewardfallswithinthe
+rangeof0to1,withanexactmatchyieldingarewardof1.
+Similartothebinaryreward,Figure2(right)showsthatentropyreductionLLMoutperformsboth
+baselineswhenthenumberofquestionsisgreaterthanone. Eventhoughthesoftrewardisdifferent
+5
+from our modeling assumption, the inference-time entropy reduction algorithm is still better at
+preferenceinferencethanthetwobaselines.
+5 RelatedWork
+Learningtoaskclarifyingquestion. Therearemanypriorworksinlearningtoaskclarification
+questions[12,1,18,19]. [12]reliesontheideathatagoodclarificationquestionistheonewhose
+answerwillbeuseful. TheyuseQ&Aforumdatatotrainneuralnetworkstobeananswermodel
+andananswerutilitycalculatorandchoosequestionthatmaximizesexpectedutility. [1]looksat
+theproblemofaskinggoodclarifyingquestionsfromaninformationretrievalperspective,andtrain
+modelswithquestion-answerpairsdatatoretrievegoodquestionsfromacrowdsourceddataset. [18]
+studiesinteractiveclassificationwherequestionsareselected based ontheentropyminimization
+principlesimilartoourwork. Theycrowdsourcenon-interactivedatatotrainneuralnetworksusedto
+definetheirprobabilitydistributions.Themaindifferencebetweenourworkandtheseworkisthatwe
+donotrequireanysortoftrainingdataandinsteadrelyonthepowerfulzero-shotlearningcapability
+ofLLMstodefinerichdistributions,whichwecanprobabilisticallyreasonoveratinferencetime.
+ProbabilisticreasoningwithLLMs. [5]providesaunifyingframeworkofseeingrecentinference-
+timeLLMalgorithms[9,15,4]asperformingreasoningwithprobabilisticprograms. [20]utilizes
+LLMtodefinepriordistributionsinaprobabilisticgraphicalmodelandperformsinferenceinthe
+modeltosolvenavigation,actionrecognition,andimagesegmentation. Ourworkstudiesinference-
+timeprobabilisticreasoningwithLLMinthecontextofactivepreferenceinference.
+6 ConclusionandDiscussion
+Inthiswork,wepresentaninference-timealgorithmtoenhancetheefficiencyofactivelyinferring
+preferencesofLLMsanddemonstratethatinourwebshoppingsetting,ourmethodperformsbetter
+thanthebaselinesusingfeweruserinteractions.
+Thereareseveralfuturedirectionsforthiswork. Themostobviousoneistolettheallowedquestions
+beopen-ended. Eventhoughthismodificationwillnotcallforanychangetothemodeldefinition,
+this generalization will necessitate an approximation to the objective calculation as there might
+be infinitely many answers to an open-ended question. One needs to test empirically how much
+computationisneededbeforetheMonteCarloapproximationiscloseenoughtothetrueexpected
+value. Anotherdirectionistocomeupwithamoreflexibleprobabilisticmodelthatdoesnotassume
+thetargetrewardfunctionisbinary. Whilethisassumptionworkswellinthewebshoppingsetting,
+asevidentlyshowninbothbinaryandsoftrewardevaluation,itmayresultinpoorperformancefor
+othertasksthatinvolveafullpredictionoftherewardfunction.
+References
+[1] MohammadAliannejadi,HamedZamani,FabioCrestani,andWBruceCroft. Askingclarifying
+questions in open-domain information-seeking conversations. In Proceedings of the 42nd
+internationalacmsigirconferenceonresearchanddevelopmentininformationretrieval,pp.
+475–484,2019.
+[2] TomBrown,BenjaminMann,NickRyder,MelanieSubbiah,JaredDKaplan,PrafullaDhariwal,
+ArvindNeelakantan,PranavShyam,GirishSastry,AmandaAskell,etal. Languagemodelsare
+few-shotlearners. Advancesinneuralinformationprocessingsystems,33:1877–1901,2020.
+[3] PaulFChristiano,JanLeike,TomBrown,MiljanMartic,ShaneLegg,andDarioAmodei. Deep
+reinforcementlearningfromhumanpreferences. Advancesinneuralinformationprocessing
+systems,30,2017.
+[4] AntoniaCreswell,MurrayShanahan,andIrinaHiggins. Selection-inference: Exploitinglarge
+languagemodelsforinterpretablelogicalreasoning. arXivpreprintarXiv:2205.09712,2022.
+[5] DavidDohan,WinnieXu,AitorLewkowycz,JacobAustin,DavidBieber,RaphaelGontijo
+Lopes,YuhuaiWu,HenrykMichalewski,RifASaurous,JaschaSohl-Dickstein,etal.Language
+modelcascades. arXivpreprintarXiv:2207.10342,2022.
+6
+[6] KevinEllis. Human-likefew-shotlearningviabayesianreasoningovernaturallanguage. In
+Thirty-seventhConferenceonNeuralInformationProcessingSystems,2023.
+[7] PaulGrice. StudiesintheWayofWords. HarvardUniversityPress,1991.
+[8] BelindaZLi,AlexTamkin,NoahGoodman,andJacobAndreas. Elicitinghumanpreferences
+withlanguagemodels. arXivpreprintarXiv:2310.11589,2023.
+[9] MaxwellNye,AndersAndreassen,GuyGur-Ari,HenrykWitoldMichalewski,JacobAustin,
+David Bieber, David Martin Dohan, Aitor Lewkowycz, Maarten Paul Bosma, David Luan,
+CharlesSutton,andAugustusOdena. Showyourwork: Scratchpadsforintermediatecomputa-
+tionwithlanguagemodels,2021. https://arxiv.org/abs/2112.00114.
+[10] OpenAI. Gpt-4technicalreport,2023.
+[11] LongOuyang,JeffreyWu,XuJiang,DiogoAlmeida,CarrollWainwright,PamelaMishkin,
+ChongZhang,SandhiniAgarwal,KatarinaSlama,AlexRay,etal. Traininglanguagemodelsto
+followinstructionswithhumanfeedback. AdvancesinNeuralInformationProcessingSystems,
+35:27730–27744,2022.
+[12] SudhaRaoandHalDauméIII. Learningtoaskgoodquestions: Rankingclarificationquestions
+usingneuralexpectedvalueofperfectinformation. InProceedingsofthe56thAnnualMeeting
+oftheAssociationforComputationalLinguistics(Volume1: LongPapers),pp.2737–2746,
+Melbourne,Australia,July2018.AssociationforComputationalLinguistics. doi: 10.18653/v1/
+P18-1255. URLhttps://aclanthology.org/P18-1255.
+[13] BurrSettles. Activelearningliteraturesurvey. 2009.
+[14] HugoTouvron,ThibautLavril,GautierIzacard,XavierMartinet,Marie-AnneLachaux,Timo-
+théeLacroix,BaptisteRozière,NamanGoyal,EricHambro,FaisalAzhar,etal. Llama: Open
+andefficientfoundationlanguagemodels. arXivpreprintarXiv:2302.13971,2023.
+[15] JasonWei,XuezhiWang,DaleSchuurmans,MaartenBosma,FeiXia,EdChi,QuocVLe,
+DennyZhou, etal. Chain-of-thoughtpromptingelicitsreasoninginlargelanguagemodels.
+AdvancesinNeuralInformationProcessingSystems,35:24824–24837,2022.
+[16] ShunyuYao,HowardChen,JohnYang,andKarthikNarasimhan. Webshop: Towardsscalable
+real-worldwebinteractionwithgroundedlanguageagents. InArXiv,2022.
+[17] ShunyuYao,JeffreyZhao,DianYu,NanDu,IzhakShafran,KarthikNarasimhan,andYuan
+Cao. ReAct:Synergizingreasoningandactinginlanguagemodels. InInternationalConference
+onLearningRepresentations(ICLR),2023.
+[18] LiliYu, HowardChen, SidaI.Wang, TaoLei, andYoavArtzi. Interactiveclassificationby
+askinginformativequestions. InProceedingsofthe58thAnnualMeetingoftheAssociationfor
+ComputationalLinguistics,pp.2664–2680,Online,July2020.AssociationforComputational
+Linguistics. doi: 10.18653/v1/2020.acl-main.237. URLhttps://aclanthology.org/2020.
+acl-main.237.
+[19] HamedZamani,SusanDumais,NickCraswell,PaulBennett,andGordLueck. Generating
+clarifyingquestionsforinformationretrieval. InProceedingsofthewebconference2020,pp.
+418–428,2020.
+[20] ZiruiZhao,WeeSunLee,andDavidHsu. Largelanguagemodelsascommonsenseknowledge
+forlarge-scaletaskplanning. arXivpreprintarXiv:2305.14078,2023.
+A Appendix
+7
+User: Consider the following products:
+1. Product 1 - blue, plastic, heavy, dust-proof, iPhone phone case
+2. Product 2 - green, plastic, heavy, dust-proof, iPhone phone case
+3. Product 3 - purple, plastic, heavy, dust-proof, iPhone phone case
+4. Product 4 - green, leather, light, water-proof, iPhone phone case
+5. Product 5 - red, plastic, heavy, dust-proof, iPhone phone case
+6. Product 6 - red, plastic, heavy, dust-proof, android phone case
+Please ask yes or no question to figure which product I want, one at a time.
+You will only get to ask three questions, so choose wisely. If you're
+(cid:44)→
+ready, you can go ahead and ask the first question
+(cid:44)→
+GPT-4: Is the product you want made of plastic?
+User: yes
+GPT-4: Is the product you want for an iPhone?
+User: yes
+GPT-4: Is the product you want blue?
+User: no
+GPT-4: Is the product you want green?
+User: no
+GPT-4: Is the product you want red?
+User: no
+GPT-4: So, the product you want is the purple, plastic, heavy, dust-proof,
+iPhone phone case. Is that correct?
+(cid:44)→
+Figure4: AnexampleconversationwithGPT-4(zerotemperature)demonstratinghowGPT-4is
+lackingefficiencywhenpromptedtoaskquestions. Inthisexample,onecanalwaysfigureoutthe
+targetproductwithin3questions,butGPT-4isusing5questions,whichisasbadasaskingifthe
+targetproductisProduct1or2or3andsoon.
+A.1 Equivalencebetweenexpectedentropyminimizationandexpectedmodelchange
+maximization
+Expected entropy minimization and expected model change maximization can be shown to be
+equivalentforthesettinginthiswork. Theproofisstraightforward:
+argmaxE [D (p(h|c,q,a)||p(h|c))]
+pmodel(a|c,q) KL
+q∼r(q|c)
+=argmaxE [E [logp(h|c)]−H(p(h|c,q,a))]
+pmodel(a|c,q) p(h|c,q,a)
+q∼r(q|c)
+=argmax−H(p(h|c,q,a))
+q∼r(q|c)
+=argminH(p(x|c,q,a))
+q∼r(q|c)
+A.2 TaskCreation
+Tocreatethetasksweevaluateinourwork,wefirstuseGPT-4toextractproducttypes/categories
+fromactualproductsfromWebShop[16](seeFigure5). Eachtaskhasitsownproducttype,andthe
+8
+listofproductsforthetaskisretrievedbysearchingWebShopwebsiteforthetop10productswith
+thetask’sproducttypeasthesearchkeyword. Thetargetproductissampledrandomlyfromthelist
+ofproducts.
+Given a product, please tell me what's the type of the product.
+For example,
+Product: Bright Citrus Deodorant by Earth Mama | Natural and Safe for
+Sensitive Skin, Pregnancy and Breastfeeding, Contains Organic Calendula
+(cid:44)→
+3-Ounce
+(cid:44)→
+Product type: Deodorant
+Here's the product,
+Product: {product}
+Please put your answer in the format 'Product type: '. Do not say anything
+else.
+(cid:44)→
+Figure5: Promptusedforextractingproducttype
+A.3 Prompts
+Figure6,Figure7,Figure8,Figure9,Figure10containthepromptsforr(q|c),p (a|q),vanilla
+human
+baseline,ReActbaseline,andsoftrewardcalculationrespectively. Forp(x|q,a),weactuallyuse
+thesamepromptasp (a|q)tocalculateitbysimulatingahumanthatprefersxmostandask
+human
+questionqtothesimulatedhuman. Supposea(human)istheanswerthatthesimulatedhumanoutputs.
+Thebinaryscorethatp(x|q,a)isproportionaltois1whentheanswermatcheshumananswerand0
+whenitisnot.
+Suppose you are a seller, and you need to determine which of the following
+products the customer wants to buy:
+(cid:44)→
+{products}
+The conversation you've had with the customer so far is as follows:
+\n{conversation}\n. \
+(cid:44)→
+Generate a list of 10 yes/no questions you would ask the customer to
+further figure out which of the products the customer want.
+(cid:44)→
+Keep in mind that:
+1. The question must ask for a yes or no answer only.
+2. The question must ask about one specific thing, do not use 'and' or 'or'
+to put many features/properties/attributes together.
+(cid:44)→
+3. Do not explain.
+Figure6: Promptusedforr(q|c)
+Suppose you want to buy the following product:
+{product_txt}
+You will interact with a salesperson. They will ask you a question about
+the product you want. Please answer only either yes or no based on the
+(cid:44)→
+product information.
+(cid:44)→
+If you are asked about features not mentioned in the product description,
+then say No.
+(cid:44)→
+Figure7: Promptusedforsimulatingp (a|q)andalsoforp(x|q,a)
+human
+9
+Suppose you are a seller, and you need to determine which of the following
+products the customer wants to buy:
+(cid:44)→
+{products}
+The conversation you've had with the customer so far is as follows:
+\n{conversation}\n. \
+(cid:44)→
+What's the next yes/no question you would ask the customer to further
+figure out which of the products the customer want?
+(cid:44)→
+Keep in mind that:
+1. The question must ask for a yes or no answer only.
+2. The question must ask about one specific thing, do not use 'and' or 'or'
+to put many features/properties/attributes together.
+(cid:44)→
+3. Do not explain.
+Figure8: PromptusedforroleplayingVanillaLLM
+10
+Please choose the appropriate action (think, ask_question, get_products,
+choose_products) based on the observation and given example runs.
+(cid:44)→
+Important: the question must be a yes/no question
+Example 1:
+Instruction: i want to buy a phone case
+Action: show_products[]
+Observation:
+1. ID: B09G9D18YS | Product Name: BURGA Phone Case Compatible with iPhone
+13 - Hybrid 2-Layer Hard Shell + Silicone Protective Case - Black Polka
+(cid:44)→
+Dots Pattern Nude Almond Latte Fashion - Scratch-Resistant Shockproof
+(cid:44)→
+Cover
+(cid:44)→
+- Price: $19.95
+- Attributes: phone case, wireless charging, heavy duty
+- Options: color (almond latte, black & gold onyx, dazzling glow, emerald
+pool, fatal contradiction, gentle wind, gold dust, hidden beauty,
+(cid:44)→
+iconic ruby, mystic river)
+(cid:44)→
+... # Full list of products in the actual prompt not included here for
+brevity
+(cid:44)→
+Action: think[I'll ask a few yes/no questions to determine which one of
+these products the customer wants. Some of these phone cases are
+(cid:44)→
+holster phone cases. I'll ask a yes/no question about if they want a
+(cid:44)→
+holster]
+(cid:44)→
+Observation: OK.
+Action: ask_question[Are you looking for a holster phone case? (Yes/No)]
+Observation: Answer: No.
+Action: think[Ok, we're looking for non-holster phone case. Among these,
+there are some clear phone cases. Let's ask a yes/no question if they
+(cid:44)→
+want the phone case to be clear]
+(cid:44)→
+Observation: OK.
+Action: ask_question[Are you looking for a clear phone case? (Yes/No)]
+Observation: Answer: No.
+... # Full question asking in the actual prompt not included for brevity
+IMPORTANT: No more question can be asked.
+Action: choose_product[]
+Observation: OK.
+Example 2:
+Instruction: {instruction}
+Figure9: PromptusedforReAct
+11
+Given {product_type} with the following description:
+{target_product_txt}
+Please rate each of the following {product_type} on a scale of 1-10 based
+on how similar it is to the given target {product_type}
+(cid:44)→
+{products_txt}
+The {product_type} least similar to the given target {product_type} should
+receive a score of 1. Please give you answer in the format '1.
+(cid:44)→
+Explanation: one sentence, Rating: x/10' and so on. Always explain and
+(cid:44)→
+give rating to all answers. At the very end, please put all output
+(cid:44)→
+ratings in the form 'All ratings: score_1, score_2, ...
+(cid:44)→
+Figure10: Promptusedtocalculatesoftreward
+12

@@ -1,0 +1,919 @@
+Mobile Manipulation with Active Inference for
+Long-Horizon Rearrangement Tasks
+Corrado Pezzato*, Ozan Çatal*, Toon Van de Maele, Riddhi J. Pitliya, and
+Tim Verbelen
+VERSES AI Research Lab, Los Angeles, California, 90016, USA
+{corrado.pezzato,ozan.catal}@verses.ai
+Abstract. Despite growing interest in active inference for robotic con-
+trol,itsapplicationtocomplex,long-horizontasksremainsuntested.We
+addressthisgapbyintroducingafullyhierarchicalactiveinferencearchi-
+tectureforgoal-directedbehaviorinrealisticroboticsettings.Ourmodel
+combinesahigh-levelactiveinferencemodelthatselectsamongdiscrete
+skills realized via a whole-body active inference controller. This unified
+approach enables flexible skill composition, online adaptability, and re-
+covery from task failures without requiring offline training. Evaluated
+on the Habitat Benchmark for mobile manipulation, our method out-
+performs state-of-the-art baselines across the three long-horizon tasks,
+demonstrating for the first time that active inference can scale to the
+complexity of modern robotics benchmarks.
+1 Introduction
+Activeinferenceoffersaprincipledframeworkformodelingtheaction-perception
+loop, unifying inference and control. Both continuous and discrete formulations
+have been developed to capture sensorimotor and cognitive processes [18,26],
+and past works have explored hybrid schemes that integrate discrete decision-
+makingwithcontinuouscontrolinthecontextofhandwriting[19]andoculomo-
+tor tasks [16,17].
+More recently, hybrid continuous-discrete approaches have shown promise in
+generating rich, goal-directed behavior in 2D simulated settings for reaching,
+grasping, and tool use [24,21,23]. However, active inference has yet to demon-
+strate scalability to the complexity and long time horizons required by modern
+robotics benchmarks. In particular, no prior work has convincingly shown that
+active inference alone can match or exceed the performance of state-of-the-art
+methods in realistic robotic tasks.
+In this paper, we address this gap by introducing a fully hierarchical hy-
+brid architecture for active inference-based control in long-horizon mobile ma-
+nipulation tasks. Fig. 1 provides a high-level overview. Our system combines
+a high-level active inference agent that reasons over task-relevant abstractions
+withanovelwhole-bodycontrollerbasedoncontinuoushierarchicalactiveinfer-
+ence [22,20]. This integration allows for flexible and robust skill execution, sup-
+portsonlineadaptation,andeliminatestheneedforofflinetraining.Weevaluate
+5202
+luJ
+32
+]OR.sc[
+1v83371.7052:viXra
+2 C. Pezzato et al.
+Habitat Benchmark
+Observations Action
+VBGS map
+TidyHouse PrepareGroceries SetTable
+Discrete
+Pick
+Retry Pick
+Discrete Place Continuous Velocity
+Hig
+m
+h
+o
+-
+d
+le
+e
+v
+l
+el
+Retry Place
+Goal
+Move
+Goals Wh
+C
+o
+o
+le
+n
+-
+t
+b
+ro
+o
+l
+dy Control
+Obstacles
+PickFridge
+Navigation
+PickDrawer
+Continuous
+Fig.1: Solution overview. Overview of the proposed solution and the Habitat
+Tasks described in detail in section 2.
+ourapproachonthreelong-horizonmobilemanipulationtasksfromtheHabitat
+Benchmark [28], namely TidyHouse, PrepareGroceries, and SetTable. These
+tasks require complex, multi-step interactions with articulated objects and con-
+strained environments, such as retrieving items from drawers or refrigerators,
+transportingthemacrossrooms,andplacingthemonsurfaces.Successdemands
+both long-term planning and precise, reactive motor control. Our method out-
+performs state-of-the-art baselines across all three tasks, providing a compelling
+demonstration of active inference.
+1.1 Related work
+Long-Horizonmobilemanipulationchallengesthatdemandbothnavigationand
+manipulationabilitiesarewell-suitedtoevaluatingtheeffectivenessofembodied
+AI algorithms. Works like the Habitat Benchmark [28], ThreeDWorld [8], and
+ManipulaTHOR [5] require robots to navigate in indoor apartments and rear-
+rangehouseholdobjects.WechosetofocusontheHabitatBenchmarkbecauseof
+itschallengingnature:itrequirescontinuousmotorcontrol(baseandarm),inter-
+actionwitharticulatedobjects(openingdrawersandfridges),andinvolvescom-
+plicatedscenelayoutswithclutter.Intheliterature,long-horizonproblemshave
+been tackled with task-and-motion-planning (TAMP) approaches [13,12,27,9].
+Although effective, these methods often rely on accurate knowledge of the
+sceneandobjects,andarecomputationallyexpensive.Learning-basedapproaches
+have emerged in recent years as an alternative; however, monolithic end-to-end
+RL solutions to long-horizon tasks are shown to be prone to failure [28,10]. The
+main reasons for this are the high sample complexity, inefficient exploration, as
+well as complicated reward design.
+A common strategy for addressing long-horizon tasks in RL is to decom-
+pose them into shorter, more manageable subtasks. For instance, the authors
+of Habitat [28] propose a hierarchical framework for mobile manipulation. This
+integratesclassicaltaskplanningtogeneratehigh-levelsymbolicgoals,whilein-
+Mobile Manipulation with Active Inference 3
+dividuallow-levelskillsaretrainedusingRLtoachievethesegoals.Thismethod
+demonstratessuperiorperformancecomparedtomonolithicend-to-endRLpoli-
+cies and traditional sense-plan-act pipelines. However, naively chaining multiple
+skills can result in hand-off issues [28], where the terminal state of one skill falls
+outsidethedistributionofstatesencounteredduringtrainingbythesubsequent
+skill, or leads to states that are infeasible for it to handle. This is especially
+an issue for stationary manipulation skills. Prior work often decouples the mo-
+bile base from the manipulator to simplify the inverse kinematics of redundant
+systems [25].
+In contrast, [10] highlights that mobile manipulation skills are inherently
+more robust to error accumulation during skill chaining. By leveraging the
+robot’s full embodiment, these skills enable more effective subtask execution
+by allowing the robot to reposition itself. Improved subtask formulation, skill
+composability,andreusabilityallowed[10]toreachstate-of-the-artperformance
+to date on Habitat.
+Activeinferenceoffersadistinctperspectiveondecision-makingandcontrol,
+framingbothasaspectsofaunifiedinferenceprocess.Thetheoryproposesthat
+complex movements can emerge naturally from generative models that encode
+goals as prior beliefs and observation preferences [18]. Within this framework,
+the nervous system is seen as maintaining a hierarchical generative model that
+continuously produces and refines perceptual hypotheses.
+Earlyworkonhybridactiveinferencecombiningdiscreteandcontinuouspro-
+cessesfocusedonunderstandingsystemssuchasoculomotion[7,16,17]andhand-
+writing [19]. For instance, [7] proposed linking discrete and continuous states by
+usingBayesianmodelaveragingoverdiscretepriors,andconvertingtheresulting
+continuousposteriorintoadiscreterepresentationthroughBayesianmodelcom-
+parison. These models typically use a discrete state-space to generate empirical
+priors, which then guide a continuous controller through sequences of attractive
+setpoints to achieve articulated behavior.
+Hybrid active inference has been extended to dynamic tasks that demand
+flexible planning [24,21,23]. These scenarios require agents to infer object dy-
+namics, decompose tasks into subgoals, and coordinate multiple degrees of free-
+dom to execute composite actions. While such studies demonstrate the promise
+of hybrid active inference in complex motor control, no implementation has yet
+scaled to meet the complexity of established robotics benchmarks. In this work,
+weintroduceafullyhierarchicalhybridactiveinferencesystemthat,forthefirst
+time, outperforms state-of-the-art baselines on the Habitat Benchmark, demon-
+strating its viability for long-horizon robotic manipulation.
+1.2 Habitat Benchmark
+The Habitat Benchmark [28] comprises three long-horizon mobile manipulation
+tasks visualized in Fig. 1: TidyHouse, PrepareGroceries, and SetTable.
+InTidyHouse,therobotistaskedwithrelocatingfiveobjectsfromaninitial
+to a designated goal position. Both the start and goal locations are typically on
+4 C. Pezzato et al.
+opensurfacessuchastablesorkitchencounters.ThePrepareGroceriestaskin-
+volvesmovingtwoobjectsfromanalreadyopenrefrigeratortoacountertopand
+returningoneobjectfromthecounterbackintothefridge.Finally,inSetTable,
+the agent must move a bowl from a closed drawer to a table, and then place an
+apple retrieved from a closed fridge on the same table. This scenario involves
+interacting with articulated objects and picking and placing items within con-
+fined containers. All tasks are specified as a sequence of subgoals. Each subgoal
+is a tuple (s ,s∗), where s is the initial 3D center-of-mass position of an object
+1 1
+and s∗ denotes its goal position. For instance, TidyHouse is defined by a set of
+fivesuchtuples:{(si,s∗i)}5 .Thegeneratedscenesforthetasksarebuiltupon
+1 i=1
+the ReplicaCAD dataset, which provides a diverse set of 105 photorealistic in-
+doorenvironments.Eachepisodeinstantiatesarearrangementtaskbyrandomly
+sampling rigid objects from the YCB dataset and placing them on annotated
+support surfaces, resulting in cluttered initial configurations.
+2 Methods
+2.1 Planning with Universal Generative Models
+TotackletheHabitatBenchmark,weproposeanactiveinferenceagent,endowed
+with a hierarchy of generative models, each minimizing the Variational Free
+Energy. In this universal generative model [6] actions at one level become the
+preferences of the level below. As we traverse down the hierarchy, each model’s
+timehorizonbecomesshorter,andtheplanningbecomesmorefine-grained.Each
+component in the hierarchy has its own set of responsibilities. The high-level
+model orchestrates the sequence of logical actions to take, i.e., where to move
+and what to pick or place. The Navigation model manages the path planning
+throughtheenvironment,whilethePick & Place model coordinateshowtargets
+should be approached or released. Finally, at the bottom of the hierarchy lies
+the active inference whole-body controller, which calculates joint controls for
+the robot and performs obstacle avoidance. These models keep track of their
+surroundings using a Variational Bayes approach to Gaussian splatting [14,15],
+which integrates RGBD observations into a probabilistic world map.
+High Level Model Atthemostabstractlevel,theagentconsistsofapartially
+observed Markov Decision Process (POMDP) capturing dynamics over possible
+states of the object that need to be collected. This allows for the formation
+of beliefs over these states and robust planning of the agent’s various skills.
+StateandactioninferenceinthisPOMDPisachievedbyminimizingvariational
+free energy according to the FEP [18]. Crucially, this model tracks the robot’s
+position with respect to the pick/place location as well as the object’s relation
+to the robot, the pick, and the place location. This is then used to schedule
+either movement or manipulation skills. We present this model using generic
+activeinferencetermsinFig.2a.Incontrasttoclassicalactiveinferencemodels,
+the actions in our model are abstractions of the skills they represent. The joint
+controls are generated by the continuous lowest-level model.
+Mobile Manipulation with Active Inference 5
+C
+A A
+B ...
+Other location
+C Pick location Place location
+D Inventory Receptacle
+A A A (b)
+B ...
+Variant 1
+D D D
+Variant 4 Variant 0 Variant 2
+Variant 3
+(a) (c)
+Fig.2:The Generative Model.(a)Thehigh-levelmodelsequencesskills,each
+implemented by a generative model interacting with the continuous controller.
+(b) Dynamics at the highest level. The highest level models the robot location
+(top) and the object location (bottom). The robot can be either at an other
+location–irrelevanttothetask–apicklocation,oraplacelocation.Theobject
+canbeintherobot’sinventoryorreceptacle(location).(c)Dynamicsatthepick
+& place level. The model switches between various approach parameters based
+on feedback from the low-level controller to increase robustness against failures.
+Pick & Place Model Every interaction with the environment can fail due
+to unforeseen circumstances or invalid prior beliefs. To accommodate this, the
+hierarchymaintainsaretrymodelforthefailure-proneskillssuchaspickingand
+placing. As shown in Fig. 2c, this model maintains a set of possible approach
+directions and switches between them based on detected successes or failures of
+a pick or place. Each approach parameter represents a goal for the lower level
+controller that can be enacted from that location.
+Navigation Model Crucially, still missing from our description of the hierar-
+chicalmodelisawaytomovefromonepointtoanother.Discreteactiveinference
+modelsarewellsuitedforthisasshownin[4].However,duetothestaticnature
+of the environment as well as the prior knowledge about the object location we
+optedtouseA*pathfinding[11]togeneratewaypointsthatactasextrinsicgoals
+for the low level controller.
+6 C. Pezzato et al.
+2.2 Perception with Variational Bayes Gaussian Splatting
+The models need to infer the structure of the environment to keep track of
+obstacles and goals in the world. Following the Variational Bayesian approach
+used throughout the other models, we use a Variational Bayes Gaussian Splat
+(VBGS)[15]tobuilda3DrepresentationoftheworldfromRGBDobservations.
+Inthismodel,theworldisrepresentedasa6DGaussianmixtureover3Dpoints
+in space with corresponding 3D color information; the generative model is up-
+dated online from observations using Coordinate Ascent Variational Inference
+(CAVI) [1,2,3] without needing a replay buffer or observation queue. As with a
+normal3DGaussianSplat,themodeleffectivelyformsaradiancefieldthatcap-
+turestheroom’sfreeandoccupiedspace.Thisallowsforeasyobstacleavoidance
+further down the hierarchy. The parameters of the distributions of component k
+(i.e.µ ,Σ )thatgeneratesandcarerandomvariables,z istheassociatedmix-
+k k
+turecomponentforagivendatapoint,dependentonthecategoricalparameters
+π.
+2.3 Continuous control with Active Inference
+Recent works proposed Hierarchical Active Inference (HAIF) schemes for con-
+tinuous control of kinematic chains [22,20]. In this section, we extend previous
+work [20] to whole-body control of differential drive mobile manipulators. Such
+robots are composed of a wheeled mobile base and one or more robot arms. We
+leverage the modularity of HAIF and define one generative model for base con-
+trol and one for arm control, and then link them through top-down prediction
+errors and bottom-up predictions. This results in an overall control scheme that
+coordinates the whole body of the mobile manipulator at once. An overview of
+theHAIFapproachisdepictedinFig.3.Importantly,eachblockinthehierarchy
+has the same structure and follows the same update rules for state estimation
+and control. The difference for base and arm control lies in the definition of the
+generativemodelg andthephysicalquantitiestheinternalandexternalbeliefs
+e
+represent,asexplainednext.Ingeneral,thekinematicgenerativemodelg com-
+e
+putestheextrinsicbeliefsatthecurrentlevelj giventhecurrentintrinsicbeliefs
+µj and the extrinsic beliefs from the level below µj−1, i.e. µj = g (µj,µj−1).
+i e e e i e
+The goal is to obtain a set of equations to describe how the internal beliefs of
+active inference agents are generated and updated over time. Following [22], the
+biologically plausible belief update equations are:
+(cid:34) (cid:35)
+µ˙j i = µj i ′ +π p jεj p +∂ µi g − e ⊤ π π j e j+ ε 1 j εj e +1+∂f i j⊤π µ j i εj µi (1)
+µi µi
+(cid:20) µj′ −πjεj +∂ g⊤πj+1εj+1+πjεj +∂fj⊤πj εj (cid:21)
+µ˙j = e e e µe e e e v v e µe µe , (2)
+e −πj εj
+µe µe
+whereπ , π ,π areprecisionparametersforproprioceptive,extrinsic,andvisual
+p e v
+models, and ε , ε and ε are the proprioceptive, extrinsic, and visual predic-
+p e v
+tion errors, respectively. Finally, εj = µj′ −fj(µj) and εj = µj′ −fj(µj)
+µi i i i µe e e i
+Mobile Manipulation with Active Inference 7
+yhcrareiH
+Shoulder
+Base
+j Shoulder
+j+1 Elbow
+Hand
+Hand
+Fig.3:OverviewoftheHierarchicalActiveInferenceapproachformobilemanip-
+ulator control. Intrinsic and extrinsic beliefs µ , µ are internal representations
+i e
+of joint angles and Cartesian poses, respectively. They generate proprioceptive
+and visual predictions p and p at their level according to the generative mod-
+p v
+els g , g . They are also linked through a kinematic generative model g . The
+v p e
+functions f and f describe the dynamics and are used to guide goal-directed
+i e
+behavior.
+are dynamics prediction errors, with precision π and π . These are used to
+µi µe
+achievegoal-directedbehaviorandcollisionavoidance,asexplainedlater.Inthe
+equations above, we assumed to be able to observe joint positions, velocities,
+and link positions such that g and g are identity mappings. Link positions
+p v
+can be computed from joint positions via forward kinematics or estimated via
+visual input. We now have to find a suitable form for g to easily compute the
+e
+gradientswithrespecttointrinsicandextrinsicbeliefsforboththearmandthe
+base.
+Arm generative model Similarly to [20], the generative model for the HAIF
+agent comprises an intrinsic belief µ about joint angles and links’ lengths, as
+i
+well as an extrinsic belief µ about a link’s absolute Cartesian position and
+e
+orientation, for each joint j:
+µj = (cid:2) θj,lj(cid:3)⊤ µj = (cid:2) xj,yj,zj,qj,qj,qj,qj(cid:3)⊤ = (cid:2) tj qj(cid:3)⊤ . (3)
+i e w x y z
+The function g describes the 3D position and orientation of the subsequent
+e
+link of a kinematic chain given the pose of the previous one. We can define the
+generative model g as in [20] (see A.1 for more details):
+e
+(cid:20) tj−1+h(qj−1·[0 tj]·qj−1∗) (cid:21)
+g (µj,µj−1)= , (4)
+e i e qj−1·qj
+where qj−1∗ is the conjugate quaternion, ′′·′′ represents the Hamilton product,
+and h(·) is a function that returns the imaginary coefficients of a quaternion.
+In our HAIF agent, the translation tj−1 and quaternion qj−1 are given by the
+extrinsic beliefs µj−1. The translation vector tj and rotation qj are instead
+e
+8 C. Pezzato et al.
+dependent on the kinematic properties of the current link j and the joint angle
+andlengthθj, lj.Thegenerativemodelcanthenbefullyspecifiedasafunction
+oftheintrinsicandextrinsicbeliefs,andthegradientscanbecomputedinclosed:
+(cid:20) (cid:21) (cid:20) (cid:21)
+∂g ∂ g ∂g ∂ g
+e = θ e ∈R2×7, e = x,y,z e ∈R7×7 (5)
+∂µ i ∂ l g e ∂µ e ∂ q g e
+Thanks to the choice of using quaternions as singularity-free orientation repre-
+sentation, these gradients are easy to compute since the terms in the generative
+model are either linear or quadratic in the parameters, or they appear as argu-
+ments of sine and cosine functions.
+Differential drive generative model We now extend the HAIF for robot
+arm control to a differential drive robot. To do so, we write a simple kinematic
+model based on Euler’s updates where the robot base position and orientation
+with respect to a world frame are expressed as:
+
+x =x +V cos(θ )δt
+ t+1 t t t
+y =y +V sin(θ )δt (6)
+t+1 t t t
+θ
+=θ +ω δt,
+t+1 t t
+where V, ω are respectively forward and rotational velocities. By considering
+smallwheelincrements∆ϕ =ϕ −ϕ inbetweentimestepswhere
+R,L {R,L}t {R,L}t−1
+ϕ are the right and left wheel rotations, the expressions for forward and
+{R,L}
+angular velocities result:
+r (cid:0) (cid:1)
+V = ∆ϕ +∆ϕ (7)
+t 2δt R L
+r (cid:0) (cid:1)
+ω = ∆ϕ −∆ϕ (8)
+t lδt R L
+The terms r, l are the wheel radius and distance respectively. The generative
+modelforthedifferentialdriveHAIFisdefinedasaone-levelhierarchicalmodel
+where there are two controllable states, the wheel rotations:
+ x + r (cid:0) ∆ϕ +∆ϕ (cid:1) cos(θ ) 
+g
+e
+(µj
+i
+,µj
+e
+−1)=y t
+t
+−
+−
+1
+1 θ
++ 2
+2
+r (cid:0)
++
+∆ϕ
+r
+R
+R (cid:0) ∆
++
+ϕ
+∆ϕ
+−
+L
+L ∆
+(cid:1) s
+ϕ
+in(
+(cid:1)
+θ
+t
+t
+−
+−
+1
+1 ), (9)
+t−1 l R L
+We set the intrinsic beliefs to be wheel rotations and extrinsic beliefs to be
+position x−y and orientation θ with respect to a world frame:
+(cid:2) (cid:3)⊤ (cid:2) (cid:3)⊤
+µ = ϕ , ϕ µ = x,y,θ . (10)
+i R L e
+The internal and external beliefs are then updated through the gradient of the
+generative model:
+ 
+∂g (cid:20) ∂ g (cid:21) ∂g ∂ x g e
+∂µ
+e
+i
+=
+∂
+ϕ
+ϕ
+R
+L g e
+e ∈R2×3,
+∂µ
+e
+e
+=∂
+∂ y g
+g e∈R3×3 (11)
+θ e
+Mobile Manipulation with Active Inference 9
+Whole-body generative model The arm and base models can be combined
+intoasinglewhole-bodymodelbydefininganoverallhierarchicalstructurethat
+combinesthetwo.Fromeqs.(1)and(2),onecannoticehowthepredictionerrors
+at the level above εj+1 influence the beliefs at the current level µ˙j and µ˙j. By
+e i e
+this logic, the extrinsic prediction errors of the first level of the hierarchy will
+nothaveanyinfluencesincethereisnolevelleftbelowinthechain.However,we
+can propagate these errors back to the top level of the hierarchy of the mobile
+base kinematic model. By doing so, the base can further minimize free energy
+by moving its wheels. In turn, we can propagate up from the base kinematic
+modelthepredictionsaboutthefirstlink’spositionandorientationoftherobot
+arm,closingtheloop.Mathematically,allequationsremainthesameapartfrom
+the one corresponding to the update of internal beliefs µ˙j for the base, which
+i
+becomes:
+(cid:20) µ0′ +π0ε0+∂ g⊤π1(κ ε1 +κ ε2 )+∂f0⊤π0 ε0 (cid:21)
+µ˙0 = i p p µi e e base e,base arm e,arm i µi µi (12)
+i −π0 ε0
+µi µi
+whereκ andκ aretuningparameterstoweighttheeffectofarmandbase
+base arm
+predictionerrors.Bytuningtheseparameters,onecanshaperobotbehavior,for
+instance,toallowmoreorlessbaseresponseduetothearm’sextrinsicprediction
+errors. The equation for µ˙0 remains the same since the gradient with respect to
+e
+extrinsic beliefs is zero. This is because the values x , y , θ are simply
+t−1 t−1 t−1
+constants from the previous time step and not beliefs from the level below.
+This simple change allows using the base motion to minimize the arm’s pre-
+dictionerrors,extendingthearm’sreachabilitybeyonditsstationaryworkspace.
+ThisiscrucialforthesuccessfulcompletionoftheHabitatBenchmark.Addition-
+ally,westillpreservetheabilitytosendindividualgoalstothebaseasexplained
+below.
+Goals,obstacles,andcontrol Torealizegoal-directedbehavior,wecandefine
+attractive goals and repulsive forces as in [22,20]. Goals can be both intrinsic
+(joint positions) or extrinsic (Cartesian poses) for the arm and base, and they
+can be combined to define future desired states µ∗. Goals act as attractors,
+forming dynamic functions f =κ (µ∗−µ) that linearly minimize the distance
+a a
+betweenthedesiredandcurrentstates.Thedesiredstatescanbedefinedflexibly
+in terms of the current beliefs as
+µ∗ =Nµ+n∗, (13)
+whereN achievesdynamicbehaviors,suchaskeepingalimbverticalbyimposing
+thex, ycoordinatesofalinktobethesameasthepreviousone,whilen∗imposes
+an attractor to a static configuration. Some examples of basic goals that can be
+giventothemobilemanipulatorintheHabitatBenchmarkare1)End-effector
+goal: the robot will use its whole body to reach a target (x∗, y∗, z∗) position,
+2)Base goal:therobotwillmoveitsbasetoreachagoal(x∗, y∗, θ∗),whereθ∗
+10 C. Pezzato et al.
+can be updated over time such that the robot faces the goal θ∗ =arctan2(y∗−
+t
+y ,x∗−x ),3)Armjointgoal:therobotwillreachaspecificjointconfiguration,
+t t
+4) Combinations of the above: the user can mix goals for example making
+the base move while keeping the arm in a certain joint configuration. The same
+idea of attractive forces can be used for collision avoidance through repulsive
+forces, where a repulsive state µ! has to be avoided (see appendix A.2).
+Givenagoal,thecontrolactioniscomputedbyminimizingtheproprioceptive
+component of the free energy with respect to the control signals [22]:
+a˙ =−∂ F =−∂ s˜ π ε˜ (14)
+a p a p p p
+where−∂ s˜ isthepartialderivativeofproprioceptiveobservationswithrespect
+a p
+tothecontrol,andε˜ =s˜ −g (µ)arethegeneralizedproprioceptiveprediction
+p p p
+errors.
+2.4 Whole-body high-level skills for objects rearrangement
+Similarly to the chosen Habitat Baseline [10], we define a set of abstract high-
+level skills that the high-level planner can sequence at runtime. These skills
+are implemented with the whole-body controller, and are divided into Pick,
+Place, Move, PickFromFridge, PickFromDrawer. The skills are defined as a
+fixed sequence of goals given to the whole-body controller to realize an overall
+behavior.Everyskillcomputesawhole-bodycontrolactionfortherobot.Details
+about the skills can be found in appendix A.3.
+3 Experiments
+3.1 Experiments setup
+Agent embodiment:TheHabitatBenchmarkemploysaFetchrobotthatfea-
+tures a mobile wheeled base, a 7DoF robotic arm, and a parallel-jaw gripper. It
+is equipped with two RGB-D cameras with a resolution of 128×128 pixels on
+boththearmandthehead.Therobotperceivesitsstatethroughproprioceptive
+sensing, which includes joint angles of the arm and the Cartesian coordinates of
+the end-effector. The robot can also sense the goal positions (3DoF), as well as
+a scalar to indicate whether an object is held. Obstacle positions are sensed by
+querying the map model.
+Action space: The action space is a 10DoF continuous space, for whole-body
+control. It is composed of forward and angular base velocities, a 7DoF arm
+velocity action, and a 1DoF gripper action. Grasping is abstract as in previous
+work [28,10], such that if the gripper action is positive, the object closest to the
+end-effector within 15cm will be snapped to the gripper. An object is instead
+released by a negative action.
+Evaluation metrics Each task in the Habitat Benchmark is composed of a
+sequence of subtasks that must be completed. As in previous work [28,10], we
+measure performance by reporting the completion rate at each subtask stage,
+Mobile Manipulation with Active Inference 11
+with the success rate of the final subtask representing the overall task success.
+Notably,iftheprevioussubtaskhasfailed,thecurrentsubtaskisalsoconsidered
+a failure independently of its outcome. At the start of each evaluation episode,
+the robot’s base is placed at a random position and orientation, ensuring no
+collisions, while the arm begins in a resting configuration.
+BaselinesWecompareourmodelagainstmethodsin[10],namelyaMonolithic
+RL approach and a Multi-skill RL Mobile manipulation (MM). The latter had
+thebestperformanceamongseverallearning-basedandclassicaltaskandmotion
+planning approaches. The Monolithic RL is an end-to-end RL policy for each
+completetask(TidyHouse,PrepareGroceries,andSetTable).Differentreward
+functions are selected according to oracle knowledge about the current subtask
+beingexecuted,suchaspicking orplacing,totrain asinglepolicyforsuchlong-
+horizontasks.TheMulti-skillRLMobilemanipulationapproach,instead,trains
+different mobile manipulation policies that are then chained by an oracle task
+planner executed in open loop. For details about the baselines, we refer the
+reader to [10].
+3.2 Results
+We report the benchmark results in Fig. 4. Our approach outperforms the base-
+lines in all three tasks, averaging 72.5% completion rate in TidyHouse, 77%
+completion rate in PrepareGroceries, and 50% completion rate in SetTable
+over five seeds. The best performing baseline, MM, instead, averages 71%, 64%,
+and29%respectively.Consideringallthreetaskscombined,weachieveda66.5%
+successratecomparedtothe54.7%oftheMMbaseline.Notably,theMMbase-
+line requires extensive offline training. That is 6400 episodes per task across
+varied layouts and configurations in the Habitat environments, and 100 million
+steps per skill across a total of 7 skills. In contrast, our method relies on hand-
+tuning each skill over just a handful of episodes and is evaluated directly on
+unseen layouts and configurations, demonstrating strong generalization without
+the need for data-intensive training. However, we still rely on privileged infor-
+mation, such as the floor map for path planning and articulated object states.
+These assumptions will be removed in future work.
+4 Discussion and Conclusion
+In this work, we proposed a hierarchical active inference model to address the
+Habitat Benchmark, surpassing state-of-the-art performance across all three
+benchmark tasks. Our system is composed of two key components: a high-level
+model that selects appropriate low-level skills based on discrete observations,
+and a set of low-level skills defined through goals for a novel whole-body con-
+troller using hierarchical active inference. This architecture enables the system
+to flexibly adapt to task failures and dynamically adjust behavior in response
+toenvironmentalchanges.Importantly,ourmethodoperatesonline,withoutre-
+quiringofflinetraining,andsupportsreal-timeadaptationofthehigh-levelplan.
+12 C. Pezzato et al.
+TidyHouse PrepareGroceries SetTable
+etaR
+ssecuS
+egarevA
+Pick
+obj
+P
+. 1
+lace
+obj
+P
+.
+i
+1
+ck
+obj
+P
+. 2
+lace
+obj
+P
+. 2
+ick
+obj
+P
+. 3
+lace
+obj
+P
+. 3
+ick
+obj
+P
+. 4
+lace
+obj
+P
+. 4
+ick
+obj
+P
+. 5
+lace
+obj. 5
+Pick
+obj. 1
+Place
+obj. 1
+Pick
+obj. 2
+Place
+obj. 2
+Pick
+obj. 3
+Place
+obj. 3
+Open
+drawer
+Pick
+bowl
+Place
+bow
+C
+l
+lose
+drawe
+O
+r
+pen
+fridge
+Pick
+apple
+Place
+apple
+Close
+fridge
+Ours MM Baseline Monolithic RL
+Fig.4:EvaluationresultsontheHabitatBenchmark,averagedover100episodes.
+Each task is evaluated on different apartment layouts and divided into stages.
+For a stage to be successful, all previous stages must also be successful. Tidy-
+House: Evaluated over five pick-and-place stages, from Pick obj. 1 to Place
+obj. 5. PrepareGroceries: Measured from Pick obj. 1 to Place obj. 3.
+SetTable: Involves a more complex sequence including Open drawer → Pick
+bowl → Place bowl → Close drawer, and similarly for the fridge and apple.
+While our current implementation still relies on certain privileged information
+(such as access to a global map for path planning), our future work will focus
+on enabling the agent to actively explore and construct maps in real-time. Ad-
+ditionally, knowledge of the state of articulated objects, such as drawers and
+refrigerators, will be inferred directly from raw RGBD sensory input. Moreover,
+while low-level skills are currently composed of a fixed sequence of goals for
+the continuous whole-body controller, one could add an intermediate hierarchi-
+cal level as in [21] to smoothly transition between subgoals. Another interest-
+ing direction to explore would be learning skills directly from demonstration. In
+summary,ourhierarchicalhybridactiveinferencemodeldemonstratespromising
+results in goal-directed robotic control within complex environments. With fur-
+ther enhancements in perception, exploration, and skill acquisition, we believe
+this framework could serve as a foundation for more generalized and scalable
+robotic agents.
+References
+1. Beal,M.J.:VariationalAlgorithmsforApproximateBayesianInference.Ph.D.the-
+sis, University College London (2003)
+2. Bishop, C.M.: Pattern Recognition and Machine Learning. Springer (2006)
+3. Blei, D.M., Kucukelbir, A., McAuliffe, J.D.: Variational inference: A review for
+statisticians. Journal of the American Statistical Association 112(518), 859–877
+Mobile Manipulation with Active Inference 13
+(2017). https://doi.org/10.1080/01621459.2017.1285773, https://doi.org/
+10.1080/01621459.2017.1285773
+4. Çatal,O.,VandeMaele,T.,Pitliya,R.J.,Albarracin,M.,Pattisapu,C.,Verbelen,
+T.: Belief sharing: A blessing or a curse. In: Buckley, C.L., Cialfi, D., Lanillos,
+P., Pitliya, R.J., Sajid, N., Shimazaki, H., Verbelen, T., Wisse, M. (eds.) Active
+Inference. pp. 121–133. Springer Nature Switzerland, Cham (2025)
+5. Ehsani,K.,Han,W.,Herrasti,A.,VanderBilt,E.,Weihs,L.,Kolve,E.,Kembhavi,
+A., Mottaghi, R.: Manipulathor: A framework for visual object manipulation. In:
+Proceedings of the IEEE/CVF conference on computer vision and pattern recog-
+nition. pp. 4497–4506 (2021)
+6. Friston, K.J., Da Costa, L., Tschantz, A., Kiefer, A., Salvatori, T., Neacsu, V.,
+Koudahl, M., Heins, C., Sajid, N., Markovic, D., Parr, T., Verbelen, T., Buckley,
+C.L.: Supervised structure learning. Biological Psychology 193, 108891 (2024).
+https://doi.org/https://doi.org/10.1016/j.biopsycho.2024.108891,
+https://www.sciencedirect.com/science/article/pii/S0301051124001510
+7. Friston, K.J., Parr, T., de Vries, B.: The graphical brain: Belief propagation and
+active inference. Network neuroscience 1(4), 381–414 (2017)
+8. Gan,C.,Zhou,S.,Schwartz,J.,Alter,S.,Bhandwaldar,A.,Gutfreund,D.,Yamins,
+D.L., DiCarlo, J.J., McDermott, J., Torralba, A., et al.: The threedworld trans-
+port challenge: A visually guided task-and-motion planning benchmark towards
+physicallyrealisticembodiedai.In:2022Internationalconferenceonroboticsand
+automation (ICRA). pp. 8847–8854. IEEE (2022)
+9. Garrett,C.R.,Lozano-Pérez,T.,Kaelbling,L.P.:Pddlstream:Integratingsymbolic
+planners and blackbox samplers via optimistic adaptive planning. In: Proceedings
+oftheinternationalconferenceonautomatedplanningandscheduling.vol.30,pp.
+440–448 (2020)
+10. Gu,J.,Chaplot,D.S.,Su,H.,Malik,J.:Multi-skillmobilemanipulationforobject
+rearrangement. arXiv preprint arXiv:2209.02778 (2022)
+11. Hart, P.E., Nilsson, N.J., Raphael, B.: A formal basis for the heuristic determina-
+tion of minimum cost paths. IEEE Transactions on Systems Science and Cyber-
+netics 4(2), 100–107 (1968). https://doi.org/10.1109/TSSC.1968.300136
+12. Kaelbling, L.P., Lozano-Pérez, T.: Hierarchical task and motion planning in the
+now. In: 2011 IEEE International Conference on Robotics and Automation. pp.
+1470–1477. IEEE (2011)
+13. Kaelbling, L.P., Lozano-Pérez, T.: Integrated task and motion planning in belief
+space.TheInternationalJournalofRoboticsResearch32(9-10),1194–1227(2013)
+14. Kerbl, B., Kopanas, G., Leimkühler, T., Drettakis, G.: 3d gaussian splatting for
+real-time radiance field rendering. ACM Transactions on Graphics 42(4) (July
+2023), https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/
+15. VandeMaele,T.,Çatal,O.,Tschantz,A.,Buckley,C.L.,Verbelen,T.:Variational
+bayes gaussian splatting (2024)
+16. Parr, T., Friston, K.J.: Active inference and the anatomy of oculomotion. Neu-
+ropsychologia 111, 334–343 (2018)
+17. Parr,T.,Friston,K.J.:Thediscreteandcontinuousbrain:fromdecisionstomove-
+ment—and back again. Neural computation 30(9), 2319–2347 (2018)
+18. Parr, T., Pezzulo, G., Friston, K.J.: Active inference: the free energy principle in
+mind, brain, and behavior. MIT Press (2022)
+19. Parr, T., Pezzulo, Friston, K.J., Giovanni: Generative models for sequential dy-
+namics in active inference. Springer Nature Link (2023)
+14 C. Pezzato et al.
+20. Pezzato, C., Buckley, C., Verbelen, T.: Why learn if you can infer? robot arm
+control with hierarchical active inference. In: The First Workshop on NeuroAI@
+NeurIPS2024 (2024)
+21. Priorelli, M., Stoianov, I.P.: Deep hybrid models: Infer and plan in a dynamic
+world. Entropy 27, 570 (2025). https://doi.org/10.3390/e27060570, https:
+//doi.org/10.3390/e27060570
+22. Priorelli,M.,Pezzulo,G.,Stoianov,I.P.:Deepkinematicinferenceaffordsefficient
+and scalable control of bodily movements. Proceedings of the National Academy
+of Sciences 120(51), e2309058120 (Dec 2023). https://doi.org/10.1073/pnas.
+2309058120, https://pnas.org/doi/10.1073/pnas.2309058120
+23. Priorelli, M., Stoianov, I.P.: Slow but flexible or fast but rigid? discrete and con-
+tinuous processes compared. Heliyon 10(20) (2024)
+24. Priorelli, M., Stoianov, I.P.: Dynamic planning in hierarchical active inference.
+Neural Networks p. 107075 (2025)
+25. Sandakalum, T., Ang Jr, M.H.: Motion planning for mobile manipulators—a sys-
+tematic review. Machines 10(2), 97 (2022)
+26. Smith, R., Friston, K.J., Whyte, C.J.: A step-by-step tutorial on active inference
+and its application to empirical data. PubMed (2022)
+27. Srivastava, S., Fang, E., Riano, L., Chitnis, R., Russell, S., Abbeel, P.: Combined
+task and motion planning through an extensible planner-independent interface
+layer.In:2014IEEEinternationalconferenceonroboticsandautomation(ICRA).
+pp. 639–646. IEEE (2014)
+28. Szot, A., Clegg, A., Undersander, E., Wijmans, E., Zhao, Y., Turner, J., Maestre,
+N.,Mukadam,M.,Chaplot,D.S.,Maksymets,O.,etal.:Habitat2.0:Traininghome
+assistants to rearrange their habitat. Advances in neural information processing
+systems 34, 251–266 (2021)
+Mobile Manipulation with Active Inference 15
+A Appendix
+A.1 Kinematic generative model
+To generative model in eq. (4) is defined from generic transformation matrices.
+Tocomputetheabsolutepositionandorientationofthecurrentlinkj giventhe
+absolute position and orientation of the previous one, we can write:
+(cid:20) Rj−1Rj tj−1+Rj−1tj(cid:21)
+wT = , (15)
+j 0 1
+where w indicates the world frame as an absolute reference, R represents a
+rotation matrix, and t a translation vector. The world frame can be the base
+link of a robot arm. From eq. (15), we note that the resulting absolute rotation
+of a link is the multiplication of two rotation matrices. However, we can express
+this as a quaternion multiplication qj−1·qj. Similarly, we can rotate a vector tj
+by a quaternion qj−1 corresponding to Rj−1, leading to eq. (4). Considering a
+generic Denavit–Hartenberg (DH) transformation matrix
+ cosθj −sinθjcosαj sinθjsinαj ljcosθj
+sinθj cosθjcosαj −cosθjsinαj ljsinθj
+
+  0 sinαj cosαj dj   , (16)
+0 0 0 1
+we note that the translation vector is simply tj =[ljcosθj,ljsinθj,dj]. Accord-
+ing to the DH convention, the rotational part of the transformation matrix is
+the composition of a rotation θj about the previous z-axis and a rotation of αj
+around the x-axis. We can then write:
+(cid:104) (cid:105)
+qj = cosθj cosαj,cosθj cosαj,cosθj cosαj,cosθj cosαj . (17)
+2 2 2 2 2 2 2 2
+The generic kinematic model in eq. (4) can be expressed as
+ xj−1+x 
+tf
+yj−1+y tf
+ 
+g e (µj i ,µj e −1)= (cid:20) tj−1+h(q q j j − − 1 1 · · [0 qj tj]·qj−1∗) (cid:21) ,=     zj− q w 1 , + tf z tf    , (18)
+ q x, tf 
+ 
+ q y, tf 
+q
+z, tf
+wherex ,y ,z andq arethetransformedtranslationsandrotation.Com-
+tf tf tf ∗, tf
+puting the Hamilton products yields the following expressions for the trans-
+16 C. Pezzato et al.
+formed positions
+x =qj−12 ljcosθj +qj−12 ljcosθj −qj−12 ljcosθj −qj−12 ljcosθj
+tf w x y z
++2qj−1qj−1ljsinθj +2qj−1qj−1dj +2qj−1qj−1dj −2qj−1qj−1ljsinθj,
+x y x z w y w z
+y =qj−12 ljsinθj −qj−12 ljsinθj +qj−12 ljsinθj −qj−12 ljsinθj
+tf w x y z
++2qj−1qj−1ljcosθj +2qj−1qj−1dj −2qj−1qj−1dj +2qj−1qj−1ljcosθj,
+x y y z w x w z
+z =qj−12 dj −qj−12 dj −qj−12 dj +qj−12 dj
+tf w x y z
++2qj−1qj−1ljcosθj +2qj−1qj−1ljsinθj −2qj−1qj−1ljcosθj +2qj−1qj−1ljsinθj,
+x z y z w y w x
+and orientation:
+θj αj θj αj θj αj θj αj
+q =qj−1cos cos −qj−1cos sin −qj−1sin sin −qj−1sin cos ,
+w, tf w 2 2 x 2 2 y 2 2 z 2 2
+θj αj θj αj θj αj θj αj
+q =qj−1cos sin +qj−1cos cos +qj−1sin cos −qj−1sin sin ,
+x, tf w 2 2 x 2 2 y 2 2 z 2 2
+θj αj θj αj θj αj θj αj
+q =qj−1sin sin −qj−1sin cos +qj−1cos cos +qj−1cos sin ,
+y, tf w 2 2 x 2 2 y 2 2 z 2 2
+θj αj θj αj θj αj θj αj
+q =qj−1sin cos +qj−1sin sin −qj−1cos sin +qj−1cos cos .
+z, tf w 2 2 x 2 2 y 2 2 z 2 2
+A.2 Collision avoidance in HAIF
+A repulsive state µ! can be imposed on intrinsic beliefs, to realize joint limit
+avoidance, or extrinsic beliefs for collision avoidance with the environment. We
+define joint limit avoidance as:
+(cid:40)
+0, if ||e ||>γ
+f (µ)= θ θ , (19)
+r,θ
+k ζ(1/γ −1/||e ||), otherwise
+r,θ θ θ
+where e = µ! −µ , µ is the slice of beliefs about joint angles, µ! are the
+θ θ θ θ θ
+joint limits, and γ is a chosen threshold. The variable ζ ∈ {−1, 1} is negative
+θ
+for lower limits and positive for upper limits. The collision avoidance strategy is
+instead the same as [22]:
+(cid:40)
+0, if ||e ||>γ
+f (µ)= obst obst ,
+r,obst k (1/γ −1/||e ||)e /||e ||3, otherwise
+r,obst obst obst obst obst
+(20)
+where e = µ! −µ , µ is the slice of beliefs about link positions, and
+obst pos pos pos
+µ! is the position of an obstacle given by the VBGS module. Goal attractors
+pos
+and repulsive forces for joint limits and collision avoidance are then summed to-
+gethertoformthedynamicsfunctionofasinglelevel.Thisallowsonetoachieve
+behaviors such as reaching a target while avoiding an obstacle. Parameters are
+manually chosen to achieve sufficient performance in the test cases, but could
+be automatically optimized.
+Mobile Manipulation with Active Inference 17
+A.3 Whole-body Skills
+The routines for the different skills for the mobile manipulator are defined as
+follows:
+– Pick: The robot unfolds its arm (joint goal), moves to a pre-grasp position
+abovethetargetobject(end-effector+jointgoal),andthenproceedstothe
+grasp pose to perform the grasp once close enough (end-effector goal). After
+grasping, it retreats to the post-grasp pose (end-effector goal) and folds the
+arm back into a compact configuration (joint goal) (see Fig. 5).
+Unfold and reach pre-grasp Proceed to grasp Lift to post-grasp Retreat arm Fold arm for navigation
+Fig.5: Evolution of the Pick skill over time.
+– Place: It mirrors the Pick sequence, but targets a specified place location.
+– PickFromDrawer:Theend-effectorismovedinfrontofthedrawerhingeand
+grasps the handle once close enough (end-effector + joint goal). Then, the
+robot executes a linear backward trajectory to pull the drawer open (end-
+effectorgoal).TheobjectispickedasinPick.Finally,therobotend-effector
+is placed in front of the handle again (end-effector goal), and the drawer is
+pushed close following a linear trajectory (end-effector goal) (see Fig. 6).
+Unfold and reach handle Proceed to grasp Pull the drawer Retreat arm Pick bowl
+Go in front of the handle Push the drawer Retreat arm
+Fig.6: Evolution of the PickFromDrawer skill over time.
+– PickFromFridge: The robot unfolds its arm (joint goal), moves in front of
+thefridgehandle,andgraspsitoncecloseenough(end-effectorgoal).Itthen
+follows a circular trajectory to partially open the door (end-effector goal).
+18 C. Pezzato et al.
+After that, the arm retreats (joint goal), and finally, the arm starts a linear
+trajectory from behind the half-opened door to push it to fully open (end-
+effectorgoal).TheobjectispickedasinPick,andthentherobotfirstmoves
+to the left of the fridge door (base + joint goal), and after it follows a linear
+trajectory to push the door closed (end-effector goal) (see Fig. 7).
+Unfold and reach handle Pull the door (circular motion) Retreat arm Push the door (linear motion) Pick theapple
+Retreat arm Move behind the door Reach handle Push the door (linear motion) Retreat arm
+Fig.7: Evolution of the PickFromFridge skill over time.
+– Move: The NavModel computes a global path towards a final goal and orien-
+tation, and provides the move skill with the current active subgoal (x∗, y∗),
+alongwiththefinaldesiredpositionandorientation.Ateachstep,thehead-
+ing θ∗ toward the subgoal is computed. A predefined joint configuration
+(joint goal) for the arm is set to avoid collisions. The skill terminates when
+the robot is within a threshold distance of the target pose. See Fig. 8) for
+an example. The reach threshold for the position is kept at 0.8m while the
+one for orientation to 0.3rad. These are particularly loose since we rely on
+whole-body manipulation skills and are not required to precisely position
+the base before executing them.
+Fig.8: Top view of the Move skill where the robot moves through subgoals fol-
+lowing the global path.
+Mobile Manipulation with Active Inference 19
+A.4 Example evolution of a probabilistic map
+In Fig. 9 we present an example of how a probabilistic map can evolve through
+time using VBGS.
+t=0 t=50
+t=100 t=150
+Fig.9:AnexampleoftheprobabilisticmapevolutionwithVBGSinoneHabitat
+apartment. The left side of each panel shows the location of the robot on the
+ground truth floor plan. The right side overlays the Gaussian components over
+the obstacles projected onto the floor.

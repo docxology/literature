@@ -5,6 +5,7 @@ validation checklists to guide the LLM toward better summaries.
 """
 from __future__ import annotations
 
+import re
 from typing import List, Optional
 
 from infrastructure.literature.summarization.models import SummarizationContext
@@ -55,12 +56,125 @@ class SummarizationPromptBuilder:
         """Check if using a small model (<7B parameters)."""
         return self._detect_model_size(metadata) < 7.0
     
-    def build_draft_prompt(self, context: SummarizationContext, metadata: dict) -> str:
+    def _truncate_full_text(
+        self,
+        full_text: str,
+        max_chars: int,
+        context: SummarizationContext
+    ) -> str:
+        """Intelligently truncate full_text while preserving key sections.
+        
+        Preserves abstract, introduction, and conclusion sections, truncating
+        middle sections while maintaining structure.
+        
+        Args:
+            full_text: Full paper text to truncate.
+            max_chars: Maximum characters allowed.
+            context: SummarizationContext with structured sections.
+            
+        Returns:
+            Truncated text that fits within max_chars.
+        """
+        if len(full_text) <= max_chars:
+            return full_text
+        
+        # Calculate space needed for key sections
+        key_sections_size = (
+            len(context.abstract or "") +
+            len(context.introduction or "") +
+            len(context.conclusion or "")
+        )
+        
+        # Reserve space for key sections plus buffer for headers/formatting
+        buffer = 2000  # Space for headers, instructions, etc.
+        remaining_space = max_chars - key_sections_size - buffer
+        
+        if remaining_space < 10000:  # Minimum space for middle content
+            # If not enough space, prioritize abstract and intro
+            remaining_space = max_chars - len(context.abstract or "") - len(context.introduction or "") - buffer
+            if remaining_space < 5000:
+                # Last resort: just use abstract and intro
+                return (context.abstract or "") + "\n\n" + (context.introduction or "") + "\n\n[Content truncated due to size limits]"
+        
+        # Try to preserve structure by finding section boundaries
+        # Look for common section headers
+        import re
+        section_pattern = re.compile(
+            r'^\s*(?:##?\s+)?(?:Abstract|Introduction|Methods?|Results?|Discussion|Conclusion)',
+            re.IGNORECASE | re.MULTILINE
+        )
+        
+        # Find where introduction ends (approximate)
+        intro_end = 0
+        if context.introduction:
+            intro_pos = full_text.find(context.introduction)
+            if intro_pos >= 0:
+                intro_end = intro_pos + len(context.introduction)
+        
+        # Find where conclusion starts
+        conclusion_start = len(full_text)
+        if context.conclusion:
+            conclusion_pos = full_text.find(context.conclusion)
+            if conclusion_pos >= 0:
+                conclusion_start = conclusion_pos
+        
+        # Extract middle section
+        middle_start = intro_end
+        middle_end = conclusion_start
+        
+        if middle_end > middle_start:
+            middle_text = full_text[middle_start:middle_end]
+            
+            # Truncate middle section to fit
+            if len(middle_text) > remaining_space:
+                # Truncate from middle, preserving start and end
+                half_space = remaining_space // 2
+                truncated_middle = (
+                    middle_text[:half_space] +
+                    "\n\n[... content truncated ...]\n\n" +
+                    middle_text[-half_space:]
+                )
+            else:
+                truncated_middle = middle_text
+        else:
+            # Fallback: truncate from end
+            truncated_middle = full_text[intro_end:middle_start + remaining_space]
+            if len(truncated_middle) < len(full_text[intro_end:]):
+                truncated_middle += "\n\n[... content truncated ...]"
+        
+        # Reconstruct with preserved sections
+        result_parts = []
+        if context.abstract:
+            result_parts.append(context.abstract)
+        if context.introduction:
+            result_parts.append(context.introduction)
+        if truncated_middle:
+            result_parts.append(truncated_middle)
+        if context.conclusion:
+            result_parts.append(context.conclusion)
+        
+        result = "\n\n".join(result_parts)
+        
+        # Final safety check
+        if len(result) > max_chars:
+            # Last resort: truncate from end
+            result = result[:max_chars - 100] + "\n\n[... truncated ...]"
+        
+        return result
+    
+    def build_draft_prompt(
+        self,
+        context: SummarizationContext,
+        metadata: dict,
+        max_chars: Optional[int] = None
+    ) -> str:
         """Build prompt for initial draft generation.
         
         Args:
             context: Structured context from paper.
             metadata: Paper metadata (title, authors, year, source).
+            max_chars: Optional maximum characters for prompt. If provided and full_text
+                      exceeds limit, will truncate intelligently.
             
         Returns:
             Complete prompt string for draft generation.
@@ -96,7 +210,20 @@ class SummarizationPromptBuilder:
         if not is_small:
             sections.append("Use this as your PRIMARY source for all information.")
         sections.append("")
-        sections.append(context.full_text)
+        
+        # Truncate full_text if max_chars provided and needed
+        full_text = context.full_text
+        if max_chars is not None:
+            # Estimate space for other sections
+            other_sections_size = sum(len(s) for s in sections) + 2000  # Buffer for instructions
+            available_for_text = max_chars - other_sections_size
+            
+            if len(full_text) > available_for_text:
+                full_text = self._truncate_full_text(full_text, available_for_text, context)
+                sections.append("[NOTE: Paper text has been truncated to fit context window. Key sections (abstract, introduction, conclusion) are preserved.]")
+                sections.append("")
+        
+        sections.append(full_text)
         sections.append("")
         
         # Section 4: Instructions (consolidated, model-aware)

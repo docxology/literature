@@ -1,0 +1,973 @@
+DEEP ACTIVE INFERENCE AS VARIATIONAL POLICY
+GRADIENTS
+APREPRINT
+BerenMillidge
+DepartmentofInformatics
+UniversityofEdinburgh
+UnitedKingdom
+July10,2019
+ABSTRACT
+Active Inference is a theory of action arising from neuroscience which casts action and planning
+asabayesianinferenceproblemtobesolvedbyminimizingasinglequantity–thevariationalfree
+energy. Active Inference promises a unifying account of action and perception coupled with a bi-
+ologically plausible process theory. Despite these potential advantages, current implementations
+of Active Inference can only handle small, discrete policy and state-spaces and typically require
+theenvironmentaldynamicstobeknown. InthispaperweproposeanoveldeepActiveInference
+algorithmwhichapproximateskeydensitiesusingdeepneuralnetworksasflexiblefunctionapprox-
+imators,whichenablesActiveInferencetoscaletosignificantlylargerandmorecomplextasks. We
+demonstrateourapproachonasuiteofOpenAIGymbenchmarktasksandobtainperformancecom-
+parablewithcommonreinforcementlearningbaselines. Moreover,ouralgorithmshowssimilarities
+with maximum entropy reinforcement learning and the policy gradients algorithm, which reveals
+interestingconnectionsbetweentheActiveInferenceframeworkandreinforcementlearning.
+Keywords Active Inference, Predictive Processing, OpenAI Gym, Neural Networks, Policy
+Gradients,Actor-Critic,ReinforcementLearning
+ActiveInferenceisaproposedunifyingtheoryofactionandperceptionemergingoutofthePredictiveCoding(Clark,
+2013, 2012, 2015; Rao and Ballard, 1999; Friston, 2003) and Bayesian Brain (Knill and Pouget, 2004; Doya et al.,
+2007;Friston,2012)theoriesofbrainfunction. (Fristonetal.,2009;Brownetal.,2011;Adamsetal.,2013). Ithas
+beenappliedinavarietyofwaysincludinginmodellingchoicetasks(Fristonetal.,2013,2014), servingasabasis
+for exploration, artificial curiosity (Friston et al., 2015, 2017a), the explore-exploit trade-off (Friston et al., 2012),
+and potentially for illuminating neuropsychiatric disorders (Mirza et al., 2019; Adams et al., 2012; Barrett et al.,
+2016). Moreover,aneuroscientificallygroundedprocesstheoryhasbeendeveloped(Fristonetal.,2017a),basedon
+variationalmessagepassing(ParrandFriston,2018c;Parretal.,2019;vandeLaaranddeVries,2019;Fristonetal.,
+2017b), that can replicate several observed neuropsychological processes such as repetition suppression, mismatch
+negativity,andperhapsevenplace-cellactivity. (Fristonetal.,2017a).
+ActiveInferencecastsactionandperceptionasbayesianinferenceproblemswhichcanbothbesolvedsimultaneously
+through a variational approach that minimizes a single quantity – the variational free-energy. This is in line with
+9102
+luJ
+8
+]GL.sc[
+1v67830.7091:viXra
+APREPRINT-JULY10,2019
+theFree-EnergyPrinciple: adeepertheoryemergingfrompredictiveprocessing(Friston,2010;Fristonetal.,2006;
+FristonandStephan,2007;Friston,2009,2019)whichproposesthatthebrain,andperhapsallfar-from-equilibrium
+self-organisingsystemsmustinsomesenseminimizetheirfree-energy(FristonandAo,2012;Karl,2012). Despite
+thefree-energybeingaratheresotericconcept,undercertainassumptionsthefree-energyprinciplecanbetranslated
+into a biologically and neuroscientifically plausible process theory (Friston, 2003, 2005) that could theoretically be
+implementedinthebrain. 1 Thecoreideaisthatthebrainpossesseshierarchicalgenerativemodelscapableofgen-
+eratingexpectedsense-data,whicharetrainedbyminimizingthepredictionerrorbetweenthepredictedandobserved
+sense-data. Predictionerrorthusbecomesageneralunsupervisedtrainingsignal, usedtosuccessivelyinferandim-
+prove our understanding of the state of the world. Due to the emphasis on prediction error, this general theory is
+known as Predictive Processing. Active Inference extends this idea by applying it to action. There are two ways to
+minimizepredictionerror. Thefirstistoupdateinternalmodelstoaccuratelyaccountforincomingsense-data. This
+isperception. Thesecondistotakeactionsintheworldsoastobringtheincomingsense-dataintoagreementwith
+the prior predictions. This is action. This duality lets Active Inference treat action and perception under the same
+formalism,andenablesbothtobeoptimizedsimultaneouslybyminimizingthevariationalfree-energy.
+ActiveInferencewasfirstappliedtocontinuoustime,state,andactionspaces.(Fristonetal.,2009).Adiscreteversion
+waslaterdevelopedwhichismoreinlinewithcurrenttrendsinreinforcementlearningandoptimalcontrol(Friston
+et al., 2012), which we focus on here. Although there are significant differences from paper to paper, and we have
+elidedmuchdetail,thegeneralsetupofdiscreteActiveInferenceisasfollows:
+ThereisanagentwhichexistsinaPartiallyObservedMarkovDecisionProcess(POMDP).Theagentreceivesobser-
+vationsofromanenvironmentwhichhashiddenstatesswhichtheagenttriestoinfer. Theagentcanalsotakeactions
+whichchangetheenvironment’sstate. Theagent’s”goal”istominimizeitsexpectedfreeenergyintothefutureupto
+sometimehorizonT.Theagenttheninfersitsownactionsatthecurrenttimetobeconsistentwiththisgoal.
+The agent is equipped with a generative model of its observations, states, and actions which can be factorized as
+follows:
+p(o,s,a,γ)=p(o|s)p(s|s ,a )p(a|γ)p(γ) (1)
+t−1 t−1
+whereγ isaprecisionparameterwhichaffectsthedistributionofactions. Eachofthedistributionsinthefactorized
+generativemodelistypicallyrepresentedasasinglematrixwhichisusuallyprovidedbytheexperimenterratherthan
+beinglearnedfromexperience. 2
+Theagenttheninvertsthisgenerativemodelthroughaprocessofapproximatevariationalinference. Thisworksby
+definingvariationaldistributionsQ(s,a)=Q(s|sˆ)Q(a|πˆ)minimizingtheKL-divergencebetweenthesedistributions
+andthegenerativemodel. Thedivergencebetweenthevariationaldistributionandthegenerativemodeliscalledthe
+variationalfreeenergy.
+To infer its policy, the agent needs to compute the expected-free-energy (EFE) of each policy, which is simply the
+sumofthefreeenergiesexpectedunderthevariationalposterioruptothetimehorizon. Whatthismeansinpractice
+isthat, foreverypossiblepolicy, theagentneedstorunforwarditsgenerativemodelfromthecurrenttimeuntilthe
+timehorizon,generatingfictitiousfuturestatesandobservationsitprojectsitwillbeinifitfollowsthatpolicy. Itthem
+mustcomputethefree-energyofthosestatesandobservationsandaddthemalluptogetanestimateofthevalueof
+anyparticularpolicy. TheagentcanthensampleactionsfromitsactionposteriorusingaBoltzmanndistributionwith
+theγ parameteractingasaninversetemperature.
+1SometutorialintroductionstotheFree-EnergyPrincipleanditsapplicationstoneuroscienceare:Bogacz(2017);Buckleyetal.
+(2017);Millidge(2019).
+2Severalpapers(Fristonetal.,2016;Schwartenbecketal.,2019)dolearnatleastthe”A”matrixrepresentingp(o|s)whichcan
+bedonebysettinghyperparametersgoverningthedistributionofthevaluesintheAmatrixandthenderivingadditionalvariational
+updaterulesforthesehyperparameters,butthisisnotthenormandithasonlybeenappliedtolearnthe”A”matrix.
+2
+APREPRINT-JULY10,2019
+Duetotheneedtoenumerateovereverypossiblepolicyandprojectthemforwardsintimeupuntilthetimehorizon,
+this algorithm quickly becomes intractable for large policy spaces or time horizons. It also has trouble representing
+largestate-spaces. WerefertothistypeofalgorithmastabularActiveInference,byanalogytotabularreinforcement
+learning,whichrepresentseverystateinthestate-spaceexplicitlyasagianttable,andrunsintosimilarscalingissues
+(Kaelbling et al., 1996; Sutton et al., 1998). Because of these scaling issues, tabular Active Inference has not been
+appliedtoanynon-toytaskswithlargestateoractionspaces.
+In this paper, inspired by recent advances in machine learning and variational inference (Goodfellow et al., 2016;
+KingmaandWelling,2013),weproposeanoveldeepActiveInferencealgorithmwhichusesdeepneuralnetworksto
+approximatethekeydensitiesofthefactorizedgenerativemodel. ThisapproachenablesActiveInferencetobescaled
+uptotaskssignificantlylargerandmorecomplexthananyattemptedbeforeinthetabularActiveInferenceliterature,
+andwedemonstrateperformancecomparabletocommonreinforcementlearningalgorithmsforseveralbaselinetasks
+inOpenAIGym(Brockmanetal.,2016)–theCartPole,Acrobot,andLunar-Landertask.Ouralgorithmdoesnotneed
+pre-specifiedtransitionorobservationmodelshard-codedintothealgorithmasitcanlearnflexiblenonlinearfunctions
+toapproximatethesedensitieswhichcanbeoptimizedpurelythroughagradientdescentonthevariationalfree-energy
+functionalwithoutneedinghand-craftedvariationalupdaterules.Moreover,weshowhowonecanuseabootstrapping
+estimationtechniquetoobtainamortizedestimatesoftheexpected-free-energyforastate-actionpairwithoutneeding
+toexplicitlyprojectthepolicyforwardthroughtime,whichpotentiallyenablesthealgorithmtohandlelongorinfinite
+timehorizons.
+We find that the mathematical form of the policy-selection part of our algorithm is somewhat similar to the policy
+gradientsandactor-criticalgorithmsinreinforcementlearning,despitehavingbeenderivedfromcompletelydifferent
+frameworks and objectives. We compare and contrast these algorithms with our own algorithm, and highlight how
+ActiveInferencenativelyincludesseveraladjustmentsthathavebeenempiricallyfoundtoimprovepolicygradients
+but which fall naturally out of our framework. We also investigate how Active Inference includes exploration and
+information-gaintermsandwecomparethemtorelatedworkinthereinforcementlearningliterature.
+DeepActiveInference
+OurdeepActiveInferencealgorithmusesthesamePOMDPformulationasthetabularversion. Thereisanenviron-
+ment which has internal states which then generate observations which the agent receives. The agent can then take
+actions in response to these observations that affect the internal state of the environment, and thus the observations
+thattheagentreceivesinthefuture. Inourcase,theagentalsoreceivesrewardsfromtheenvironment,whichituses
+toconstructbetterpolicies. ThestatesoftheenvironmentareMarkov,whichmeansthatthenextstatedependsonly
+onthecurrentstateandtheagent’saction. TheobservationstheenvironmentgeneratesarenotnecessarilyMarkov.
+The agent maintains a generative model of the environment with the same high-level structure comprising states,
+observations, actions, and rewards. Unlike the observations, however, the states and actions are hidden or latent
+variables, which the agent must infer. In bayesian terms, this means that the agent must compute the following
+posteriorprobability,wheres anda arethehistoriesofpreviousstatesandactionsuptothecurrenttimet.
+<t <t
+p(s,a|o,s ,a )
+<t <t
+Directly computing this posterior through bayesian inference is intractable for any but the simplest cases. Instead
+variational methods are used. These posit additional variational densities Q that the agent controls, which are then
+optimized by minimizing the KL divergence between them and the true posterior so that ultimately the Q densities
+approximatethetrueposteriordensities. Thevariationaldensitytominimizeisthus:
+(cid:90) Q(s,a)
+KL[Q(s,a)||p(s,a,|o,s ,a )]= Q(s,a)log( ) (2)
+<t <t p(s,a,|o,s ,a ))
+<t <t
+3
+APREPRINT-JULY10,2019
+Using bayes’ rule, the properties of logarithms, and the linearity of the integral, we can split this expression up as
+follows:
+(cid:90)
+KL[Q(s,a)||p(s,a,|o,s ,a )]=E [logQ(s,a)]+E [logp(s,a,o,s ,a )]+ Q(s,a)logp(o,s ,a )
+<t <t Q(s,a) Q(s,a) <t <t <t <t
+(3)
+(cid:90) (cid:90)
+= Q(s,a)log(Q(s,a)+ Q(s,a)logp(s,a,o,s ,a )+logp(o,s ,a )
+<t <t <t <t
+(4)
+Thislastintegralvanishessincelogp(s,a,o,s ,a )hasnodependenceonanyofthevariablesinQ,sothesecan
+<t <t
+betakenoutoftheintegral,andastheremainderisjustadistributionitintegratesto1. Wecanthusseethat:
+KL[Q(s,a)||p(s,a,|o,s ,a )]=KL[Q(s,a)||p(s,a,o,s ,a )]+logp(o,s ,a ) (5)
+<t <t <t <t <t <t
+SincethelogptermdoesnotdependontheparametersofQ(andsinceKLdivergenceisnon-negative),minimizing
+theKLdivergenceontheright-handsideisthesameasminimizingthatontheleft. Thisthenreplacesthedifficulties
+ofminimizingtheKLbetweenthevariationaldistributionandthetrueposterior(whichisunknown),withthatofthe
+KLdivergencebetweenthevariationaldistributionandthejointdistribution,whichisgivenbythegenerativemodel.
+ThevariationalfreeenergyissimplytheKLdivergencebetweenthevariationalandjointdistributions:
+KL[Q(s,a)||p(s,a,o,s ,a )]=F (6)
+<t <t
+This quantity is also the same as the evidence-based-lower-bound ELBO used in machine learning and variational
+inference (Hoffman et al., 2013; Blei et al., 2017). We now have to deal with the free energy term, and specifically
+thejointdistributionp(s,a,o,s ,a ). Thistermcanbefactorizedaccordingtothegenerativemodeloftheagent.
+<t <t
+Theagent’sgenerativemodelassumesthattheagentexistsinsideaPOMDPsuchthatthegenerativeprocessisthat
+observations depend on states, states depend on the previous state and the previous action, and the current action is
+inferredfromthecurrentstateonly. Theseassumptionsresultinthefollowingfactorizationforthejointdensity:
+p(s,a,o,s ,a )=p(o|s)p(a|s)p(s|s ,a )=F (7)
+<t <t t−1 t−1
+The”historyterms”s anda arereplacedbys anda becauseoftheMarkovassumptiononthestatesand
+<t <t t−1 t−1
+actions.ThevariationaldistributionistakentofactorizeasQ(s,a)=Q(a|s)Q(s).Thisfactorizationdoesnotimpose
+anyadditionalassumptionsandfollowsdirectlyfromthelawsofprobability..Thefreeenergytobeminimizedisthus:
+F =KL[Q(a|s)Q(s))||p(o|s)p(a|s)p(s|s ,a )] (8)
+t−1 t−1
+Using standard properties of logs and the definition of the KL divergence, the expression for the free energy splits
+apartintothreeterms:
+(cid:90)
+−F = Q(s)logp(o|s)+KL(Q(s)||p(s|s ,a )]+E [KL[Q(a|s)||p(a|s)] (9)
+t−1 t−1 Q(s)
+Thekeyelementofourmethodisusingdeepneuralnetworkstoapproximateeachofthekeydensitiesinthisexpres-
+sion. Lookingatthefirstterm,weseeweneedtoapproximatethedensitiesQ(s)andlogp(s|o). Thesetwodensities,
+onemappingfromobservationstostatesandtheothermappingbackfromstatestoobservationsishighlyreminiscent
+ofthevariational-autoencoder(VAE)objective,(KingmaandWelling,2013)andcanbemodelleddirectlyasone. 3
+Thesecondtermisthedivergencebetweentheposteriorexpectedgiventheobservationandthepriorexpectedvalueof
+thestategiventhepreviousstateandaction.Thevariationalposteriorisgivenbytheencodermodeloftheobservation
+model, while the prior p(s|s ,a ) can be modelled, under Gaussian assumptions, directly by a neural network
+t−1 t−1
+whichoutputsthemeanandvarianceofaGaussiangiventhepreviousstateandaction. Inthispaperweuseasimple
+3ForatutorialonVAEsseeDoersch(2016).
+4
+APREPRINT-JULY10,2019
+feedforwardnetworkforthis,butmorecomplexstatefulmodelssuchasLSTMscouldalsobeused.Assumingboththe
+posteriorandpriordensitiesareGaussian,theKLdivergenceiscomputableanalytically,sothereisnocomputational
+difficultyhere. Thesetwotermsandtheirinstantiationsasneuralnetworkstakecareoftheperceptionaspectofthe
+ActiveInferenceagent.
+The key term for Active Inference is the third term. Let’s examine it in more detail. We can decompose the KL
+divergenceintoanenergyandanentropyterm:
+(cid:90)
+KL[Q(a|s)||p(a|s)]= Q(a|s)logp(a|s)+H(Q(a|s)) (10)
+ThevariationaldensityQ(a|s)isundercompletecontroloftheagent,andweparametrizeitbyadeepneuralnetwork.
+ThismakestheentropytermH(Q(a|s))simpletocomputeasitissimplytheentropyoftheactiondistributionoutput
+bytheneuralnetworkwhichcanbecomputedsimplyasasumfordiscreteactions. Theenergytermismoretricky.
+This is because it involves the true action posterior p(a|s), which we do not know precisely. First, we will make
+some assumptions about the form of this density. Specifically, we will assume, following Friston et al. (2015) and
+Schwartenbecketal.(2019),andasinthetabularcase,thattheagentexpectsthatitwillacttominimizeitsexpected-
+free-energyintothefuture,andthatthedistributionoveractionsisaprecision-weightedBoltzmanndistributionover
+theexpectedfreeenergies. Thatis:
+p(a|s)=σ(−γG(s,a)) (11)
+Whereσisasoftmaxfunction. Thisjusttellsusthatthe”optimal”free-energyagentwouldfirstcomputetheexpected
+free-energy of all paths into the future for each action it could take, and then choose an action probabilistically by
+sampling from a Boltzmann distribution over the expected free energies for each action. This method has some
+empiricalsupport. Boltzmannorsoftmaxchoiceruleshavebeenregularlyusedtomodeldecision-makinginhumans
+andotheranimals(Gershman,2018a,b;Dawetal.,2006)andsimilarrulesareappliedinreinforcementlearningunder
+thetermBoltzmannExploration(Cesa-Bianchietal.,2017). Thekeyterminthisequationistheexpectedfreeenergy
+G(s,a). Thisisapathintegral(orsum)ofthefree-energyoftheexpectedtrajectoriesintothefuturegiventhecurrent
+stateandaction. Thismeansthatinthecaseofdiscretetime-stepsandanultimatetimehorizonT,wecanwritethis
+asasimplesum:
+T
+(cid:88)
+G(s,a)= G(s ,a ) (12)
+t t
+t
+Wefirsttakeoutthefirsttermobtainanexpressionoftheexpectedfreeenergyforasingletime-step:
+T
+(cid:88)
+G(s,a)=G(s ,a )+E [ G(s ,a )] (13)
+t t Q(st+1,at+1) t+1 t+1
+t+1
+Wecanthenexpandtheexpectedfreeenergyforasingletime-stepusingthedefinitionofthefreeenergyfrombefore
+astheKLdivergencebetweenthevariationaldistributionandthejointdistributiontoobtain4:
+G(s ,a )=KL[Q(s)||p(s,o)] (14)
+t t
+(cid:90)
+= Q(s)[logQ(s)−logp(s,o)] (15)
+(cid:90)
+= Q(s)[logQ(s)−logp(s|o)−logp(o)] (16)
+(cid:90)
+= Q(s)[logQ(s)−logQ(s|o)−logp(o)] (17)
+(cid:90)
+=−logp(o)+ Q(s)[logQ(s)−logQ(s|o)] (18)
+(cid:90)
+=−r(o)+ Q(s)[logQ(s)−logQ(s|o)] (19)
+4Actionisnotincludedasafreeparameterinthevariationalorgenerativedensitiessincetheexpected-free-energyisafunction
+ofbothstatesandactions–i.e.theEFEisevaluatedforeveryactionsotheactionisimplicitlyconditionedon).
+5
+APREPRINT-JULY10,2019
+In the third line, since we do not know the true posterior distribution of the states given the observations in the
+future, we approximate it with our variational density. In the penultimate line, logp(o) term can be taken out of
+expectationsinceithasnodependenceons. ThistermiscrucialtoActiveInferenceasitisthepriorexpectationover
+outcomes,whichencodestheagentspreferencesabouttheworld. Inthefinallinewereplacethepriorprobabilityof
+anobservation-logp(o)directlywiththereward-r(o). Thisisbecause,inActiveInference,theagentissimplydriven
+to minimize surprise, and therefore all goals must be encoded as priors built into the agent’s generative model, so
+that the least surprising thing for it to do would be to achieve its goals. Due to the complete class theorem (Friston
+et al., 2012) any scalar reward signal can be encoded directly as a prior using p(o) ∝ exp(r(o)). In this paper,to
+enableeffectivecomparisonswithreinforcementlearningmethods,theagent’spriorssimplyaretomaximizerewards.
+However, it is important to note that the Active Inference framework is actually more general than reinforcement
+learning. Itcanrepresentrewardfunctionsdirectlyaspriorsusingthecompleteclasstheorem,butitcanalsoencode
+othermoreflexiblefunctions.Additionally,theactionposteriorp(a|s)doesnotnecessarilyhavetobecomputedusing
+theexpected-free-energy. Forinstance,theactionprobabilitiescouldbeprovideddirectlybyobservinganotheragent,
+which would allow the Active Inference agent to switch seamlessly between imitation and reinforcement learning
+styles.
+(cid:82)
+The prior term represents the external reward the agent receives, but there is a second term Q(s)[logQ(s) −
+logQ(s|o)] which represents something quite different. It requires the maximization of the difference between the
+prior over future states, and the future ”posterior” generated after ”observing” the fictive predicted future outcome.
+This incentivizes visiting states where either the transition or observation model are poor, thus endowing the agent
+with what can be thought of as an intrinsic curiosity. In the Active Inference literature, this term is often called the
+epistemicorintrinsicvalue(Fristonetal.,2015).
+Wecanthenrepresentthetotalexpectedfreeenergyasthesum:
+(cid:90) T
+(cid:88)
+G(s,a)=−r(o)+ Q(s)[logQ(s)−logQ(s|o)]+E [ G(s ,a )] (20)
+Q(st+1,at+1) t+1 t+1
+t+1
+Trying to compute this quantity exactly is intractable due to the need to explicitly compute many future trajectories
+andtheexpected-free-energyassociatedwitheachone. However,itispossibletolearnabootstrappedestimateofthis
+functionfromsamplesusinganeuralnetworktolearnanamortizedinferencedistribution. Wedefineanapproximate
+expected-free-energy(EFE)-valuenetworkG (s,a),withparametersφ,whichmapsastateactionpairtoanestimated
+φ
+ˆ
+EFE. This estimated EFE is then compared to a second estimate of the EFE G(s,a) which uses the free energy
+calculatedatthecurrenttime-stepbutapproximatestherestofthetrajectorywithanotherestimatebytheEFE-value
+netestimateforthenexttime-step. Thatis:
+(cid:90)
+ˆ
+G(s,a)=−r(o)+ Q(s)[logQ(s)−logQ(s|o)]+G (s,a) (21)
+φ
+Thedifferencebetweenthetwoestimatescanthenbeminimizedbyagradientdescentprocedurewithrespecttothe
+parametersoftheEFE-valuenetφ. InthispapertheL2normisusedasalossfunctionforthegradientdescent:
+L=||G (s,a)−G(s ˆ ,a)||2 (22)
+φ
+ThisprocedureisanalogoustobootstrappedvalueorQfunctionestimationproceduresinreinforcementlearning,for
+which guarantees of convergence exist in tabular cases. It also empirically has been found to work for deep neural
+networksinpractice,albeitwithvarioustechniquesneededtoboostthestabilityoftheoptimizationprocedure,despite
+thelackofanytheoreticalconvergenceguarantees.
+GiventhatwenowpossessameanstoestimateG(s,a)andthustheactionposteriorp(a|s),theactionmodelQ(a|s)can
+(cid:82)
+betrainedtodirectlyminimizethelossfunctionL = Q(a|s)logp(a|s)+H(Q(a|s)). Gradientsofthisexpression
+withrespecttotheparametersofQ(a|s)canbecomputedanalyticallyorbyusingautomaticdifferentiationsoftware.
+6
+APREPRINT-JULY10,2019
+Torecap, thedeepActiveInferenceagentpossessesfourinternalneuralnetworks. Aperceptionmodelwhichmaps
+observationstostatesandbackagainandmodelsthedistributionsQ(s|o)andp(o|s),andistrainedwithaVAE-like
+log-probability-of-observationsloss. Atransitionmodelwhichmodelsthedistributionsp(s |s ,a )istrainedto
+t t−1 t−1
+minimizedifferencesbetweenthepredictedtransitionandtheactuallyoccurringstateatthenexttime-stepobtained
+through Q(s |o ). An action model, which models the distribution Q(a |s ), and can be trained directly through
+t t t t
+(cid:82)
+gradient descent on the loss function L = Q(a|s)logp(a|s)+H(Q(a|s)), and a value network G (s,a) that is
+φ
+trainedthroughabootstrappedestimateoftheexpected-free-energy,asexplainedabove.
+Wepresentourdeep-active-inferencealgorithminfullbelow:
+Algorithm1DeepActiveInference
+Initialization:
+InitializeObservationNetworksQ (s|o),p (o|s)withparametersθ.
+θ θ
+InitializeStateTransitionNetworkp (s|s ,a )withparametersφ
+φ t−1 t−1
+InitializepolicynetworkQ (a|s)withparametersξ
+ξ
+InitializebootstrappedEFE-networkG (s,a)withparametersψ
+ψ
+Receivepriorstates
+0
+Takeprioractiona
+0
+Receiveinitialobservationo
+1
+Receiveinitialrewardr
+1
+functionACTION-PERCEPTION-LOOP
+whilet<T do
+sˆ ←Q (s|o)(o ) (cid:46)Infertheexpectedstatefromtheobservation
+t θ t
+s ←p (s|s ,a )(sˆ) (cid:46)Predictthestatedistributionforthenexttime-step
+(cid:100)t+1 φ t−1 t−1
+a ∼Q (a|s) (cid:46)Sampleanactionfromthepolicyandtakeit
+t ξ
+Receiveobservationo
+t+1
+Receiverewardr
+t+1
+sˆ ←Q (s|o)(o ) (cid:46)Inferexpectedstatefromnextobservation
+t+1 θ t+1
+ComputethebootstrappedEFEestimateoffromthecurrentstateandaction:
+G(cid:100)(s,a)←r +E [logs −logsˆ ]+E [G (s ,a )]
+t+1 Q(st+1 (cid:100)t+1 t+1 Q(st+1,at+1) ψ t+2 t+2
+ComputetheVariationalFreeEnergyF:
+(cid:82)
+F ←E [logp(o|s)]+KL[sˆ ||s ]+E [ daQ (a|s)σ(−γG (s,a)(s ))+H(Q (a|s))]
+Q(s) t+1 (cid:100)t+1 Q(s) ξ ψ t+1 ξ
+θ ←θ+αdF (cid:46)Updatetheθparameters
+dθ
+φ←φ+αdF (cid:46)Updatetheφparameters
+dφ
+ξ ←ξ+αdF (cid:46)Updatetheξparameters
+dξ
+L←||G(cid:100)(s,a)−G (s,a)||2 (cid:46)Computetheboostrappingloss
+ψ
+ψ ←ψ+αdL (cid:46)Updatetheψparameters
+dψ
+endwhile
+endfunction
+Unlike the tabular Active Inference algorithms proposed by Friston and colleagues, this algorithm approximates all
+importantdensitieswithneuralnetworks,whichcanallbeoptimizedthroughasimplegradientdescentprocedureon
+theexpressionforthevariationalfreeenergy. Thecomputationgraphisfullydifferentiablesothatderivativesofthe
+parametersofthenetworkscanbecomputedautomaticallyusingautomaticdifferentiationsoftwarewithouttheneed
+forhand-derivedcomplexvariationalupdaterulesorblack-boxoptimizationtechniques. Moreover, althoughinthis
+paper the densities were approximated using simple multi-layer perception networks, in principle each density can
+7
+APREPRINT-JULY10,2019
+be approximated by a neural network, or other differentiable function, of any size or complexity, thus enabling this
+algorithmtoscaleindefinitely.
+RelationtoPolicyGradients
+Reinforcement learning is perhaps the dominant paradigm used to train agents to solve complex tasks with high
+dimensional state-spaces (Mnih et al., 2015; Lillicrap et al., 2015; Silver et al., 2017). Reinforcement learning also
+formulatestheaction-problemasanMDPwithstates,actionsandrewards.Inreinforcementlearning,however,instead
+ofactingtominimizeexpectedsurprise,wesimplymaximizeexpectedrewards. Theagent’sgoalateverytime-step
+issimplytomaximizethesumofdiscountedrewardsoveritstrajectoriesintothefuture. Thiscanbewrittenas:
+T
+(cid:88)
+G = γi−1r(s ,a ) (23)
+t t t
+i
+Whereγisadiscountfactorthatreducestheimpactoffuturerewards.Wecanalsodefinestateandstate-actionreward
+functions which map states and actions to the reward expected from that state or state-action pair under a particular
+policy.
+Qπ(s,a)=E [G |s=s,a=a] (24)
+π t
+Vπ(s)=E [E [G |s=s]] (25)
+π a t
+Thegoalofanagentistofindapolicywhichcanmaximizetheexpectedsumofdiscountedrewards. Thisgoalcanbe
+writtenastheobjectivefunction:
+t=∞(cid:90)
+(cid:88)
+J(θ)=E[G ]= p(s |s ,a )p (a |s )G(s ,a )dsda (26)
+t t t−1 t−1 θ t−1 t−1 t t
+t=0
+Whereθaretheparametersofthepolicywhichoutputsthedistributionp (a|s). Therearetwowaystooptimizethis
+θ
+objective. The first is to obtain it directly by maximizing over the Q function, and thus not explicitly represent the
+policyatall. ThisleadstotheQandTDlearningfamilyofalgorithms. Thesecondwayistoexplicitlyrepresentthe
+policy,forinstanceusingadeepneuralnetwork,andfititdirectly. Wefocusonthissecondapproachsinceitbearsthe
+greatestsimilaritieswithourdeepActiveInferencealgorithm.
+WecancomputethegradientsofJwithrespecttoθdirectlyusingthefollowinglog-gradienttrick(Suttonetal.,2000):
+(cid:90)
+(cid:88)
+∇ J(θ)= ∇ p(s |s ,a )p (a |s )G(s ,a ) (27)
+θ θ t t−1 t−1 θ t−1 t−1 t t
+t
+∇ p(s |s ,a )p (a |s )
+=p(s |s ,a )p (a |s ) θ t t−1 t−1 θ t−1 t−1 G(s ,a ) (28)
+t t−1 t−1 θ t−1 t−1 p(s |s ,a )p (a |s ) t t
+t t−1 t−1 θ t−1 t−1
+(cid:90)
+(cid:88)
+= p(s |s ,a )∇ logp (a |s )G(s ,a ) (29)
+t t−1 t−1 θ θ t−1 t−1 t t
+t
+(cid:88)
+= E [∇ logp (a |s )G(s ,a )] (30)
+p(st|st−1,at−1) θ θ t−1 t−1 t t
+t
+Thesealgorithmsdirectlymaximizethereinforcementobjectiveandso,unlikeQ-learningmethods,havesomeguar-
+antees of formal convergence. However, the gradients often suffer from high variance. The return G(s ,a ) can be
+t t
+estimated using Monte-Carlo methods or can be approximated using a function approximation method such as Q-
+learning. Algorithmsthatdothelatterarecalledactor-criticalgorithmssincetheycontainbothan”actor”network-
+thepolicy,anda”critic”networkwhichlearnstoapproximatethevaluefunction.
+Ofinterestistheclosesimilaritybetweenouralgorithmwhichwasderiveddirectlyfromthevariationalfree-energy
+using an inference procedure, and the policy gradient updates derived from maximizing the total discounted sum of
+8
+APREPRINT-JULY10,2019
+expectedreturns. Wewritetheoutthelossfunctionssidebyside,whilesimplifyingsomeoftheextraneousnotation
+tomakethecomparisonmoreclear. J isActiveInferenceandJ representspolicygradients.
+AI PG
+(cid:90)
+J (θ)=E [ daQ (a|s)logp(a|s)+H(Q(a|s))] (31)
+AI Q(s) θ
+J (θ)=E [logp (a|s)G(s,a)] (32)
+PG p(s,a) θ
+There are several interesting similarities and differences. The first is the additional entropy term H(Q(a|s)) in the
+ActiveInferenceobjective. ThismeansthattheActiveInferenceagentdoesnotmerelytrytomaximizetheexpected-
+free-energy into the future, it does so while also trying to maximize the entropy of the distribution over its actions.
+Essentially,thismaximumentropyobjectivemakestheagenttrytoactasrandomlyaspossiblewhilestillachieving
+high reward, which significantly aids exploration. Interestingly, a recent strand of reinforcement learning literature
+also focuses on adding an entropy regularization term to the loss (Haarnoja et al., 2017; Haarnoja, 2018; Ziebart
+et al., 2008; Rawlik et al., 2010, 2013; Haarnoja et al., 2018) and have shown this to empirically aid performance
+and exploration on many benchmark tasks. The maximum-entropy framework has also inspired work on relating
+reinforcementlearningtoprobabilisticandvariationalapproaches(Levine,2018;Fellowsetal.,2018).
+Theseconddifferencebetweenthealgorithmsliesinthevaluefunction. Policygradientsusesthestate-actionvalue
+functions directly, while Active Inference replaces this with a log probability which is derived from a precision-
+weighted softmax over the value-function. It is unclear which approach is to be preferred, although the log-
+probabilitiesmayhelpreducethevarianceofthegradientbyreducingthemagnitudeofthemultipliersinceprobabil-
+itiesareinherentlynormalized. ThisdifferenceiscentraltoActiveInference,whichatahighlevelaimstominimize
+surprise in the future, as opposed to reinforcement learning which aims to maximize reward. As stated in the intro-
+duction,reinforcementlearningcanbesubsumedwithinActiveInferencesincerewardscansimplybedefinedtobe
+highlyexpectedstates.
+Another difference lies in the representation of the policy. Policy gradient methods optimize the log probability of
+thepolicy, whileActiveInferencedirectlyoptimizestherawprobabilityvalues. Itisstillanopenquestionhowthis
+changesthedynamicsoflearningunderActiveInferencecomparedtopolicygradients,althoughthereissomereason
+toexpectthelog-probabilitiestobebetterconditioned. Additionally,ActiveInferenceexplicitlycomputestheintegral
+overtheaction(atleastindiscreteactionspaces)usingthecounterfactualpredictedresultsfromtheaction,whilethe
+policygradientmethodonlysamplesfromthisintegralbyusingtheactionstheagentactuallytookduringtheepisode.
+Thisshouldtheoreticallyreducevariancesinceitiscomputingthetrueexpectationratherthanthesampleadvantage,
+andananalogousschemealsobeenempiricallyfoundtoimproveperformanceinactor-criticalgorithms(Asadietal.,
+2017;CiosekandWhiteson,2018).
+The final difference relates to the outer expectation. The policy gradient expression is taken under an expectation
+over the true environmental dynamics, which are generally unknown. This means that the only way to correctly
+make updates is to sample the expectation using states that are derived from the current policy. This means that
+policy gradients are naturally on-policy algorithms which can only validly use the data obtained under the current
+policy. However,duringtrainingthepolicychangesoftenwhichrenderspastdataunusablewhichdecreasessample
+efficiency. ActiveInference,however,requiresanexpectationtakenunderthetransitionmodel,whichisknown. This
+means that Active Inference algorithms can be applied ”off-policy”, which is a large advantage. Any data can be
+usedtotrainanActiveInferenceagent–eventhatwhichwascollectedunderacompletelydifferentandperhapseven
+randompolicy,providedthetransitionmodelisknownandaccurate. Whileoff-policyvariantsofpolicygradientand
+actor-critic algorithms have been proposed (Degris et al., 2012; Song et al., 2015; Haarnoja et al., 2018) the native
+off-policystatusofActiveInferenceisalargeadvantage.
+Interestingly, many of the differences between Active Inference and policy gradients, such as the entropy term and
+theexplicitcomputationoftheexpectationovertheaction,havebeentheoreticallyandempiricallyshowntoimprove
+performance of policy gradients. These improvements to policy gradients naturally fall out of the Active Inference
+9
+APREPRINT-JULY10,2019
+framework. The similarities between the two algorithms also highlight a potentially close connection between rein-
+forcement learning and Active Inference, especially the link between maximum entropy reinforcement learning and
+variational inference. The exact relationships between the paradigms of Active Inference, maximum entropy rein-
+forcementlearning,andstochasticoptimalcontrol(Friston,2011;BotvinickandToussaint,2012;Rawliketal.,2010)
+stillremainsunclear,however.
+RelatedWork
+AsignificantamountofworkhasgoneintoexploringtabularActiveInferencealgorithmsandquestionssuchashow
+the framework encompasses epistemic value and exploration (Friston et al., 2015; Pezzulo et al., 2016; Moulin and
+Souchay, 2015; FitzGerald et al., 2015), models of active vision (Mirza et al., 2016; Friston et al., 2018; Parr and
+Friston,2017,2018a), biologicallyplausibleneuralprocesstheories(ParrandFriston,2018b;Fristonetal.,2017a),
+theconnectionstothemotorsystem(Adamsetal.,2013),implementationsbasedonvariationalmessagepassing(Parr
+etal.,2019;Fristonetal.,2017b;vandeLaaranddeVries,2019),andeveninsight,curiosity,andconcept-learning
+(Fristonetal.,2017a;Schwartenbecketal.,2019;Smithetal.,2019). Thesemethodsthough,whileprovidinginsight
+intothequalitativedynamicsofActiveInferenceandtheimportanceofvariousparameters,areinherentlynon-scalable
+duetotheirexponentialcomplexity,andtheyhavenotbeenappliedtoanythingbeyondsimpletoy-tasks.
+Ueltzho¨ffer(2018),toourknowledge,isthefirstpapertoproposeapproximatingtheobservationandtransitionmodels
+with deep neural networks. They use single layer tanh networks with sixteen neurons which outputs the mean and
+varianceofadiagonalconditionalgaussian. TheyusedthismodeltosolvetheMountain-CarproblemfromOpenAI
+gym. Akeydifferenceofthisworkishowtheyrepresentedaction. Theycomputedcontinuousactionsinamanner
+thatrequiredthemtoknowthepartialderivativesofthesensationsgiventheaction,whichmeantpropagatingthrough
+theenvironmentaldynamics, whichareunknown. Duetothistheyhadtouseablackboxevolutionaryoptimizerto
+optimizetheirmodels,whichissubstantiallymoresample-inefficient. Inourmodelwedonotusethisapproach,but
+instead use a learned amortized inference distribution Q(a|s) and minimize this using a variational approach on the
+divergencewiththeapproximatedtrueposteriorofthevaluefunctionp(a|s),whichislearnedthroughabootstrapping
+estimation procedure. Due to this our method is end-to-end differentiable and all networks can be trained through
+gradientdescentonthevariationalfree-energy.
+Whilethispaperwasinpreparation,apaperbyCataletal.(2019)cameoutalongsimilarlines.Theyalsoparametrized
+theobservationandtransitionmodelswithdeepneuralnetworks, andtheyuseda”habit” policytoapproximatethe
+expectedfreeenergy,analogouslytoQlearninginreinforcementlearning. However,theyonlyappliedtheirmodelto
+theMountain-CartaskandalsodidnotderivethefullvariationalderivationoftheKLdivergenceoftheactionmodel
+and the action posterior, but instead used their habit policy or EFE-approximating network to select actions directly
+throughasoftmaxchoicerule. Insteadwemaintainaseparatepolicynetworkwhichadheresmorecloselytothefull
+free-energyderivationandalsosolvesignificantlymorecomplextasksthantheMountain-Car.
+Active Inference also brings together several contemporary strands of deep reinforcement learning. There has been
+much work on model-based reinforcement learning which uses models for planning and state estimation, including
+using separate observation and transition models and unsupervised objectives similar to Active Inference (Deisen-
+rothandRasmussen,2011;Wayneetal.,2018;HaandSchmidhuber,2018). DeepActiveInferenceismodel-based
+from the start, and the three separate models effectively fall out of the probabilistic formalism. There has also been
+workposingthereinforcementlearningproblemasavariationalinferenceproblem. Onethreadofthisworkderives
+maximumentropyreinforcementlearningandhasbeenshowntoimprovebenchmarkresultsonmanytasks(Rawlik
+etal.,2010;BotvinickandToussaint,2012;Levine,2018;Fellowsetal.,2018;Rawliketal.,2013). Theformalism
+ofActiveInferencediffersslightlyfromtheseinthewayithandlesrewardsandsetsupthegeneralMDPformalism.
+Themaximumentropyreinforcementlearninginferencemethodstypicallysetsuptheinferenceproblembyassuming
+binaryoptimalityvariables,andthenconditionsonthosevariablesbeingtrue,wheretheprobabilityofthembeingtrue
+10
+APREPRINT-JULY10,2019
+is proportional to the exponentiated reward. Active Inference by contrast does not introduce any auxiliary variables
+butinsteadencodestherewarddirectlyinthepriors. Beyondthis,thedetailedconnectionbetweenActiveInference
+and the maximum entropy formulation of reinforcement learning remain obscure, despite the fact that they may be
+equivalentgiventheclosesimilaritiesofmanyoftheresultingequations.
+Finally there has also been much work focusing on intrinsic motivations for reinforcement learning agents. For a
+theoreticalreviewseeOudeyerandKaplan(2009). Therehasbeenworkwhichusespredictionerrordirectly,(Stadie
+et al., 2015), and also information gain (Houthooft et al., 2016b; Mohamed and Rezende, 2015; Houthooft et al.,
+2016a) as epistemic rewards in a manner similar to our approach. In Active Inference, however, the form of the
+epistemicrewardsnaturallyfallsoutoftheframeworkratherthanbeingpostulatedonanad-hocbasis. However,itis
+stillunclearwhetherthetypeofepistemicrewardproscribedbytheexpected-free-energyisoptimalforexploration,
+and indeed other forms of epistemic reward may be better. Moreover, it is worth noting, as done in (Biehl et al.,
+2018),thatdespitethecommonuseoftheexpectedfreeenergyastheprior,thisisinfactarbitrary,andotherintrinsic
+motivationscanbesubstituted.
+Model
+All the environments used in this paper were not partially observed, but rather only MDPs with small state-spaces.
+Thismeansthatthemappingfromobservationstohiddenstateswasunnecessaryandthusdispensedwithforgreater
+simplicity. The key contribution of this paper is fundamentally the action selection mechanism, and not training a
+neural network to learn p(o|s). However the transition model was still required and used to compute the epistemic
+reward.
+Thepolicynetwork,transitionnetwork,andvalue-networkwereeachatwo-layeredperceptronwith100hiddenunits
+and a relu activation function. All networks were trained through minimizing the free-energy objective using the
+ADAMoptimizer.Alearningrateof0.001wasusedthroughout.Thevaluenetworkwastrainedusingthebootstrapped
+estimator. Allhyperparameterswaskeptthesameforalltasks. Nocomplexhyperparametertuningwasnecessaryfor
+reasonableperformanceonourbenchmarks. Nopreprocessingwasdoneonthestates,rewards,oractions.
+Thestabilityofbootstrappedvalueestimationisalargetopicinreinforcementlearning. Convergenceisnotguaran-
+teed for nonlinear function approximators, and stability has been shown to be an issue empirically (Fujimoto et al.,
+2018). Numerous methods have been discovered in the literature to aid the stability and learning. In this paper we
+implemented only two of the most basic techniques which are now used universally in deep-Q learning: a memory
+buffer(Mnihetal.,2013)andatargetnetwork(VanHasseltetal.,2016).Amemorybufferstoresahistoryofprevious
+states visited, and each gradient descent step is taken on a batch of state-action-reward-next-state tuples taken from
+the buffer. This prevents overfitting to the immediate history, which contains many states that are highly correlated
+withoneanotherandreducesgradientvariance. Secondly,weusedatargetnetwork,which”freezes”theweightsof
+ˆ
+the value network used in the G(s,a) estimator for a number of epochs – in our experiments we updated after fifty
+epochs.Thisenablesthevalue-networktomakegradientstepswithoutconstantlychasingamovingtarget,andsoaids
+stability.
+Since the bootstrapping estimator for the value function estimator had a significant effect on the behaviour of the
+model, we believe that large performance gains could be had by implementing many of these techniques and fine-
+tuning hyperparameters. However, this sort of optimization was not the goal of this paper, which is intended to
+be more of an introduction and a demonstration of the potential of deep-active-inference rather than a performance
+contest. Examplesofsuchimplementationdetailscanbefoundin(Fujimotoetal.,2018).
+Forcomparison,weimplementedtworeinforcementbaselinemethods:Q-learningandActor-critic.Q-learningsimply
+learnsthestate-actionvaluefunctionthroughabootstrappingproceduresimilartotheoneweusedtoapproximatethe
+EFE. It does not maintain a separate representation of the policy, but simply chooses actions directly based on the
+11
+APREPRINT-JULY10,2019
+maximumQ-valuethatitcomputes. Forafaircomparison,theQ-learningagentweimplementedusedaBoltzmann
+explorationruleinitsactionselection,similartotothesoftmaxoverpoliciesimplementedinourdeepActiveInference
+algorithm. ThisalsogavetheQ-learningagentsufficientstochasticitytoexploreenoughtoconvergetoagoodpolicy
+foralloftheenvironments.
+TheQ-learningagentlearnedavalue-network,whichwasamulti-layerperceptronwithasinglehiddenlayerof100
+neurons and a relu activation function. This was identical in the numbers of neurons and activation function to the
+neural networks used in the deep Active Inference agent. All hyperparameters were kept the same as in the deep
+Active Inference agent. Like the Active Inference agent, the Q-learning agent used a memory replay buffer and a
+targetnetworktohelpstabilizetraining.
+Actor critic algorithms are variants of policy gradient algorithms that use a separate ”critic” neural network to esti-
+matethevaluefunctioninsteadofdirectlyestimatingitthroughmonte-carloreturns. Weinstantiatedtheactorcritic
+algorithmwithapolicynetworkandavaluenetworkidenticaltothedeep-active-inferenceagent. Allhyperparame-
+terswerethesameasforthedeepActiveInferenceagent. Thevalue-networkwastrainedusingQ-learningandalso
+possessedamemorybufferandatargetnetwork.
+Results
+TheperformanceoftheActiveInferenceandbaselinereinforcementlearningagentswasmeasuredonthreetasksfrom
+the OpenAI Gym. The tasks were Cartpole Environment, the Acrobot Environment,and the Lunar-Lander environ-
+ment. Whilenotextremelyhighdimensionaltasks,theyaresignificantlymorechallengingthananybeforeattempted
+intheActiveInferenceliterature. Exampleframesfromthethreegamesareshownbelow.
+Figure 1: Frames from the three environments. From left to right: CartPole-v1, Acrobot-v1, LunarLander-v2. For
+moreinformationabouttheseenvironmentsbeyondwhatisinthispaper,pleaseconsulttheOpenAIGymdocumenta-
+tion.
+ThegoaloftheCartPoleenvironmentistokeepthepolebalanceduprightatopthecart. Thestatespacecomprisesof
+fourvalues(thecartpositionandcartvelocity,andtheangleθofthepoleandtheanglevelocity).Therewardschedule
+is+1foreverytime-steptheepisodedoesnotend. Theepisodeendswhenevertheangleofthepoleismorethan15
+degreesfromvertical,orthebaseofthecartmovesmorethan2.4unitsfromthecenter.
+IntheAcrobotenvironment,theagentpossessesatwojointedpendulum,andtheaimistoswingitfromadownward
+positiontobeingbalancedverticallyat180degrees.Rewardis0ifthearmoftheAcrobotisabovethehorizontaland-
+1otherwise.Thisposesachallenginginitialexplorationproblemsincegettinganyrewardotherthan-1isveryunlikely
+withrandomactions. Theoptimalsolutionwouldnetslightlylessthan0reward(giventhetimeneededtoswingup
+theAcrobotwhenitwouldbeaccruingnegativereward).Thestate-spaceoftheenvironmentisa6dimensionalvector,
+whichrepresentsthevariousanglesofthejoints. Theactionspaceisa3dimensionalvectorrepresentingtheforceon
+eachjoint.
+12
+APREPRINT-JULY10,2019
+ThegoaloftheLunar-Landerenvironmentistolandtherocketonalandingpadthatisalwaysatcoordinates(0,0).
+The state-space is 8-dimensional and the action space is 4-dimensional with the actions being fire left engine, right
+engine, upwards engine, and do nothing. The agent receives a reward of +100 for landing on the pad, +10 for each
+of the rocket-legs are standing, and -0.3 for every time-step the rocket’s engines are firing. The maximum possible
+rewardforanepisodeis+200.
+TheperformanceoftheActiveInferenceagentwascomparedtotwobaselinereinforcementlearningalgorithms(Q-
+learningandactor-critic). Eachagentbeganwithrandomlyinitializedneuralnetworksandhadtolearnhowtoplay
+fromscratch, usingonlythestateandrewarddataprovidedbytheenvironment. Weran20trialsof15000episodes
+each,andthemeanrewardtheagentaccumulatedoneachepisodeoftheCartPoleenvironmentisplottedbelow:
+Figure 2: Comparison of the mean reward obtained by the Active Inference agent compared to two reinforcement
+learningbaselinealgorithms–Actor-CriticandQlearning.
+HerewecanseethattheActiveInferenceagentactuallyoutperformsbothofthereinforcementlearningbaselinesby
+asignificantmarginintheend,andthemeanrewardreachesthemaximumscoreof+500. Theactor-criticalgorithm
+does slightly better but does not manage to reach a mean of +500 reward per episode, and the Q learning algorithm
+performsevenworse. ThisdemonstratesthattheActiveInferenceagentcanbecompetitivewith, andcanevenbeat
+conventionalreinforcementlearningalgorithmsonsomebenchmarks.
+WenowperformanablationexperimentontheActiveInferencenetworktotesthowthevarioustermsinthealgorithm
+affect performance. We compare the full Active Inference network with two ablated versions. One model lacks the
+epistemic value component of the value function (see equation 19), and instead estimates the reward only, as in Q
+learning. The second model lacks the entropy term of the KL loss, and so only optimizes the policy by minimizing
+(cid:82)
+Q(a|s)logp(a|s)withouttheentropyterm. Theresultsareplottedbelow:
+13
+APREPRINT-JULY10,2019
+Figure 3: We compare the full Active Inference agent (entropy regularization + transition model) with an Active
+Inferenceagentwithoutthetransitionmodel,andwithoutboththeentropytermandthetransitionmodel).
+AninterestingresulthereisthatthemaincontributiontothesuccessofActiveInferenceistheentropytermintheloss
+function. WithouttheentropytermtheActiveInferenceagentconvergestoalowermeanrewardwhichiscomparable
+totheperformanceoftheactor-criticandslightlybetterthantheQ-learningalgorithm.
+Figure4:ComparisonoftherewardsobtainedbythefullyablatedActiveInferenceagentwithstandardreinforcement-
+learningbaselinesofQ-learningandActor-Critic.
+14
+APREPRINT-JULY10,2019
+However, the mean rewards are somewhat misleading since the actual distribution of rewards over the runs appears
+to be bimodal. In most cases all algorithms successfully converged to the maximum of 500 rewards per episode.
+However, in several cases, the algorithm fails to converge at all, and usually collapses to a very low reward per
+episode. The mean reward obtained therefore effectively measures the proportion of successful runs rather than the
+meanofanaveragerun.Toseethis,thegraphsbelowshowasuperpositionofeverysinglerunfortheActiveInference
+agent,theactor-critic,theq-learningagent,andtheactive-inference-with-entropyagent. Weseethattherewardsper
+episodeineachruntypicallybifurcateandeitherendupbeingnearlyoptimalornearzero. Thisisespeciallyobvious
+intheablatedActiveInferenceagentandalsointheQ-learningagent,albeitwithmuchmorevariance.
+(a) Rewards for all runs of the Ablated Active- (b) Rewards obtained for all 20 runs of the Q-
+InferenceAgent. learningAgent
+(c)Rewardsforall20runsoftheActive-Inference
+(d)Rewardsforall20runsoftheActor-CriticAgent
+Agent
+Figure 5: Rewards obtained for each episode for all 20 runs of the different agents. Observe the policy collapse
+andbifurcations,especiallyoftheActiveInferenceagentandQ-learningagentforwhichrewardsinanepisodewill
+tend towards the optimal +200 or near 0. The entropy term in the Active Inference formulation appears to prevent
+policycollapsenotbycausingconvergencetoaperfectpolicy, butinsteadbypreventingpolicycollapsesbecoming
+permanent.
+Wecallthisbifurcationintoeithernear-optimalorcompletelyfailedruns”policycollapse”since,atsomepointduring
+training, the distribution over actions given by the policy will abruptly collapse to put all weight on a single action,
+resulting in the agent rapidly tipping over the pole and obtaining a very low score. The entropy-regularized Active
+Inferencealgorithmdoesbetterbecausetheentropytermencouragestheoptimizertospreadtheprobabilitybetween
+allthepossibleactionsasmuchaspossiblewhilealsomaximizingreward. Itisunclear,however,whyexactlypolicy
+collapse occurs. Moreover, it appears to be a phenomenon the baseline reinforcement learning agents suffer from
+15
+APREPRINT-JULY10,2019
+as well. Interestingly, the entropy term in the Active Inference agent, while it appears to prevent policy collapse,
+does not simply cause the agents reward to converge cleanly to the maximum. Instead, the reward obtained per
+episodefluctuateswildlyfromoptimaltonear0,whichmaybethepolicyconstantlyattemptingtocollapsebutbeing
+preventedbytheentropytermrepeatedly.
+Wefoundlittletonodifferencewhentheepistemicvaluewasnotcomputedandtheexpected-free-energywassimply
+reducedtothereward. Thisalsoheldtrueintheothertasksandrunscountertosomeoftheproposedbenefitsinthe
+literatureforexplicitepistemicforaging. Wemayhaveobservedlittleeffectoftheepistemicvalueforseveralreasons.
+Firstly, the tasks used were fairly simple in terms of goals: all they required was simple motor control without any
+particularneedforlong-termgoal-directedexploration. Itisthuspossiblethatrandomexplorationalone,ensuredby
+theentropy-maximizingcomponentofthepolicyprovidedsufficientexploration. Secondly,theepistemicvalueonly
+enterstheActiveInferenceequationsasatermintheexpected-free-energy,whichwasestimatedthroughbootstrapping
+methods. Iftheseestimateswereinaccurateorunstableinthefirstplace,thenaddinganepistemicvaluetermcould
+havelittleeffect. Thirdly,theepistemicvaluetermisdefinedasthedifferencebetweentheexpectedandtheobserved
+state posteriors from the transition model. While these were large initially, the magnitude of these prediction errors
+rapidlydeclinedasthetransitionmodelimproved,reachingasteadystatefarsmallerthantheaverageextrinsicreward.
+Thus,thecontributiontotheexpectedfree-energyfromtheepistemicrewardswouldbesmall,andsowouldhavelittle
+impactonbehaviour. Wedemonstratethisbyshowingthemeantime-courseoftheepistemicrewardoverthecourse
+oftheepisodes.
+Figure 6: Mean Transition model loss over 15000 episodes. The right graph starts from 500 episodes into a run to
+showtheconvergencebettersincetheinitiallossesareextremelyhigh.
+The transition-model loss declines extremely rapidly to near 0 ,and the agent thus moves from an exploratory to
+an exploitatory mode. This happens long before the policy or value-networks have converged, meaning that the
+epistemic value ends up driving very little exploration and having very little effect overall. As a comparison, the
+rewardmagnitudeoftheCartPoletaskwas+1.
+16
+APREPRINT-JULY10,2019
+WealsocomparedtheActiveInferenceagenttothetwobaselinereinforcementlearningagentsontwomorecomplex
+tasks than the CartPole – the Acrobot and the Lunar-Lander environments from OpenAIGym. The graphs of the
+performanceoftheagentsarebelow:
+Figure7: ComparisonofActiveInferencewithstandardreinforcementlearningalgorithmsontheAcrobotenviron-
+ment.
+Figure8: ComparisonofActiveInferencewithreinforcementlearningalgorithmsontheLunar-Landerenvironment.
+17
+APREPRINT-JULY10,2019
+Ascanbeseen,theActiveInferenceagentiscompetitivewithbaselinereinforcementleaningagentsonbothofthese
+tasks. In terms of computational cost, Active Inference without the transition model has roughly the same cost as
+thedeep-actor-criticalgorithmfromreinforcementlearning. Addingthetransitionmodelhasagreatercomputational
+costand,forthecurrentsuiteoftasks,appearstoaddlittlebenefit–therandomexplorationensuredbythestochastic
+action selection and the entropy regularization appears to be sufficient exploration for solving these tasks without
+morecomplexepistemicrewards. Webelieve,however,thatinmorecomplextaskswithacompositionalstructureand
+longtemporalgapsbetweenrewardsandactions,thenthissortofgoal-directedexplorationwillbecomeincreasingly
+necessary.TheActiveInferenceagentoutperformsthetwostandardreinforcementlearningapproachesontheacrobot
+task.ThisislikelyduetotheentropyregularizationtermoftheActiveInferenceagentdrivingmoreexploration,which
+isakeydifficultyofthistasksincenorewardsareobtaineduntiltheagenthappenstoswingupthearmtoabovethe
+horizontal. Itisunclearwhytheperformanceofpolicygradientsdeclinesovertimeinthistask, butitcouldbedue
+to policy collapse. Active Inference underperforms policy gradients on the lunar lander tasks, but it is comparable
+withQ-learningandactor-critic. Webelievethisisduetoinaccuraciesandbiasinusingneuralnetworkstoestimate
+thevaluefunction,asdoneinactor-critic,Q-learningandourActiveInferencealgorithmasopposedtosimplyusing
+unbiasedmonte-carloreturns,asisdonebypolicygradient.
+Discussion
+Inthispaper,wehavederivedanoveldeepActiveInferencealgorithmwhichusesdeepneuralnetworkstoapproximate
+the key densities of the variational free energy. We have contrasted this approach with tabular Active Inference and
+shown that deep Active Inference is significantly more scalable to larger tasks and state-spaces. Moreover, we have
+shown that our algorithm is competitive, and in some cases superior, to standard baseline reinforcement learning
+agents on a suite of reinforcement learning benchmark tasks from OpenAIGym. While Active Inference performed
+worsethandirectpolicygradientsontheLunar-Landertask,webelievethisisduetotheinaccuracyoftheexpected-
+free-energy-value-functionestimationnetwork,sincethepolicygradientmethoduseddirectandunbiasedmonte-carlo
+samples of the reward rather than a bootstrapping estimator. Since the performance of Active Inference, at least in
+thecurrentincarnation,issensitivetothesuccessfultrainingoftheEFE-network,webelievethatimprovementshere
+could substantially aid performance. Moreover, it is also possible to forego or curtail the use of the bootstrapping
+estimatorandusethegenerativemodeltodirectlyestimatefuturestatesandtheexpected-free-energythereof, atthe
+expenseofgreatercomputationalcost.
+AnadditionaladvantageofActiveInferenceisthatduetohavingthetransitionmodel,itispossibletopredictfuture
+trajectoriesandrewardsNstepsintothefutureinsteadofjustthenexttime-step.Thesetrajectoriescanthenbesampled
+fromandusedtoreducethevarianceofthebootstrappingestimator,whichshouldworkaslongasthetransitionmodel
+isaccurate.ThenumberNcouldperhapsevenbeadaptivelyupdatedgiventhecurrentaccuracyofthetransitionmodel
+andthevarianceofthegradientupdates. Thisisawayofcontrollingthebias-variancetrade-offintheestimator,since
+thefuturesamplesshouldreducebiaswhileincreasingthevarianceoftheestimate, andalsothecomputationalcost
+foreachupdate.
+Another important parameter in Active Inference and predictive processing is the precision (Feldman and Friston,
+2010;Kanaietal.,2015),whichinActiveInferencecorrespondstotheinversetemperatureparameterinthesoftmax
+andsocontrolsthestochasticityofactionselection. Inallsimulationsreportedaboveweusedafixedprecisionof1.
+However,intabularActiveInferencetheprecisionisoftenexplicitlyoptimizedagainstthevariationalfreeenergy,and
+thesamecanbedoneinourdeepActiveInferencealgorithm. Infact, thederivativesoftheprecisionparametercan
+becomputedautomaticallyusingautomaticdifferentiation. Determiningtheimpactofprecisionoptimizationonthe
+performanceofthesealgorithmsisanotherworthwhileavenueforfuturework.
+While we did not find that using the epistemic reward helped improve performance on our benchmarks, this could
+beduetothesimplicityofthetasksweweretryingtosolve,forwhichrandomexplorationissufficient. Itwouldbe
+18
+APREPRINT-JULY10,2019
+interesting to see if the epistemic value terms of Active Inference become much more important on more complex
+taskswithahierarchicalandcompositionalstructure,andwithlongtemporaldependencieswhichareexactlythesort
+oftasksthatcurrentrandom-explorationreinforcementagentsstruggletosolve.Moreover,assuggestedbyBiehletal.
+(2018),ActiveInferencecanalsobeextendedtouseotherintrinsicmotivations,andtheireffectsonthebehaviourof
+ActiveInferenceagentsisstillunknown.
+TheentropyregularizationterminActiveInferenceprovedtobeextremelyimportant,andwasoftenthefactorcausing
+thesuperiorperformanceofActiveInferencetothereinforcementlearningbaselines. Thisentropytermisinteresting,
+sinceitparallelssimilardevelopmentsinreinforcementlearning,whichhavealsofoundthataddinganentropytermto
+thestandardsumofdiscountedreturnsobjectiveimprovesperformance,policystabilityandgeneralizability(Haarnoja
+etal.,2017;Haarnoja,2018). Thisisofevenmoreinterestgiventhatthesealgorithmscanbederivedfromasimilar
+variational framework which also casts control as inference (Levine, 2018). How these variational frameworks of
+action relate to one another is an important avenue for future work, particularly since Active Inference possesses
+abiologicallyplausibleprocesstheorywhichcastsneuronalsignallingasvariationalmessagepassing. Additionally,
+manyofthedifferencesbetweenActiveInferenceandthestandardpolicygradientsalgorithm–suchastheexpectation
+overtheaction, andtheentropyregularizationterm–havebeenindependentlyproposedtoimprovepolicygradient
+and actor critic methods. The fact that these improvements fall naturally out of the Active Inference framework
+couldsuggestthatthereisdeepersignificancebothtothemandtoActiveInferenceapproachesingeneral. Theother
+key differences between policy gradients and Active Inference is the optimization of the policy probabilities versus
+the log policy probabilities, and multiplying by the log of the probabilities of the estimated values, rather than the
+estimatedvaluesdirectly. Itiscurrentlyunclearpreciselyhowimportantthesedifferencesaretotheperformanceof
+thealgorithm,andtheireffectonthenumericalstabilityorconditioningoftherespectivealgorithms,andthisisalso
+animportantavenueforfutureresearch. ThecomparableperformanceofActiveInferencetoactor-criticandpolicy
+gradientapproachesinourresultssuggestthattheeffectofthesedifferencesmaybeminor,however.
+Ourmodelusesdeepneuralnetworkstrainedusingbackpropagation,whichisgenerallynotthoughttobebiologically
+plausible–althoughthereareproposedwaystoimplementbackpropagationorapproximationsthereofinabiologi-
+cally plausible manner (Whittington and Bogacz, 2019). This means that our model is not, nor is it intended to be,
+a direct model of how Active Inference is implemented in the brain. Instead, this work aims towards implementing
+ActiveInferenceinartificialsystems,andprovidingaproof-of-conceptthatActiveInferencecansolvemorecomplex
+tasks than those currently tackled in the literature and have the potential, ultimately, to be scaled up to the kind of
+complexproblemsthebrainregularlysolves. Intermsofbiologicallyplausibility,thevariational-message-passingap-
+proachofParretal.(2019)seemslikeapromisingdirectiontotake. Ourmodel,however,showsthatActiveInference
+canbeappliedinamachinelearningcontextusingdeepneuralnetworks,andcanbescaleduptoachieveperformance
+comparablewithreinforcementlearningbenchmarksonmorecomplextasksthananybeforeattemptedinthelitera-
+ture. WebelieveourworktakesasteptowardsansweringthequestionofwhetherActiveInferenceapproachescanbe
+actuallyusedtosolvethekindsofreal-worldproblemsthatthebrainmustultimatelysolve.
+Conclusion
+Insum, wehavederivedanoveldeepActiveInferencealgorithmdirectlyfromthevariationalfreeenergy. Thefull
+model consists of four separate neural networks approximating the terms of the variational free energy functional.
+We demonstrate that our approach can handle significantly more complex tasks than any previous Active Inference
+algorithm,andiscomparabletocommonreinforcementlearningbaselinesonasuiteoftasksfromOpenAIGym. We
+also highlight interesting connections between our method and policy gradient algorithms and maximum-entropy-
+reinforcement-learning. Finally, albeit not in a biologically plausible manner, we have shown that Active Inference
+algorithmscanbescaleduptomeetlarge-scaletasks,andthattheyprovideausefulfoiltothestandardparadigmof
+reinforcementlearning.
+19
+APREPRINT-JULY10,2019
+Acknowledgements
+IwouldliketothankMycahBanksforherinvaluablecommentsandworkproofingthismanuscript.
+References
+Adams, R. A., Perrinet, L. U., and Friston, K. (2012). Smooth pursuit and visual occlusion: active inference and
+oculomotorcontrolinschizophrenia. PloSone,7(10):e47502.
+Adams,R.A.,Shipp,S.,andFriston,K.J.(2013). Predictionsnotcommands: activeinferenceinthemotorsystem.
+BrainStructureandFunction,218(3):611–643.
+Asadi, K., Allen, C., Roderick, M., Mohamed, A.-r., Konidaris, G., Littman, M., andAmazon, B.U.(2017). Mean
+actorcritic. stat,1050:1.
+Barrett, L. F., Quigley, K. S., and Hamilton, P. (2016). An active inference theory of allostasis and interoception in
+depression. PhilosophicalTransactionsoftheRoyalSocietyB:BiologicalSciences,371(1708):20160011.
+Biehl,M.,Guckelsberger,C.,Salge,C.,Smith,S.C.,andPolani,D.(2018).Expandingtheactiveinferencelandscape:
+Moreintrinsicmotivationsintheperception-actionloop. Frontiersinneurorobotics,12.
+Blei,D.M.,Kucukelbir,A.,andMcAuliffe,J.D.(2017). Variationalinference: Areviewforstatisticians. Journalof
+theAmericanStatisticalAssociation,112(518):859–877.
+Bogacz, R. (2017). A tutorial on the free-energy framework for modelling perception and learning. Journal of
+mathematicalpsychology,76:198–211.
+Botvinick,M.andToussaint,M.(2012). Planningasinference. Trendsincognitivesciences,16(10):485–488.
+Brockman,G.,Cheung,V.,Pettersson,L.,Schneider,J.,Schulman,J.,Tang,J.,andZaremba,W.(2016).Openaigym.
+arXivpreprintarXiv:1606.01540.
+Brown,H.,Friston,K.J.,andBestmann,S.(2011). Activeinference,attention,andmotorpreparation. Frontiersin
+psychology,2:218.
+Buckley,C.L.,Kim,C.S.,McGregor,S.,andSeth,A.K.(2017). Thefreeenergyprincipleforactionandperception:
+Amathematicalreview. JournalofMathematicalPsychology,81:55–79.
+Catal,O.,Nauta,J.,Verbelen,T.,Simoens,P.,andDhoedt,B.(2019).Bayesianpolicyselectionusingactiveinference.
+arXivpreprintarXiv:1904.08149.
+Cesa-Bianchi, N., Gentile, C., Lugosi, G., and Neu, G. (2017). Boltzmann exploration done right. In Advances in
+NeuralInformationProcessingSystems,pages6284–6293.
+Ciosek, K. and Whiteson, S. (2018). Expected policy gradients. In Thirty-Second AAAI Conference on Artificial
+Intelligence.
+Clark,A.(2012). Dreamingthewholecat: Generativemodels,predictiveprocessing,andtheenactivistconceptionof
+perceptualexperience. Mind,121(483):753–771.
+Clark,A.(2013). Whatevernext? predictivebrains,situatedagents,andthefutureofcognitivescience. Behavioral
+andbrainsciences,36(3):181–204.
+Clark,A.(2015). Surfinguncertainty: Prediction,action,andtheembodiedmind. OxfordUniversityPress.
+Daw, N. D., O’doherty, J. P., Dayan, P., Seymour, B., and Dolan, R. J. (2006). Cortical substrates for exploratory
+decisionsinhumans. Nature,441(7095):876.
+Degris,T.,White,M.,andSutton,R.S.(2012). Off-policyactor-critic. arXivpreprintarXiv:1205.4839.
+Deisenroth,M.andRasmussen,C.E.(2011). Pilco: Amodel-basedanddata-efficientapproachtopolicysearch. In
+Proceedingsofthe28thInternationalConferenceonmachinelearning(ICML-11),pages465–472.
+20
+APREPRINT-JULY10,2019
+Doersch,C.(2016). Tutorialonvariationalautoencoders. arXivpreprintarXiv:1606.05908.
+Doya, K., Ishii, S., Pouget, A., and Rao, R. P. (2007). Bayesian brain: Probabilistic approaches to neural coding.
+MITpress.
+Feldman,H.andFriston,K.(2010). Attention,uncertainty,andfree-energy. Frontiersinhumanneuroscience,4:215.
+Fellows, M., Mahajan, A., Rudner, T. G., and Whiteson, S. (2018). Virel: A variational inference framework for
+reinforcementlearning. arXivpreprintarXiv:1811.01132.
+FitzGerald,T.H.,Schwartenbeck,P.,Moutoussis,M.,Dolan,R.J.,andFriston,K.(2015). Activeinference,evidence
+accumulation,andtheurntask. Neuralcomputation,27(2):306–328.
+Friston,K.(2003). Learningandinferenceinthebrain. NeuralNetworks,16(9):1325–1352.
+Friston, K. (2005). A theory of cortical responses. Philosophical transactions of the Royal Society B: Biological
+sciences,360(1456):815–836.
+Friston,K.(2009).Thefree-energyprinciple:aroughguidetothebrain? Trendsincognitivesciences,13(7):293–301.
+Friston,K.(2010). Thefree-energyprinciple: aunifiedbraintheory? Naturereviewsneuroscience,11(2):127.
+Friston,K.(2011). Whatisoptimalaboutmotorcontrol? Neuron,72(3):488–498.
+Friston,K.(2012). Thehistoryofthefutureofthebayesianbrain. NeuroImage,62(2):1230–1233.
+Friston,K.(2019). Afreeenergyprincipleforaparticularphysics. arXivpreprintarXiv:1906.10184.
+Friston, K. and Ao, P. (2012). Free energy, value, and attractors. Computational and mathematical methods in
+medicine,2012.
+Friston, K., FitzGerald, T., Rigoli, F., Schwartenbeck, P., Pezzulo, G., et al. (2016). Active inference and learning.
+Neuroscience&BiobehavioralReviews,68:862–879.
+Friston, K., Kilner, J., and Harrison, L. (2006). A free energy principle for the brain. Journal of Physiology-Paris,
+100(1-3):70–87.
+Friston,K.,Rigoli,F.,Ognibene,D.,Mathys,C.,Fitzgerald,T.,andPezzulo,G.(2015).Activeinferenceandepistemic
+value. Cognitiveneuroscience,6(4):187–214.
+Friston, K., Samothrakis, S., and Montague, R. (2012). Active inference and agency: optimal control without cost
+functions. Biologicalcybernetics,106(8-9):523–541.
+Friston,K.,Schwartenbeck,P.,FitzGerald,T.,Moutoussis,M.,Behrens,T.,andDolan,R.J.(2013). Theanatomyof
+choice: activeinferenceandagency. Frontiersinhumanneuroscience,7:598.
+Friston,K.,Schwartenbeck,P.,FitzGerald,T.,Moutoussis,M.,Behrens,T.,andDolan,R.J.(2014). Theanatomyof
+choice: dopamine and decision-making. Philosophical Transactions of the Royal Society B: Biological Sciences,
+369(1655):20130481.
+Friston, K. J., Daunizeau, J., and Kiebel, S. J. (2009). Reinforcement learning or active inference? PloS one,
+4(7):e6421.
+Friston,K.J.,Lin,M.,Frith,C.D.,Pezzulo,G.,Hobson,J.A.,andOndobaka,S.(2017a). Activeinference,curiosity
+andinsight. Neuralcomputation,29(10):2633–2683.
+Friston,K.J.,Parr,T.,anddeVries,B.(2017b).Thegraphicalbrain:beliefpropagationandactiveinference.Network
+Neuroscience,1(4):381–414.
+Friston, K. J., Rosch, R., Parr, T., Price, C., and Bowman, H. (2018). Deep temporal models and active inference.
+Neuroscience&BiobehavioralReviews,90:486–501.
+Friston,K.J.andStephan,K.E.(2007). Free-energyandthebrain. Synthese,159(3):417–458.
+21
+APREPRINT-JULY10,2019
+Fujimoto,S.,vanHoof,H.,andMeger,D.(2018). Addressingfunctionapproximationerrorinactor-criticmethods.
+arXivpreprintarXiv:1802.09477.
+Gershman,S.J.(2018a). Deconstructingthehumanalgorithmsforexploration. Cognition,173:34–42.
+Gershman,S.J.(2018b). Uncertaintyandexploration. bioRxiv,page265504.
+Goodfellow,I.,Bengio,Y.,andCourville,A.(2016). Deeplearning. MITpress.
+Ha, D. and Schmidhuber, J. (2018). Recurrent world models facilitate policy evolution. In Advances in Neural
+InformationProcessingSystems,pages2450–2462.
+Haarnoja,T.(2018).AcquiringDiverseRobotSkillsviaMaximumEntropyDeepReinforcementLearning.PhDthesis,
+UCBerkeley.
+Haarnoja,T.,Tang,H.,Abbeel,P.,andLevine,S.(2017). Reinforcementlearningwithdeepenergy-basedpolicies. In
+Proceedingsofthe34thInternationalConferenceonMachineLearning-Volume70,pages1352–1361.JMLR.org.
+Haarnoja, T., Zhou, A., Abbeel, P., and Levine, S. (2018). Soft actor-critic: Off-policy maximum entropy deep
+reinforcementlearningwithastochasticactor. arXivpreprintarXiv:1801.01290.
+Hoffman, M. D., Blei, D. M., Wang, C., and Paisley, J. (2013). Stochastic variational inference. The Journal of
+MachineLearningResearch,14(1):1303–1347.
+Houthooft,R.,Chen,X.,Duan,Y.,Schulman,J.,DeTurck,F.,andAbbeel,P.(2016a). Curiosity-drivenexploration
+indeepreinforcementlearningviabayesianneuralnetworks. arXivpreprintarXiv:1605.09674.
+Houthooft,R.,Chen,X.,Duan,Y.,Schulman,J.,DeTurck,F.,andAbbeel,P.(2016b). Vime: Variationalinformation
+maximizingexploration. InAdvancesinNeuralInformationProcessingSystems,pages1109–1117.
+Kaelbling, L.P., Littman, M.L., andMoore, A.W.(1996). Reinforcementlearning: Asurvey. Journalofartificial
+intelligenceresearch,4:237–285.
+Kanai, R., Komura, Y., Shipp, S., andFriston, K.(2015). Cerebralhierarchies: predictiveprocessing, precisionand
+thepulvinar. PhilosophicalTransactionsoftheRoyalSocietyB:BiologicalSciences,370(1668):20140169.
+Karl,F.(2012). Afreeenergyprincipleforbiologicalsystems. Entropy,14(11):2100–2121.
+Kingma,D.P.andWelling,M.(2013). Auto-encodingvariationalbayes. arXivpreprintarXiv:1312.6114.
+Knill, D. C. and Pouget, A. (2004). The bayesian brain: the role of uncertainty in neural coding and computation.
+TRENDSinNeurosciences,27(12):712–719.
+Levine,S.(2018). Reinforcementlearningandcontrolasprobabilisticinference: Tutorialandreview. arXivpreprint
+arXiv:1805.00909.
+Lillicrap,T.P.,Hunt,J.J.,Pritzel,A.,Heess,N.,Erez,T.,Tassa,Y.,Silver,D.,andWierstra,D.(2015). Continuous
+controlwithdeepreinforcementlearning. arXivpreprintarXiv:1509.02971.
+Millidge,B.(2019). Combiningactiveinferenceandhierarchicalpredictivecoding: Atutorialintroductionandcase
+study.
+Mirza,M.B.,Adams,R.A.,Mathys,C.D.,andFriston,K.J.(2016). Sceneconstruction,visualforaging,andactive
+inference. Frontiersincomputationalneuroscience,10:56.
+Mirza,M.B.,Adams,R.A.,Parr,T.,andFriston,K.(2019). Impulsivityandactiveinference. Journalofcognitive
+neuroscience,31(2):202–220.
+Mnih,V.,Kavukcuoglu,K.,Silver,D.,Graves,A.,Antonoglou,I.,Wierstra,D.,andRiedmiller,M.(2013). Playing
+atariwithdeepreinforcementlearning. arXivpreprintarXiv:1312.5602.
+Mnih, V., Kavukcuoglu, K., Silver, D., Rusu, A. A., Veness, J., Bellemare, M. G., Graves, A., Riedmiller, M., Fid-
+jeland, A. K., Ostrovski, G., et al. (2015). Human-level control through deep reinforcement learning. Nature,
+518(7540):529.
+22
+APREPRINT-JULY10,2019
+Mohamed,S.andRezende,D.J.(2015). Variationalinformationmaximisationforintrinsicallymotivatedreinforce-
+mentlearning. InAdvancesinneuralinformationprocessingsystems,pages2125–2133.
+Moulin, C. and Souchay, C. (2015). An active inference and epistemic value view of metacognition. Cognitive
+neuroscience,6(4):221–222.
+Oudeyer,P.-Y.andKaplan,F.(2009).Whatisintrinsicmotivation?atypologyofcomputationalapproaches.Frontiers
+inneurorobotics,1:6.
+Parr,T.andFriston,K.J.(2017).Uncertainty,epistemicsandactiveinference.JournalofTheRoyalSocietyInterface,
+14(136):20170376.
+Parr,T.andFriston,K.J.(2018a).Activeinferenceandtheanatomyofoculomotion.Neuropsychologia,111:334–343.
+Parr, T. and Friston, K. J. (2018b). The anatomy of inference: Generative models and brain structure. Frontiers in
+computationalneuroscience,12.
+Parr,T.andFriston,K.J.(2018c).Generalisedfreeenergyandactiveinference:canthefuturecausethepast? BioRxiv,
+page304782.
+Parr,T.,Markovic,D.,Kiebel,S.J.,andFriston,K.J.(2019). Neuronalmessagepassingusingmean-field,bethe,and
+marginalapproximations. Scientificreports,9(1):1889.
+Pezzulo, G., Cartoni, E., Rigoli, F., Pio-Lopez, L., and Friston, K. (2016). Active inference, epistemic value, and
+vicarioustrialanderror. Learning&Memory,23(7):322–338.
+Rao, R. P. and Ballard, D. H. (1999). Predictive coding in the visual cortex: a functional interpretation of some
+extra-classicalreceptive-fieldeffects. Natureneuroscience,2(1):79.
+Rawlik,K.,Toussaint,M.,andVijayakumar,S.(2010). Approximateinferenceandstochasticoptimalcontrol. arXiv
+preprintarXiv:1009.3958.
+Rawlik,K.,Toussaint,M.,andVijayakumar,S.(2013). Onstochasticoptimalcontrolandreinforcementlearningby
+approximateinference. InTwenty-ThirdInternationalJointConferenceonArtificialIntelligence.
+Schwartenbeck,P.,Passecker,J.,Hauser,T.U.,FitzGerald,T.H.,Kronbichler,M.,andFriston,K.J.(2019). Compu-
+tationalmechanismsofcuriosityandgoal-directedexploration. eLife,8:e41703.
+Silver,D.,Schrittwieser,J.,Simonyan,K.,Antonoglou,I.,Huang,A.,Guez,A.,Hubert,T.,Baker,L.,Lai,M.,Bolton,
+A.,etal.(2017). Masteringthegameofgowithouthumanknowledge. Nature,550(7676):354.
+Smith, R., Schwartenbeck, P., Parr, T., andFriston, K.J.(2019). Anactiveinferenceapproachtomodelingconcept
+learning. bioRxiv,page633677.
+Song,R.,Lewis,F.L.,Wei,Q.,andZhang,H.(2015). Off-policyactor-criticstructureforoptimalcontrolofunknown
+systemswithdisturbances. IEEETransactionsonCybernetics,46(5):1041–1050.
+Stadie,B.C.,Levine,S.,andAbbeel,P.(2015). Incentivizingexplorationinreinforcementlearningwithdeeppredic-
+tivemodels. arXivpreprintarXiv:1507.00814.
+Sutton,R.S.,Barto,A.G.,etal.(1998). Introductiontoreinforcementlearning,volume135. MITpressCambridge.
+Sutton, R. S., McAllester, D. A., Singh, S. P., and Mansour, Y. (2000). Policy gradient methods for reinforcement
+learningwithfunctionapproximation. InAdvancesinneuralinformationprocessingsystems,pages1057–1063.
+Ueltzho¨ffer,K.(2018). Deepactiveinference. BiologicalCybernetics,112(6):547–573.
+vandeLaar, T.W.anddeVries, B.(2019). Simulatingactiveinferenceprocessesbymessagepassing. Frontiersin
+RoboticsandAI,6(20).
+VanHasselt, H., Guez, A., andSilver, D.(2016). Deepreinforcementlearningwithdoubleq-learning. InThirtieth
+AAAIConferenceonArtificialIntelligence.
+23
+APREPRINT-JULY10,2019
+Wayne, G., Hung, C.-C., Amos, D., Mirza, M., Ahuja, A., Grabska-Barwinska, A., Rae, J., Mirowski, P., Leibo,
+J. Z., Santoro, A., et al. (2018). Unsupervised predictive memory in a goal-directed agent. arXiv preprint
+arXiv:1803.10760.
+Whittington,J.C.andBogacz,R.(2019).Theoriesoferrorback-propagationinthebrain.Trendsincognitivesciences.
+Ziebart,B.D.,Maas,A.L.,Bagnell,J.A.,andDey,A.K.(2008). Maximumentropyinversereinforcementlearning.
+InAaai,volume8,pages1433–1438.Chicago,IL,USA.
+24

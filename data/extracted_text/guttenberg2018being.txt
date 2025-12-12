@@ -1,0 +1,617 @@
+Being curious about the answers to questions: novelty search with learned
+attention
+NicholasGuttenberg1,2,MartinBiehl1,NathanielVirgo2,RyotaKanai1
+1ArayaInc,Tokyo,Japan2Earth-lifeScienceInstitute,Tokyo,Japan
+Abstract of the space (Dickson and Dinner, 2010). In evolutionary
+algorithms, the general concept of quality diversity (Pugh
+We investigate the use of attentional neural network layers et al., 2016) and more specifically novelty search (Lehman
+inordertolearna‘behaviorcharacterization’whichcanbe andStanley,2011)hasbeenusedinasimilarway,explicitly
+usedtodrivenoveltysearchandcuriosity-basedpolicies.The
+modifyingthefitnessofsolutionswithrespecttohowdiffer-
+space is structured towards answering a particular distribu-
+tionofquestions,whichareusedinasupervisedwaytotrain enttheyarefromotherattemptedsolutions. Noveltysearch
+the attentional neural network. We find that in a 2d explo- has also been applied to modify reward functions used in
+ration task, the structure of the space successfully encodes reinforcementlearning(Contietal.,2017).
+localsensory-motorcontingenciessuchthatevenagreedylo- In the specific case of novelty search, there is a balance
+cal‘dothemostnovelaction’policywithnoreinforcement between the pure heuristic of exploring rare states and the
+learningorevolutioncanexplorethespacequickly. Wealso
+applythistoahigh/lownumberguessinggametask,andfind learnedapproacheswhichinsomesensetrytocollapseab-
+that guessing according to the learned attention profile per- stractly equivalent but microscopically different states into
+forms active inference and can discover the correct number the same representation. In novelty search, this takes the
+morequicklythananexactbutpassiveapproach. form of the behavior characterization — the way in which
+distinct agent behaviors or outcomes are embedded into a
+Euclidean space in order to assess their novelty. While
+Introduction
+much of the work uses hand-crafted behavior characteriza-
+Therearenowanumberofapproachesdesignedtodriveex- tions based on some knowledge of the relevant degrees of
+plorationofunseenspaces. Intrinsicallymotivatedcuriosity freedomofthetaskathand,therehasbeenworkinformulat-
+algorithms drive reinforcement learning agents and agents inggeneralcharacterizationswhichworkacrossmanytasks
+which learn models alike into low-likelihood states (Ostro- (Doncieux and Mouret, 2013), and in learning the charac-
+vskietal.,2017;AchiamandSastry,2017),hard-to-predict terizationswithrespecttospecificcriteriaforthequalityof
+states(Pathaketal.,2017), orjustdirectlytrytomaximize exploration(Meyersonetal.,2016).
+the information gained by the agent about its world (Fris- In this paper, we consider a correspondence between re-
+tonetal.,2015;Houthooftetal.,2016;deAbrilandKanai, cent ideas about attention in deep learning and the novelty
+2018). In developmental robotics, goal babbling (Baranes search algorithm, both of which have embedding spaces at
+and Oudeyer, 2013) drives an agent to map out its ego- their core. In attentional neural networks (Vaswani et al.,
+motion space before committing to any particular reward. 2017), thenetworktakesasaninputacollectionofmemo-
+Similarly,therearemethodsinmachinelearningwhichuse ries,andthenlearnstoperformalookuponthatcollectionof
+diversity-based metrics to learn sets of skills (Guttenberg memoriesinordertoextractinformationthatisrelevantto-
+etal.,2017;Eysenbachetal.,2018). wardsansweringaparticularquestion. Theattentionalnet-
+These methods share the aspect that they require sign- work achieves this by first embedding both the memories
+ficant learning of the environmental dynamics, long-term and the ‘query’ (which encodes information specifying the
+planning, and other aspects of the world. At the other end question)intoasharedspacewherelocationinthespaceis
+ofthespectrum,thereareanumberofheuristicapproaches informativeaboutrelevancy,andthenusespairwisecompar-
+which can be successfully curious starting from scratch. ison between the query and memories to determine which
+Umbrella sampling methods (Torrie and Valleau, 1977) in particular information from the memories to use. This is
+computational chemistry work by simply driving simula- quitesimilartohowbehaviorcharacterizationlearnsanem-
+tions away from frequently visited states by modifying the bedding space that captures novelty. However, in the case
+energy, while non-equilibrium versions achieve similar re- of novelty, what is being represented is the potential to be
+sultsbyresamplingtrajectoriesthatheadtowardsrareareas
+8102
+nuJ
+1
+]IA.sc[
+1v10200.6081:viXra
+relevantforanyquestionratherthanaspecificone. Because scattering happening between the input and output. There
+of this, novelty search makes use of distance from the dis- is a general class of methods which implement this sort of
+tribution of existing experiences rather than proximity to a random access via having each potential input be matched
+specificquery. Ifweuseadistancemetricforpairwisecom- againsta‘query’generatedbythecurrentstageinthecom-
+parisonintheattentionalnetworks,thelearnedspaceshould putation,suchthattheinformationbroughtintothenetwork
+equallywellbeabletoevaluatenovelty,andassuchwecan atthatstageisaweightedsumacrosstheinputs—theseare
+bridgethetwomethods. generally referred to as attention mechanisms. Such atten-
+tion mechanisms have the property that the minimum path
+AttentionalNetworks
+length to create a receptive field covering the entire input
+Traditionalneuralnetworksarecomposedofaseriesofma- datasetisconstant,irrespectiveofthedatasetsize(Vaswani
+trix multiplications and nonlinearities, where the matrices etal.,2017).
+correspondtoparameterslearnedviagradientdescent: Thegeneralstructureofthesenetworkshaseachpotential
+input(whereeachinputisavector(cid:126)x )generateakeyvector
+i
+(cid:126)k summarizingtheinformationitcontainsvialineartrans-
+(cid:126)y =f(M n f(M n−1 f(...f(M 1 (cid:126)x+b(cid:126) 1 )...)+(cid:126)b n−1 )+b(cid:126) n ) (1) fo i rmation,whilethecurrentcomputationalstate(cid:126)zgenerates
+one or more query vectors (cid:126)q in the same space again via
+In this case, it is easy to compute the gradient of the pa-
+lineartransformation. Thesaliencyofaninputw isdeter-
+rametermatrices(or‘weights’)Mwithrespecttosomeerror i
+mined by comparing these key and query vectors — often,
+functionusingonlyabackpropagatederrorsignalthatdoes
+via the exponential of the dot product of the vector. Then,
+not depend on the rest of the network. The recent avail-
+theoverallsaliencypatternisnormalizedtosumtoone:
+abilityofautomaticdifferentiationhasenabledrapidexper-
+imentationinawidevarietyofalternatestructures: extend-
+exp((cid:126)k ·(cid:126)q)
+ing to general higher-dimensional tensors, replacing matri- w = i (2)
+ceswithconvolutionoperations,usingbranchingandmerg- i (cid:80) j exp((cid:126)k j ·(cid:126)q)
+ingpatterns,factorizingthematrixmultiplications,so-called
+where(cid:126)k =M (cid:126)x and(cid:126)q =M (cid:126)z.Theinputtothenetwork
+‘highway’ or ‘residual’ network structures which sequen- i k i q
+from this attentional lookup is then the weighted sum over
+tiallyperturbativelymodifythenetwork’shiddenstate,and
+theinputs:
+variousformsofregularization.
+A common pattern among this zoo of different network X(cid:126) = (cid:88) w (cid:126)x (3)
+architectures is that as information from a particular input i i
+flowsthroughthenetwork,therelationshipbetweenthein- i
+put and the intended output becomes potentially more and This formulation is fully differentiable, but can at the
+morecomplex, butalsobecomesmoredifficulttolearnvia sametimelearntoattendtoonlyasmallsubsetofthetotal
+gradient descent. The reason for this is that each time the input. Aninterestingconsequenceoflearningtosolveprob-
+inputismultipliedbyaparametermatrixinseries,thevari- lems using this type of attention model is that the saliency
+ousgradientsarescaledbytheeigenvaluesofthatmatrix— patternw weightsinputsaccordingtotheirrelevancetothe
+meaningthatforverydeeppaths,thegradientstendtoeither current computation, and so can be directly inspected or
+diverge to infinity or converge to zero. Techniques such as usedforinterpretationofhowthenetworkissolvingapar-
+orthogonalinitialization(Saxeetal.,2013)helprelaxthese ticulartask.
+constraints,allowingmodernnetworkstotakeadvantageof In this paper, we exploit that property of w to evaluate
+the nonlinearity offered by deep stacks, but in cases where howrelevantpotentialinputstoanetworkwouldbe,andin
+informationisunnecessarilypropagatedthroughmanysub- turnusethatpatternofprojectedrelevanceinordertodirect
+sequentlayersitcanstillposedifficultiesintermsoftraining theactionsofanagenttosearchforrelevantinformationin
+times. As such, there are trade-offs involved in simultane- itsenvironment. Bymakinguseofavariationinwhichthe
+ously achieving a wide receptive field (in that the network comparison between key and query is based not on a dot
+can integrate large amounts of evidence towards some pre- product,butratheronthedistancebetweenthevectorsina
+diction or inference) while maintaining pathways through Euclideanspace,wecanbridgeattentionalneuralnetworks
+thenetworkforinformationtoflowwhicharenotanylonger withexistingresearchdoneonbehaviorcharacterizationsin
+thannecessary. noveltysearch.
+This consideration makes random access memory an at-
+Method
+tractive model for network design. If the network could
+simply choose which information it needed to look at for If we wished to make an agent that could answer any one
+eachstageofthecomputationwithoutneedingtopropagate of a set of questions which might be posed to it (similar to
+thatinformationthroughalargenumberofinterveningvari- ideas of multi-task behavior characterizations in Meyerson
+ables, then one could minimize the amount of unnecessary etal.(2016)),wecouldaskanagenttofillitsmemorywith
+General Schematic and actions into a set of key vectors {(cid:126)k} representing the
+Net
+Question Eq agent’smemoryofpaststatesandactions(butnotwhathap-
+State, Proposal kNN pened next, e.g. the outcomes). We also separately embed
+Net
+State, Action Es w theoutcomesintoasetofcorrespondingvaluevectors{(cid:126)v}
+O M u e t m co o m ry e N E e o t N P et Prediction ( ti w o h n i , c o h r c e a v n en op b t e io f n u a s l e ly d b w e it f h us i e n d fo w rm ith at o io th n e a r b m ou em tt o h r e y q i u n e fo st r i m on a- )
+usinganetworkE .
+o
+Figure1: Generalschematicofaninferencenetworkwhich
+Weighting factors are calculated between (cid:126)q and the set
+alsolearnsabehaviorcharacterizationandcanevaluatethe {(cid:126)k}, andthenareusedtoperformaweightedaverageover
+saliency of a given proposed action to objectives such as
+theoutcomeembeddings. These(optionallyfusedwiththe
+noveltysearchorquestion-motivatedcuriosity. Thedashed
+query)arethenusedasinputstoapredictionnetworkP,and
+linesrepresentoptionalinformationflowsthatcanbeadded
+theentirethingistrainedend-to-end.
+withoutdisruptingtheabilitytocorrectlyembedactionpro-
+Thereasonforthisstructureisthatitisolatesthingswhich
+posals.
+theagentalreadyknowsorcandirectlycontrol(currentsen-
+sorstateandfutureaction)fromthingswhichdependonen-
+vironmentalfactors(theoutcomeoftakinganaction). This
+a set of points that is likely to contain a good match from
+meansthatifweproposesomeactiona˜fromthecurrentsen-
+any random query to which it might be exposed. This is
+sor state s˜we can directly compute the address where that
+then heuristically satisfied by finding new points to add to
+newgeneratedmemorywillendupintheembeddingspace.
+memorywhicharefurthestfromthesetofexistingpoints—
+Thatallowsustotakeasabehavioralpolicythingssuchas
+thesamecriteriawhichdrivesthenoveltysearchalgorithm.
+‘choosetheactionwhichgeneratesthemostnovelmemory’
+In this case however, the behavior characterization can be
+or‘chooseanactionwhichwillbemostrelevanttowardsa
+naturallylearneddirectlyfromthesetofquestionstheagent
+specified question’. This means that by setting up the net-
+istrainedtoanswer.
+workthisway,wecanobtaincuriousity-drivenpoliciesthat
+In novelty search, the weighting function used is essen-
+donotrequirereinforcementlearningorevolutionarysearch
+tially a nearest neighbor look-up in the embedding space:
+bygreedilytakingthemostnovellocalaction. Asaresult,
+1/k if a point is one of the k-nearest neighbors, and 0 oth-
+thesepoliciescanbeuseddirectlybyanagentdroppedinto
+erwise. In order to use this as part of a neural network, it
+a new environment and adapted to the new environment in
+is convenient to modify it into a differentiable form so that
+anonlinefashion.
+we can learn the embedding via backpropagation. To this
+end, we can consider an extension in the form of a ‘soft
+Position-basedExplorationTask
+kNN’ similar to the trick used in (Pritzel et al., 2017; Jain
+and Lindsey, 2018) by proposing a weighting between the We consider an environment comprised of navigating con-
+embeddings of the agent’s memory of past experiences (cid:126)x nected 2D floorplans composed of overlapping randomly
+i
+whichisusedtogenerateakeyvector(cid:126)k andvaluevector(cid:126)v generated rectangles of movable area, in which an agent is
+i i
+vialineartransformationandaqueryvector(cid:126)q,givenby: navigatingbypickingadirectionandmovinginthatdirec-
+tion for a fixed distance. Collisions result in the agent re-
+w = exp(−α|(cid:126)k i −(cid:126)q|) (4) versingdirectionandcontinuingtotravelfortheremainder
+i (cid:80) exp(−α|(cid:126)k −(cid:126)q|) of its movement distance. The agent has two sensors: one
+j j
+whichprovidesitscurrentcoordinates,andasecondwhich
+wheretheoutputofthissoftkNNmoduleis:
+indicateswhenitcollideswithanobjectorwall. Forthein-
+ferencequestion,weasktheagenttopredicttheprobability
+(cid:88)
+(cid:126)y = w i (cid:126)v i (5) thatagivenactionwillcauseittocollidewithawall,mean-
+i ingthattheagent’staskisessentiallytothoroughlymapout
+In order to tie this to inference on a particular question, theboundariesandcollidablesurfacesofitsenvironment.
+we consider the general type of network structure shown The state is taken to be the current position, the action
+in Fig. 1. Here, we have some kind of representation of beingthe x and y componentsofthe proposeddirectionof
+thequestionandrelevantcontext(currentsensorstate,etc), travel (normalized to a unit vector), and the observation o
+which we transform into the query vector (cid:126)q by way of an to be whether or not the agent collided with a wall. Since
+embeddingnetworkE . Thistransformationcanoptionally theinputsensorsaresosimple,wedon’tnecessarilyexpect
+q
+makeuseofinformationintheagent’smemory(thedashed thatmuchofadifferenceintheembeddingspacecompared
+line) by way of an attentional mechanism. We also have a to a trivial behavior characterization where we just use ev-
+memoryofpastsensorstates(s),actions(a),andoutcomes erything. However, this simple case does test one some-
+(o)(whichcouldbesubsequentsensorstates,adifferentset what non-trivial thing — namely, the agent does not have
+of sensors, etc). We use a network E to embed the states anypriorknowledgeaboutitssensor-motorcoupling. That
+s
+is to say, even if the agent could identify a nearby physi- a) b)
+callocationwhichithasn’tbeentobefore,thatisnotapri- 0.8 0.8
+ori associated with the action which will actually take it to
+thatlocation. Assuch,withthisenvironmentwearetesting 0.6 0.6
+whetherornottheagentcanlearnhowtonavigatetonovel
+regions purely as a byproduct of learning to solve the par- 0.4 0.4
+ticularinferencetaskoffiguringoutifitwillmakecontact
+withawall. 0.2 0.2
+For this task, the question takes the form of a (s,a) pair
+(from this position, if you move in this direction, will you 0.25 0.50 0.75 0.25 0.50 0.75
+hit a wall?), so we use the same network for both E and
+q 0.8 0.8
+E . Thisnetworkiscomposedoffourhiddenlayersofsize
+s
+256withrectifiedlinearnonlinearities(ReLU),followedby
+0.6 0.6
+alearnedlinearprojectionintoa24dembeddingspace. The
+networkE takesasinputthefull(s,a,o)tripletsandpasses
+o 0.4 0.4
+themthroughfourhiddenlayersofsize256withReLUnon-
+linearities, followedbylinearprojectionintoa128dspace.
+0.2 0.2
+The soft kNN layer combines these (α = 20), and finally
+the prediction network P passes that result through four
+0.25 0.50 0.75 0.25 0.50 0.75
+morehiddenlayers(size256, ReLUactivations), withafi-
+nal single-unit layer with sigmoid activation to output the Figure2: a)Examplefloorplanand300stepsoftrajectory
+predictedprobabilitythattheagentwillcollidewithawall. for the curious agent. The background color corresponds
+The network is trained using the logistic loss L = to the agent’s current evaluation of novelty by position at
+−ylog(p)−(1−y)log(1−p) on 1000 trajectories from theendofthetrajectory,withyellowcorrespondingtohigh
+different,randomlygeneratedfloorplans,whereeachtrajec- novelty and blue corresponding to low novelty. b) Vector
+tory is 1000 steps long and is generated by taking random field showing the action at each location which the agent
+actions.Duringtraining,batchesarecomposedbyrandomly wouldfindmostnovel.
+selecting50ofthesetrajectoriesandchoosingarandomstart
+point,suchthattheagentrememberstheprevious300steps
+before the start point and must predict the collisions over
+action from each point (Fig. 2b), we find good agreement
+the next 100 steps. The agent is trained on 15000 of these
+betweentheproposedactionsandthedirectionofthelocal
+batches using the Adam optimizer (Kingma and Ba, 2014)
+spatialgradientofthenovelty—meaningthattheagenthas
+withaninitiallearningrateof4×10−4thatisreducedbya
+apparentlycorrectlylearnedthesensor-motorcontingencies
+factorof0.9wheneverthetestlossdoesnotdecreasefor10
+inordertonavigatethespace. Atthesametime(duetolack
+iterations. Allofthenetworksareimplementedandtrained
+offeedbackbetweenthecontentsofmemoryandtheembed-
+using PyTorch (Paszke et al., 2017). All code for the ex-
+dings),thenovelactionsareonlylocallyinformative,butdo
+perimentsinthispaperisprovidedathttps://github.
+notcorrectlytakeintoaccountlong-rangeplanningofpaths
+com/arayabrain/QuestionDrivenNovelty.
+throughthespacetoreachhigh-noveltyregions.
+In order to ‘behave curiously’, we seed the agent with
+Giventhattheagentseemstobeabletopursuehighnov-
+50 steps of random actions to have an initial memory, and
+eltyregions,doesthelearnedbehaviorcharacterizationpro-
+then for each subsequent step we propose 50 random ac-
+vide reasonable direction as to efficient exploration? We
+tions a˜ and choose the action which maps to a point in the
+compare the rates at which a random action policy, the un-
+embeddingspacez(cid:48) whichisfurthestfromitsnearestpoint
+trained network, and the trained network explore the space
+in memory. An example floorplan and trajectory over 300
+by dividing the domain into a 16×16 grid and measuring
+subsequent steps is shown in Fig. 2a. The background of
+over 15 random (unseen) floorplans the average number of
+thisfigurecorrespondstoavisualizationofthemodel’sas-
+grid cells explored as a function of time. This is shown in
+sessments of the novelty at different locations, generated
+Fig. 3. The trained network policy explores significantly
+by creating a grid of points over the possible (x,y) coor-
+fasterthantherandomwalk,roughlyreachingthesamelevel
+dinates within the floorplan, proposing actions taken from
+ofexplorationafter1900stepsastherandomactionpolicy
+eachofthosepoints,andtakingthedistanceassociatedwith
+obtainsin5000steps.
+themost‘novel’actionateachpoint. Thisshowsthat,pre-
+Whenweaskthenetworktofollowanoveltysearchpol-
+dictably,themodelconsiderspointswhereithasneverbeen
+icy, we are in essence asking it to take actions which can
+tobenovelcomparedtopointswhichithasalreadyvisited.
+helpitanswerquestionsforwhichitdoesnotyethavegood
+When we compare this to the direction of the most novel
+supporting data. If we have a particular question in mind,
+120
+100
+80
+60
+40
+20
+0
+0 1000 2000 3000 4000 5000
+Step
+derolpxe
+slleC
+such as whether there would be a wall at a particular point
+inspace,wecandirectlyvisualizetheactionsandpositions
+whichthenetworkwouldconsiderinformativetowardsan-
+sweringthatquestion. Wedothisbyprojectingthequestion
+intotheembeddingspace,andthenvisualizingtheattention
+given to a virtual grid of state/action pairs. Visualizations
+of this are shown in Fig. 4. The saliency associated with a
+spatiallylocalizedqueryfallsoffontheorderofoneortwo
+oftheagent’ssteps. Thismeansthatwhileasinglequestion
+can be used to locally guide the agent, it does not provide
+globallyconsistentnavigationalcuesiftheagentiscurrently
+farawayfromtheregioninwhichthequestioncouldbean-
+Random
+Untrained swered, though it could still be used as a reward signal for
+Trained reinforcementlearningorevolutionarysearch.
+Guessinggame
+Wenowturntoamoreabstractsystem,totakespecificad-
+Figure3: Explorationofnewgridcellsbytherandomac-
+vantageofthefactthattheembeddingspacefortheagentis
+tionpolicy,theuntrainednetworkpolicy,andthetrainednet-
+organized to help the agent be curious about specific ques-
+work policy. These are curves are averaged over 15 newly
+tionsratherthannecessarilycuriousingeneral. Forthis,we
+generatedrandomfloorplans.
+lookatagameinwhichtheagentmustguessanumberbe-
+tween 1 and 256, and is told whether their guess is high,
+low, or correct. This game constitutes an active inference
+task, where the early questions should be arranged in a bi-
+nary search in order to provide the evidence that the agent
+will need in order to infer the correct number rapidly. An
+agentwhichguessesrandomlyandthenrendersaprediction
+at the end will significantly underperform compared to bi-
+0.8 0.8 narysearch,aswillevenanagentwhichguessesuniformly
+fromthecurrentpossiblesetofvalues.
+0.6 0.6 The network for this task is set up so that the internal
+process of paying attention to its own memory has a simi-
+0.4 0.4
+larformtotheguessinggamestructure. Thenetworkstarts
+fromalearnedinitialstatevector,andhastoupdatethatstate
+0.2 0.2
+vectorthroughasuccessionofthreeattentivelookupsintoits
+memory,indexedbytheguessbutnottheoutcome.Assuch,
+0.25 0.50 0.75 0.25 0.50 0.75
+thenetworksortofplaysaversionoftheguessinggamein-
+ternallyinordertofigureoutitspredictionsandnextguess,
+0.8 0.8 and the saliency profiles from those attentive lookups end
+upbeinggoodproxiesforwherethenetworkwouldbenefit
+0.6 0.6 fromreceivingmoreinformation.
+Specifically,guessesarethermometer-encoded(Fieteand
+0.4 0.4
+Seung,2007)(witheachguessgbeinga256dvectorwhose
+first g entries are set to one and the rest zero) and passed
+0.2 0.2
+through three 128 neuron hidden layers with ReLU activa-
+tions — this constitutes the (s,a) embedding network E .
+0.25 0.50 0.75 0.25 0.50 0.75 s
+One-hot encoded outcomes (high, low, equal) are stacked
+Figure4: Plotofthesaliencyofdifferentpositionstowards withtheencodedguesses,passedthroughasingle128neu-
+specific questions (will a collision occur in this direction ron hidden layer + ReLU, and then the outcomes cross-
+from this point?), and the corresponding greedy saliency- reference eachother using two attentive blocks constructed
+maximizingpolicy. along the lines of the Transformer architecture (Vaswani
+et al., 2017) — that is to say, using dot product atten-
+tion as described in 2 rather than Euclidean distance, com-
+bined with additional normalization and linear transforma-
+Memory X (Mx) Memory Y (My) Query (Q)
+Initial hidden state
+Thermometer-Encoded Guess + Outcome (learned, 128d vector)
+Guess
+1 1 0 0 0 0 1 1 0 0 0 0
+3 layer dense net
+(128 neurons)
+Q
+Mx
+My
+Attention Attention
+Attention Attention Attention
+0.2-0.40.10.7-0.30.5
+0
+Predictor Network
+Saliency Saliency Saliency
+Dense
+Layer
+SoftMax
+0.14
+0.12
+0.10
+0.08
+0.06
+0.04
+0.02
+0.00
+0 100 200
+Number (Guess)
+Figure 5: Architecture of the guessing game network, us-
+ing attention blocks as defined in Eq. 6 and Eq. 7. Virtual
+queries for currently unexplored guesses are added to M ,
+x
+andsaliencyfromtheattentionallayersisaveragedinorder
+todeterminethemostpotentiallyinformativeguesstomake
+next.
+tionsteps. Eachblockhastheform:
+z ≡Normalize(z +Attn(z ,z )) (6)
+∗ in in in
+z ≡Normalize(z +M ReLU(M z +(cid:126)b )+(cid:126)b ) (7) out ∗ 2 1 ∗ 1 2
+where Attn(x,y) is an attentional lookup into the matrix
+of observations x for each element of the matrix of queries
+y;M ,M areweightmatriceswiththesamegeometryasz,
+1 2
+and(cid:126)b and(cid:126)b arebiases(whicharebroadcastovertherows
+1 2
+ofz). ThefunctionNormalize(x)isthelayernormalization
+(Ba et al., 2016) operation which subtracts the mean over
+features (columns of x) and divides by the standard devia-
+tion:
+x − 1 (cid:80) x
+Normalize(x) = ij N j ij (8)
+ij (cid:113)
+1 (cid:80) x2 −(1 (cid:80) x )2 N j ij N j ij
+Finally,thequeryencoderE takesasinputalearnedini-
+q
+tial query vector, which then drives three successive atten-
+tionalblocksoftheaboveform(withthelastblockreplacing
+itsinputratherthanaddingtotheinput,inordertomakesure
+alloftheinformationusedtogeneratethepredictioncomes
+frommemory). Theembeddingspacesareall8dspaces,but
+differentonesfrom(s,a),o,andqineachcase. Welookat
+thepatternofsalienciesofthesethreepassesfromatrained
+networkinFig.6. Finally,theoutputofthethirdattentional
+blockispassedthroughtwo128neuronhiddenlayerswith
+ReLUactivationsfollowedbyasoftmaxactivationover256
+ycneilaS
+Initial Guess 6 Guess 12
+1st Attention 1st Attention 1st Attention
+2nd Attention 2nd Attention 2nd Attention
+3rd Attention 3rd Attention 3rd Attention
+Prediction Prediction Prediction
+0 100 200 0 100 200
+Number (Guess) Number (Guess)
+Figure6: Saliencypatternsfromthetrainedguessinggame
+network. The vertical dashed line shows the correct num-
+ber, and the curves show the three query attention patterns
+after different numbers of guesses. Also visualized is the
+predictedprobabilitydistributionfromthenetwork.
+values in order to render the probability distribution of the
+network’sguess.
+Inordertoencouragetheagenttoplacesaliencyinfuture
+guesses that will be informative, we give the agent access
+toitsfuture memories duringtraining(butnotduring test).
+What this means is that the agent starts from a state that
+knows all about the game up to some move t, but then is
+issuingaqueryintoamemoryembeddingspacethatduring
+training contains information from t + 1 and later moves,
+which the agent can access only if it manages to correctly
+predictwherethatinformationisgoingtobeinitsmemory
+space.Asaresult,whenweactuallyusethispolicyforplay-
+out, the agent’s lookups will correspond to places where it
+would like there to be future information — which we can
+then make use of in order to choose the agent’s guess. As
+such,herewearenotstrictlydoingnoveltysearchwherewe
+simply look to maximize the variety of the agent’s knowl-
+edge, but rather we’re focusing on the particular question
+theagentistryingtoanswer. Thenetworkistrainedfor150
+epochs on 2×105 random games (e.g. where the guesses
+derive from a uniform random policy) of length 30, using
+theAdamoptimizerwithlearningrate1×10−4.
+Followingtraining,weexamineaguessingpolicydriven
+by the network’s predictions as to the most likely num-
+ber,andaguessingpolicydrivenbythepointofmaximum
+saliency of the third attentional lookup. We find that just
+guessingaccordingtothesaliencypatternalonecanimple-
+mentanactiveinferencestrategywhichoutperformsthebest
+case ‘passive inference’ strategy, of guessing according to
+the distribution of numbers which are still possible given
+the evidence up to this point. These results are shown in
+Fig.7. However,theprediction-basedstrategysignificantly
+underperforms what should theoretically be possible. We
+havetriedafewvariantarchitectures(oneusinganLSTMto
+pre-processtheguessessofarbeforetheattentionallookup,
+and another simply reducing all hidden layer sizes to 32),
+and it seems that the prediction performance is a result of
+underfitting. Asking the model to use only three memory
+lookups in order to summarize up to 20 guesses seems to
+1.0
+0.8
+0.6
+0.4
+0.2
+0.0
+1 2 3 4 5 6 7 8 91011121314151617181920
+Guess #
+etar
+niW
+searchsense.
+When the ‘question’ underlying the agent’s curiosity is
+specific in nature, it is possible to use these embedding
+spaces not to only evaluate the novelty of action policies
+oroutcomes,butalsotodirectthatinaquestion-dependent
+way. This means that it is possible to construct an agent
+which, rather than just being ‘curious’, is ‘curious about’
+— that is to say, that its curiosity is directly tied to its un-
+Saliency derstandingofwhatisneededtoknoworansweraspecific
+Prediction
+question. This suggests an interesting interpretation of in-
+Binary Search
+trinsic curiosity as a compatible concept to empowerment
+Passive Inference
+(Klyubinetal.,2005b,a). Thatistosay,empowermentasan
+intrinsicmotivationmaximizesanagent’sabilitytoachieve
+a diversity of discernable outcomes in the future without
+knowledge of which specific outcome may correspond to
+Figure 7: Success rate by move number of different algo-
+high reward for the agent. Similarly, curiosity independent
+rithmsinplayingtheguessinggame. Abinarysearchgives
+ofspecificgoals(e.g. ‘intrinsic’curiosity)couldbeseenas
+the optimal result, shown in green. Passive inference (red
+the maximization of the agent’s ability to answer any ran-
+curve) in this case corresponds to randomly guessing ac-
+dom question (out of a distribution of potential questions)
+cordingtotheremainingpossiblevalues,andcorrespondsto
+without prior knowledge of what that question is going to
+thebestonecandowithoutsomeparticularstrategyforin-
+be.
+formationgain.Thesaliencyprofilefromthenetwork(blue)
+outperformsthisuptoguess10,showingthatthenetwork’s
+References
+saliencysuccessfullyperformsactiveinference.
+Achiam, J. and Sastry, S. (2017). Surprise-based intrinsic mo-
+tivation for deep reinforcement learning. arXiv preprint
+arXiv:1703.01732.
+befairlydifficult,butatthesametimethatdifficultycauses
+thenetworktomakegooduseofthesaliencypatterns. The Ba,J.L.,Kiros,J.R.,andHinton,G.E.(2016). Layernormaliza-
+LSTM-basedarchitectureperformedbetteratprediction,but tion. arXivpreprintarXiv:1607.06450.
+itssaliencyprofilewassignificantlylessusefulanddidnot
+Baranes, A. and Oudeyer, P.-Y. (2013). Active learning of in-
+outperform passive inference, while decreasing the hidden versemodelswithintrinsicallymotivatedgoalexplorationin
+layersizedamagedboththepredictionandsaliencyperfor- robots. RoboticsandAutonomousSystems,61(1):49–73.
+mance.
+Conti, E., Madhavan, V., Such, F.P., Lehman, J., Stanley, K.O.,
+and Clune, J. (2017). Improving exploration in evolution
+Conclusions strategies for deep reinforcement learning via a population
+ofnovelty-seekingagents. arXivpreprintarXiv:1712.06560.
+We examined the possibility of using inference tasks to
+shape the embedding spaces used by novelty search to dif- deAbril,I.M.andKanai,R.(2018). Curiosity-drivenreinforce-
+ferentiate between new and old action policies, using two ment learning with homeostatic regulation. arXiv preprint
+arXiv:1801.07440.
+examplesystems.Ineachcase,wefindevidencethatbyask-
+inganetworktouseattentionalmechanismstocollectinfor- Dickson, A. and Dinner, A. R. (2010). Enhanced sampling of
+mation relevant to its inference task (which can be learned nonequilibrium steady states. Annual review of physical
+in a differentiable, end-to-end fashion), the sense of ‘nov- chemistry,61:441–459.
+elty’or‘saliency’inthelearnedspacecanactuallycapture Doncieux,S.andMouret,J.-B.(2013). Behavioraldiversitywith
+somelocalsensory-motorcontigenciesandbeusedtoderive multiplebehavioraldistances. InEvolutionaryComputation
+a ‘greedily curious’ action policy without the need for any (CEC),2013IEEECongresson,pages1427–1434.IEEE.
+direct reinforcement learning or evolution. These greedy
+Eysenbach,B.,Gupta,A.,Ibarz,J.,andLevine,S.(2018). Diver-
+policiesdonotexecuteanylong-rangeplanning,andassuch sityisallyouneed:Learningskillswithoutarewardfunction.
+theycannotalwaysescapeuninterestingregions,butcanstill arXivpreprintarXiv:1802.06070.
+provide a boost in the rate of exploration of an agent com-
+Fiete, I. R. and Seung, H. S. (2007). Neural network models of
+paredtorandompolicysampling. Therefore,evenwhenthe
+birdsongproduction,learning,andcoding. NewEncyclope-
+greedypoliciesarenotsufficientontheirowntoobtainthe diaofNeuroscience.Eds.L.Squire,T.Albright,F.Bloom,F.
+desiredorinterestingbehaviors, itmaybebeneficialtouse Gage,andN.Spitzer.Elsevier.
+it at the start, and then transition over to policies learned
+Friston, K., Rigoli, F., Ognibene, D., Mathys, C., Fitzgerald, T.,
+viareinforcementorevolutionusingthelearnedembedding andPezzulo,G.(2015).Activeinferenceandepistemicvalue.
+spacetomodifytherewardfunctioninthestandardnovelty Cognitiveneuroscience,6(4):187–214.
+Guttenberg, N., Biehl, M., and Kanai, R. (2017). Learning
+body-affordances to simplify action spaces. arXiv preprint
+arXiv:1708.04391.
+Houthooft,R.,Chen,X.,Duan,Y.,Schulman,J.,DeTurck,F.,and
+Abbeel,P.(2016).Vime:Variationalinformationmaximizing
+exploration. InAdvancesinNeuralInformationProcessing
+Systems,pages1109–1117.
+Jain,M.S.andLindsey,J.(2018). Semiparametricreinforcement
+learning.
+Kingma, D. and Ba, J. (2014). Adam: A method for stochastic
+optimization. arXivpreprintarXiv:1412.6980.
+Klyubin, A.S., Polani, D., andNehaniv, C.L.(2005a). Allelse
+beingequalbeempowered.InEuropeanConferenceonArti-
+ficialLife,pages744–753.Springer.
+Klyubin,A.S.,Polani,D.,andNehaniv,C.L.(2005b). Empower-
+ment: Auniversalagent-centricmeasureofcontrol. InEvo-
+lutionaryComputation, 2005.The2005IEEECongresson,
+volume1,pages128–135.IEEE.
+Lehman, J. and Stanley, K. O. (2011). Abandoning objectives:
+Evolution through the search for novelty alone. Evolution-
+aryComputation,19(2):189–223. PMID:20868264.
+Meyerson,E.,Lehman,J.,andMiikkulainen,R.(2016). Learning
+behavior characterizations for novelty search. In Proceed-
+ings of the Genetic and Evolutionary Computation Confer-
+ence2016,pages149–156.ACM.
+Ostrovski, G., Bellemare, M. G., Oord, A. v. d., and Munos, R.
+(2017). Count-basedexplorationwithneuraldensitymodels.
+arXivpreprintarXiv:1703.01310.
+Paszke,A.,Gross,S.,Chintala,S.,Chanan,G.,Yang,E.,DeVito,
+Z.,Lin,Z.,Desmaison,A.,Antiga,L.,andLerer,A.(2017).
+Automaticdifferentiationinpytorch.
+Pathak, D., Agrawal, P., Efros, A. A., and Darrell, T. (2017).
+Curiosity-drivenexplorationbyself-supervisedprediction.In
+InternationalConferenceonMachineLearning(ICML),vol-
+ume2017.
+Pritzel,A.,Uria,B.,Srinivasan,S.,Puigdomenech,A.,Vinyals,O.,
+Hassabis,D.,Wierstra,D.,andBlundell,C.(2017). Neural
+episodiccontrol. arXivpreprintarXiv:1703.01988.
+Pugh,J.K.,Soros,L.B.,andStanley,K.O.(2016). Qualitydiver-
+sity: Anewfrontierforevolutionarycomputation. Frontiers
+inRoboticsandAI,3:40.
+Saxe, A. M., McClelland, J. L., and Ganguli, S. (2013). Exact
+solutionstothenonlineardynamicsoflearningindeeplinear
+neuralnetworks. arXivpreprintarXiv:1312.6120.
+Torrie,G.M.andValleau,J.P.(1977). Nonphysicalsamplingdis-
+tributions in monte carlo free-energy estimation: Umbrella
+sampling.JournalofComputationalPhysics,23(2):187–199.
+Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L.,
+Gomez, A. N., Kaiser, Ł., and Polosukhin, I. (2017). At-
+tention is all youneed. In Advances in Neural Information
+ProcessingSystems,pages6000–6010.

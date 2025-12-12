@@ -107,6 +107,77 @@ class PDFChunker:
         self.chunk_overlap = chunk_overlap
         self.min_chunk_size = min_chunk_size
     
+    def _search_section_pattern(self, pattern: str, text: str) -> Optional[re.Match]:
+        """Search for section pattern in both original and normalized text.
+        
+        Args:
+            pattern: Regex pattern to search for.
+            text: Text to search in.
+            
+        Returns:
+            Match object if found, None otherwise.
+        """
+        # Try original text first
+        match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+        if match:
+            return match
+        
+        # Try normalized text (strip leading whitespace from each line)
+        normalized_lines = [line.strip() for line in text.split('\n')]
+        normalized_text = '\n'.join(normalized_lines)
+        match = re.search(pattern, normalized_text, re.IGNORECASE | re.MULTILINE)
+        
+        if match:
+            # Map normalized position back to original text
+            norm_pos = match.start()
+            norm_line_idx = normalized_text[:norm_pos].count('\n')
+            orig_lines = text.split('\n')
+            
+            if norm_line_idx < len(normalized_lines) and norm_line_idx < len(orig_lines):
+                # Calculate position in original text
+                # Sum lengths of all lines before the matched line, plus newlines
+                orig_pos = sum(len(line) + 1 for line in orig_lines[:norm_line_idx])
+                if norm_line_idx > 0:
+                    orig_pos -= 1  # Adjust for last newline
+                
+                # Find the matched line in original and normalized
+                matched_line_norm = normalized_lines[norm_line_idx]
+                matched_line_orig = orig_lines[norm_line_idx]
+                
+                # Find offset within the line
+                line_start_in_norm = sum(len(nl) + 1 for nl in normalized_lines[:norm_line_idx])
+                if norm_line_idx > 0:
+                    line_start_in_norm -= 1
+                offset_in_line = norm_pos - line_start_in_norm
+                
+                # Find where the normalized content starts in the original line
+                orig_line_stripped = matched_line_orig.lstrip()
+                leading_whitespace = len(matched_line_orig) - len(orig_line_stripped)
+                orig_line_start = orig_pos + leading_whitespace
+                
+                # Calculate final position
+                final_pos = orig_line_start + offset_in_line
+                
+                # Create a match-like object with correct positions
+                class MappedMatch:
+                    def __init__(self, start_pos, end_pos, matched_text):
+                        self._start = start_pos
+                        self._end = end_pos
+                        self._text = matched_text
+                    
+                    def start(self):
+                        return self._start
+                    
+                    def end(self):
+                        return self._end
+                    
+                    def group(self):
+                        return self._text
+                
+                return MappedMatch(final_pos, final_pos + len(match.group()), match.group())
+        
+        return None
+    
     def identify_sections(self, text: str) -> Dict[str, Tuple[int, int]]:
         """Identify key sections in PDF text.
         
@@ -117,11 +188,10 @@ class PDFChunker:
             Dictionary mapping section names to (start_char, end_char) positions.
         """
         sections: dict[str, Tuple[int, int]] = {}
-        lines = text.split('\n')
         
         # Find abstract
         for pattern in self.SECTION_PATTERNS['abstract']:
-            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            match = self._search_section_pattern(pattern, text)
             if match:
                 start = match.end()
                 # Abstract typically ends before Introduction or next major section
@@ -139,7 +209,7 @@ class PDFChunker:
         
         # Find introduction
         for pattern in self.SECTION_PATTERNS['introduction']:
-            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            match = self._search_section_pattern(pattern, text)
             if match:
                 start = match.end()
                 # Introduction typically 2000-5000 words, take first 5000 chars
@@ -149,7 +219,34 @@ class PDFChunker:
         
         # Find conclusion (search from end)
         for pattern in self.SECTION_PATTERNS['conclusion']:
+            # Try original text first
             matches = list(re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE))
+            if not matches:
+                # Try normalized text
+                normalized_lines = [line.strip() for line in text.split('\n')]
+                normalized_text = '\n'.join(normalized_lines)
+                norm_matches = list(re.finditer(pattern, normalized_text, re.IGNORECASE | re.MULTILINE))
+                if norm_matches:
+                    # Use the last match and map back to original
+                    norm_match = norm_matches[-1]
+                    norm_pos = norm_match.start()
+                    norm_line_idx = normalized_text[:norm_pos].count('\n')
+                    orig_lines = text.split('\n')
+                    if norm_line_idx < len(orig_lines):
+                        orig_pos = sum(len(line) + 1 for line in orig_lines[:norm_line_idx]) - 1
+                        if orig_pos < 0:
+                            orig_pos = 0
+                        # Create a match-like object
+                        class MappedMatch:
+                            def __init__(self, start_pos, end_pos):
+                                self._start = start_pos
+                                self._end = end_pos
+                            def start(self):
+                                return self._start
+                            def end(self):
+                                return self._end
+                        matches = [MappedMatch(orig_pos, orig_pos + len(norm_match.group()))]
+            
             if matches:
                 match = matches[-1]  # Take the last match
                 start = match.end()
@@ -162,7 +259,7 @@ class PDFChunker:
         
         # Find methods
         for pattern in self.SECTION_PATTERNS['methods']:
-            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            match = self._search_section_pattern(pattern, text)
             if match:
                 start = match.end()
                 # Methods section typically ends at Results
@@ -180,7 +277,7 @@ class PDFChunker:
         
         # Find results
         for pattern in self.SECTION_PATTERNS['results']:
-            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            match = self._search_section_pattern(pattern, text)
             if match:
                 start = match.end()
                 # Results typically ends at Discussion
@@ -198,7 +295,7 @@ class PDFChunker:
         
         # Find discussion
         for pattern in self.SECTION_PATTERNS['discussion']:
-            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            match = self._search_section_pattern(pattern, text)
             if match:
                 start = match.end()
                 # Discussion typically ends at Conclusion
@@ -340,6 +437,26 @@ class PDFChunker:
             ))
             chunk_index += 1
         
+        # Safety: If no chunks created yet but sections exist, create at least one chunk
+        if not chunks and sections:
+            # Create chunk from first section found (sorted_sections already defined above)
+            first_section_name, (first_start, first_end) = sorted_sections[0]
+            section_text = text[first_start:first_end]
+            if len(section_text.strip()) >= self.min_chunk_size:
+                chunks.append(TextChunk(
+                    text=section_text,
+                    start_pos=first_start,
+                    end_pos=first_end,
+                    section_name=first_section_name,
+                    chunk_index=0,
+                    is_prioritized=first_section_name in prioritized_sections
+                ))
+                chunk_index = 1
+            else:
+                # Section too small, fall back to simple chunking
+                chunks = self._chunk_simple(text)
+                return chunks
+        
         # Remaining chunks: process rest of text
         if sorted_sections:
             last_processed = sorted_sections[-1][1][1]  # End of last section
@@ -350,16 +467,15 @@ class PDFChunker:
         if first_chunk_parts:
             # Start after the last prioritized section
             current_pos = max(last_processed, first_chunk_parts[-1][1])
+        elif chunks:
+            # We created a chunk from sections, start after it
+            current_pos = chunks[-1].end_pos
         elif sorted_sections:
-            # No prioritized sections found, but we have other sections - start after last section
-            current_pos = last_processed
+            # No prioritized sections found, but we have other sections - start from first section
+            current_pos = sorted_sections[0][1][1]  # End of first section
         else:
             # No sections found at all - fall back to simple chunking from start
-            # If we already created a chunk, start after it, otherwise start from beginning
-            if chunks:
-                current_pos = chunks[-1].end_pos
-            else:
-                current_pos = 0
+            current_pos = 0
         
         while current_pos < len(text):
             chunk_end = min(current_pos + self.target_chunk_size, len(text))
@@ -409,6 +525,11 @@ class PDFChunker:
             # Final safety check: if we haven't advanced, force advancement
             if current_pos >= len(text):
                 break
+        
+        # Final safety: ensure at least one chunk exists
+        if not chunks:
+            # Fall back to simple chunking
+            chunks = self._chunk_simple(text)
         
         return chunks
     

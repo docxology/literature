@@ -1,0 +1,654 @@
+Deep Random Splines for Point Process Intensity
+Estimation of Neural Population Data
+GabrielLoaiza-Ganem SeanM.Perkins
+DepartmentofStatistics DepartmentofBiomedicalEngineering
+ColumbiaUniversity ColumbiaUniversity
+gl2480@columbia.edu sp3222@columbia.edu
+KarenE.Schroeder MarkM.Churchland JohnP.Cunningham
+DepartmentofNeuroscience DepartmentofNeuroscience DepartmentofStatistics
+ColumbiaUniversity ColumbiaUniversity ColumbiaUniversity
+ks3381@columbia.edu mc3502@columbia.edu jpc2181@columbia.edu
+Abstract
+Gaussianprocessesaretheleadingclassofdistributionsonrandomfunctions,but
+theysufferfromwellknownissuesincludingdifficultyscalingandinflexibilitywith
+respecttocertainshapeconstraints(suchasnonnegativity). HereweproposeDeep
+RandomSplines,aflexibleclassofrandomfunctionsobtainedbytransforming
+Gaussiannoisethroughadeepneuralnetworkwhoseoutputaretheparameters
+ofaspline. UnlikeGaussianprocesses,DeepRandomSplinesallowustoreadily
+enforce shape constraints while inheriting the richness and tractability of deep
+generativemodels. Wealsopresentanobservationalmodelforpointprocessdata
+whichusesDeepRandomSplinestomodeltheintensityfunctionofeachpoint
+processandapplyittoneuralpopulationdatatoobtainalow-dimensionalrepre-
+sentationofspikingactivity. Inferenceisperformedviaavariationalautoencoder
+that uses a novel recurrent encoder architecture that can handle multiple point
+processesasinput. Weuseanewlycollecteddatasetwhereaprimatecompletes
+apedalingtask,andobservebetterdimensionalityreductionwithourmodelthan
+withcompetingalternatives.1
+1 Introduction
+GaussianProcesses(GPs)areoneofthemaintoolsformodelingrandomfunctions[31]. Theyallow
+controlofthesmoothnessofthefunctionbychoosinganappropriatekernelbuthavethedisadvantage
+that,exceptinspecialcases(forexampleGilboaetal.[17],Flaxmanetal.[15]),inferenceinGP
+modelsscalespoorlyinbothmemoryandruntime. Furthermore,GPscannoteasilyhandleshape
+constraints. Itcanoftenbeofinteresttomodelafunctionundersomeshapeconstraint,forexample
+nonnegativity,monotonicityorconvexity/concavity[29,33,30,26]. Whilesomeshapeconstraints
+canbeenforcedbytransformingtheGPorbyenforcingthematafinitenumberofpoints,doingso
+cannotalwaysbedoneandusuallymakesinferenceharder,seeforexampleLinandDunson[24].
+Splinesareanotherpopulartoolformodelingunknownfunctions[37]. Whentherearenoshape
+constraints,frequentistinferenceisstraightforwardandcanbeperformedusinglinearregression,
+bywritingthesplineasalinearcombinationofbasisfunctions. Undershapeconstraints,thebasis
+functionexpansionusuallynolongerapplies, sincethespaceofshapeconstrainedsplinesisnot
+typically a vector space. However, the problem can usually still be written down as a tractable
+1Ourcodeisavailableathttps://github.com/cunningham-lab/drs.
+33rdConferenceonNeuralInformationProcessingSystems(NeurIPS2019),Vancouver,Canada.
+9102
+ceD
+92
+]LM.tats[
+6v01620.3091:viXra
+constrainedoptimizationproblem[33]. Furthermore,whenusingsplinestomodelarandomfunction,
+adistributionmustbeplacedonthespline’sparameters,sotheinferenceproblembecomesBayesian.
+DiMatteoetal.[10]proposedamethodtoperformBayesianinferenceinasettingwithoutshape
+constraints, but the method relies on the basis function expansion and cannot be used in a shape
+constrainedsetting.Furthermore,fairlysimpledistributionshavetobeplacedonthesplineparameters
+fortheirapproximateposteriorsamplingalgorithmtoworkadequately,whichresultsinthesplines
+havingarestrictiveandoversimplifieddistribution.
+Ontheotherhand,deepprobabilisticmodelstakeadvantageofthemajorprogressinneuralnetworks
+tofitrich,complexdistributionstodatainatractableway[32,28,21,16,20]. However,theirgoalis
+notusuallytomodelrandomfunctions.
+Inthispaper,weintroduceDeepRandomSplines(DRS),analternativetoGPsformodelingrandom
+functions. DRS are a deep probabilistic model in which standard Gaussian noise is transformed
+throughaneuralnetworktoobtaintheparametersofaspline,andtherandomfunctionisthenthe
+correspondingspline. Thiscombinesthecomplexityofdeepgenerativemodelsandtheabilityto
+enforceshapeconstraintsofsplines.
+WeuseDRStomodelthenonnegativeintensityfunctionsofPoissonprocesses[22]. Inorderto
+ensurethatthesplinesarenonnegative,weuseaparameterizationofnonnegativesplinesthatcanbe
+writtenasanintersectionofconvexsets,andthenusethemethodofalternatingprojections[36]to
+obtainapointinthatintersection(anddifferentiatethroughthatduringlearning). Toperformscalable
+inference,weuseavariationalautoencoder[21]withanovelencoderarchitecturethattakesmultiple,
+trulycontinuouspointprocessesasinput(notdiscretizedinbins,asiscommon).
+Our contributions are: (i) Introducing DRS, (ii) using the method of alternating projections to
+constrainsplines,(iii)proposingavariationalautoencodermodelwhithanovelencoderarchitecture
+forpointprocessdatawhichusesDRS,and(iv)showingthatourmodeloutperformscommonly
+usedalternativesinbothsimulatedandrealdata.
+Therestofthepaperisorganizedasfollows: wefirstexplainDRS,howtoparameterizethemand
+howconstraintscanbeenforcedinsection2. Wethenpresentourmodelandhowtodoinferencein
+section3. Wethencompareourmodelagainstcompetingalternativesinsimulateddataandintwo
+realspikingactivitydatasets,oneofwhichwecollected,insection4,andobservethatourmethod
+outperformsthealternatives. Finally,wesummarizeourworkinsection5.
+2 DeepRandomSplines
+Throughout the paper we will consider functions on the interval [T ,T ) and will select I + 1
+1 2
+fixed knots T = t < ··· < t = T . We will refer to a function as a spline of degree d and
+1 0 I 2
+smoothnesss<difthefunctionisad-degreepolynomialineachinterval[t ,t )fori=1,...,I,
+i−1 i
+iscontinuous,andstimesdifferentiable.Wewilldenotethesetofsplinesofdegreedandsmoothness
+sbyG ={g :ψ ∈Ψ },whereΨ isthesetofparametersofeachpolynomialineachinterval.
+d,s ψ d,s d,s
+That is, every ψ ∈ Ψ contains the parameters of each of the I polynomial pieces (it does not
+d,s
+containthelocationsoftheknotsaswetakethemtobefixedsinceweobservedoverfittingwhennot
+doingso). Whilethemostnaturalwaystoparameterizesplinesofdegreedarealinearcombination
+ofbasisfunctionsorwiththed+1polynomialcoefficientsofeachinterval,theseparameterizations
+donotlendthemselvestoeasilyenforceconstraintssuchasnonnegativity[33]. Wewillthususe
+adifferentparameterizationwhichwewillexplainindetailinthenextsection. Wewilldenoteby
+Ψ ⊆ Ψ thesubsetofsplineparametersthatresultinthesplineshavingtheshapeconstraintof
+d,s
+interest,forexample,nonnegativity.
+DRS are a distribution over G . To sample from a DRS, a standard Gaussian random variable
+d,s
+Z ∈Rm istransformedthroughaneuralnetworkparameterizedbyθ,f :Rm →Ψ. TheDRSis
+θ
+thengivenbyg andinferenceonθcanbeperformedthroughavariationalautoencoder[21].
+fθ(Z)
+Notethatf mapstoΨ,thusensuringthatthesplinehastherelevantshapeconstraint.
+2.1 ConstrainingSplines
+Wenowexplainhowwecanenforcepiecewisepolynomialstoformanonnegativespline. Weaddthe
+nonnegativityconstrainttothesplineaswewilluseitforourmodelinsection3,butconstraintssuch
+2
+asmonotonicityandconvexity/concavitycanbeenforcedinananalogousway. Inordertoachieve
+this,weuseaparameterizationofnonnegativesplinesthatmightseemoverlycomplicatedatfirst.
+However,ithasthecriticaladvantagethatitdecomposesintotheintersectionofconvexsetsthatare
+easilycharacterizedintermsoftheparameters,whichisnotthecaseforthenaiveparameterization
+whichonlyincludesthed+1coefficientsofeverypolynomial. Wewillseehowtotakeadvantageof
+thisfactinthenextsection.
+Abeautifulbutperhapslesserknownsplineresult(seeLasserre[23])givesthatapolynomialp(t)of
+degreed,whered=2k+1forsomek ∈N,isnonnegativeintheinterval[l,u)ifandonlyifitcan
+bewrittendownasfollows:
+p(t)=(u−t)[t](cid:62)Q [t]+(t−l)[t](cid:62)Q [t] (1)
+1 2
+where[t]=(1,t,t2,...,tk)(cid:62)andQ andQ are(k+1)×(k+1)symmetricpositivesemidefinite
+1 2
+matrices. Itfollowsthatapiecewisepolynomialofdegreedwithknotst ,...,t definedasp(i)(t)
+0 I
+fort∈[t ,t )fori=1,...,I isnonnegativeifandonlyifitcanbewrittenas:
+i−1 i
+p(i)(t)=(t −t)[t](cid:62)Q(i)[t]+(t−t )[t](cid:62)Q(i)[t] (2)
+i 1 i−1 2
+fori = 1,...,I,whereeachQ(i) andQ(i) are(k+1)×(k+1)symmetricpositivesemidefinite
+1 2
+matrices. WecanthusparameterizeeverypiecewisenonnegativepolynomialonourI intervalswith
+(Q(i),Q(i))I . Ifnoconstraintsareaddedontheseparameters,theresultingpiecewisepolynomial
+1 2 i=1
+mightnotbesmooth,socertainconstraintshavetobeenforcedinordertoguaranteethatweare
+parameterizinganonnegativesplineandnotjustanonnegativepiecewisepolynomial. Tothatend,
+wedefineC asthesetof(Q(i),Q(i))I suchthat:
+1 1 2 i=1
+p(i)(t )=p(i+1)(t )fori=1,...,I−1 (3)
+i i
+thatis,C isthesetofparameterswhoseresultingpiecewisepolynomialasinequation2iscontinuous.
+1
+Analogously,letC forj =2,3,... bethesetof(Q(i),Q(i))I suchthat:
+j 1 2 i=1
+∂j−1 ∂j−1
+p(i)(t )= p(i+1)(t )fori=1,...,I−1 (4)
+∂tj−1 i ∂tj−1 i
+sothatC isthesetofparameterswhosecorrespondingpiecewisepolynomialshavematchingleft
+j
+andright(j−1)-thderivatives. LetC bethesetof(Q(i),Q(i))I whicharesymmetricpositive
+0 1 2 i=1
+semidefinite. Wecanthenparameterizethesetofnonnegativesplineson[T ,T )byΨ=∩s+1C .
+1 2 j=0 j
+Notethatthecasewheredisevencanbetreatedanalogously(seeappendix1).
+2.2 TheMethodofAlternatingProjections
+InordertouseaDRS,f hastomaptoΨ,thatis,weneedtohaveawayforaneuralnetworktomapto
+θ
+theparametersetcorrespondingtononnegativesplines. Weachievethisbytakingf (z)=h(f˜(z)),
+θ θ
+where f˜ is an arbitrary neural network and h is a surjective function onto Ψ. The most natural
+θ
+choiceforhistheprojectionontoΨ. However,whilecomputingtheprojectionontoΨ(forΨasin
+section2.1)canbedonebysolvingaconvexoptimizationproblem,itcannotbedoneanalytically.
+Thisisanissuebecausewhenwetrainthemodel,wewillneedtodifferentiatef withrespectto
+θ
+θ. NotethatAmosandKolter[4]proposeamethodtohaveanoptimizationproblemasalayerin
+aneuralnetwork. Onemighthopetousetheirmethodforourproblem, butitcannotbeapplied
+due to the semidefinite constraint on our matrices. Concurrently to our work, Agrawal et al. [3]
+developedamethodtodifferentiatethroughconvexoptimizationproblemsthatiscompatiblewith
+oursemidefiniteconstraints. Weleavefurtherexplorationoftheirmethodwithinourframeworkfor
+futurework.
+The method of alternating projections [36, 5] allows us to approximately compute such a func-
+tion h analytically. If C ,...,C are closed, convex sets in RD, then the sequence ψ(k) =
+0 s+1
+P (ψ(k−1))convergestoapointin∩s+1C foranystartingψ(0),whereP istheprojection
+kmod(s+2) j=0 j j
+onto C for j = 0,...,s+1. The method of alternating projections then consists on iteratively
+j
+projectingontoeachsetinacyclicfashion. Wecallcomputingψ(k)fromψ(k−1)thek-thiterationof
+themethodofalternatingprojections. Thismethodcanbeusefultoobtainapointintheintersection
+ifeachP canbeeasilycomputed.
+j
+3
+Inourcase,projectingontoC canbedonebydoingeigenvaluedecompositionsofQ(i) andQ(i)
+0 1 2
+andzeroingoutnegativeelementsinthediagonalmatricescontainingtheeigenvalues. Whilethis
+projection might seem computationally expensive, the matrices are small and this can be done
+efficiently. For example, for cubic splines (d = 3), there are 2I matrices each one of size 2×2.
+Projecting onto C for j = 1,...s + 1 can be done analytically as it can be formulated as a
+j
+quadraticoptimizationproblemwithlinearconstraints. Furthermore,becauseofthelocalnatureof
+theconstraintswhereeveryintervalisonlyconstrainedbyitsneighboringintervals,thisquadratic
+optimizationproblemcanbereducedtosolvingatridiagonalsystemoflinearequationsofsizeI−1
+whichcanbesolvedefficientlyinO(I)timewithsimplifiedGaussianelimination. Weprovethis
+fact,usingtheKKTconditions,inappendix2.
+BylettinghbethefirstM iterationsofthemethodofalternatingprojections,wecanensurethatf
+θ
+maps(approximately)toΨ,whilestillbeingabletocompute∇ f (z). Notethatwecouldfindsuch
+θ θ
+anhfunctionusingDykstra’salgorithm(nottobeconfusedwithDijkstra’sshortestpathalgorithm),
+whichisamodificationofthemethodofalternatingprojectionsthatconvergestotheprojectionof
+ψ(0)onto∩s+1C [14,6,35]),butwefoundthatthemethodofalternatingprojectionswasfasterto
+j=0 j
+differentiatewhenusingreversemodeautomaticdifferentiationpackages[1].
+Anotherwayoffindingsuchanhwouldbeunrollinganyiterativeoptimizationmethodthatsolves
+theprojectionontoΨ,suchasgradient-basedmethodsorNewtonmethods. Wefoundthealternating
+projectionsmethodmoreconvenientasitdoesnotinvolveadditionalhyperparameterssuchaslearning
+ratethatdrasticallyaffectperformance. Furthermore,themethodofalternatingprojectionsisknown
+to have a linear convergence rate (as fast as gradient-based methods) that is independent of the
+startingpoint[5]. Thislastobservationisimportant,asthestartingpointinourcaseisdetermined
+bytheoutputoff˜,sothattheconvergenceratebeingindependentofthestartingpointensuresthat
+θ
+f˜ cannotlearntoignoreh, whichisnotthecaseforgradient-basedandNewtonmethods(fora
+θ
+fixednumberofiterationsandlearningrate,theremightexistaninitialpointthatistoofarawayto
+actuallyreachtheprojection). Finally,notethatifwewantedtoenforce,forexample,thatthespline
+bemonotonic,wecouldparameterizeitsderivativeandforceittobenonnegativeornonpositive.
+Convexityorconcavitycanbeenforcedanalogously.
+3 DeepRandomSplinesasIntensityFunctionsofPointProcesses
+SincewewilluseDRSasintensityfunctionsforPoissonprocesses,webeginthissectionwithabrief
+reviewoftheseprocesses.
+3.1 PoissonProcesses
+AninhomogeneousPoissonprocessinasetS isarandomsubsetofS. Theprocesscan(forour
+purposes) be parameterized by an intensity function g : S → R and in our case, S = [T ,T ).
++ 1 2
+WewriteS ∼PP (g)todenotethattherandomsetS,whoseelementswecallevents,followsa
+S
+PoissonprocessonS withintensityg. IfS = {x }K ∼ PP (g),then|S ∩A|,thenumberof
+k k=1 S (cid:82)
+eventsinanyA⊆S,followsaPoissondistributionwithparameter g(t)dtandtheloglikelihood
+A
+ofS isgivenby:
+K (cid:90)
+(cid:88)
+logp({x }K |g)= logg(x )− g(t)dt (5)
+k k=1 k
+S
+k=1
+Splineshavetheveryimportantpropertythattheycanbeanalyticallyintegrated(astheintegralof
+polynomialscanbecomputedinclosedform),whichallowstoexactlyevaluatetheloglikelihoodin
+equation5whengisaspline. Asaconsequence,fittingaDRStoobservedeventsismoretractable
+thanfittingmodelsthatuseGPstorepresentg,suchaslog-GaussianCoxprocesses[29]. Inferencein
+thelattertypeofmodelsisverychallenging,despitesomeeffortsbyCunninghametal.[9],Adams
+etal.[2],Lloydetal.[25]. Splinesalsovarysmoothly,whichincorporatesthereasonableassumption
+thattheexpectednumberofeventschangessmoothlyovertime. Thesepropertieswereourmain
+motivationsforchoosingsplinestomodelintensityfunctions.
+4
+3.2 OurModel
+SupposeweobserveN simultaneouspointprocessesin[T ,T )atotalofRrepetitions(wewill
+1 2
+calleachoneoftheserepetitions/samplesatrial). LetX denotethen-thpointprocessofther-th
+r,n
+trial. Lookingaheadtoanapplicationwestudyintheresults,dataofthistypeisastandardsetupfor
+microelectrodearraydata,whereN neuronsaremeasuredfromtimeT totimeT forRrepetitions,
+1 2
+andeacheventinthepointprocessescorrespondstoaspike(thetimeatwhichtheneurons“fired”).
+EachX isalsocalledaspiketrain. Themodelwepropose,whichwecallDRS-VAE,isasfollows:
+r,n
+xr1 LSTM1
+ xr2 LSTM2
+ Z r ∼N(0,I m )forr =1,...,R dense
+ψ =f(n)(Z )forn=1,...,N (6)
+r,n θ r
+X
+|ψ ∼PP (g )
+r,n r,n [T1,T2) ψr,n xrN LSTMN
+... ...
+Figure1: Encoderarchitecture.
+whereeachf(n) :Rm →Ψisobtainedasdescribedinsection2.2. ThehiddenstateZ forther-th
+θ r
+trialX :=(X ,...,X )canbethoughtasalow-dimensionalrepresentationofX . Notethat
+r r,1 r,N r
+whiletheintensityfunctionofeverypointprocessandeverytrialisaDRS,thelatentstateZ ofeach
+r
+trialissharedamongtheN pointprocesses. Notealsothatthedatawearemodelingcanbethought
+ofasRmarkedpointprocesses[22],wherethemarkoftheeventx (thek-theventofthen-th
+r,n,k
+pointprocessofther-thtrial)isn. Inthissetting,g correspondstotheconditional(onZ andon
+ψr,n r
+themarkbeingn)intensityoftheprocessforther-thtrial.
+Once again, one might think that our parameterization of nonnegative splines is unnecessarily
+complicatedandthathavingf(n)inequation6beasimplerparameterizationofanarbitraryspline
+θ
+(e.g. basiscoefficients)andusingτ(g )insteadofg ,whereτ isanonnegativefunction,might
+ψr,n ψr,n
+beabettersolutiontoenforcingnonnegativityconstraints. Thefunctionτ wouldhavetobechosen
+insuchawaythattheintegralofequation5canstillbecomputedanalytically,makingτ(t)=t2a
+naturalchoice. Whilethisprocedurewouldavoidhavingtousethemethodofalternatingprojections,
+wefoundthatsquaredsplinesperformverypoorlyastheyoscillatetoomuch. Alternatively,wealso
+triedusingaB-splinebasiswithnonnegativecoefficients,resultinginnonnegativesplines. While
+the approximation error between a nonnegative smooth function and its B-spline approximation
+withnonnegativecoefficientscanbebounded[34],notethatnoteverynonnegativesplinecanbe
+writtendownasalinearcombinationofB-splineswithnonnegativecoefficients. Inpracticewefound
+theboundtobetoolooseandalsoobtainedbetterperformancethroughthemethodofalternating
+projections.
+3.3 Inference
+AutoencodingvariationalBayes[21]isatechniquetoperforminferenceinthefollow1ingtypeof
+model:
+(cid:26)
+Z ∼N(0,I )forr =1,...,R
+r m (7)
+X |Z ∼p (x|z )
+r r θ r
+whereX aretheobservablesandZ ∈Rmthecorrespondinglatents. Sincemaximumlikelihoodis
+r r
+notusuallytractable,theposteriorp(z|x)isapproximatedwithq (z|x),whichisgivenby:
+φ
+q (z|x)= (cid:89) R q (z |x ),withq (z |x )=N (cid:16) µ (x ),diag (cid:0) σ2(x ) (cid:1)(cid:17) (8)
+φ φ r r φ r r φ r φ r
+r=1
+wheretheencoder(µ ,σ )isaneuralnetworkparameterizedbyφ. TheELBOL,alowerbound
+φ φ
+oftheloglikelihood,isthenmaximizedoverboththegenerativeparametersθandthevariational
+5
+parametersφ:
+R
+(cid:88)
+L(θ,φ)= −KL(q (z |x )||p(z ))+E [logp (x |z )] (9)
+φ r r r qφ(zr|xr) θ r r
+r=1
+MaximizingtheELBOwithstochasticgradientmethodsisenabledbytheuseofthereparameter-
+izationtrick. Inordertoperforminferenceinourmodel,weuseautoencodingvariationalBayes.
+Becauseofthepointprocessnatureofthedata,µ andσ requirearecurrentarchitecture,since
+φ φ
+theirinputx = (x ,x ,...,x )consistsofN pointprocesses. Thisinputdoesnotconsist
+r r,1 r,2 r,N
+ofasinglesequence,butN sequencesofdifferentlengths(numbersofevents),whichrequiresa
+specializedarchitecture. WeuseN separateLSTMs[19],oneperpointprocess. EachLSTMtakes
+as input the events of the corresponding point process. The final states of each LSTM are then
+concatenatedandtransformedthroughadenselayer(followedbyanexponentialactivationinthecase
+ofσ toensurepositivity)inordertomaptothehiddenspaceRm.WealsotriedbidirectionalLSTMs
+φ
+[18]butfoundregularLSTMstobefasterwhilehavingsimilarperformance. Thearchitectureis
+depictedinfigure1. TheELBOforourmodelisthengivenby:
+(cid:88) R (cid:104)(cid:88) N K (cid:88) r,n (cid:90) (cid:105)
+L(θ,φ)= −KL(q (z |x )||p(z ))+E logg (x )− g (t)dt (10)
+φ r r r qφ(zr|xr) ψr,n r,n,k ψr,n
+r=1 n=1 k=1 S
+whereK isthenumberofeventsinthen-thpointprocessofther-thtrial. Gaoetal.[16]have
+r,n
+asimilarmodel,whereahiddenMarkovmodelistransformedthroughaneuralnetworktoobtain
+eventcountsontimebins. ThehiddenstateforatrialintheirmodelisthenanentirehiddenMarkov
+chain,whichwillhavesignificantlyhigherdimensionthanourhiddenstate. Also,theirmodelcanbe
+recoveredfromoursifwechangethestandardGaussiandistributionofZ inequation6toreflect
+r
+theirMarkovianstructureandchooseG tobepiecewiseconstant,nonnegativefunctions. Wealso
+emphasizethefactthatourmodelisveryeasytoextend: forexample,itwouldbestraightforward
+toextendittomulti-dimensionalpointprocesses(notneuraldataanymore)bychangingG andits
+parameterization. ItisalsostraightforwardtouseamorecomplicatedpointprocessthanthePoisson
+onebyallowingtheintensitytodependonpreviouseventhistory. Furthermore,DRScanbeusedin
+settingsthatrequirerandomfunctions,evenifnopointprocessisinvolved.
+Oneoftheadvantagesofourmethodisthatitscaleswell(notcubically,likemostGPmethods)with
+respecttomostofitsparameterslikenumberoftrials,numberofknots,numberofiterationsofthe
+alternatingprojectionsalgorithm,hiddendimensionandnumberofneurons. Theonlyparameter
+withwhichourmethoddoesnotscaleaswellisthenumberofspikessincetheLSTM-basedencoder
+hastoprocesseveryspikeindividually(notspikecountsovertimebins). However,thisissuecan
+beaddressedbyusinganon-amortizedinferenceapproach(i.e. nothavinganencoderandhaving
+separate variational parameters for each trial). We found that the amortized approach using our
+proposedencoderwasbetterforthedatasetsweanalyzed,butevenlargerdatasetsmightbenefitfrom
+thenon-amortizedapproach.
+4 Experiments
+4.1 SimulatedData
+Wesimulateddatawiththefollowingprocedure: First,weset2differenttypesoftrials. Foreach
+typeoftrial,wesampledonetrueintensityfunctionon[0,10)foreachoftheN =2pointprocesses
+bysamplingfromaGPandexponentiatingtheresult. Wethensampled600timesfromeachtype
+oftrial,resultingin1200trials. Werandomlyselected1000trialsfortrainingandsetasidetherest
+fortesting. Wethenfitthemodeldescribedinsection3.2andcompareagainstothermethodsthat
+performintensityestimationwhilerecoveringalow-dimensionalrepresentationoftrial:thePP-GPFA
+model[13],thePfLDSmodel[16]andtheGPFAmodel[39]. Thetwolattermodelsdiscretizetime
+intoBtimebinsandhavealatentvariablepertimebinandpertrial(asopposedtoourmodelwhich
+isonlypertrial),whiletheformerrecoverscontinuouslatenttrajectories. Theydothisasawayof
+enforcingtemporalsmoothnessbyplacinganappropriatepriorovertheirlatenttrajectories,whichwe
+donothavetodoasweimplicitlyenforcetemporalsmoothnessbyusingsplinestomodelintensity
+functions. NotethatDuetal.[11],Yangetal.[38],MeiandEisner[27]andDuetal.[12]allpropose
+relatedmethodsinwhichtheintensityofpointprocessesisestimated. However,wedonotcompare
+againsttheseasthetwoformeronesmodeldynamicnetworks,makingadirectcomparisondifficult,
+6
+andthetwolatterdonotuselatentvariables,whichisoneofthemainadvantagesandgoalsofour
+methodasawaytoperformdimensionalityreductionforneuralpopulationdata.
+Weusedauniformgridwith11knots(resultinginI = 10intervals), d = 3ands = 2. Sincea
+twice-differentiablecubicsplineonI intervalshasI+3degreesoffreedom,whendiscretizingtime
+forPfLDSandGPFAweuseB = I +3 = 13timebins. Thiswaythedistributionrecoveredby
+PfLDSalsohasB = 13degreesoffreedom,whilethedistributionrecoveredbyGPFAhaseven
+more. Wesetthelatentdimensionminourmodelto2andwealsosetthelatentdimensionper
+timebininPfLDSandGPFAto2,meaningthattheoveralllatentdimensionforanentiretrialwas
+2B =26. Thesetwochoicesmakethecomparisonconservativeastheyallowmoreflexibilityforthe
+twocompetingmethodsthanforours. ForPP-GPFAwesetthecontinuouslatenttrajectorytohave
+dimension2. Ourarchitectureandhyperparameterchoicesareincludedinappendix3.
+Thetopleftpaneloffigure2showstheposteriormeansofthehiddenvariablesinourmodelfor
+each of the 200 test trials. Each posterior mean is colored according to its type of trial. We can
+seethatdifferenttypesoftrialsformseparateclusters,meaningthatourmodelsuccessfullyobtains
+low-dimensionalrepresentationsofthetrials. Notethatthemodelistrainedwithouthavingaccess
+tothetypeofeachtrial;colorsareassignedinthefigureposthoc. Thetoprightpanelshowsthe
+events(inblack)foraparticularpointprocessonaparticulartrial,alongwiththetrueintensity(in
+green)thatgeneratedtheeventsandposteriorsamplesfromourmodel(inpurple), PP-GPFA(in
+orange),PfLDS(inblue),andGPFA(inred)ofthecorrespondingintensities. NotethatsincePfLDS
+andGPFAparameterizethenumberofcountsoneachtimebin,theydonothaveacorresponding
+intensity. Weplot insteadapiecewise constantintensityoneachtime bininsucha waythatthe
+expectednumberofeventsineachtimebinisequaltotheintegraloftheintensity.Wecanseethatour
+methodrecoversasmoothfunctionthatisclosertothetruththantheonesrecoveredwithcompeting
+methods. Thebottomleftpaneloffigure2furtherillustratesthispointwithaQQ-plot(wheretimeis
+rescaledasin[7]),andwecanseeonceagainthatourmethodrecoversintensitiesthatarecloserto
+thetruth.
+Table1showsperformancefromourmodelcomparedagainstPP-GPFA,PfLDSandGPFA.The
+secondcolumnshowstheper-trialELBOontestdata,andwecanseethatourmodelhasalarger
+ELBOthanthealternatives. WhilehavingabetterELBOdoesnotimplythatourloglikelihood
+isbetter,itdoessuggestthatitis. SincebothPfLDSandGPFAputadistributiononeventcounts
+on time bins instead of a distribution on event times as our models does, the log likelihoods are
+notdirectlycomparable. However,inthecaseofPfLDS,wecaneasilyconvertfromthePoisson
+likelihoodontimebinstothepiecewiseconstantintensityPoissonprocesslikelihood,sothatthe
+numbers become comparable. In order to get a quantitative comparison between our model and
+GPFA, we take advantage of the fact that we know the true intensity that generated the data and
+compareaverageL2distance,acrosspointprocessesandtrials,betweenposteriorintensitysamples
+andactualintensityfunction. Onceagain,wecanseethatourmethodoutperformsthealternatives.
+Table1alsoincludesthestandarddeviationoftheseL2distances. Sincethestandarddeviationsare
+somewhatlargeincomparisontothemeans,foreachofthetwocompetingalternatives,wecarryout
+atwosamplet-testcomparingtheL2distancemeansobtainedwithourmethodagainstthealternative.
+Thep-valuesindicatethatourmethodrecoversintensityfunctionsthatareclosertothetruthina
+statisticallysignificantway.
+Table1: Quantitativecomparisonofourmethod(DRS-VAE)againstcompetingalternatives.
+SIMULATEDDATA REACHINGDATA CYCLINGDATA
+METHOD ELBO L2 p-VALUE ELBO 15-NN SSG/SST ELBO 15-NN SSG/SST
+DRS-VAE 57.1 4.43±3.55 − −500.8 23.7% 73.9% 6372 55.9% 70.0%
+PfLDS 52.3 11.9±6.18 <10−73 −505.7 3.1% 6.2% 6532 11.7% 3.2%
+GPFA − 12.9±7.19 <10−72 − − − − − −
+PP-GPFA 29.0 15.4±9.64 <10−71 −523.2 14.1% 30.5% 6079 51.1% 14.6%
+7
+1.0
+0.5
+0.0
+0.5
+1.0
+0.4 0.3 0.2 0.1 0.0 0.1 0.2
+latent dimension 1
+2
+noisnemid
+tnetal
+12
+10
+8
+6
+4
+2
+0
+0 2 4 6 8 10
+time (unitless)
+ytisnetni
+true intensity
+DRS-VAE posterior samples
+PfLDS posterior samples
+GPFA posterior means
+PP-GPFA posterior means
+events
+1.0
+0.8
+0.6
+0.4
+0.2
+0.0
+0.0 0.2 0.4 0.6 0.8 1.0
+theoretical quantiles
+selitnauq
+devresbo
+DRS-VAE 0.012
+PfLDS
+PP-GPFA 0.010
+0.008
+0.006
+0.004
+0.002
+0.000
+100 50 0 50 100 150 200 250 300
+time (ms)
+ytisnetni
+DRS-VAE posterior samples
+PfLDS posterior samples
+PP-GPFA posterior samples
+spike train
+Figure2: PosteriormeansofthehiddenvariablesofDRS-VAEbytypeoftrialonsimulateddata(top
+leftpanel),QQ-plotoftime-rescaledintensitiesonsimulateddata(bottomleftpanel),comparisonof
+posteriorintensitiesofourmethod(DRS-VAE)againstcompetingalternativesonsimulateddata(top
+rightpanel)andreachingdata(bottomrightpanel).
+4.2 RealData
+4.2.1 ReachingData
+WealsofitourmodeltothedatasetcollectedbyChurchlandetal.[8].Thedataset,afterpreprocessing
+(seeappendix4fordetails),consistsofmeasurementsof20neuronsfor3590trialsontheinterval
+[−100,300)(inms)ofaprimate. Ineachtrial,theprimatereacheswithitsarmtoaspecificlocation,
+whichchangesfromtrialtotrial(wecanthinkofthe40locationsastypesoftrials),wheretime0
+correspondstothebeginningofthemovement. Werandomlysplitthedataintoatrainingsetwith
+3000trialsandatestsetwiththerestofthetrials.
+Weusedtwice-differentiablecubicsplinesand18uniformlyspacedknots(thatis,17intervals). For
+thecomparisonagainstPfLDS,wesplittimeinto20bins,resultingintimebinsof20ms(which
+is a standard length), once again making sure that the degrees of freedom are comparable. This
+makesoncemoreforaconservativecomparisonaswefixthenumberofknotsinourmodelsothat
+thenumberofdegreesoffreedommatchagainstthealreadytunedcomparisoninsteadoftuning
+thenumberofknotsdirectly. Furtherarchitecturaldetailsareincludedinappendix3. Sincewedo
+nothaveaccesstothegroundtruth,wedonotcompareagainstGPFAastheL2 metriccomputed
+in the previous section cannot be used here. Again, we used a hidden dimension m = 2 for our
+model,resultinginhiddentrajectoriesofdimension40forPfLDS,andcontinuoustrajectoriesof
+dimension2forPP-GPFA.Weexperimentedwithlargervaluesofmbutdidnotobservesignificant
+improvementsineithermodel.
+Thebottomrightpaneloffigure2showsthespiketrain(black)foraparticularneurononaparticular
+trial,alongwithposteriorsamplesfromourmodel(inpurple),PP-GPFA(inorange)andPfLDS(in
+8
+blue)ofthecorrespondingintensities. Wecanseethattheposteriorsamplesfromourmethodlook
+moreplausibleandsmootherthantheotherones.
+Table1alsoshowstheper-trialELBOontestdataforourmodelandforthecompetingalternatives.
+Again, our model has a larger ELBO, even when PfLDS has access to 20 times more hidden
+dimensions: ourmethodismoresuccessfulatproducinglow-dimensionalrepresentationsoftrials
+thanPfLDS.Thetablealsoshowsthepercentageofcorrectlypredictedtesttrialtypeswhenusing
+15-nearestneighborsontheposteriormeansoftraindata(theentiretrajectoriesareusedforPfLDS
+and20uniformlyspacedpointsalongeachdimensionofthecontinuoustrajectoriesofPP-GPFA,
+resultingin40dimensionallatentrepresentations). While23.7%mightseemsmall, itshouldbe
+notedthatitissignificantlybetterthanrandomguessing(whichwouldhave2.5%accuracy)and
+thatthemodelwasnottrainedtominimizethisobjective. Regardless,wecanseethatourmethod
+outperformsbothPP-GPFAandPfLDSinthismetric,evenwhenusingamuchlower-dimensional
+representationofeachtrial. Thetablealsoincludesthepercentageofexplainedvariationwhendoing
+ANOVAonthetestposteriormeans(denotedSSG/SST),usingtrialtypeasgroups. Onceagain,we
+canseethatourmodelrecoversamoremeaningfulrepresentationofthetrials.
+4.2.2 CyclingData
+Wealsofitourmodeltoournewlycollecteddataset.Afterpreprocessing(seesupplementarymaterial),
+it consists of 1300 and 188 train and test trials, respectively. During each trial, 20 neurons were
+recordedastheprimateturnsahand-heldpedaltonavigatethroughavirtualenvironment. Thereare
+8trialtypes,basedonwhethertheprimateispedalingforwardorbackwardandoverwhatdistance.
+Weusethesamehyperparametersettingsasforthereachingdata,exceptweuse26uniformlyspaced
+knots(25intervals)and28binsforPfLDS,aswellasahiddendimensionm=10,resultinginhidden
+trajectories of dimension 280 for PfLDS (analogously, we set PP-GPFA to have 10 dimensional
+continuoustrajectories,andtake28uniformlyspacedpointsalongeachdimensiontoobtain280
+dimensionallatentrepresentations). Resultsarealsosummarizedintable1. Wecanseethatwhileour
+ELBOishigherthanforPP-GPFA,itisactuallylowerthanforPfLDS,whichwebelieveiscaused
+byanartifactofpreprocessingthedataratherthananyessentialperformanceloss.
+WhiletheELBOwasbetterforPfLDS,thequalityofourlatentrepresentationsissignificantlybetter,
+asshownbytheaccuracyof15-nearestneighborstopredicttesttrialtypes(randomguessingwould
+have12.5%accuracy)andtheANOVApercentageofexplainedvariationofthetestposteriormeans,
+whicharealsobetterthanforPP-GPFA.Thisisparticularlyimpressiveasourlatentrepresentations
+have28timesfewerdimensions. Wedidexperimentwithdifferenthyperparametersettings, and
+foundthattheELBOofPfLDSincreasedslightlywhenusingmoretimebins(atthecostofeven
+higher-dimensionallatentrepresentations),whereasourELBOremainedthesamewhenincreasing
+thenumberofintervals. However,eveninthissettingtheaccuracyof15-nearestneighborsandthe
+percentageofexplainedvariationdidnotimproveforPfLDS.
+5 Conclusions
+InthispaperweintroducedDeepRandomSplines,analternativetoGaussianprocessestomodel
+random functions. Owing to our key modeling choices and use of results from the spline and
+optimization literatures, fitting DRS is tractable and allows one to enforce shape constraints on
+the random functions. While we only enforced nonnegativity and smoothness in this paper, it
+isstraightforwardtoenforceconstraintssuchasmonotonicity(orconvexity/concavity). Wealso
+proposedavariationalautoencoderthattakesadvantageofDRStoaccuratelymodelandproduce
+meaningfullow-dimensionalrepresentationsofneuralactivity.
+FutureworkincludesusingDRS-VAEformulti-dimensionalpointprocesses,forexamplespatial
+pointprocesses. Whilesplineswouldbecomehardertouseinsuchasetting,theycouldbereplaced
+byanyfamilyofeasily-integrablenonnegativefunctions,suchas,forexample,coniccombinations
+ofGaussiankernels. Anotherlineoffutureworkinvolvesusingamorecomplicatedpointprocess
+thanthePoisson,forexampleaHawkesprocess,byallowingtheparametersofthesplineinacertain
+intervaltodependonthepreviousspikinghistoryofpreviousintervals. Finally,DRScanbeapplied
+inmoregeneralsettingsthantheoneexploredinthispapersincetheycanbeusedinanysetting
+wherearandomfunctionisinvolved,havingmanypotentialapplicationsbeyondwhatweanalyzed
+here.
+9
+Acknowledgments
+We thank the Simons Foundation, Sloan Foundation, McKnight Endowment Fund, NIH NINDS
+5R01NS100066,NSF1707398,andtheGatsbyCharitableFoundationforsupport.
+References
+[1] M.Abadi,P.Barham,J.Chen,Z.Chen,A.Davis,J.Dean,M.Devin,S.Ghemawat,G.Irving,
+M.Isard,etal. Tensorflow: asystemforlarge-scalemachinelearning. InOSDI,volume16,
+pages265–283,2016.
+[2] R. P. Adams, I. Murray, and D. J. MacKay. Tractable nonparametric bayesian inference
+in poisson processes with gaussian process intensities. In Proceedings of the 26th Annual
+InternationalConferenceonMachineLearning,pages9–16.ACM,2009.
+[3] A.Agrawal,B.Amos,S.Barratt,S.Boyd,S.Diamond,andJ.Z.Kolter. Differentiableconvex
+optimizationlayers. InAdvancesinNeuralInformationProcessingSystems,2019.
+[4] B.AmosandJ.Z.Kolter. Optnet: Differentiableoptimizationasalayerinneuralnetworks. In
+InternationalConferenceonMachineLearning,pages136–145,2017.
+[5] H.H.BauschkeandJ.M.Borwein. Onprojectionalgorithmsforsolvingconvexfeasibility
+problems. SIAMreview,38(3):367–426,1996.
+[6] J.P.BoyleandR.L.Dykstra. Amethodforfindingprojectionsontotheintersectionofconvex
+setsinhilbertspaces.InAdvancesinorderrestrictedstatisticalinference,pages28–47.Springer,
+1986.
+[7] E.N.Brown,R.Barbieri,V.Ventura,R.E.Kass,andL.M.Frank. Thetime-rescalingtheorem
+and its application to neural spike train data analysis. Neural computation, 14(2):325–346,
+2002.
+[8] M.M.Churchland,J.P.Cunningham,M.T.Kaufman,J.D.Foster,P.Nuyujukian,S.I.Ryu,
+andK.V.Shenoy. Neuralpopulationdynamicsduringreaching. Nature,487(7405):51,2012.
+[9] J. P. Cunningham, K. V. Shenoy, and M. Sahani. Fast gaussian process methods for point
+processintensityestimation. InProceedingsofthe25thinternationalconferenceonMachine
+learning,pages192–199.ACM,2008.
+[10] I.DiMatteo,C.R.Genovese,andR.E.Kass. Bayesiancurve-fittingwithfree-knotsplines.
+Biometrika,88(4):1055–1071,2001.
+[11] N.Du,L.Song,M.Yuan,andA.J.Smola. Learningnetworksofheterogeneousinfluence. In
+AdvancesinNeuralInformationProcessingSystems,pages2780–2788,2012.
+[12] N.Du,H.Dai,R.Trivedi,U.Upadhyay,M.Gomez-Rodriguez,andL.Song. Recurrentmarked
+temporal point processes: Embedding event history to vector. In Proceedings of the 22nd
+ACMSIGKDDInternationalConferenceonKnowledgeDiscoveryandDataMining,pages
+1555–1564.ACM,2016.
+[13] L.DunckerandM.Sahani. Temporalalignmentandlatentgaussianprocessfactorinference
+in population spike trains. In Advances in Neural Information Processing Systems, pages
+10445–10455,2018.
+[14] R.L.Dykstra. Analgorithmforrestrictedleastsquaresregression. JournaloftheAmerican
+StatisticalAssociation,78(384):837–842,1983.
+[15] S. Flaxman, A. Wilson, D. Neill, H. Nickisch, and A. Smola. Fast kronecker inference in
+gaussianprocesseswithnon-gaussianlikelihoods. InInternationalConferenceonMachine
+Learning,pages607–616,2015.
+[16] Y.Gao,E.W.Archer,L.Paninski,andJ.P.Cunningham. Lineardynamicalneuralpopulation
+modelsthroughnonlinearembeddings. InAdvancesinNeuralInformationProcessingSystems,
+pages163–171,2016.
+[17] E.Gilboa,Y.Saatçi,andJ.P.Cunningham. Scalingmultidimensionalinferenceforstructured
+gaussianprocesses. IEEEtransactionsonpatternanalysisandmachineintelligence,37(2):
+424–436,2015.
+[18] A.GravesandJ.Schmidhuber. Framewisephonemeclassificationwithbidirectionallstmand
+otherneuralnetworkarchitectures. NeuralNetworks,18(5-6):602–610,2005.
+10
+[19] S. Hochreiter and J. Schmidhuber. Long short-term memory. Neural computation, 9(8):
+1735–1780,1997.
+[20] M.Johnson,D.K.Duvenaud,A.Wiltschko,R.P.Adams,andS.R.Datta.Composinggraphical
+modelswithneuralnetworksforstructuredrepresentationsandfastinference. InAdvancesin
+neuralinformationprocessingsystems,pages2946–2954,2016.
+[21] D.P.KingmaandM.Welling. Auto-encodingvariationalbayes. InInternationalConference
+onLearningRepresentations,2014.
+[22] J.F.C.Kingman. Poissonprocesses,volume3. ClarendonPress,1992.
+[23] J.-B. Lasserre. Moments, positive polynomials and their applications, volume 1. World
+Scientific,2010.
+[24] L.LinandD.B.Dunson. Bayesianmonotoneregressionusinggaussianprocessprojection.
+Biometrika,101(2):303–317,2014.
+[25] C.Lloyd,T.Gunter,M.Osborne,andS.Roberts. Variationalinferenceforgaussianprocess
+modulatedpoissonprocesses. InInternationalConferenceonMachineLearning,pages1814–
+1822,2015.
+[26] E. Mammen. Estimating a smooth monotone regression function. The Annals of Statistics,
+pages724–740,1991.
+[27] H.MeiandJ.M.Eisner. Theneuralhawkesprocess: Aneurallyself-modulatingmultivariate
+pointprocess. InAdvancesinNeuralInformationProcessingSystems,pages6754–6764,2017.
+[28] S.MohamedandB.Lakshminarayanan.Learninginimplicitgenerativemodels.InInternational
+ConferenceonLearningRepresentations,2017.
+[29] J.Møller,A.R.Syversveen,andR.P.Waagepetersen.Loggaussiancoxprocesses.Scandinavian
+journalofstatistics,25(3):451–482,1998.
+[30] J.O.Ramsay. Monotoneregressionsplinesinaction. Statisticalscience,pages425–441,1988.
+[31] C.E.Rasmussen. Gaussianprocessesinmachinelearning. InAdvancedlecturesonmachine
+learning,pages63–71.Springer,2004.
+[32] D.J.Rezende,S.Mohamed,andD.Wierstra. Stochasticbackpropagationandapproximate
+inferenceindeepgenerativemodels. InInternationalConferenceonMachineLearning,pages
+1278–1286,2014.
+[33] J.W.SchmidtandW.Hess. Positivityofcubicpolynomialsonintervalsandpositivespline
+interpolation. BITNumericalMathematics,28(2):340–352,1988.
+[34] W. Shen, S. Ghosal, et al. Adaptive bayesian density regression for high-dimensional data.
+Bernoulli,22(1):396–420,2016.
+[35] R.J.Tibshirani. Dykstra’salgorithm,admm,andcoordinatedescent: Connections,insights,
+andextensions. InAdvancesinNeuralInformationProcessingSystems,pages517–528,2017.
+[36] J.vonNeumann. Thegeometryoforthogonalspaces,functionaloperators-vol.ii. Annalsof
+Math.Studies,22,1950.
+[37] G.Wahba. Splinemodelsforobservationaldata,volume59. Siam,1990.
+[38] J.Yang,V.Rao,andJ.Neville.Decouplinghomophilyandreciprocitywithlatentspacenetwork
+models. InUAI,2017.
+[39] M.B.Yu,J.P.Cunningham,G.Santhanam,S.I.Ryu,K.V.Shenoy,andM.Sahani. Gaussian-
+processfactoranalysisforlow-dimensionalsingle-trialanalysisofneuralpopulationactivity.
+InAdvancesinneuralinformationprocessingsystems,pages1881–1888,2009.
+[40] M. Yuan and Y. Lin. Model selection and estimation in regression with grouped variables.
+JournaloftheRoyalStatisticalSociety: SeriesB(StatisticalMethodology),68(1):49–67,2006.
+11

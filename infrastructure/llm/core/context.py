@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 from infrastructure.core.logging_utils import get_logger
 from infrastructure.core.exceptions import ContextLimitError
@@ -165,7 +165,12 @@ class ConversationContext:
             )
             raise ContextLimitError(
                 "Message too large for context window",
-                context={"size": new_tokens, "limit": self.max_tokens, "estimated_total": self.estimated_tokens + new_tokens}
+                context={
+                    "size": new_tokens,
+                    "limit": self.max_tokens,
+                    "estimated_total": self.estimated_tokens + new_tokens,
+                    "suggestion": "Consider using two-stage mode or truncating content"
+                }
             )
     
     def save_state(self) -> Dict[str, Any]:
@@ -357,4 +362,61 @@ class ConversationContext:
             )
         
         return status, stats
+    
+    def estimate_available_tokens(self, reserve_percent: float = 0.2) -> int:
+        """Estimate available tokens in context window.
+        
+        Args:
+            reserve_percent: Percentage of context to reserve for response generation (default: 0.2 = 20%).
+            
+        Returns:
+            Estimated available tokens after reserving space for response.
+            
+        Example:
+            >>> available = context.estimate_available_tokens()
+            >>> if prompt_tokens > available:
+            ...     # Prompt too large, need to truncate or use two-stage mode
+        """
+        available = self.max_tokens - self.estimated_tokens
+        # Reserve space for response generation
+        usable = int(available * (1.0 - reserve_percent))
+        return max(0, usable)
+    
+    def estimate_prompt_tokens(self, prompt: str) -> int:
+        """Estimate token count for a prompt string.
+        
+        Args:
+            prompt: Prompt text to estimate.
+            
+        Returns:
+            Estimated token count (using 1 token ≈ 4 chars ratio).
+            
+        Example:
+            >>> tokens = context.estimate_prompt_tokens("Hello world")
+            >>> print(f"Prompt will use ~{tokens} tokens")
+        """
+        return len(prompt) // 4
+    
+    def check_prompt_fits(self, prompt: str, reserve_percent: float = 0.2) -> Tuple[bool, int, int]:
+        """Check if a prompt will fit in the context window.
+        
+        Args:
+            prompt: Prompt text to check.
+            reserve_percent: Percentage of context to reserve for response (default: 0.2).
+            
+        Returns:
+            Tuple of (fits, prompt_tokens, available_tokens):
+            - fits: True if prompt will fit, False otherwise
+            - prompt_tokens: Estimated tokens for the prompt
+            - available_tokens: Available tokens in context window
+            
+        Example:
+            >>> fits, prompt_tokens, available = context.check_prompt_fits(prompt)
+            >>> if not fits:
+            ...     logger.warning(f"Prompt too large: {prompt_tokens} > {available}")
+        """
+        prompt_tokens = self.estimate_prompt_tokens(prompt)
+        available_tokens = self.estimate_available_tokens(reserve_percent)
+        fits = prompt_tokens <= available_tokens
+        return fits, prompt_tokens, available_tokens
 

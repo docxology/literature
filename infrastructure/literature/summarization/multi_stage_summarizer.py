@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, Tuple, TYPE_CHECKING
 
 from infrastructure.core.logging_utils import get_logger
+from infrastructure.core.exceptions import ContextLimitError
 from infrastructure.literature.summarization.models import (
     SummarizationContext,
     SummarizationProgressEvent,
@@ -139,6 +140,40 @@ class MultiStageSummarizer:
             target_chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap
         )
+        
+        # Auto two-stage fallback configuration
+        import os
+        auto_two_stage_str = os.environ.get('LITERATURE_AUTO_TWO_STAGE', 'true').lower()
+        self.auto_two_stage_fallback = auto_two_stage_str in ('true', '1', 'yes')
+    
+    def _estimate_prompt_tokens(self, prompt: str) -> int:
+        """Estimate token count for a prompt (1 token ≈ 4 chars).
+        
+        Args:
+            prompt: Prompt text to estimate.
+            
+        Returns:
+            Estimated token count.
+        """
+        return len(prompt) // 4
+    
+    def _check_context_fits(self, prompt: str, reserve_percent: float = 0.2) -> tuple[bool, int, int]:
+        """Check if prompt will fit in context window.
+        
+        Args:
+            prompt: Prompt text to check.
+            reserve_percent: Percentage of context to reserve for response (default: 0.2).
+            
+        Returns:
+            Tuple of (fits, prompt_tokens, available_tokens):
+            - fits: True if prompt will fit, False otherwise
+            - prompt_tokens: Estimated tokens for the prompt
+            - available_tokens: Available tokens in context window
+        """
+        prompt_tokens = self._estimate_prompt_tokens(prompt)
+        available_tokens = self.llm_client.context.estimate_available_tokens(reserve_percent)
+        fits = prompt_tokens <= available_tokens
+        return fits, prompt_tokens, available_tokens
     
     def generate_draft(
         self,
@@ -162,8 +197,44 @@ class MultiStageSummarizer:
             logger.warning("citation_key missing from metadata, using fallback 'unknown'")
             citation_key = 'unknown'
         
-        # Always use single-stage mode with full paper context
+        # Check if we should use two-stage mode based on text size threshold
+        use_two_stage_by_size = (
+            self.two_stage_enabled and 
+            len(context.full_text) > self.two_stage_threshold
+        )
+        
+        if use_two_stage_by_size:
+            logger.info(
+                f"[{citation_key}] Text size ({len(context.full_text):,} chars) exceeds threshold "
+                f"({self.two_stage_threshold:,} chars), using two-stage mode..."
+            )
+            return self._generate_draft_two_stage(context, metadata, progress_callback)
+        
+        # Try single-stage mode first, but check if prompt will fit
         logger.info(f"[{citation_key}] Generating draft summary (single-stage mode, full paper context)...")
+        
+        # Build prompt to check size
+        prompt = self.prompt_builder.build_draft_prompt(context, metadata)
+        fits, prompt_tokens, available_tokens = self._check_context_fits(prompt)
+        
+        if not fits:
+            if self.auto_two_stage_fallback and self.two_stage_enabled:
+                logger.warning(
+                    f"[{citation_key}] Prompt too large for context window "
+                    f"({prompt_tokens:,} tokens > {available_tokens:,} available). "
+                    f"Automatically switching to two-stage mode..."
+                )
+                return self._generate_draft_two_stage(context, metadata, progress_callback)
+            else:
+                logger.error(
+                    f"[{citation_key}] Prompt too large for context window "
+                    f"({prompt_tokens:,} tokens > {available_tokens:,} available). "
+                    f"Two-stage mode is {'disabled' if not self.two_stage_enabled else 'not auto-enabled'}. "
+                    f"Consider enabling LITERATURE_AUTO_TWO_STAGE=true or truncating content."
+                )
+                # Will raise ContextLimitError when trying to add message
+                # This allows the error to propagate with proper context
+        
         return self._generate_draft_single_stage(context, metadata, progress_callback)
     
     def _generate_draft_single_stage(
@@ -200,6 +271,29 @@ class MultiStageSummarizer:
         prompt = self.prompt_builder.build_draft_prompt(context, metadata)
         prompt_size = len(prompt)
         logger.info(f"[{citation_key}] Draft prompt built: {prompt_size:,} chars (full_text={len(context.full_text):,} chars)")
+        
+        # Pre-flight check: Verify prompt will fit in context window
+        fits, prompt_tokens, available_tokens = self._check_context_fits(prompt)
+        if not fits:
+            error_msg = (
+                f"Prompt too large for context window: {prompt_tokens:,} tokens > {available_tokens:,} available. "
+                f"Consider using two-stage mode or truncating content."
+            )
+            logger.error(f"[{citation_key}] {error_msg}")
+            raise ContextLimitError(
+                error_msg,
+                context={
+                    "size": prompt_tokens,
+                    "limit": self.llm_client.context.max_tokens,
+                    "available": available_tokens,
+                    "estimated_total": self.llm_client.context.estimated_tokens + prompt_tokens,
+                    "suggestion": "Use two-stage mode or truncate content"
+                }
+            )
+        
+        logger.debug(
+            f"[{citation_key}] Pre-flight check passed: {prompt_tokens:,} tokens <= {available_tokens:,} available"
+        )
         
         # Save prompt to file for debugging
         try:
@@ -296,6 +390,14 @@ class MultiStageSummarizer:
                 f"Context: {error_context}\n"
                 f"Traceback: {traceback.format_exc()}"
             )
+            
+            # If ContextLimitError and two-stage is available, suggest it
+            if isinstance(e, ContextLimitError) and self.two_stage_enabled and self.auto_two_stage_fallback:
+                logger.warning(
+                    f"[{citation_key}] Context limit error in single-stage mode. "
+                    f"Two-stage mode should have been used automatically. "
+                    f"This may indicate a bug in the size checking logic."
+                )
             
             # Emit progress event for failure
             if progress_callback:

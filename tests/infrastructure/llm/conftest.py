@@ -23,8 +23,12 @@ def mock_requests_post(mocker):
 
 @pytest.fixture
 def default_config():
-    """Create a default LLMConfig for testing with auto_inject disabled."""
-    return LLMConfig(auto_inject_system_prompt=False)
+    """Create LLMConfig from test configuration."""
+    from tests.test_config_loader import get_test_llm_config
+    config = get_test_llm_config()
+    # Preserve auto_inject_system_prompt=False for tests that need it
+    config.auto_inject_system_prompt = False
+    return config
 
 @pytest.fixture
 def config_with_system_prompt():
