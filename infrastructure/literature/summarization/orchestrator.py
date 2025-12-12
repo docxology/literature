@@ -273,7 +273,7 @@ def find_papers_needing_processing(
     library_entries: List[LibraryEntry]
 ) -> Dict[str, List[LibraryEntry]]:
     """Find papers needing different types of processing."""
-    from infrastructure.literature.workflow.orchestrator import find_papers_needing_pdf
+    from infrastructure.literature.workflow.operations.download import find_papers_needing_pdf
     extractor = TextExtractor()
     
     return {

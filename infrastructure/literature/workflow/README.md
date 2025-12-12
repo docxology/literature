@@ -5,7 +5,8 @@ Workflow orchestration, progress tracking, and search orchestration.
 ## Components
 
 - **workflow.py**: `LiteratureWorkflow` for multi-paper operations
-- **orchestrator.py**: Search workflow orchestration functions
+- **orchestrator.py**: Thin orchestrator (re-exports from operations/)
+- **operations/**: Operation-specific modules (search, download, cleanup, meta-analysis, LLM operations)
 - **progress.py**: Progress tracking for long-running tasks
 
 ## Quick Start

@@ -22,11 +22,8 @@ from typing import Dict
 
 import pytest
 
-# Add scripts to path (one more parent level since we're in tests/infrastructure/llm/)
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "scripts"))
-
-# Import functions and classes from the review script
-from scripts import (
+# Import functions and classes from infrastructure.llm.review
+from infrastructure.llm.review import (
     get_max_input_length,
     estimate_tokens,
     ReviewMetrics,
@@ -35,14 +32,27 @@ from scripts import (
     save_review_outputs,
     generate_review_summary,
     validate_review_quality,
-    DEFAULT_MAX_INPUT_LENGTH,
+    check_ollama_availability,
+    extract_manuscript_text,
+    generate_executive_summary,
+    generate_quality_review,
+    generate_methodology_review,
+    generate_improvement_suggestions,
 )
-# Import validation functions from infrastructure (now moved there)
+from infrastructure.llm.review.generator import DEFAULT_MAX_INPUT_LENGTH
+# Import validation functions from infrastructure
 from infrastructure.llm import (
     is_off_topic,
     detect_repetition,
     deduplicate_sections,
+    detect_conversational_phrases,
+    check_format_compliance,
+    is_ollama_running,
+    select_best_model,
+    LLMClient,
+    LLMConfig,
 )
+from infrastructure.core.logging_utils import log_stage
 
 
 class TestEstimateTokens:
@@ -449,13 +459,12 @@ class TestModuleImports:
     
     def test_all_required_imports_available(self):
         """Test that all required functions/classes are importable."""
-        from scripts import (
+        from infrastructure.llm.review import (
             ReviewMetrics,
             ManuscriptMetrics,
             SessionMetrics,
             estimate_tokens,
             get_max_input_length,
-            log_stage,
             check_ollama_availability,
             extract_manuscript_text,
             generate_executive_summary,
@@ -464,12 +473,12 @@ class TestModuleImports:
             generate_improvement_suggestions,
             save_review_outputs,
             generate_review_summary,
-            main,
         )
+        from infrastructure.core.logging_utils import log_stage
         
         # All imports should be available
         assert callable(estimate_tokens)
-        assert callable(main)
+        assert callable(log_stage)
 
 
 class TestIsOffTopic:
@@ -761,7 +770,6 @@ class TestDetectConversationalPhrases:
     
     def test_no_conversational_phrases(self):
         """Test that formal academic text returns empty list."""
-        from scripts import detect_conversational_phrases
         text = """## Methodology Review
         
         The manuscript employs rigorous experimental design.
@@ -770,28 +778,24 @@ class TestDetectConversationalPhrases:
     
     def test_based_on_document_detected(self):
         """Test that 'based on the document you shared' is detected."""
-        from scripts import detect_conversational_phrases
         text = "Based on the document you shared, this appears to be a research paper."
         phrases = detect_conversational_phrases(text)
         assert len(phrases) >= 1
     
     def test_ill_help_you_detected(self):
         """Test that 'I'll help you' is detected."""
-        from scripts import detect_conversational_phrases
         text = "I'll help you understand the key points of this manuscript."
         phrases = detect_conversational_phrases(text)
         assert len(phrases) >= 1
     
     def test_let_me_know_detected(self):
         """Test that 'Let me know if' is detected."""
-        from scripts import detect_conversational_phrases
         text = "Let me know if you need more details about the methodology."
         phrases = detect_conversational_phrases(text)
         assert len(phrases) >= 1
     
     def test_multiple_phrases_detected(self):
         """Test that multiple conversational phrases are all detected."""
-        from scripts import detect_conversational_phrases
         text = """Based on the document you've shared, I'll provide you with analysis.
         Let me know if you have questions. I'd be happy to help further."""
         phrases = detect_conversational_phrases(text)
@@ -807,7 +811,6 @@ class TestCheckFormatCompliance:
     
     def test_compliant_response(self):
         """Test that properly formatted response passes."""
-        from scripts import check_format_compliance
         text = """## Overview
         
         The manuscript presents research on optimization algorithms.
@@ -827,7 +830,6 @@ class TestCheckFormatCompliance:
     
     def test_emojis_allowed(self):
         """Test that emoji usage is now allowed."""
-        from scripts import check_format_compliance
         text = """## Overview 🔑
         
         The manuscript is excellent! 🚀 Great work! ✅"""
@@ -838,7 +840,6 @@ class TestCheckFormatCompliance:
     
     def test_tables_allowed(self):
         """Test that table usage is now allowed."""
-        from scripts import check_format_compliance
         text = """## Overview
 
 | Feature | Score |
@@ -852,7 +853,6 @@ class TestCheckFormatCompliance:
     
     def test_conversational_violation(self):
         """Test that conversational phrases are flagged."""
-        from scripts import check_format_compliance
         text = """Based on the document you shared, I'll help you understand the key points.
         Let me know if you need more details."""
         
@@ -863,7 +863,6 @@ class TestCheckFormatCompliance:
     
     def test_emojis_tables_with_conversational_still_fails(self):
         """Test that conversational phrases still fail even with emojis/tables."""
-        from scripts import check_format_compliance
         text = """## Overview 🚀
 
 | Type | Score |
@@ -943,8 +942,6 @@ class TestValidateReviewQualityWithFormatCompliance:
     
     def test_emojis_pass_validation(self):
         """Test that emojis don't cause validation failures."""
-        from scripts import validate_review_quality
-        
         # Response with emoji - should be valid now
         response = """## Overview
         
@@ -977,8 +974,6 @@ class TestValidateReviewQualityWithFormatCompliance:
     
     def test_conversational_phrases_still_flagged(self):
         """Test that conversational phrases are flagged as format issues."""
-        from scripts import validate_review_quality
-        
         # Response with conversational phrases
         response = """## Overview
         
@@ -1008,25 +1003,14 @@ class TestLLMReviewIntegration:
     
     def test_check_ollama_availability(self):
         """Test Ollama availability check."""
-        from scripts import check_ollama_availability, is_ollama_running
-        
         if not is_ollama_running():
             pytest.skip("Ollama not running")
         
-        available, model = check_ollama_availability()
+        available = check_ollama_availability()
         assert available is True
-        assert model is not None
     
     def test_generate_review_with_real_llm(self):
         """Test generating a review with real LLM."""
-        from scripts import (
-            generate_executive_summary,
-            is_ollama_running,
-            select_best_model,
-            LLMClient,
-            LLMConfig,
-        )
-        
         if not is_ollama_running():
             pytest.skip("Ollama not running")
         
@@ -1045,12 +1029,10 @@ class TestLLMReviewIntegration:
         Results show 95% accuracy on the test dataset.
         """
         
-        response, metrics = generate_executive_summary(client, test_text)
+        # generate_executive_summary takes text and optional model, not client
+        response = generate_executive_summary(test_text, model=model)
         
         assert len(response) > 0
-        assert metrics.output_chars > 0
-        assert metrics.output_words > 0
-        assert metrics.generation_time_seconds > 0
 
 
 class TestValidateReviewQualityRepetition:

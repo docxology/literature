@@ -133,11 +133,12 @@ class TestLiteratureWorkflow:
                 )
 
             def save_summary(self, result, summary_result, output_dir, pdf_path=None):
-                """Mock save_summary method."""
+                """Mock save_summary method - now returns list of paths."""
                 output_dir.mkdir(exist_ok=True)
                 summary_path = output_dir / f"{summary_result.citation_key}_summary.md"
                 summary_path.write_text(summary_result.summary_text)
-                return summary_path
+                # Return list of paths (summary, claims_quotes, methods_tools)
+                return [summary_path]
 
         test_summarizer = TestSummarizer()
 
@@ -484,13 +485,17 @@ class TestLiteratureWorkflow:
 
         results = list(zip(search_results, summary_results))
 
-        # Mock save method
-        summarizer.save_summary.side_effect = [Path("summary1.md"), Path("summary2.md")]
+        # Mock save method - now returns list of paths
+        summarizer.save_summary.side_effect = [
+            [Path("summary1.md"), Path("paper1_claims_quotes.md"), Path("paper1_methods_tools.md")],
+            [Path("summary2.md"), Path("paper2_claims_quotes.md"), Path("paper2_methods_tools.md")]
+        ]
 
         output_dir = Path("summaries")
         saved_paths = workflow.save_summaries(results, output_dir)
 
-        assert len(saved_paths) == 2
+        # Should have 6 paths total (3 files per paper * 2 papers)
+        assert len(saved_paths) == 6
         assert summarizer.save_summary.call_count == 2
 
     def test_get_workflow_stats(self):
@@ -557,9 +562,9 @@ class TestLiteratureWorkflow:
         )
         mock_summarizer.summarize_paper.return_value = summary_result
 
-        # Mock save_summary to return a path
+        # Mock save_summary to return a list of paths
         mock_saved_path = tmp_path / "literature" / "summaries" / "test2024_summary.md"
-        mock_summarizer.save_summary.return_value = mock_saved_path
+        mock_summarizer.save_summary.return_value = [mock_saved_path]
 
         # Mock search result
         search_result = SearchResult(

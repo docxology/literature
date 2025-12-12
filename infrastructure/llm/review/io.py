@@ -391,8 +391,7 @@ The following items are extracted from the review for easy tracking:
                 "temperature_summary": 0.3,
                 "temperature_review": 0.3,
                 "temperature_suggestions": 0.4,
-                "max_tokens": get_review_max_tokens()[0],
-                "max_tokens_source": get_review_max_tokens()[1],
+                "max_tokens": get_review_max_tokens(),
                 "timeout_seconds": get_review_timeout(),
                 "system_prompt": "manuscript_review",
             }

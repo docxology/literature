@@ -60,21 +60,57 @@ class TestSummarizationResult:
     def test_compression_ratio_edge_cases(self):
         """Test compression ratio with edge cases."""
         # Zero input words
-        result = SummarizationResult("key", True, "summary", 0, 0, 10, 1.0, 1)
+        result = SummarizationResult(
+            citation_key="key",
+            success=True,
+            summary_text="summary",
+            input_chars=0,
+            input_words=0,
+            output_words=10,
+            generation_time=1.0,
+            attempts=1
+        )
         assert result.compression_ratio == 10.0
 
         # Normal case
-        result = SummarizationResult("key", True, "summary", 100, 20, 10, 1.0, 1)
+        result = SummarizationResult(
+            citation_key="key",
+            success=True,
+            summary_text="summary",
+            input_chars=100,
+            input_words=20,
+            output_words=10,
+            generation_time=1.0,
+            attempts=1
+        )
         assert result.compression_ratio == 0.5
 
     def test_words_per_second_edge_cases(self):
         """Test words per second with edge cases."""
         # Zero generation time
-        result = SummarizationResult("key", True, "summary", 100, 20, 10, 0.0, 1)
+        result = SummarizationResult(
+            citation_key="key",
+            success=True,
+            summary_text="summary",
+            input_chars=100,
+            input_words=20,
+            output_words=10,
+            generation_time=0.0,
+            attempts=1
+        )
         assert result.words_per_second == 10000.0
 
         # Very small time
-        result = SummarizationResult("key", True, "summary", 100, 20, 10, 0.001, 1)
+        result = SummarizationResult(
+            citation_key="key",
+            success=True,
+            summary_text="summary",
+            input_chars=100,
+            input_words=20,
+            output_words=10,
+            generation_time=0.001,
+            attempts=1
+        )
         assert result.words_per_second == 10000.0
 
 
@@ -556,14 +592,20 @@ The method used is...
 
         output_dir = tmp_path / "summaries"
 
-        # Execute (pdf_path is optional)
-        saved_path = summarizer.save_summary(result, summary_result, output_dir, pdf_path=None)
+        # Execute (pdf_path is optional) - now returns list of paths
+        saved_paths = summarizer.save_summary(result, summary_result, output_dir, pdf_path=None)
 
-        # Verify
-        assert saved_path.exists()
-        assert saved_path.name == "test2024_summary.md"
+        # Verify - should return list with at least the summary file
+        assert isinstance(saved_paths, list)
+        assert len(saved_paths) >= 1
+        
+        # Find the summary file
+        summary_path = next((p for p in saved_paths if "summary.md" in str(p)), None)
+        assert summary_path is not None
+        assert summary_path.exists()
+        assert summary_path.name == "test2024_summary.md"
 
-        written_content = saved_path.read_text()
+        written_content = summary_path.read_text()
         assert "Test Paper" in written_content
         assert "Author One" in written_content
         assert "2024" in written_content
@@ -597,12 +639,17 @@ The method used is...
         output_dir = tmp_path / "summaries"
 
         # Execute (pdf_path is optional)
-        saved_path = summarizer.save_summary(result, summary_result, output_dir, pdf_path=None)
+        saved_paths = summarizer.save_summary(result, summary_result, output_dir, pdf_path=None)
 
         # Verify summary_path field is set (though save_summary doesn't modify the result)
         # The workflow should set this field after calling save_summary
-        assert saved_path.exists()
-        # Note: save_summary returns the path but doesn't modify the result object
+        # save_summary now returns a list of paths
+        assert isinstance(saved_paths, list)
+        assert len(saved_paths) >= 1
+        summary_path = next((p for p in saved_paths if "summary.md" in str(p)), None)
+        assert summary_path is not None
+        assert summary_path.exists()
+        # Note: save_summary returns a list of paths but doesn't modify the result object
 
     def test_summary_result_with_path_field(self):
         """Test SummarizationResult with summary_path field."""
@@ -1142,18 +1189,22 @@ class TestAlwaysSaveBehavior:
         engine = SummarizationEngine(Mock())
         output_dir = tmp_path / "summaries"
         
-        # Save summary
-        saved_path = engine.save_summary(
+        # Save summary - now returns list of paths
+        saved_paths = engine.save_summary(
             result=result,
             summary_result=summary_result,
             output_dir=output_dir
         )
         
         # Verify file exists
-        assert saved_path.exists()
+        assert isinstance(saved_paths, list)
+        assert len(saved_paths) >= 1
+        summary_path = next((p for p in saved_paths if "summary.md" in str(p)), None)
+        assert summary_path is not None
+        assert summary_path.exists()
         
         # Read saved content
-        content = saved_path.read_text(encoding='utf-8')
+        content = summary_path.read_text(encoding='utf-8')
         
         # Verify validation metadata is included
         assert "Validation Status" in content
@@ -1312,3 +1363,272 @@ class TestPostProcessingDeduplication:
         
         # Should preserve most content
         assert len(deduplicated) > len(text) * 0.7  # At least 70% preserved
+
+
+class TestThreePassSummarization:
+    """Test three-pass summarization: comprehensive summary, claims/quotes, methods/tools."""
+    
+    def test_summarization_result_has_new_fields(self):
+        """Test that SummarizationResult includes claims_quotes_text and methods_tools_text."""
+        result = SummarizationResult(
+            citation_key="test2024",
+            success=True,
+            summary_text="Main summary",
+            claims_quotes_text="Claims and quotes",
+            methods_tools_text="Methods and tools"
+        )
+        
+        assert result.summary_text == "Main summary"
+        assert result.claims_quotes_text == "Claims and quotes"
+        assert result.methods_tools_text == "Methods and tools"
+    
+    def test_extract_claims_and_quotes(self, tmp_path):
+        """Test claims and quotes extraction method."""
+        from infrastructure.llm.core.client import LLMClient
+        from infrastructure.llm.core.config import LLMConfig
+        
+        # Create mock LLM client
+        config = LLMConfig(base_url="http://localhost:11434", default_model="test")
+        llm_client = LLMClient(config)
+        
+        # Mock the query method
+        llm_client.query = Mock(return_value="## Key Claims\n\n- Claim 1\n- Claim 2\n\n## Important Quotes\n\n**Quote:** \"Test quote\"\n**Context:** Introduction")
+        
+        engine = SummarizationEngine(llm_client)
+        
+        result = SearchResult(
+            title="Test Paper",
+            authors=["Author 1"],
+            year=2024,
+            abstract="Test abstract",
+            url="https://example.com/paper",
+            source="test"
+        )
+        
+        pdf_text = "This is a test paper with some claims and quotes."
+        
+        claims_quotes = engine._extract_claims_and_quotes(
+            pdf_text=pdf_text,
+            result=result,
+            citation_key="test2024"
+        )
+        
+        assert "Key Claims" in claims_quotes
+        assert "Important Quotes" in claims_quotes
+        assert llm_client.query.called
+        # Verify context was cleared
+        assert len(llm_client.context.messages) == 0 or llm_client.query.call_args[1].get('reset_context', False)
+    
+    def test_analyze_methods_and_tools(self, tmp_path):
+        """Test methods and tools analysis method."""
+        from infrastructure.llm.core.client import LLMClient
+        from infrastructure.llm.core.config import LLMConfig
+        
+        # Create mock LLM client
+        config = LLMConfig(base_url="http://localhost:11434", default_model="test")
+        llm_client = LLMClient(config)
+        
+        # Mock the query method
+        llm_client.query = Mock(return_value="## Algorithms\n\n- Algorithm 1\n\n## Software Frameworks\n\n- PyTorch\n\n## Datasets\n\n- Dataset 1")
+        
+        engine = SummarizationEngine(llm_client)
+        
+        result = SearchResult(
+            title="Test Paper",
+            authors=["Author 1"],
+            year=2024,
+            abstract="Test abstract",
+            url="https://example.com/paper",
+            source="test"
+        )
+        
+        pdf_text = "This paper uses PyTorch and Dataset 1."
+        
+        methods_tools = engine._analyze_methods_and_tools(
+            pdf_text=pdf_text,
+            result=result,
+            citation_key="test2024"
+        )
+        
+        assert "Algorithms" in methods_tools or "Software Frameworks" in methods_tools
+        assert llm_client.query.called
+        # Verify context was cleared
+        assert len(llm_client.context.messages) == 0 or llm_client.query.call_args[1].get('reset_context', False)
+    
+    def test_save_summary_saves_all_three_files(self, tmp_path):
+        """Test that save_summary saves all three output files."""
+        from infrastructure.llm.core.client import LLMClient
+        from infrastructure.llm.core.config import LLMConfig
+        
+        config = LLMConfig(base_url="http://localhost:11434", default_model="test")
+        llm_client = LLMClient(config)
+        engine = SummarizationEngine(llm_client)
+        
+        result = SearchResult(
+            title="Test Paper",
+            authors=["Author 1"],
+            year=2024,
+            abstract="Test abstract",
+            url="https://example.com/paper",
+            source="test"
+        )
+        
+        summary_result = SummarizationResult(
+            citation_key="test2024",
+            success=True,
+            summary_text="Main summary text",
+            claims_quotes_text="Claims and quotes text",
+            methods_tools_text="Methods and tools text",
+            input_chars=1000,
+            input_words=200,
+            output_words=50
+        )
+        
+        output_dir = tmp_path / "summaries"
+        saved_paths = engine.save_summary(result, summary_result, output_dir)
+        
+        # Should return list of 3 paths
+        assert len(saved_paths) == 3
+        assert any("test2024_summary.md" in str(p) for p in saved_paths)
+        assert any("test2024_claims_quotes.md" in str(p) for p in saved_paths)
+        assert any("test2024_methods_tools.md" in str(p) for p in saved_paths)
+        
+        # Verify files exist
+        summary_file = output_dir / "test2024_summary.md"
+        claims_file = output_dir / "test2024_claims_quotes.md"
+        methods_file = output_dir / "test2024_methods_tools.md"
+        
+        assert summary_file.exists()
+        assert claims_file.exists()
+        assert methods_file.exists()
+        
+        # Verify content
+        assert "Main summary text" in summary_file.read_text()
+        assert "Claims and quotes text" in claims_file.read_text()
+        assert "Methods and tools text" in methods_file.read_text()
+    
+    def test_save_summary_handles_missing_optional_fields(self, tmp_path):
+        """Test that save_summary handles missing claims_quotes_text or methods_tools_text."""
+        from infrastructure.llm.core.client import LLMClient
+        from infrastructure.llm.core.config import LLMConfig
+        
+        config = LLMConfig(base_url="http://localhost:11434", default_model="test")
+        llm_client = LLMClient(config)
+        engine = SummarizationEngine(llm_client)
+        
+        result = SearchResult(
+            title="Test Paper",
+            authors=["Author 1"],
+            year=2024,
+            abstract="Test abstract",
+            url="https://example.com/paper",
+            source="test"
+        )
+        
+        # Only summary_text, no optional fields
+        summary_result = SummarizationResult(
+            citation_key="test2024",
+            success=True,
+            summary_text="Main summary text",
+            claims_quotes_text=None,
+            methods_tools_text=None,
+            input_chars=1000,
+            input_words=200,
+            output_words=50
+        )
+        
+        output_dir = tmp_path / "summaries"
+        saved_paths = engine.save_summary(result, summary_result, output_dir)
+        
+        # Should only save summary file
+        assert len(saved_paths) == 1
+        assert any("test2024_summary.md" in str(p) for p in saved_paths)
+        
+        # Optional files should not exist
+        claims_file = output_dir / "test2024_claims_quotes.md"
+        methods_file = output_dir / "test2024_methods_tools.md"
+        
+        assert not claims_file.exists()
+        assert not methods_file.exists()
+    
+    def test_summarize_paper_performs_three_passes(self, tmp_path):
+        """Test that summarize_paper performs all three passes."""
+        from infrastructure.llm.core.client import LLMClient
+        from infrastructure.llm.core.config import LLMConfig
+        from infrastructure.literature.summarization.multi_stage_summarizer import MultiStageSummarizer
+        
+        config = LLMConfig(base_url="http://localhost:11434", default_model="test")
+        llm_client = LLMClient(config)
+        
+        # Create engine first
+        engine = SummarizationEngine(llm_client)
+        
+        # Mock the multi-stage summarizer
+        mock_summarizer = Mock(spec=MultiStageSummarizer)
+        validation_result = Mock()
+        validation_result.is_valid = True
+        validation_result.score = 0.9
+        validation_result.errors = []
+        validation_result.has_hard_failure = Mock(return_value=False)
+        mock_summarizer.summarize_with_refinement = Mock(return_value=(
+            "Main summary",
+            validation_result,
+            1
+        ))
+        engine.multi_stage_summarizer = mock_summarizer
+        
+        # Mock the extraction methods
+        engine._extract_claims_and_quotes = Mock(return_value="Claims and quotes")
+        engine._analyze_methods_and_tools = Mock(return_value="Methods and tools")
+        
+        # Create extracted text file in expected location
+        extracted_text_dir = Path("data/extracted_text")
+        extracted_text_dir.mkdir(parents=True, exist_ok=True)
+        extracted_text_file = extracted_text_dir / "test.txt"
+        pdf_text = "Full paper text here. " * 100  # Ensure enough text
+        extracted_text_file.write_text(pdf_text)
+        
+        # Mock text extraction
+        engine.text_extractor = Mock()
+        engine.text_extractor.load_extracted_text = Mock(return_value=pdf_text)
+        
+        # Mock context extraction
+        from infrastructure.literature.summarization.models import SummarizationContext
+        engine.context_extractor = Mock()
+        engine.context_extractor.create_summarization_context = Mock(return_value=SummarizationContext(
+            title="Test Paper",
+            abstract="Abstract",
+            introduction="Introduction",
+            conclusion="Conclusion",
+            key_terms=["test"],
+            equations=[],
+            full_text=pdf_text
+        ))
+        
+        result = SearchResult(
+            title="Test Paper",
+            authors=["Author 1"],
+            year=2024,
+            abstract="Test abstract",
+            url="https://example.com/paper",
+            source="test"
+        )
+        
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_text("Test PDF content")
+        
+        summary_result = engine.summarize_paper(result, pdf_path)
+        
+        # Verify all three passes were called
+        assert mock_summarizer.summarize_with_refinement.called, "Multi-stage summarizer should have been called"
+        assert engine._extract_claims_and_quotes.called, "Claims/quotes extraction should have been called"
+        assert engine._analyze_methods_and_tools.called, "Methods/tools analysis should have been called"
+        
+        # Verify result contains all three outputs
+        assert summary_result.summary_text == "Main summary"
+        assert summary_result.claims_quotes_text == "Claims and quotes"
+        assert summary_result.methods_tools_text == "Methods and tools"
+        
+        # Cleanup
+        if extracted_text_file.exists():
+            extracted_text_file.unlink()

@@ -1,11 +1,15 @@
 """Core logic for LLM module.
 
 Provides LLMClient for interacting with Ollama local LLMs with:
-- Multiple response modes (short, long, structured)
+- Multiple response modes (short, long, structured, raw)
 - Streaming and non-streaming queries
 - Per-query generation options
 - Context management with system prompt injection
 - Template support for research tasks
+
+Note: This class is cohesive - all methods work together and share state
+(config, context). The class is kept as a single file (1268 lines) due to
+tight coupling between query methods, streaming logic, and connection management.
 """
 from __future__ import annotations
 

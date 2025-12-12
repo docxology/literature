@@ -333,6 +333,8 @@ class DataAggregator:
         if entries is None:
             entries = self.aggregate_library_data()
         
+        logger.debug(f"Preparing text corpus from {len(entries)} entries...")
+        
         if extracted_text_dir is None:
             extracted_text_dir = Path("data/extracted_text")
         
@@ -342,10 +344,15 @@ class DataAggregator:
         abstracts: List[str] = []
         years: List[Optional[int]] = []
         
+        extracted_count = 0
+        abstract_fallback_count = 0
+        empty_count = 0
+        
         for entry in entries:
             citation_keys.append(entry.citation_key)
             titles.append(entry.title)
-            abstracts.append(entry.abstract if hasattr(entry, 'abstract') else "")
+            abstract = entry.abstract if hasattr(entry, 'abstract') else ""
+            abstracts.append(abstract)
             years.append(entry.year)
             
             # Try to load extracted text
@@ -354,12 +361,23 @@ class DataAggregator:
                 try:
                     text_content = text_file.read_text(encoding='utf-8')
                     texts.append(text_content)
+                    extracted_count += 1
                 except Exception as e:
                     logger.warning(f"Failed to read {text_file}: {e}")
-                    texts.append("")
+                    texts.append(abstract)
+                    abstract_fallback_count += 1
             else:
                 # Fallback to abstract if no extracted text
-                texts.append(entry.abstract if hasattr(entry, 'abstract') else "")
+                texts.append(abstract)
+                if abstract:
+                    abstract_fallback_count += 1
+                else:
+                    empty_count += 1
+        
+        logger.info(f"Text corpus prepared: {len(entries)} entries, "
+                   f"{extracted_count} with extracted text, "
+                   f"{abstract_fallback_count} using abstracts, "
+                   f"{empty_count} empty")
         
         return TextCorpus(
             citation_keys=citation_keys,

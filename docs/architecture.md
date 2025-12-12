@@ -29,6 +29,7 @@ The system is organized into logical, independent modules:
 - **Core**: Foundation utilities
 - **LLM**: Local LLM integration
 - **Literature**: Literature search and management
+- **Validation**: PDF validation and text extraction
 
 ## System Layers
 
@@ -44,6 +45,9 @@ The system is organized into logical, independent modules:
 │  ┌──────────┐  ┌──────────┐  ┌──────────────┐         │
 │  │   Core   │  │   LLM    │  │  Literature  │         │
 │  └──────────┘  └──────────┘  └──────────────┘         │
+│  ┌──────────┐                                          │
+│  │Validation│                                          │
+│  └──────────┘                                          │
 └─────────────────────────────────────────────────────────┘
                           │
                           ▼
@@ -83,15 +87,23 @@ Local LLM integration for research assistance:
 
 Literature search and management:
 - **Core**: LiteratureSearch main interface
-- **Sources**: API adapters (arXiv, Semantic Scholar, etc.)
+- **Sources**: API adapters (arXiv, Semantic Scholar, PubMed, CrossRef, OpenAlex, DBLP, bioRxiv, Europe PMC, Unpaywall)
 - **PDF**: PDF downloading and extraction
 - **Library**: Library indexing and BibTeX generation
 - **Summarization**: AI-powered paper summarization
 - **Meta-Analysis**: Analysis tools and visualizations
-- **Workflow**: Workflow orchestration
+- **Workflow**: Workflow orchestration with progress tracking
 - **Analysis**: Paper analysis and domain detection
 - **HTML Parsers**: Publisher-specific PDF URL extraction
-- **Reporting**: Comprehensive reporting
+- **Reporting**: Comprehensive reporting with multi-format export
+- **LLM Operations**: Advanced LLM operations for multi-paper synthesis
+
+### Validation Module (`infrastructure/validation/`)
+
+PDF validation and text extraction:
+- **PDF Text Extraction**: Multi-library support (pdfplumber, pypdf, PyPDF2)
+- **Automatic Fallback**: Tries libraries in order if one fails
+- **Error Handling**: Comprehensive error handling for PDF issues
 
 ## Data Flow
 
@@ -154,9 +166,11 @@ infrastructure/
 ├── core/          (no dependencies)
 ├── llm/
 │   └── depends on: core/
-└── literature/
-    ├── depends on: core/
-    └── depends on: llm/ (for summarization)
+├── literature/
+│   ├── depends on: core/
+│   ├── depends on: llm/ (for summarization)
+│   └── depends on: validation/ (for PDF text extraction)
+└── validation/    (no dependencies)
 ```
 
 ## Configuration Management
@@ -193,10 +207,17 @@ data/
 ├── library.json              # Paper metadata index
 ├── references.bib            # BibTeX bibliography
 ├── summarization_progress.json  # Progress tracking
+├── failed_downloads.json     # Failed download tracking
 ├── pdfs/                     # Downloaded PDFs
 ├── summaries/                # AI-generated summaries
 ├── extracted_text/           # Extracted PDF text
-└── output/                   # Meta-analysis outputs
+├── output/                   # Meta-analysis outputs
+└── llm_outputs/              # Advanced LLM operation results
+    ├── literature_reviews/
+    ├── science_communication/
+    ├── comparative_analysis/
+    ├── research_gaps/
+    └── citation_networks/
 ```
 
 ## Extension Points

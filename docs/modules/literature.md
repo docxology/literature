@@ -55,10 +55,50 @@ AI-powered summarization:
 ### Meta-Analysis (`meta_analysis/`)
 
 Analysis tools:
-- Temporal trends
-- Keyword evolution
-- PCA analysis
-- Visualizations
+- Temporal trends (publication year analysis)
+- Keyword evolution (keyword frequency over time)
+- PCA analysis (text feature extraction and clustering)
+- Metadata visualization (venue, author, citation distributions)
+- Graphical abstract generation
+
+### Workflow (`workflow/`)
+
+Workflow orchestration:
+- LiteratureWorkflow for multi-paper operations
+- Progress tracking with resumability
+- Search orchestrator
+- Operation modules (search, download, cleanup, meta-analysis, LLM operations)
+
+### Analysis (`analysis/`)
+
+Paper analysis tools:
+- PaperAnalyzer for structure/content analysis
+- DomainDetector for automatic domain detection
+- ContextBuilder for rich context generation
+
+### HTML Parsers (`html_parsers/`)
+
+Publisher-specific PDF URL extraction:
+- Elsevier, Springer, IEEE, ACM, Wiley parsers
+- Generic parser fallback
+- Modular parser system
+
+### Reporting (`reporting/`)
+
+Comprehensive reporting:
+- LiteratureReporter for multi-format export
+- JSON, CSV, HTML export formats
+- Library statistics and summaries
+
+### LLM Operations (`llm/`)
+
+Advanced LLM operations:
+- LiteratureLLMOperations for multi-paper synthesis
+- PaperSelector for configurable filtering
+- Literature review generation
+- Science communication narratives
+- Comparative analysis
+- Research gap identification
 
 ## Usage Examples
 
@@ -94,9 +134,75 @@ result = engine.summarize_paper(
 )
 ```
 
+### Workflow Operations
+
+```python
+from infrastructure.literature.workflow import LiteratureWorkflow
+
+workflow = LiteratureWorkflow()
+
+# Search and add papers
+result = workflow.search_and_add(
+    keywords=["active inference"],
+    limit=10
+)
+
+# Download PDFs
+download_result = workflow.download_pdfs()
+```
+
+### Meta-Analysis
+
+```python
+from infrastructure.literature.meta_analysis import (
+    DataAggregator,
+    create_publication_timeline_plot,
+    create_keyword_frequency_plot
+)
+
+# Create aggregator
+aggregator = DataAggregator()
+
+# Publication timeline
+create_publication_timeline_plot()
+
+# Keyword analysis
+keyword_data = extract_keywords_over_time()
+create_keyword_frequency_plot(keyword_data, top_n=20)
+```
+
+### LLM Operations
+
+```python
+from infrastructure.literature.llm import (
+    LiteratureLLMOperations,
+    PaperSelector
+)
+
+# Generate literature review
+operations = LiteratureLLMOperations()
+result = operations.generate_literature_review(
+    papers=selected_papers,
+    focus="methods"
+)
+```
+
+### Reporting
+
+```python
+from infrastructure.literature.reporting import LiteratureReporter
+
+reporter = LiteratureReporter()
+reporter.export_library_report(
+    output_dir=Path("output"),
+    formats=["json", "csv", "html"]
+)
+```
+
 ## See Also
 
 - **[Literature Module Documentation](../infrastructure/literature/AGENTS.md)** - Complete documentation
 - **[Searching Papers Guide](../guides/search-papers.md)** - Search guide
 - **[Summarizing Papers Guide](../guides/summarize-papers.md)** - Summarization guide
+- **[Meta-Analysis Guide](../guides/meta-analysis.md)** - Meta-analysis guide
 

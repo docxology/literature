@@ -4,6 +4,11 @@ This module provides high-level orchestration for literature search,
 download, and summarization workflows. It coordinates between different
 components while maintaining clean separation of concerns.
 
+The LiteratureWorkflow class is cohesive - all methods work together and share
+state (literature_search, summarizer, progress_tracker, failed_tracker).
+The class is kept as a single file (1202 lines) due to tight coupling between
+workflow stages.
+
 Classes:
     LiteratureWorkflow: Main workflow orchestrator
     WorkflowResult: Result container for workflow operations
@@ -1107,10 +1112,12 @@ class LiteratureWorkflow:
         # Save summary to disk if summary text exists (always save, even if validation failed)
         if summary_result.summary_text:
             try:
-                summary_path = self.summarizer.save_summary(
+                saved_paths = self.summarizer.save_summary(
                     result, summary_result, Path("data/summaries"), pdf_path=pdf_path
                 )
-                summary_result.summary_path = summary_path
+                # Set summary_path to the main summary file (first in list)
+                if saved_paths:
+                    summary_result.summary_path = saved_paths[0]
                 if not summary_result.success:
                     logger.info(f"[{citation_key}] Summary saved despite validation failure (quality score: {summary_result.quality_score:.2f})")
             except Exception as e:
@@ -1164,12 +1171,14 @@ class LiteratureWorkflow:
             # Always save if summary_text exists (even if validation failed)
             if summary_result.summary_text:
                 try:
-                    summary_path = self.summarizer.save_summary(
+                    saved_file_paths = self.summarizer.save_summary(
                         search_result, summary_result, output_dir, pdf_path=pdf_path
                     )
-                    saved_paths.append(summary_path)
+                    saved_paths.extend(saved_file_paths)
                     status = "Saved" if summary_result.success else "Saved (validation failed)"
-                    log_success(f"{status}: {summary_path.name}")
+                    # Log all saved files
+                    for path in saved_file_paths:
+                        log_success(f"{status}: {path.name}")
                 except Exception as e:
                     logger.error(f"Failed to save summary for {summary_result.citation_key}: {e}")
 

@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from infrastructure.literature.analysis.context_builder import ContextBuilder
+from infrastructure.literature.analysis.context_builder import ContextBuilder, PaperContext
 from infrastructure.literature.analysis.domain_detector import (
     DomainDetector,
     DomainDetectionResult,
@@ -183,17 +183,29 @@ class TestPaperAnalyzer:
 class TestContextBuilder:
     """Tests for ContextBuilder."""
 
-    def test_build_context(self, sample_library_entry, tmp_path):
+    def test_build_context(self, sample_search_result, tmp_path):
         """Test context building."""
         builder = ContextBuilder()
         pdf_path = tmp_path / "test.pdf"
-        pdf_path.write_bytes(b"fake pdf")
+        # Create a minimal valid PDF for testing
+        try:
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.pagesizes import letter
+            c = canvas.Canvas(str(pdf_path), pagesize=letter)
+            c.drawString(100, 750, sample_search_result.title)
+            c.drawString(100, 730, sample_search_result.abstract or "Test abstract")
+            c.save()
+        except ImportError:
+            # If reportlab not available, create minimal PDF bytes
+            pdf_path.write_bytes(b"%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n>>\nendobj\nxref\n0 1\ntrailer\n<<\n/Size 1\n/Root 1 0 R\n>>\nstartxref\n0\n%%EOF")
         
         try:
-            context = builder.build_context(sample_library_entry, pdf_path)
-            assert isinstance(context, dict)
-        except (AttributeError, ImportError, TypeError) as e:
+            context = builder.build_context(pdf_path, sample_search_result)
+            assert isinstance(context, PaperContext)
+            assert context.title == sample_search_result.title
+            assert context.citation_key is not None
+        except (AttributeError, ImportError, TypeError, ValueError) as e:
             # Skip if API has changed or dependencies unavailable
-            pytest.skip(f"build_context API may have changed: {e}")
+            pytest.skip(f"build_context API may have changed or dependencies unavailable: {e}")
 
 

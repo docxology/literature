@@ -14,7 +14,7 @@
 - Discussion: 78283 chars
 
 ## Key Terms
-theory, free, systems, applications, neuroscience, machine, learning, coding, principle, energy, predictive
+predictive, theory, principle, energy, machine, neuroscience, learning, free, coding, applications, systems
 
 ## Equations Found
 10 equations extracted

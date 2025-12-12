@@ -47,7 +47,7 @@ from infrastructure.literature.meta_analysis.pca import (
 
 @pytest.fixture
 def sample_entries():
-    """Create sample library entries for testing."""
+    """Create sample library entries for testing with longer abstracts for PCA."""
     return [
         LibraryEntry(
             citation_key="test2020a",
@@ -57,7 +57,14 @@ def sample_entries():
             doi="10.1234/test1",
             source="arxiv",
             url="https://example.com/1",
-            abstract="This paper discusses machine learning applications in physics research.",
+            abstract=(
+                "This paper discusses machine learning applications in physics research. "
+                "We present novel methods for analyzing physical systems using neural networks. "
+                "The approach combines deep learning techniques with traditional physics models. "
+                "Experimental results demonstrate significant improvements in prediction accuracy. "
+                "The methods are applicable to quantum mechanics, statistical physics, and cosmology. "
+                "We evaluate our approach on multiple benchmark datasets and show consistent performance."
+            ),
             venue="Journal of Physics",
             citation_count=50,
         ),
@@ -69,7 +76,14 @@ def sample_entries():
             doi="10.1234/test2",
             source="semanticscholar",
             url="https://example.com/2",
-            abstract="Deep learning methods for biological data analysis.",
+            abstract=(
+                "Deep learning methods for biological data analysis have shown remarkable success. "
+                "This paper explores convolutional neural networks for image classification in biology. "
+                "We apply transfer learning techniques to improve performance on small datasets. "
+                "The results show that deep learning can outperform traditional machine learning methods. "
+                "Applications include protein structure prediction, gene expression analysis, and medical imaging. "
+                "The methods are evaluated on multiple biological datasets with consistent improvements."
+            ),
             venue="Nature Biology",
             citation_count=100,
         ),
@@ -81,7 +95,14 @@ def sample_entries():
             doi="10.1234/test3",
             source="arxiv",
             url="https://example.com/3",
-            abstract="Neural networks and active inference in cognitive science.",
+            abstract=(
+                "Neural networks and active inference in cognitive science represent a new paradigm. "
+                "This paper combines machine learning with theoretical neuroscience to model brain function. "
+                "We present a framework that integrates predictive processing with deep learning architectures. "
+                "The approach enables better understanding of perception, action, and learning in biological systems. "
+                "Experimental validation shows that the model can reproduce key cognitive phenomena. "
+                "The work has implications for artificial intelligence and understanding of neural computation."
+            ),
             venue="Cognitive Science",
             citation_count=75,
         ),
@@ -361,16 +382,31 @@ class TestPCAAnalysis:
         """Test text feature extraction."""
         corpus = aggregator.prepare_text_corpus()
         if len(corpus.texts) > 0:
-            features, feature_names = extract_text_features(corpus)
+            features, feature_names, valid_indices = extract_text_features(corpus)
             assert features.shape[0] == len(corpus.texts)
             assert len(feature_names) > 0
+            assert len(valid_indices) == features.shape[0]
 
-    def test_compute_pca(self, aggregator):
+    def test_compute_pca(self, aggregator, tmp_path):
         """Test PCA computation."""
-        corpus = aggregator.prepare_text_corpus()
+        # Create extracted text files with more content to ensure enough features
+        extracted_dir = tmp_path / "extracted_text"
+        extracted_dir.mkdir(exist_ok=True)
+        
+        # Write extracted text files with shared vocabulary
+        texts = {
+            "test2020a": "machine learning physics neural networks deep learning algorithms data analysis optimization methods experimental results performance evaluation",
+            "test2021a": "deep learning biology neural networks machine learning algorithms data analysis biological systems experimental results performance evaluation",
+            "test2022a": "neural networks active inference cognitive science machine learning algorithms data analysis experimental results performance evaluation",
+        }
+        for key, text in texts.items():
+            (extracted_dir / f"{key}.txt").write_text(text)
+        
+        corpus = aggregator.prepare_text_corpus(extracted_text_dir=extracted_dir)
         if len(corpus.texts) > 0 and any(len(t) > 0 for t in corpus.texts):
             try:
-                features, _ = extract_text_features(corpus)
+                # Use lower min_df to ensure we get features from test data
+                features, _, _ = extract_text_features(corpus, min_df=1, max_features=50)
                 if features.shape[0] > 0 and features.shape[1] >= 2:
                     pca_data, pca_model = compute_pca(features, n_components=2)
                     # PCA may reduce components if fewer features available
@@ -379,16 +415,28 @@ class TestPCAAnalysis:
                     assert pca_model.n_components == expected_components
                 else:
                     pytest.skip(f"Not enough features for PCA: {features.shape[1]} features, need at least 2")
-            except (ValueError, ImportError):
+            except (ValueError, ImportError) as e:
                 # Skip if not enough features or sklearn not available
-                pytest.skip("Not enough features for PCA or sklearn not available")
+                pytest.skip(f"Not enough features for PCA or sklearn not available: {e}")
 
-    def test_cluster_papers(self, aggregator):
+    def test_cluster_papers(self, aggregator, tmp_path):
         """Test paper clustering."""
-        corpus = aggregator.prepare_text_corpus()
+        # Create extracted text files with more content
+        extracted_dir = tmp_path / "extracted_text"
+        extracted_dir.mkdir(exist_ok=True)
+        
+        texts = {
+            "test2020a": "machine learning physics neural networks deep learning algorithms data analysis",
+            "test2021a": "deep learning biology neural networks machine learning algorithms data analysis",
+            "test2022a": "neural networks active inference cognitive science machine learning algorithms data analysis",
+        }
+        for key, text in texts.items():
+            (extracted_dir / f"{key}.txt").write_text(text)
+        
+        corpus = aggregator.prepare_text_corpus(extracted_text_dir=extracted_dir)
         if len(corpus.texts) > 0 and any(len(t) > 0 for t in corpus.texts):
             try:
-                features, _ = extract_text_features(corpus)
+                features, _, _ = extract_text_features(corpus, min_df=1, max_features=50)
                 if features.shape[0] >= 2 and features.shape[1] >= 2:
                     pca_data, _ = compute_pca(features, n_components=2)
                     labels = cluster_papers(pca_data, n_clusters=min(2, len(corpus.texts)))
@@ -401,7 +449,19 @@ class TestPCAAnalysis:
     @patch("infrastructure.literature.meta_analysis.pca.save_plot")
     def test_create_pca_2d_plot(self, mock_save, aggregator, tmp_path):
         """Test 2D PCA plot creation."""
-        corpus = aggregator.prepare_text_corpus()
+        # Create extracted text files
+        extracted_dir = tmp_path / "extracted_text"
+        extracted_dir.mkdir(exist_ok=True)
+        
+        texts = {
+            "test2020a": "machine learning physics neural networks deep learning algorithms",
+            "test2021a": "deep learning biology neural networks machine learning algorithms",
+            "test2022a": "neural networks active inference cognitive science machine learning",
+        }
+        for key, text in texts.items():
+            (extracted_dir / f"{key}.txt").write_text(text)
+        
+        corpus = aggregator.prepare_text_corpus(extracted_text_dir=extracted_dir)
         output_path = tmp_path / "pca_2d.png"
         mock_save.return_value = output_path
         if len(corpus.texts) > 0 and any(len(t) > 0 for t in corpus.texts):
@@ -444,6 +504,18 @@ class TestPCALoadingsVisualizations:
     
     def test_create_loadings_visualizations(self, aggregator, tmp_path):
         """Test loadings visualizations creation."""
+        # Create extracted text files
+        extracted_dir = tmp_path / "extracted_text"
+        extracted_dir.mkdir(exist_ok=True)
+        
+        texts = {
+            "test2020a": "machine learning physics neural networks deep learning algorithms data analysis optimization",
+            "test2021a": "deep learning biology neural networks machine learning algorithms data analysis biological systems",
+            "test2022a": "neural networks active inference cognitive science machine learning algorithms data analysis experimental",
+        }
+        for key, text in texts.items():
+            (extracted_dir / f"{key}.txt").write_text(text)
+        
         try:
             from infrastructure.literature.meta_analysis.pca_loadings import create_loadings_visualizations
             
@@ -459,8 +531,8 @@ class TestPCALoadingsVisualizations:
             # May be empty if scikit-learn not available or insufficient data
         except ImportError:
             pytest.skip("scikit-learn not available")
-        except (ValueError, IndexError):
-            pytest.skip("Insufficient data for loadings visualization")
+        except (ValueError, IndexError) as e:
+            pytest.skip(f"Insufficient data for loadings visualization: {e}")
 
 
 class TestGraphicalAbstract:

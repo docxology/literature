@@ -59,6 +59,35 @@ Literature search and management functionality.
 
 **See:** [Literature Module Documentation](../infrastructure/literature/AGENTS.md)
 
+## Validation Module
+
+PDF validation and text extraction utilities.
+
+**Key Components:**
+- PDF text extraction with multi-library support
+- Automatic fallback between PDF parsing libraries
+- Error handling for PDF issues
+
+**See:** [Validation Module Documentation](../infrastructure/validation/AGENTS.md)
+
+## Module Dependencies
+
+The infrastructure layer follows a clear dependency hierarchy:
+
+```
+infrastructure/
+├── core/          # No dependencies (foundation layer)
+├── llm/           # Depends on: core/
+├── literature/    # Depends on: core/, llm/ (for summarization)
+└── validation/    # No dependencies (standalone utility)
+```
+
+**Dependency Rules:**
+- **Core**: Foundation utilities with no external dependencies
+- **LLM**: Depends only on core for logging, exceptions, configuration
+- **Literature**: Depends on core and llm (for summarization features)
+- **Validation**: Standalone utility with no infrastructure dependencies
+
 ## Usage
 
 ### Importing Modules
@@ -75,7 +104,18 @@ from infrastructure.literature import (
     LiteratureSearch,
     LiteratureConfig
 )
+
+# Validation
+from infrastructure.validation import extract_text_from_pdf
 ```
+
+## Module Boundaries
+
+Each module is designed to be:
+- **Self-contained**: All functionality within module boundaries
+- **Well-defined APIs**: Clear public interfaces via `__init__.py` exports
+- **Independent testing**: Each module has its own test suite
+- **Documented**: Complete AGENTS.md and README.md for each module
 
 ## Configuration
 
@@ -86,4 +126,8 @@ All modules support environment variable configuration. See [Configuration Guide
 - **[Getting Started](../getting-started.md)** - Quick start guide
 - **[Architecture Overview](../architecture.md)** - System architecture
 - **[API Reference](../reference/api-reference.md)** - Complete API documentation
+- **[Core Module](core.md)** - Foundation utilities
+- **[LLM Module](llm.md)** - Local LLM integration
+- **[Literature Module](literature.md)** - Literature search and management
+- **[Validation Module](validation.md)** - PDF validation and text extraction
 

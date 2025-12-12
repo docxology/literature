@@ -401,3 +401,236 @@ REQUIREMENTS:
 
 Begin your citation network analysis:"""
 
+
+class ClaimsQuotesExtraction(ResearchTemplate):
+    """Template for extracting key claims and important quotes from research papers.
+    
+    Identifies main claims, hypotheses, findings, and extracts important direct quotes
+    with proper context and attribution.
+    """
+    template_str = """=== PAPER CONTENT ===
+
+Title: ${title}
+Authors: ${authors}
+Year: ${year}
+Source: ${source}
+
+PAPER TEXT:
+${text}
+
+=== END PAPER CONTENT ===
+
+TASK: Extract key claims, hypotheses, findings, and important direct quotes from this research paper.
+
+REQUIREMENTS:
+
+1. KEY CLAIMS AND HYPOTHESES:
+   - Identify the main claims the paper makes (what does it claim to show or prove?)
+   - Extract the primary hypotheses or research questions
+   - List the key findings and conclusions
+   - Include claims about methodology, results, or theoretical contributions
+   - Format each claim clearly with context
+
+2. IMPORTANT DIRECT QUOTES:
+   - Extract 5-10 of the most important direct quotes from the paper
+   - Include quotes that:
+     * State key findings or results
+     * Express main hypotheses or claims
+     * Provide critical methodological insights
+     * Summarize key contributions
+     * Present important conclusions
+   - For each quote, provide:
+     * The exact quote text in quotation marks
+     * Context about where it appears (section name if available)
+     * Brief explanation of why it's important
+
+3. STRUCTURE YOUR OUTPUT AS:
+   ## Key Claims and Hypotheses
+   [List of main claims, one per bullet point or numbered item]
+   
+   ## Important Quotes
+   [For each quote:]
+   **Quote:** "[exact quote text]"
+   **Context:** [section or location where quote appears]
+   **Significance:** [why this quote is important]
+
+4. ACCURACY REQUIREMENTS:
+   - ONLY extract quotes that appear verbatim in the paper text
+   - Do NOT paraphrase or modify quotes
+   - Do NOT invent claims not present in the paper
+   - Include section references when possible (e.g., "Introduction", "Results", "Discussion")
+   - If you cannot find a specific claim or quote, do not include it
+
+5. COMPREHENSIVENESS:
+   - Aim to extract 5-15 key claims
+   - Include 5-10 important quotes
+   - Cover all major aspects: methodology, results, conclusions, contributions
+   - Prioritize claims and quotes that are central to the paper's contribution
+
+6. FORMATTING:
+   - Use clear markdown structure
+   - Use quotation marks for all direct quotes
+   - Use bullet points or numbered lists for claims
+   - Maintain academic tone
+
+Begin extracting claims and quotes now:"""
+
+    def render(
+        self,
+        title: str,
+        authors: str,
+        year: str,
+        source: str,
+        text: str
+    ) -> str:
+        """Render template for claims and quotes extraction.
+        
+        Args:
+            title: Paper title.
+            authors: Author names.
+            year: Publication year.
+            source: Source database.
+            text: Paper text content.
+            
+        Returns:
+            Rendered prompt string.
+        """
+        return self.template_str.replace("${title}", title).replace(
+            "${authors}", authors
+        ).replace("${year}", year).replace("${source}", source).replace("${text}", text)
+
+
+class MethodsToolsAnalysis(ResearchTemplate):
+    """Template for analyzing methods, algorithms, frameworks, datasets, and tools used in research papers.
+    
+    Extracts detailed information about:
+    - Algorithms and methodologies
+    - Software frameworks and libraries
+    - Datasets employed
+    - Evaluation metrics
+    - Software tools and platforms
+    """
+    template_str = """=== PAPER CONTENT ===
+
+Title: ${title}
+Authors: ${authors}
+Year: ${year}
+Source: ${source}
+
+PAPER TEXT:
+${text}
+
+=== END PAPER CONTENT ===
+
+TASK: Analyze and extract detailed information about the methods, algorithms, frameworks, datasets, evaluation metrics, and software tools used in this research paper.
+
+REQUIREMENTS:
+
+1. ALGORITHMS AND METHODOLOGIES:
+   - Identify all algorithms mentioned (e.g., gradient descent, active inference, PCA, etc.)
+   - Document the specific methodology or approach used
+   - Include algorithmic details: steps, parameters, configurations
+   - Note any novel algorithms or modifications to existing ones
+   - Include mathematical formulations if central to the method
+
+2. SOFTWARE FRAMEWORKS AND LIBRARIES:
+   - Extract all software frameworks mentioned (e.g., PyTorch, TensorFlow, JAX, scikit-learn, etc.)
+   - List programming languages used (Python, MATLAB, R, etc.)
+   - Identify libraries and packages (NumPy, Pandas, etc.)
+   - Note any custom implementations or code repositories mentioned
+   - Include version numbers if specified
+
+3. DATASETS:
+   - List all datasets used (e.g., ImageNet, CIFAR-10, UCI datasets, etc.)
+   - Include dataset characteristics: size, number of samples, features
+   - Note any custom or proprietary datasets
+   - Document data preprocessing steps if mentioned
+   - Include data sources or repositories
+
+4. EVALUATION METRICS:
+   - Extract all metrics used for evaluation (accuracy, F1-score, precision, recall, MSE, etc.)
+   - Include statistical tests (t-tests, ANOVA, etc.) and significance levels
+   - Note baseline comparisons and benchmarks
+   - Document performance measures and their values
+   - Include any custom metrics defined in the paper
+
+5. SOFTWARE TOOLS AND PLATFORMS:
+   - Identify software tools used (MATLAB, SPSS, R, etc.)
+   - List platforms or environments (Google Colab, AWS, local clusters, etc.)
+   - Note hardware specifications if mentioned (GPUs, CPUs, memory)
+   - Include any simulation tools or software packages
+   - Document computational resources used
+
+6. STRUCTURE YOUR OUTPUT AS:
+   ## Algorithms and Methodologies
+   [List of algorithms with descriptions]
+   
+   ## Software Frameworks and Libraries
+   [List of frameworks, languages, and libraries]
+   
+   ## Datasets
+   [List of datasets with characteristics]
+   
+   ## Evaluation Metrics
+   [List of metrics and evaluation methods]
+   
+   ## Software Tools and Platforms
+   [List of tools, platforms, and computational resources]
+
+7. CRITICAL ACCURACY REQUIREMENTS - NO SPECULATION ALLOWED:
+   - ONLY include information EXPLICITLY STATED in the paper text
+   - NEVER use words like: "implied", "likely", "potentially", "not explicitly mentioned but", "probably", "may have been used", "suggested", "inferred", "assumed"
+   - NEVER guess or infer tools, frameworks, datasets, or methods based on context or prior knowledge
+   - If a tool/framework/dataset is not EXPLICITLY NAMED in the paper, DO NOT include it
+   - For each item you list, provide the EXACT QUOTE or specific text from the paper that mentions it
+   - Example format: "PyTorch (version 1.8.0)" - ONLY if the paper explicitly states "PyTorch version 1.8.0"
+   - If you cannot find explicit mention, write: "Not specified in paper" rather than guessing
+   - Include specific names, versions, and details ONLY when explicitly stated in the paper
+   - Be precise with technical terminology - use exact terms from the paper
+
+8. COMPREHENSIVENESS:
+   - Extract ALL relevant tools, frameworks, datasets, and methods that are EXPLICITLY MENTIONED
+   - Include both standard and custom solutions that are EXPLICITLY NAMED
+   - Cover all aspects: algorithms, software, data, evaluation, hardware - but ONLY if explicitly stated
+   - Prioritize items that are central to reproducing the research
+   - If a section has no explicit mentions, state "Not specified in paper" for that section
+
+9. FORMATTING:
+   - Use clear markdown structure with sections
+   - Use bullet points or numbered lists within sections
+   - Include specific details (versions, sizes, names) ONLY when explicitly stated in the paper
+   - Maintain technical accuracy - quote exact text from the paper when possible
+   - Format: For each item, include the exact quote or specific text that mentions it
+
+10. VERIFICATION:
+    - Before listing any item, verify it appears explicitly in the paper text
+    - If you're unsure whether something is explicitly stated, DO NOT include it
+    - When in doubt, exclude rather than speculate
+    - Every item must have a clear, explicit mention in the paper text
+
+Begin analyzing methods and tools now. Remember: ONLY explicit mentions, NO speculation, NO implied information:"""
+
+    def render(
+        self,
+        title: str,
+        authors: str,
+        year: str,
+        source: str,
+        text: str
+    ) -> str:
+        """Render template for methods and tools analysis.
+        
+        Args:
+            title: Paper title.
+            authors: Author names.
+            year: Publication year.
+            source: Source database.
+            text: Paper text content.
+            
+        Returns:
+            Rendered prompt string.
+        """
+        return self.template_str.replace("${title}", title).replace(
+            "${authors}", authors
+        ).replace("${year}", year).replace("${source}", source).replace("${text}", text)
+

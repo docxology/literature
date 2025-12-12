@@ -358,7 +358,32 @@ def plot_pca_2d(
         
     Returns:
         Matplotlib figure.
+        
+    Raises:
+        ValueError: If array sizes don't match.
     """
+    # Validate array sizes
+    n_samples = len(pca_data)
+    if len(titles) != n_samples:
+        raise ValueError(
+            f"Array size mismatch in plot_pca_2d: pca_data has {n_samples} samples, "
+            f"but titles has {len(titles)} entries"
+        )
+    if len(years) != n_samples:
+        raise ValueError(
+            f"Array size mismatch in plot_pca_2d: pca_data has {n_samples} samples, "
+            f"but years has {len(years)} entries"
+        )
+    if cluster_labels is not None and len(cluster_labels) != n_samples:
+        raise ValueError(
+            f"Array size mismatch in plot_pca_2d: pca_data has {n_samples} samples, "
+            f"but cluster_labels has {len(cluster_labels)} entries"
+        )
+    
+    logger.debug(f"Creating PCA 2D plot: {n_samples} samples, "
+                f"{len(titles)} titles, {len(years)} years, "
+                f"clusters={'yes' if cluster_labels is not None else 'no'}")
+    
     fig, ax = plt.subplots(figsize=(16, 12))  # Increased for better legend spacing
     
     # Prepare year data for continuous coloring
@@ -368,6 +393,8 @@ def plot_pca_2d(
         if valid_years:
             min_year = min(valid_years)
             years_array = np.array([y if y is not None else min_year for y in years])
+            logger.debug(f"Year coloring: range {years_array.min()}-{years_array.max()}, "
+                        f"{len(valid_years)} valid years out of {len(years)}")
     
     # Marker shapes for clusters (colorblind-friendly)
     marker_map = ['o', 's', '^', 'D', 'v', 'p', '*', 'h', 'X', 'P', '<', '>']
@@ -501,7 +528,32 @@ def plot_pca_3d(
         
     Returns:
         Matplotlib figure.
+        
+    Raises:
+        ValueError: If array sizes don't match.
     """
+    # Validate array sizes
+    n_samples = len(pca_data)
+    if len(titles) != n_samples:
+        raise ValueError(
+            f"Array size mismatch in plot_pca_3d: pca_data has {n_samples} samples, "
+            f"but titles has {len(titles)} entries"
+        )
+    if len(years) != n_samples:
+        raise ValueError(
+            f"Array size mismatch in plot_pca_3d: pca_data has {n_samples} samples, "
+            f"but years has {len(years)} entries"
+        )
+    if cluster_labels is not None and len(cluster_labels) != n_samples:
+        raise ValueError(
+            f"Array size mismatch in plot_pca_3d: pca_data has {n_samples} samples, "
+            f"but cluster_labels has {len(cluster_labels)} entries"
+        )
+    
+    logger.debug(f"Creating PCA 3D plot: {n_samples} samples, "
+                f"{len(titles)} titles, {len(years)} years, "
+                f"clusters={'yes' if cluster_labels is not None else 'no'}")
+    
     from mpl_toolkits.mplot3d import Axes3D
     
     fig = plt.figure(figsize=(16, 12))
@@ -514,6 +566,8 @@ def plot_pca_3d(
         if valid_years:
             min_year = min(valid_years)
             years_array = np.array([y if y is not None else min_year for y in years])
+            logger.debug(f"Year coloring: range {years_array.min()}-{years_array.max()}, "
+                        f"{len(valid_years)} valid years out of {len(years)}")
     
     # Marker shapes for clusters (colorblind-friendly)
     marker_map = ['o', 's', '^', 'D', 'v', 'p', '*', 'h', 'X', 'P', '<', '>']
@@ -1055,6 +1109,201 @@ def plot_metadata_completeness(
     
     # Add vertical line at 100%
     ax.axvline(100, color='#1B4F72', linestyle=':', linewidth=1.5, alpha=0.5)
+    
+    plt.xticks(fontsize=FONT_SIZE_LABELS - 2)
+    plt.yticks(fontsize=FONT_SIZE_LABELS - 2)
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_author_collaboration_network(
+    author_pairs: List[Tuple[str, str, int]],
+    top_n: int = 50,
+    title: str = "Author Collaboration Network"
+) -> plt.Figure:
+    """Plot author collaboration network graph.
+    
+    Shows co-authorship relationships as a network graph.
+    
+    Args:
+        author_pairs: List of (author1, author2, count) tuples.
+        top_n: Number of top collaborations to display.
+        title: Plot title.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    try:
+        import networkx as nx
+        NETWORKX_AVAILABLE = True
+    except ImportError:
+        NETWORKX_AVAILABLE = False
+        logger.warning("networkx not available, creating simplified collaboration visualization")
+    
+    fig, ax = plt.subplots(figsize=(16, 12))
+    
+    if not NETWORKX_AVAILABLE or not author_pairs:
+        # Fallback: simple bar chart
+        if author_pairs:
+            sorted_pairs = sorted(author_pairs, key=lambda x: x[2], reverse=True)[:top_n]
+            pair_labels = [f"{a1} & {a2}" for a1, a2, _ in sorted_pairs]
+            counts = [c for _, _, c in sorted_pairs]
+            
+            y_pos = np.arange(len(pair_labels))
+            ax.barh(y_pos, counts, alpha=0.8, color='#2E86AB', edgecolor='#1B4F72', linewidth=EDGE_WIDTH)
+            ax.set_yticks(y_pos)
+            ax.set_yticklabels(pair_labels, fontsize=FONT_SIZE_LABELS - 3)
+            ax.set_xlabel('Number of Collaborations', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+            ax.set_ylabel('Author Pairs', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+            ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+            ax.grid(True, alpha=GRID_ALPHA, axis='x', linestyle='--')
+        else:
+            ax.text(0.5, 0.5, 'No collaboration data available', ha='center', va='center',
+                   fontsize=FONT_SIZE_LABELS)
+            ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        
+        plt.tight_layout()
+        return fig
+    
+    # Create network graph
+    G = nx.Graph()
+    
+    # Add edges with weights
+    sorted_pairs = sorted(author_pairs, key=lambda x: x[2], reverse=True)[:top_n]
+    for author1, author2, count in sorted_pairs:
+        if G.has_edge(author1, author2):
+            G[author1][author2]['weight'] += count
+        else:
+            G.add_edge(author1, author2, weight=count)
+    
+    if len(G.nodes()) == 0:
+        ax.text(0.5, 0.5, 'No collaboration network data available', ha='center', va='center',
+               fontsize=FONT_SIZE_LABELS)
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        plt.tight_layout()
+        return fig
+    
+    # Layout
+    pos = nx.spring_layout(G, k=1, iterations=50, seed=42)
+    
+    # Draw network
+    node_sizes = [G.degree(node) * 300 for node in G.nodes()]
+    edge_widths = [G[u][v]['weight'] * 0.5 for u, v in G.edges()]
+    
+    nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color='#2E86AB',
+                          alpha=0.8, ax=ax)
+    nx.draw_networkx_edges(G, pos, width=edge_widths, alpha=0.5, edge_color='#1B4F72', ax=ax)
+    nx.draw_networkx_labels(G, pos, font_size=8, font_weight='bold', ax=ax)
+    
+    ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    ax.axis('off')
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_source_distribution(
+    sources: Dict[str, int],
+    title: str = "Source Distribution"
+) -> plt.Figure:
+    """Plot source distribution as pie chart.
+    
+    Shows the distribution of papers across different sources.
+    
+    Args:
+        sources: Dictionary mapping source names to counts.
+        title: Plot title.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    if not sources:
+        fig, ax = plt.subplots(figsize=(10, 8))
+        ax.text(0.5, 0.5, 'No source data available', ha='center', va='center',
+               fontsize=FONT_SIZE_LABELS)
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        return fig
+    
+    # Sort by count
+    sorted_sources = sorted(sources.items(), key=lambda x: x[1], reverse=True)
+    source_names = [s[0] for s in sorted_sources]
+    counts = [s[1] for s in sorted_sources]
+    
+    fig, ax = plt.subplots(figsize=(12, 10))
+    
+    # Use colorblind-friendly colormap
+    try:
+        cmap = plt.colormaps.get_cmap(COLORMAP_CATEGORICAL)
+    except AttributeError:
+        cmap = plt.get_cmap(COLORMAP_CATEGORICAL)
+    colors = cmap(np.linspace(0, 1, len(source_names)))
+    
+    # Create pie chart
+    wedges, texts, autotexts = ax.pie(
+        counts, labels=source_names, autopct='%1.1f%%',
+        colors=colors, startangle=90, textprops={'fontsize': FONT_SIZE_LABELS - 2}
+    )
+    
+    # Enhance text visibility
+    for autotext in autotexts:
+        autotext.set_color('white')
+        autotext.set_fontweight('bold')
+        autotext.set_fontsize(FONT_SIZE_LEGEND - 1)
+    
+    ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_topic_evolution(
+    topic_data: Dict[str, List[Tuple[int, float]]],
+    title: str = "Topic Evolution Over Time"
+) -> plt.Figure:
+    """Plot topic evolution over time.
+    
+    Shows how different topics (keywords/themes) evolve over years.
+    
+    Args:
+        topic_data: Dictionary mapping topic names to list of (year, frequency) tuples.
+        title: Plot title.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    if not topic_data:
+        fig, ax = plt.subplots(figsize=(14, 8))
+        ax.text(0.5, 0.5, 'No topic evolution data available', ha='center', va='center',
+               fontsize=FONT_SIZE_LABELS)
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        return fig
+    
+    fig, ax = plt.subplots(figsize=(16, 10))
+    
+    # Use colorblind-friendly colormap
+    try:
+        cmap = plt.colormaps.get_cmap(COLORMAP_CATEGORICAL)
+    except AttributeError:
+        cmap = plt.get_cmap(COLORMAP_CATEGORICAL)
+    colors = cmap(np.linspace(0, 1, len(topic_data)))
+    markers = ['o', 's', '^', 'D', 'v', 'p', '*', 'h', 'X', 'P', '<', '>']
+    
+    for i, (topic, data) in enumerate(topic_data.items()):
+        if data:
+            years = [d[0] for d in data]
+            frequencies = [d[1] for d in data]
+            marker = markers[i % len(markers)]
+            
+            ax.plot(years, frequencies, marker=marker, label=topic, linewidth=2.5,
+                   markersize=8, color=colors[i], alpha=0.8)
+    
+    ax.set_xlabel('Year', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_ylabel('Frequency', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=FONT_SIZE_LEGEND,
+             framealpha=0.9, title='Topics', title_fontsize=FONT_SIZE_LEGEND + 1)
+    ax.grid(True, alpha=GRID_ALPHA, linestyle='--')
     
     plt.xticks(fontsize=FONT_SIZE_LABELS - 2)
     plt.yticks(fontsize=FONT_SIZE_LABELS - 2)

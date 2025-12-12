@@ -19,7 +19,7 @@ This module follows the **thin orchestrator pattern** with clear separation of c
 ```
 infrastructure/llm/
 ├── core/              # Core LLM functionality
-│   ├── client.py      # LLMClient main interface
+│   ├── client.py      # LLMClient main interface (cohesive class, kept as single file)
 │   ├── config.py      # LLMConfig, GenerationOptions
 │   └── context.py     # ConversationContext, Message
 ├── templates/         # Prompt templates

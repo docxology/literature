@@ -13,6 +13,7 @@ Welcome to the comprehensive documentation for the Literature Search and Managem
 - **[Core Module](modules/core.md)** - Foundation utilities
 - **[LLM Module](modules/llm.md)** - Local LLM integration
 - **[Literature Module](modules/literature.md)** - Literature search and management
+- **[Validation Module](modules/validation.md)** - PDF validation and text extraction
 
 ### Guides
 - **[Searching Papers](guides/search-papers.md)** - How to search for papers
@@ -46,6 +47,7 @@ Welcome to the comprehensive documentation for the Literature Search and Managem
 - **Core Utilities** → [Core Module](modules/core.md)
 - **LLM Integration** → [LLM Module](modules/llm.md)
 - **Literature Search** → [Literature Module](modules/literature.md)
+- **Validation** → [Validation Module](modules/validation.md)
 
 ## Getting Help
 

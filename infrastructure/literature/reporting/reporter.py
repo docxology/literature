@@ -236,7 +236,8 @@ class LiteratureReporter:
                     summary_result.output_words if summary_result else "",
                     f"{summary_result.compression_ratio:.2f}" if summary_result else "",
                     f"{summary_result.words_per_second:.2f}" if summary_result else "",
-                    summary_result.error or (download_result.failure_message if download_result and not download_result.success else "")
+                    (summary_result.error if summary_result and hasattr(summary_result, 'error') else None) or 
+                    (getattr(download_result, 'failure_message', None) if download_result and not download_result.success else "") or ""
                 ])
         
         logger.info(f"Generated CSV report: {output_path}")

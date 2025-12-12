@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
 from infrastructure.core.logging_utils import get_logger
 from infrastructure.core.exceptions import LLMConnectionError, FileOperationError, ContextLimitError
@@ -23,6 +23,7 @@ from infrastructure.literature.summarization.validator import SummaryQualityVali
 from infrastructure.literature.summarization.pdf_processor import PDFProcessor, PrioritizedPDFText
 from infrastructure.literature.summarization.extractor import TextExtractor
 from infrastructure.literature.summarization.utils import detect_model_size
+from infrastructure.literature.summarization.chunker import PDFChunker
 
 if TYPE_CHECKING:
     from infrastructure.llm.core.client import LLMClient
@@ -624,11 +625,43 @@ class SummarizationEngine:
                 f"below threshold (0.5) - will still be saved"
             )
         
+        # Pass 2: Extract key claims and quotes
+        logger.info(f"[{citation_key}] Starting Pass 2: Claims and quotes extraction")
+        claims_quotes_text = None
+        try:
+            claims_quotes_text = self._extract_claims_and_quotes(
+                pdf_text=pdf_text,
+                result=result,
+                citation_key=citation_key,
+                progress_callback=progress_callback
+            )
+            logger.info(f"[{citation_key}] Pass 2 completed: claims/quotes extraction")
+        except Exception as e:
+            logger.warning(f"[{citation_key}] Pass 2 (claims/quotes) failed: {e}")
+            claims_quotes_text = f"## Key Claims and Hypotheses\n\nExtraction failed: {e}\n\n## Important Quotes\n\nExtraction failed."
+        
+        # Pass 3: Analyze methods and tools
+        logger.info(f"[{citation_key}] Starting Pass 3: Methods and tools analysis")
+        methods_tools_text = None
+        try:
+            methods_tools_text = self._analyze_methods_and_tools(
+                pdf_text=pdf_text,
+                result=result,
+                citation_key=citation_key,
+                progress_callback=progress_callback
+            )
+            logger.info(f"[{citation_key}] Pass 3 completed: methods/tools analysis")
+        except Exception as e:
+            logger.warning(f"[{citation_key}] Pass 3 (methods/tools) failed: {e}")
+            methods_tools_text = f"## Algorithms and Methodologies\n\nAnalysis failed: {e}\n\n## Software Frameworks and Libraries\n\nAnalysis failed.\n\n## Datasets\n\nAnalysis failed.\n\n## Evaluation Metrics\n\nAnalysis failed.\n\n## Software Tools and Platforms\n\nAnalysis failed."
+        
         # Always include summary_text even when validation fails (for saving)
         return SummarizationResult(
             citation_key=citation_key,
             success=success,
             summary_text=summary,  # Always include summary for saving
+            claims_quotes_text=claims_quotes_text,
+            methods_tools_text=methods_tools_text,
             input_chars=input_chars,
             input_words=input_words,
             output_words=output_words,
@@ -1042,21 +1075,601 @@ class SummarizationEngine:
             min_content_preservation=0.6
         )
     
+    def _extract_claims_and_quotes(
+        self,
+        pdf_text: str,
+        result: SearchResult,
+        citation_key: str,
+        progress_callback: Optional[Callable[[SummarizationProgressEvent], None]] = None
+    ) -> str:
+        """Extract key claims and important quotes from paper.
+        
+        Uses LLM to identify:
+        - Main claims and hypotheses
+        - Important direct quotes
+        - Key findings and conclusions
+        
+        For large papers, uses chunking to process the paper in sections.
+        
+        Args:
+            pdf_text: Full PDF text content.
+            result: Search result with paper metadata.
+            citation_key: Citation key for logging.
+            progress_callback: Optional callback for progress events.
+            
+        Returns:
+            Markdown-formatted text with claims and quotes.
+        """
+        from infrastructure.llm.templates.research import ClaimsQuotesExtraction
+        from infrastructure.llm.core.config import GenerationOptions
+        
+        # Helper function to emit progress events
+        def emit_progress(stage: str, status: str, message: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None):
+            if progress_callback:
+                event = SummarizationProgressEvent(
+                    citation_key=citation_key,
+                    stage=stage,
+                    status=status,
+                    message=message,
+                    metadata=metadata or {}
+                )
+                progress_callback(event)
+        
+        emit_progress("claims_extraction", "started", f"Extracting claims and quotes for {citation_key}")
+        
+        # Clear context before extraction
+        logger.info(f"[{citation_key}] Clearing LLM context before claims/quotes extraction")
+        self.llm_client.context.clear()
+        
+        # Check if paper fits in context
+        # Estimate tokens: prompt template overhead (~2000 tokens) + paper text
+        template = ClaimsQuotesExtraction()
+        sample_prompt = template.render(
+            title=result.title,
+            authors=', '.join(result.authors) if result.authors else 'Unknown',
+            year=str(result.year) if result.year else 'Unknown',
+            source=result.source or 'unknown',
+            text=pdf_text[:1000]  # Sample for estimation
+        )
+        estimated_prompt_tokens = len(sample_prompt) // 4
+        paper_tokens = len(pdf_text) // 4
+        total_estimated = estimated_prompt_tokens + paper_tokens
+        
+        # Get available context (with 20% reserve for response)
+        available_tokens = self.llm_client.context.estimate_available_tokens(reserve_percent=0.2)
+        
+        # Determine if we need chunking
+        use_chunking = total_estimated > available_tokens
+        
+        if use_chunking:
+            logger.info(
+                f"[{citation_key}] Paper text ({paper_tokens:,} tokens) exceeds context limit "
+                f"({available_tokens:,} available). Using chunking mode..."
+            )
+            return self._extract_claims_and_quotes_chunked(
+                pdf_text, result, citation_key, progress_callback, emit_progress
+            )
+        
+        # Single-pass extraction for papers that fit in context
+        logger.info(f"[{citation_key}] Paper fits in context ({paper_tokens:,} tokens <= {available_tokens:,} available). Using single-pass mode...")
+        
+        # Build full prompt
+        prompt = template.render(
+            title=result.title,
+            authors=', '.join(result.authors) if result.authors else 'Unknown',
+            year=str(result.year) if result.year else 'Unknown',
+            source=result.source or 'unknown',
+            text=pdf_text
+        )
+        
+        # Generate extraction with appropriate options
+        options = GenerationOptions(
+            temperature=0.3,  # Lower temperature for more focused extraction
+            max_tokens=3000,  # Allow for comprehensive extraction
+        )
+        
+        try:
+            extraction_start = time.time()
+            claims_quotes = self.llm_client.query(prompt, options=options, reset_context=True)
+            extraction_time = time.time() - extraction_start
+            
+            # Clean up the response
+            claims_quotes = claims_quotes.strip()
+            
+            if not claims_quotes:
+                logger.warning(f"[{citation_key}] Empty claims/quotes extraction result")
+                return "## Key Claims and Hypotheses\n\nNo claims extracted.\n\n## Important Quotes\n\nNo quotes extracted."
+            
+            words = len(claims_quotes.split())
+            logger.info(
+                f"[{citation_key}] Claims/quotes extraction completed: "
+                f"{words} words in {extraction_time:.2f}s"
+            )
+            
+            emit_progress(
+                "claims_extraction",
+                "completed",
+                f"Extracted {words} words of claims and quotes",
+                {"words": words, "time": extraction_time}
+            )
+            
+            return claims_quotes
+            
+        except Exception as e:
+            extraction_time = time.time() - extraction_start if 'extraction_start' in locals() else 0.0
+            logger.error(f"[{citation_key}] Claims/quotes extraction failed: {e}")
+            emit_progress("claims_extraction", "failed", f"Extraction failed: {e}")
+            return f"## Key Claims and Hypotheses\n\nExtraction failed: {e}\n\n## Important Quotes\n\nExtraction failed."
+    
+    def _extract_claims_and_quotes_chunked(
+        self,
+        pdf_text: str,
+        result: SearchResult,
+        citation_key: str,
+        progress_callback: Optional[Callable[[SummarizationProgressEvent], None]],
+        emit_progress: Callable
+    ) -> str:
+        """Extract claims and quotes using chunking for large papers.
+        
+        Args:
+            pdf_text: Full PDF text content.
+            result: Search result with paper metadata.
+            citation_key: Citation key for logging.
+            progress_callback: Optional callback for progress events.
+            emit_progress: Progress event emitter function.
+            
+        Returns:
+            Combined markdown-formatted text with claims and quotes from all chunks.
+        """
+        from infrastructure.llm.templates.research import ClaimsQuotesExtraction
+        from infrastructure.llm.core.config import GenerationOptions
+        
+        # Initialize chunker with same parameters as two-stage summarization
+        chunker = PDFChunker(
+            target_chunk_size=15000,
+            chunk_overlap=500,
+            min_chunk_size=1000
+        )
+        
+        # Chunk the PDF text
+        emit_progress("claims_extraction", "in_progress", "Chunking PDF text for claims/quotes extraction...")
+        logger.info(f"[{citation_key}] Chunking PDF text ({len(pdf_text):,} chars) for claims/quotes extraction...")
+        chunking_result = chunker.chunk_text(pdf_text, preserve_sections=True)
+        
+        logger.info(
+            f"[{citation_key}] Chunking completed: {chunking_result.total_chunks} chunks, "
+            f"avg size: {chunking_result.average_chunk_size:.0f} chars"
+        )
+        
+        if chunking_result.total_chunks == 0:
+            logger.error(f"[{citation_key}] No chunks created from PDF text")
+            return "## Key Claims and Hypotheses\n\nChunking failed: No chunks created.\n\n## Important Quotes\n\nExtraction failed."
+        
+        # Process each chunk
+        all_claims_quotes = []
+        successful_chunks = 0
+        failed_chunks = 0
+        
+        template = ClaimsQuotesExtraction()
+        options = GenerationOptions(
+            temperature=0.3,
+            max_tokens=3000,
+        )
+        
+        for i, chunk in enumerate(chunking_result.chunks):
+            chunk_num = i + 1
+            logger.info(
+                f"[{citation_key}] Processing chunk {chunk_num}/{chunking_result.total_chunks} "
+                f"for claims/quotes extraction ({len(chunk.text):,} chars)..."
+            )
+            
+            emit_progress(
+                "claims_extraction",
+                "in_progress",
+                f"Processing chunk {chunk_num}/{chunking_result.total_chunks}...",
+                {"chunk_index": chunk_num, "total_chunks": chunking_result.total_chunks}
+            )
+            
+            # Build prompt for this chunk
+            chunk_prompt = template.render(
+                title=result.title,
+                authors=', '.join(result.authors) if result.authors else 'Unknown',
+                year=str(result.year) if result.year else 'Unknown',
+                source=result.source or 'unknown',
+                text=chunk.text
+            )
+            
+            try:
+                # Clear context before each chunk to avoid accumulation
+                self.llm_client.context.clear()
+                
+                chunk_start = time.time()
+                chunk_result = self.llm_client.query(chunk_prompt, options=options, reset_context=True)
+                chunk_time = time.time() - chunk_start
+                
+                if chunk_result and chunk_result.strip():
+                    all_claims_quotes.append(chunk_result.strip())
+                    successful_chunks += 1
+                    logger.info(
+                        f"[{citation_key}] Chunk {chunk_num} processed: "
+                        f"{len(chunk_result.split())} words in {chunk_time:.2f}s"
+                    )
+                else:
+                    logger.warning(f"[{citation_key}] Chunk {chunk_num} produced empty result")
+                    failed_chunks += 1
+                    
+            except Exception as e:
+                logger.error(f"[{citation_key}] Failed to process chunk {chunk_num}: {e}")
+                failed_chunks += 1
+                # Continue with other chunks
+        
+        if not all_claims_quotes:
+            error_msg = f"All chunks failed for claims/quotes extraction (processed {chunking_result.total_chunks} chunks)"
+            logger.error(f"[{citation_key}] {error_msg}")
+            emit_progress("claims_extraction", "failed", error_msg)
+            return f"## Key Claims and Hypotheses\n\nExtraction failed: {error_msg}\n\n## Important Quotes\n\nExtraction failed."
+        
+        # Combine results from all chunks
+        logger.info(
+            f"[{citation_key}] Combining results from {successful_chunks}/{chunking_result.total_chunks} chunks "
+            f"({failed_chunks} failed)"
+        )
+        
+        # Simple combination: merge all results, removing obvious duplicates
+        combined_text = "\n\n---\n\n".join(all_claims_quotes)
+        
+        # Basic deduplication: remove duplicate quotes (simple string matching)
+        # Split into sections and deduplicate
+        lines = combined_text.split('\n')
+        seen_quotes = set()
+        deduplicated_lines = []
+        
+        for line in lines:
+            # Check if this looks like a quote line
+            if '**Quote:**' in line or line.strip().startswith('"'):
+                # Extract quote text (simplified)
+                quote_key = line.strip()[:200]  # Use first 200 chars as key
+                if quote_key not in seen_quotes:
+                    seen_quotes.add(quote_key)
+                    deduplicated_lines.append(line)
+                else:
+                    continue  # Skip duplicate
+            else:
+                deduplicated_lines.append(line)
+        
+        final_result = '\n'.join(deduplicated_lines)
+        
+        words = len(final_result.split())
+        logger.info(
+            f"[{citation_key}] Claims/quotes extraction completed (chunked mode): "
+            f"{words} words from {successful_chunks} chunks"
+        )
+        
+        emit_progress(
+            "claims_extraction",
+            "completed",
+            f"Extracted {words} words of claims and quotes from {successful_chunks} chunks",
+            {"words": words, "chunks_processed": successful_chunks, "total_chunks": chunking_result.total_chunks}
+        )
+        
+        return final_result
+    
+    def _analyze_methods_and_tools(
+        self,
+        pdf_text: str,
+        result: SearchResult,
+        citation_key: str,
+        progress_callback: Optional[Callable[[SummarizationProgressEvent], None]] = None
+    ) -> str:
+        """Analyze methods, algorithms, frameworks, datasets, and tools.
+        
+        Extracts:
+        - Algorithms and methodologies used
+        - Software frameworks and libraries
+        - Datasets employed
+        - Evaluation metrics
+        - Software tools and platforms
+        
+        For large papers, uses chunking to process the paper in sections.
+        
+        Args:
+            pdf_text: Full PDF text content.
+            result: Search result with paper metadata.
+            citation_key: Citation key for logging.
+            progress_callback: Optional callback for progress events.
+            
+        Returns:
+            Markdown-formatted text with methods and tools analysis.
+        """
+        from infrastructure.llm.templates.research import MethodsToolsAnalysis
+        from infrastructure.llm.core.config import GenerationOptions
+        
+        # Helper function to emit progress events
+        def emit_progress(stage: str, status: str, message: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None):
+            if progress_callback:
+                event = SummarizationProgressEvent(
+                    citation_key=citation_key,
+                    stage=stage,
+                    status=status,
+                    message=message,
+                    metadata=metadata or {}
+                )
+                progress_callback(event)
+        
+        emit_progress("methods_analysis", "started", f"Analyzing methods and tools for {citation_key}")
+        
+        # Clear context before analysis
+        logger.info(f"[{citation_key}] Clearing LLM context before methods/tools analysis")
+        self.llm_client.context.clear()
+        
+        # Check if paper fits in context
+        # Estimate tokens: prompt template overhead (~2000 tokens) + paper text
+        template = MethodsToolsAnalysis()
+        sample_prompt = template.render(
+            title=result.title,
+            authors=', '.join(result.authors) if result.authors else 'Unknown',
+            year=str(result.year) if result.year else 'Unknown',
+            source=result.source or 'unknown',
+            text=pdf_text[:1000]  # Sample for estimation
+        )
+        estimated_prompt_tokens = len(sample_prompt) // 4
+        paper_tokens = len(pdf_text) // 4
+        total_estimated = estimated_prompt_tokens + paper_tokens
+        
+        # Get available context (with 20% reserve for response)
+        available_tokens = self.llm_client.context.estimate_available_tokens(reserve_percent=0.2)
+        
+        # Determine if we need chunking
+        use_chunking = total_estimated > available_tokens
+        
+        if use_chunking:
+            logger.info(
+                f"[{citation_key}] Paper text ({paper_tokens:,} tokens) exceeds context limit "
+                f"({available_tokens:,} available). Using chunking mode..."
+            )
+            return self._analyze_methods_and_tools_chunked(
+                pdf_text, result, citation_key, progress_callback, emit_progress
+            )
+        
+        # Single-pass analysis for papers that fit in context
+        logger.info(f"[{citation_key}] Paper fits in context ({paper_tokens:,} tokens <= {available_tokens:,} available). Using single-pass mode...")
+        
+        # Build full prompt
+        prompt = template.render(
+            title=result.title,
+            authors=', '.join(result.authors) if result.authors else 'Unknown',
+            year=str(result.year) if result.year else 'Unknown',
+            source=result.source or 'unknown',
+            text=pdf_text
+        )
+        
+        # Generate analysis with appropriate options
+        options = GenerationOptions(
+            temperature=0.3,  # Lower temperature for more focused analysis
+            max_tokens=3000,  # Allow for comprehensive analysis
+        )
+        
+        try:
+            analysis_start = time.time()
+            methods_tools = self.llm_client.query(prompt, options=options, reset_context=True)
+            analysis_time = time.time() - analysis_start
+            
+            # Clean up the response
+            methods_tools = methods_tools.strip()
+            
+            if not methods_tools:
+                logger.warning(f"[{citation_key}] Empty methods/tools analysis result")
+                return "## Algorithms and Methodologies\n\nNo methods extracted.\n\n## Software Frameworks and Libraries\n\nNo frameworks extracted.\n\n## Datasets\n\nNo datasets extracted.\n\n## Evaluation Metrics\n\nNo metrics extracted.\n\n## Software Tools and Platforms\n\nNo tools extracted."
+            
+            words = len(methods_tools.split())
+            logger.info(
+                f"[{citation_key}] Methods/tools analysis completed: "
+                f"{words} words in {analysis_time:.2f}s"
+            )
+            
+            emit_progress(
+                "methods_analysis",
+                "completed",
+                f"Analyzed methods and tools: {words} words",
+                {"words": words, "time": analysis_time}
+            )
+            
+            return methods_tools
+            
+        except Exception as e:
+            analysis_time = time.time() - analysis_start if 'analysis_start' in locals() else 0.0
+            logger.error(f"[{citation_key}] Methods/tools analysis failed: {e}")
+            emit_progress("methods_analysis", "failed", f"Analysis failed: {e}")
+            return f"## Algorithms and Methodologies\n\nAnalysis failed: {e}\n\n## Software Frameworks and Libraries\n\nAnalysis failed.\n\n## Datasets\n\nAnalysis failed.\n\n## Evaluation Metrics\n\nAnalysis failed.\n\n## Software Tools and Platforms\n\nAnalysis failed."
+    
+    def _analyze_methods_and_tools_chunked(
+        self,
+        pdf_text: str,
+        result: SearchResult,
+        citation_key: str,
+        progress_callback: Optional[Callable[[SummarizationProgressEvent], None]],
+        emit_progress: Callable
+    ) -> str:
+        """Analyze methods and tools using chunking for large papers.
+        
+        Args:
+            pdf_text: Full PDF text content.
+            result: Search result with paper metadata.
+            citation_key: Citation key for logging.
+            progress_callback: Optional callback for progress events.
+            emit_progress: Progress event emitter function.
+            
+        Returns:
+            Combined markdown-formatted text with methods and tools from all chunks.
+        """
+        from infrastructure.llm.templates.research import MethodsToolsAnalysis
+        from infrastructure.llm.core.config import GenerationOptions
+        
+        # Initialize chunker with same parameters as two-stage summarization
+        chunker = PDFChunker(
+            target_chunk_size=15000,
+            chunk_overlap=500,
+            min_chunk_size=1000
+        )
+        
+        # Chunk the PDF text
+        emit_progress("methods_analysis", "in_progress", "Chunking PDF text for methods/tools analysis...")
+        logger.info(f"[{citation_key}] Chunking PDF text ({len(pdf_text):,} chars) for methods/tools analysis...")
+        chunking_result = chunker.chunk_text(pdf_text, preserve_sections=True)
+        
+        logger.info(
+            f"[{citation_key}] Chunking completed: {chunking_result.total_chunks} chunks, "
+            f"avg size: {chunking_result.average_chunk_size:.0f} chars"
+        )
+        
+        if chunking_result.total_chunks == 0:
+            logger.error(f"[{citation_key}] No chunks created from PDF text")
+            return "## Algorithms and Methodologies\n\nChunking failed: No chunks created.\n\n## Software Frameworks and Libraries\n\nAnalysis failed.\n\n## Datasets\n\nAnalysis failed.\n\n## Evaluation Metrics\n\nAnalysis failed.\n\n## Software Tools and Platforms\n\nAnalysis failed."
+        
+        # Process each chunk
+        all_methods_tools = []
+        successful_chunks = 0
+        failed_chunks = 0
+        
+        template = MethodsToolsAnalysis()
+        options = GenerationOptions(
+            temperature=0.3,
+            max_tokens=3000,
+        )
+        
+        for i, chunk in enumerate(chunking_result.chunks):
+            chunk_num = i + 1
+            logger.info(
+                f"[{citation_key}] Processing chunk {chunk_num}/{chunking_result.total_chunks} "
+                f"for methods/tools analysis ({len(chunk.text):,} chars)..."
+            )
+            
+            emit_progress(
+                "methods_analysis",
+                "in_progress",
+                f"Processing chunk {chunk_num}/{chunking_result.total_chunks}...",
+                {"chunk_index": chunk_num, "total_chunks": chunking_result.total_chunks}
+            )
+            
+            # Build prompt for this chunk
+            chunk_prompt = template.render(
+                title=result.title,
+                authors=', '.join(result.authors) if result.authors else 'Unknown',
+                year=str(result.year) if result.year else 'Unknown',
+                source=result.source or 'unknown',
+                text=chunk.text
+            )
+            
+            try:
+                # Clear context before each chunk to avoid accumulation
+                self.llm_client.context.clear()
+                
+                chunk_start = time.time()
+                chunk_result = self.llm_client.query(chunk_prompt, options=options, reset_context=True)
+                chunk_time = time.time() - chunk_start
+                
+                if chunk_result and chunk_result.strip():
+                    all_methods_tools.append(chunk_result.strip())
+                    successful_chunks += 1
+                    logger.info(
+                        f"[{citation_key}] Chunk {chunk_num} processed: "
+                        f"{len(chunk_result.split())} words in {chunk_time:.2f}s"
+                    )
+                else:
+                    logger.warning(f"[{citation_key}] Chunk {chunk_num} produced empty result")
+                    failed_chunks += 1
+                    
+            except Exception as e:
+                logger.error(f"[{citation_key}] Failed to process chunk {chunk_num}: {e}")
+                failed_chunks += 1
+                # Continue with other chunks
+        
+        if not all_methods_tools:
+            error_msg = f"All chunks failed for methods/tools analysis (processed {chunking_result.total_chunks} chunks)"
+            logger.error(f"[{citation_key}] {error_msg}")
+            emit_progress("methods_analysis", "failed", error_msg)
+            return f"## Algorithms and Methodologies\n\nAnalysis failed: {error_msg}\n\n## Software Frameworks and Libraries\n\nAnalysis failed.\n\n## Datasets\n\nAnalysis failed.\n\n## Evaluation Metrics\n\nAnalysis failed.\n\n## Software Tools and Platforms\n\nAnalysis failed."
+        
+        # Combine results from all chunks
+        logger.info(
+            f"[{citation_key}] Combining results from {successful_chunks}/{chunking_result.total_chunks} chunks "
+            f"({failed_chunks} failed)"
+        )
+        
+        # Merge results by section, deduplicating items
+        # Collect all items by section
+        sections = {
+            "Algorithms and Methodologies": [],
+            "Software Frameworks and Libraries": [],
+            "Datasets": [],
+            "Evaluation Metrics": [],
+            "Software Tools and Platforms": []
+        }
+        
+        seen_items = set()  # Track seen items to avoid duplicates
+        
+        for chunk_result in all_methods_tools:
+            # Parse chunk result into sections
+            current_section = None
+            for line in chunk_result.split('\n'):
+                line_stripped = line.strip()
+                # Check if this is a section header
+                if line_stripped.startswith('## '):
+                    section_name = line_stripped[3:].strip()
+                    if section_name in sections:
+                        current_section = section_name
+                elif current_section and line_stripped:
+                    # Add item to section if not duplicate
+                    # Use first 100 chars as key for deduplication
+                    item_key = (current_section, line_stripped[:100].lower())
+                    if item_key not in seen_items:
+                        seen_items.add(item_key)
+                        sections[current_section].append(line_stripped)
+        
+        # Build final result
+        result_parts = []
+        for section_name, items in sections.items():
+            result_parts.append(f"## {section_name}")
+            if items:
+                for item in items:
+                    result_parts.append(item)
+            else:
+                result_parts.append("Not specified in paper")
+            result_parts.append("")  # Empty line between sections
+        
+        final_result = '\n'.join(result_parts).strip()
+        
+        words = len(final_result.split())
+        logger.info(
+            f"[{citation_key}] Methods/tools analysis completed (chunked mode): "
+            f"{words} words from {successful_chunks} chunks"
+        )
+        
+        emit_progress(
+            "methods_analysis",
+            "completed",
+            f"Analyzed methods and tools: {words} words from {successful_chunks} chunks",
+            {"words": words, "chunks_processed": successful_chunks, "total_chunks": chunking_result.total_chunks}
+        )
+        
+        return final_result
+    
     def save_summary(
         self,
         result: SearchResult,
         summary_result: SummarizationResult,
         output_dir: Path,
         pdf_path: Optional[Path] = None
-    ) -> Path:
-        """Save summary to markdown file with validation metadata.
+    ) -> List[Path]:
+        """Save comprehensive summary, claims/quotes, and methods/tools analysis to separate files.
         
-        Saves the summary to `{citation_key}_summary.md` in the output directory.
-        The saved file includes:
-        - Paper metadata (title, authors, year, source, DOI)
-        - Validation status and quality score
-        - Validation errors (if any)
-        - Generated summary text
+        Saves three separate markdown files:
+        - `{citation_key}_summary.md` - Comprehensive summary
+        - `{citation_key}_claims_quotes.md` - Key claims and quotes extraction
+        - `{citation_key}_methods_tools.md` - Methods and tools analysis
+        
+        Each file includes paper metadata. The summary file also includes
+        validation status and quality score.
         
         Summaries are saved even if validation failed, with clear indication
         of validation status for review purposes.
@@ -1068,7 +1681,7 @@ class SummarizationEngine:
             pdf_path: Optional path to PDF file (for metadata tracking).
 
         Returns:
-            Path to saved summary markdown file.
+            List of paths to saved files (summary, claims_quotes, methods_tools).
 
         Raises:
             FileOperationError: If summary_text is None or file writing fails.
@@ -1080,14 +1693,14 @@ class SummarizationEngine:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         citation_key = summary_result.citation_key
-        output_path = output_dir / f"{citation_key}_summary.md"
+        saved_paths = []
 
         # Check if summary text exists
         if not summary_result.summary_text:
             logger.warning(f"[{citation_key}] No summary text to save, skipping save operation")
             raise FileOperationError(
                 f"No summary text to save for {citation_key}",
-                context={"path": str(output_path)}
+                context={"path": str(output_dir / f"{citation_key}_summary.md")}
             )
 
         # Build validation metadata section
@@ -1126,53 +1739,123 @@ class SummarizationEngine:
 {summary_result.summary_text}
 """
 
+        # Save comprehensive summary
+        summary_path = output_dir / f"{citation_key}_summary.md"
         try:
-            output_path.write_text(content, encoding='utf-8')
-            file_size = output_path.stat().st_size
-            logger.info(f"Saved summary: {output_path.name} ({file_size:,} bytes) -> {output_path}")
-            
-            # Save metadata to JSON if available
-            try:
-                from infrastructure.literature.summarization.metadata import (
-                    SummaryMetadataManager,
-                    SummaryMetadata
-                )
-                
-                metadata_path = output_dir.parent / "summaries_metadata.json"
-                manager = SummaryMetadataManager(metadata_path=metadata_path)
-                
-                pdf_size_bytes = None
-                pdf_relative_path = None
-                if pdf_path and pdf_path.exists():
-                    pdf_size_bytes = pdf_path.stat().st_size
-                    try:
-                        pdf_relative_path = str(pdf_path.relative_to(output_dir.parent.parent))
-                    except ValueError:
-                        pdf_relative_path = str(pdf_path)
-                
-                metadata = SummaryMetadata(
-                    citation_key=citation_key,
-                    title=result.title,
-                    authors=result.authors or [],
-                    year=result.year,
-                    pdf_size_bytes=pdf_size_bytes,
-                    pdf_path=pdf_relative_path,
-                    summary_path=str(output_path.relative_to(output_dir.parent)) if output_path.exists() else None,
-                    input_chars=summary_result.input_chars,
-                    input_words=summary_result.input_words,
-                    output_words=summary_result.output_words,
-                    generation_time=summary_result.generation_time,
-                    quality_score=summary_result.quality_score,
-                    reference_count=self._last_ref_info.get('count') if self._last_ref_info else None
-                )
-                
-                manager.save_metadata(metadata)
-            except Exception as e:
-                logger.debug(f"Failed to save summary metadata: {e}")
-            
-            return output_path
+            summary_path.write_text(content, encoding='utf-8')
+            file_size = summary_path.stat().st_size
+            logger.info(f"Saved summary: {summary_path.name} ({file_size:,} bytes) -> {summary_path}")
+            saved_paths.append(summary_path)
         except Exception as e:
+            logger.error(f"Failed to save summary file: {e}")
             raise FileOperationError(
                 f"Failed to save summary: {e}",
-                context={"path": str(output_path)}
+                context={"path": str(summary_path)}
             )
+        
+        # Save claims and quotes
+        if summary_result.claims_quotes_text:
+            claims_quotes_path = output_dir / f"{citation_key}_claims_quotes.md"
+            try:
+                claims_quotes_content = f"""# {result.title} - Key Claims and Quotes
+
+**Authors:** {', '.join(result.authors) if result.authors else 'Unknown'}
+
+**Year:** {result.year or 'Unknown'}
+
+**Source:** {result.source}
+
+**Venue:** {result.venue or 'N/A'}
+
+**DOI:** {result.doi or 'N/A'}
+
+**PDF:** [{citation_key}.pdf](../pdfs/{citation_key}.pdf)
+
+**Generated:** {time.strftime('%Y-%m-%d %H:%M:%S')}
+
+---
+
+{summary_result.claims_quotes_text}
+"""
+                claims_quotes_path.write_text(claims_quotes_content, encoding='utf-8')
+                file_size = claims_quotes_path.stat().st_size
+                logger.info(f"Saved claims/quotes: {claims_quotes_path.name} ({file_size:,} bytes) -> {claims_quotes_path}")
+                saved_paths.append(claims_quotes_path)
+            except Exception as e:
+                logger.warning(f"Failed to save claims/quotes file: {e}")
+        else:
+            logger.debug(f"[{citation_key}] No claims/quotes text to save")
+        
+        # Save methods and tools analysis
+        if summary_result.methods_tools_text:
+            methods_tools_path = output_dir / f"{citation_key}_methods_tools.md"
+            try:
+                methods_tools_content = f"""# {result.title} - Methods and Tools Analysis
+
+**Authors:** {', '.join(result.authors) if result.authors else 'Unknown'}
+
+**Year:** {result.year or 'Unknown'}
+
+**Source:** {result.source}
+
+**Venue:** {result.venue or 'N/A'}
+
+**DOI:** {result.doi or 'N/A'}
+
+**PDF:** [{citation_key}.pdf](../pdfs/{citation_key}.pdf)
+
+**Generated:** {time.strftime('%Y-%m-%d %H:%M:%S')}
+
+---
+
+{summary_result.methods_tools_text}
+"""
+                methods_tools_path.write_text(methods_tools_content, encoding='utf-8')
+                file_size = methods_tools_path.stat().st_size
+                logger.info(f"Saved methods/tools: {methods_tools_path.name} ({file_size:,} bytes) -> {methods_tools_path}")
+                saved_paths.append(methods_tools_path)
+            except Exception as e:
+                logger.warning(f"Failed to save methods/tools file: {e}")
+        else:
+            logger.debug(f"[{citation_key}] No methods/tools text to save")
+        
+        # Save metadata to JSON if available
+        try:
+            from infrastructure.literature.summarization.metadata import (
+                SummaryMetadataManager,
+                SummaryMetadata
+            )
+            
+            metadata_path = output_dir.parent / "summaries_metadata.json"
+            manager = SummaryMetadataManager(metadata_path=metadata_path)
+            
+            pdf_size_bytes = None
+            pdf_relative_path = None
+            if pdf_path and pdf_path.exists():
+                pdf_size_bytes = pdf_path.stat().st_size
+                try:
+                    pdf_relative_path = str(pdf_path.relative_to(output_dir.parent.parent))
+                except ValueError:
+                    pdf_relative_path = str(pdf_path)
+            
+            metadata = SummaryMetadata(
+                citation_key=citation_key,
+                title=result.title,
+                authors=result.authors or [],
+                year=result.year,
+                pdf_size_bytes=pdf_size_bytes,
+                pdf_path=pdf_relative_path,
+                summary_path=str(summary_path.relative_to(output_dir.parent)) if summary_path.exists() else None,
+                input_chars=summary_result.input_chars,
+                input_words=summary_result.input_words,
+                output_words=summary_result.output_words,
+                generation_time=summary_result.generation_time,
+                quality_score=summary_result.quality_score,
+                reference_count=self._last_ref_info.get('count') if self._last_ref_info else None
+            )
+            
+            manager.save_metadata(metadata)
+        except Exception as e:
+            logger.debug(f"Failed to save summary metadata: {e}")
+        
+        return saved_paths

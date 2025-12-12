@@ -38,7 +38,7 @@ def extract_text_features(
     max_features: int = 1000,
     min_df: int = 2,
     max_df: float = 0.95
-) -> Tuple[np.ndarray, List[str]]:
+) -> Tuple[np.ndarray, List[str], List[int]]:
     """Extract text features using TF-IDF.
     
     Args:
@@ -48,7 +48,10 @@ def extract_text_features(
         max_df: Maximum document frequency.
         
     Returns:
-        Tuple of (feature_matrix, feature_names).
+        Tuple of (feature_matrix, feature_names, valid_indices).
+        feature_matrix: (n_valid_docs, n_features) feature matrix.
+        feature_names: List of feature names.
+        valid_indices: List of original corpus indices that were kept (for alignment).
         
     Raises:
         ValueError: If corpus is empty or has insufficient data.
@@ -60,23 +63,33 @@ def extract_text_features(
     if not corpus.texts and not corpus.abstracts:
         raise ValueError("Corpus is empty: no texts or abstracts available")
     
-    if len(corpus.texts) + len(corpus.abstracts) < 2:
-        raise ValueError(f"Insufficient documents for feature extraction: need at least 2, got {len(corpus.texts) + len(corpus.abstracts)}")
+    total_docs = len(corpus.texts) if corpus.texts else len(corpus.abstracts)
+    if total_docs < 2:
+        raise ValueError(f"Insufficient documents for feature extraction: need at least 2, got {total_docs}")
+    
+    logger.debug(f"Starting feature extraction from {total_docs} documents")
     
     # Combine titles and abstracts for better representation
-    texts = [
-        f"{title} {abstract}".strip()
-        for title, abstract in zip(corpus.titles, corpus.abstracts)
-    ]
+    texts = []
+    valid_indices = []
     
-    # Filter out empty texts
-    texts = [t for t in texts if t.strip()]
+    for idx in range(total_docs):
+        title = corpus.titles[idx] if idx < len(corpus.titles) else ""
+        abstract = corpus.abstracts[idx] if idx < len(corpus.abstracts) else ""
+        combined = f"{title} {abstract}".strip()
+        
+        if combined:  # Only keep non-empty texts
+            texts.append(combined)
+            valid_indices.append(idx)
+    
+    logger.debug(f"Filtered to {len(texts)} non-empty texts from {total_docs} total documents")
     
     if len(texts) < 2:
         raise ValueError(f"Insufficient non-empty texts for feature extraction: need at least 2, got {len(texts)}")
     
     # Adjust min_df if we have very few documents
     adjusted_min_df = min(min_df, max(1, len(texts) - 1))
+    logger.debug(f"Using min_df={adjusted_min_df} (requested {min_df}, adjusted for {len(texts)} documents)")
     
     try:
         vectorizer = TfidfVectorizer(
@@ -93,11 +106,14 @@ def extract_text_features(
         if feature_matrix.shape[0] == 0 or feature_matrix.shape[1] == 0:
             raise ValueError("Feature extraction produced empty matrix")
         
-        logger.debug(f"Extracted {feature_matrix.shape[1]} features from {len(texts)} documents")
+        logger.info(f"Extracted {feature_matrix.shape[1]} features from {len(texts)} documents "
+                   f"(filtered from {total_docs} total, {total_docs - len(texts)} empty removed)")
         
-        return feature_matrix, feature_names
+        return feature_matrix, feature_names, valid_indices
     except Exception as e:
         logger.error(f"Feature extraction failed: {e}")
+        import traceback
+        logger.debug(f"Feature extraction traceback: {traceback.format_exc()}")
         raise ValueError(f"Failed to extract features: {e}") from e
 
 
@@ -217,15 +233,34 @@ def create_pca_2d_plot(
     
     try:
         # Extract features
-        feature_matrix, feature_names = extract_text_features(corpus)
+        logger.debug("Extracting text features for PCA 2D plot...")
+        feature_matrix, feature_names, valid_indices = extract_text_features(corpus)
+        
+        # Filter corpus arrays to match valid indices
+        filtered_titles = [corpus.titles[i] for i in valid_indices if i < len(corpus.titles)]
+        filtered_years = [corpus.years[i] if i < len(corpus.years) else None for i in valid_indices]
+        
+        logger.debug(f"Aligned arrays: {len(feature_matrix)} samples, {len(filtered_titles)} titles, {len(filtered_years)} years")
+        
+        # Validate alignment
+        if len(feature_matrix) != len(filtered_titles) or len(feature_matrix) != len(filtered_years):
+            raise ValueError(
+                f"Array size mismatch: feature_matrix={len(feature_matrix)}, "
+                f"titles={len(filtered_titles)}, years={len(filtered_years)}"
+            )
         
         # Compute PCA
+        logger.debug("Computing PCA with 2 components...")
         pca_data, pca_model = compute_pca(feature_matrix, n_components=2)
+        logger.info(f"PCA computed: {len(pca_data)} samples, "
+                   f"explained variance: {pca_model.explained_variance_ratio_.sum():.2%}")
         
         # Optional clustering
         cluster_labels = None
         if n_clusters is not None and len(pca_data) >= n_clusters:
+            logger.debug(f"Computing {n_clusters} clusters...")
             cluster_labels = cluster_papers(pca_data, n_clusters=n_clusters)
+            logger.debug(f"Clustering complete: {len(np.unique(cluster_labels))} unique clusters")
         elif n_clusters is not None:
             logger.warning(f"Cannot cluster: need at least {n_clusters} samples, got {len(pca_data)}")
         
@@ -233,11 +268,12 @@ def create_pca_2d_plot(
             output_path = Path("data/output/pca_2d." + format)
             output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Create plot
+        # Create plot with aligned arrays
+        logger.debug("Creating PCA 2D plot...")
         fig = plot_pca_2d(
             pca_data=pca_data,
-            titles=corpus.titles,
-            years=corpus.years,
+            titles=filtered_titles,
+            years=filtered_years,
             cluster_labels=cluster_labels,
             explained_variance=pca_model.explained_variance_ratio_,
             title="PCA Analysis of Papers (2D)"
@@ -293,15 +329,34 @@ def create_pca_3d_plot(
     
     try:
         # Extract features
-        feature_matrix, feature_names = extract_text_features(corpus)
+        logger.debug("Extracting text features for PCA 3D plot...")
+        feature_matrix, feature_names, valid_indices = extract_text_features(corpus)
+        
+        # Filter corpus arrays to match valid indices
+        filtered_titles = [corpus.titles[i] for i in valid_indices if i < len(corpus.titles)]
+        filtered_years = [corpus.years[i] if i < len(corpus.years) else None for i in valid_indices]
+        
+        logger.debug(f"Aligned arrays: {len(feature_matrix)} samples, {len(filtered_titles)} titles, {len(filtered_years)} years")
+        
+        # Validate alignment
+        if len(feature_matrix) != len(filtered_titles) or len(feature_matrix) != len(filtered_years):
+            raise ValueError(
+                f"Array size mismatch: feature_matrix={len(feature_matrix)}, "
+                f"titles={len(filtered_titles)}, years={len(filtered_years)}"
+            )
         
         # Compute PCA (3D requires at least 3 features, but we'll handle gracefully)
+        logger.debug("Computing PCA with 3 components...")
         pca_data, pca_model = compute_pca(feature_matrix, n_components=3)
+        logger.info(f"PCA computed: {len(pca_data)} samples, "
+                   f"explained variance: {pca_model.explained_variance_ratio_.sum():.2%}")
         
         # Optional clustering
         cluster_labels = None
         if n_clusters is not None and len(pca_data) >= n_clusters:
+            logger.debug(f"Computing {n_clusters} clusters...")
             cluster_labels = cluster_papers(pca_data, n_clusters=n_clusters)
+            logger.debug(f"Clustering complete: {len(np.unique(cluster_labels))} unique clusters")
         elif n_clusters is not None:
             logger.warning(f"Cannot cluster: need at least {n_clusters} samples, got {len(pca_data)}")
         
@@ -309,11 +364,12 @@ def create_pca_3d_plot(
             output_path = Path("data/output/pca_3d." + format)
             output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Create plot
+        # Create plot with aligned arrays
+        logger.debug("Creating PCA 3D plot...")
         fig = plot_pca_3d(
             pca_data=pca_data,
-            titles=corpus.titles,
-            years=corpus.years,
+            titles=filtered_titles,
+            years=filtered_years,
             cluster_labels=cluster_labels,
             explained_variance=pca_model.explained_variance_ratio_,
             title="PCA Analysis of Papers (3D)"

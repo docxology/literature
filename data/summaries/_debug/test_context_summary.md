@@ -2,8 +2,8 @@
 
 ## Paper Identity
 - Title: Test Paper
-- Full Text Length: 231 chars
-- Full Text Words: 37 words
+- Full Text Length: 347 chars
+- Full Text Words: 47 words
 
 ## Extracted Sections
 - Abstract: 0 chars
@@ -14,12 +14,14 @@
 - Discussion: 0 chars
 
 ## Key Terms
-test, trigger, minimum, exceeds, call, enough, text, character, summarization, long, requirement
+details, explanations, test, cover, machine, long, various, scientific, methods, learning
 
 ## Equations Found
 0 equations extracted
 
 ## Full Text Preview (first 500 chars)
-This is a long enough text for summarization that exceeds the minimum character requirement and should trigger the LLM call.
-Additional content to ensure we have more than 100 characters of extractable text from this PDF document.
+Test Paper
+This is a long scientific paper about machine learning with many details and explanations that cover various aspects of the field including algorithms, datasets, and evaluation metrics.
+The paper presents novel methods for data analysis and optimization.
+Experimental results demonstrate significant improvements over baseline methods.
 ...

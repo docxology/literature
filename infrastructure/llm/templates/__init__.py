@@ -18,6 +18,8 @@ from infrastructure.llm.templates.research import (
     ComparativeAnalysis,
     ResearchGapIdentification,
     CitationNetworkAnalysis,
+    ClaimsQuotesExtraction,
+    MethodsToolsAnalysis,
 )
 from infrastructure.llm.templates.manuscript import (
     ManuscriptExecutiveSummary,
@@ -63,6 +65,9 @@ TEMPLATES: dict[str, type[ResearchTemplate]] = {
     "comparative_analysis": ComparativeAnalysis,
     "research_gap_identification": ResearchGapIdentification,
     "citation_network_analysis": CitationNetworkAnalysis,
+    # Summarization extraction templates
+    "claims_quotes_extraction": ClaimsQuotesExtraction,
+    "methods_tools_analysis": MethodsToolsAnalysis,
 }
 
 
@@ -99,6 +104,8 @@ __all__ = [
     'ComparativeAnalysis',
     'ResearchGapIdentification',
     'CitationNetworkAnalysis',
+    'ClaimsQuotesExtraction',
+    'MethodsToolsAnalysis',
     # Constants
     'REVIEW_MIN_WORDS',
     'TRANSLATION_LANGUAGES',

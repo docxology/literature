@@ -21,6 +21,8 @@ class SummarizationResult:
         citation_key: Unique identifier for the paper.
         success: Whether summarization succeeded.
         summary_text: Generated summary text if successful.
+        claims_quotes_text: Extracted key claims and quotes if successful.
+        methods_tools_text: Methods and tools analysis if successful.
         input_chars: Number of characters in extracted PDF text.
         input_words: Number of words in extracted PDF text.
         output_words: Number of words in generated summary.
@@ -35,6 +37,8 @@ class SummarizationResult:
     citation_key: str
     success: bool
     summary_text: Optional[str] = None
+    claims_quotes_text: Optional[str] = None
+    methods_tools_text: Optional[str] = None
     input_chars: int = 0
     input_words: int = 0
     output_words: int = 0
@@ -213,14 +217,15 @@ class SummarizationProgressEvent:
     Attributes:
         citation_key: Unique identifier for the paper being processed.
         stage: Stage name ("pdf_extraction", "context_extraction", 
-              "draft_generation", "validation", "refinement").
+              "draft_generation", "validation", "refinement",
+              "claims_extraction", "methods_analysis").
         status: Event status ("started", "completed", "failed").
         message: Optional human-readable message describing the event.
         metadata: Dictionary with additional metadata (timing, counts, etc.).
         timestamp: Unix timestamp when the event occurred.
     """
     citation_key: str
-    stage: str  # "pdf_extraction", "context_extraction", "draft_generation", "validation", "refinement"
+    stage: str  # "pdf_extraction", "context_extraction", "draft_generation", "validation", "refinement", "claims_extraction", "methods_analysis"
     status: str  # "started", "completed", "failed"
     message: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)

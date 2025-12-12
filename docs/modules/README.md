@@ -8,6 +8,7 @@ Documentation for all system modules.
 - **[Core Module](core.md)** - Foundation utilities
 - **[LLM Module](llm.md)** - Local LLM integration
 - **[Literature Module](literature.md)** - Literature search and management
+- **[Validation Module](validation.md)** - PDF validation and text extraction
 
 ## Quick Links
 

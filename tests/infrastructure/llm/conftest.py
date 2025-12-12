@@ -24,7 +24,13 @@ def mock_requests_post(mocker):
 @pytest.fixture
 def default_config():
     """Create LLMConfig from test configuration."""
-    from tests.test_config_loader import get_test_llm_config
+    import sys
+    from pathlib import Path
+    # Add tests directory to path for import
+    tests_dir = Path(__file__).parent.parent.parent
+    if str(tests_dir) not in sys.path:
+        sys.path.insert(0, str(tests_dir))
+    from test_config_loader import get_test_llm_config
     config = get_test_llm_config()
     # Preserve auto_inject_system_prompt=False for tests that need it
     config.auto_inject_system_prompt = False

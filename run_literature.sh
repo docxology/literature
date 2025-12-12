@@ -102,21 +102,164 @@ readonly MAX_FAILED_TEST_LINES=20
 # Helper Functions
 # ============================================================================
 
+# ============================================================================
+# Method Enhancement Utilities
+# ============================================================================
+
+# Function: with_timeout
+# Purpose: Execute a command with timeout
+# Args:
+#   $1: Timeout in seconds
+#   $2: Command to execute (as separate arguments)
+# Returns:
+#   0: Command completed successfully
+#   124: Command timed out (timeout command exit code)
+#   Other: Command exit code
+# Side effects: Logs timeout if occurs
+with_timeout() {
+    local timeout_seconds="${1:-0}"
+    shift
+    
+    if [[ $# -eq 0 ]]; then
+        log_error_with_context "with_timeout: No command provided"
+        return 1
+    fi
+    
+    if ! validate_numeric "$timeout_seconds" 1; then
+        log_error_with_context "with_timeout: Invalid timeout value: $timeout_seconds"
+        return 1
+    fi
+    
+    log_debug "Executing with timeout ${timeout_seconds}s: $*"
+    
+    # Check if timeout command is available
+    if command -v timeout &> /dev/null; then
+        # Use GNU timeout or BSD gtimeout
+        if timeout "$timeout_seconds" "$@"; then
+            return 0
+        else
+            local exit_code=$?
+            if [[ $exit_code -eq 124 ]]; then
+                log_error_with_context "Command timed out after ${timeout_seconds}s: $*" "$exit_code"
+            fi
+            return $exit_code
+        fi
+    elif command -v gtimeout &> /dev/null; then
+        # macOS with coreutils
+        if gtimeout "$timeout_seconds" "$@"; then
+            return 0
+        else
+            local exit_code=$?
+            if [[ $exit_code -eq 124 ]]; then
+                log_error_with_context "Command timed out after ${timeout_seconds}s: $*" "$exit_code"
+            fi
+            return $exit_code
+        fi
+    else
+        # Fallback: execute without timeout (log warning)
+        log_warning "timeout command not available, executing without timeout: $*"
+        "$@"
+        return $?
+    fi
+}
+
+# Function: setup_signal_handlers
+# Purpose: Setup signal handlers for graceful shutdown
+# Args: None
+# Side effects: Sets up SIGINT and SIGTERM handlers
+setup_signal_handlers() {
+    local operation_name="${1:-operation}"
+    
+    # Trap SIGINT (Ctrl+C) and SIGTERM
+    trap "log_warning '${operation_name} interrupted by user'; exit 130" INT TERM
+    
+    log_debug "Signal handlers set up for ${operation_name}"
+}
+
+# Function: cleanup_signal_handlers
+# Purpose: Remove signal handlers
+# Args: None
+cleanup_signal_handlers() {
+    trap - INT TERM
+    log_debug "Signal handlers removed"
+}
+
 # Function: validate_menu_choice
 # Purpose: Validate that a menu choice is numeric and within valid range (0-9)
 # Args:
 #   $1: Choice string to validate
+#   $2: Maximum valid choice (optional, default: 9)
 # Returns:
 #   0: Valid choice
 #   1: Invalid choice
 validate_menu_choice() {
-    local choice="$1"
+    local choice="${1:-}"
+    local max_choice="${2:-9}"
     
-    if [[ ! "$choice" =~ ^[0-9]$ ]]; then
+    if [[ -z "$choice" ]]; then
+        return 1
+    fi
+    
+    if ! validate_numeric "$choice" 0 "$max_choice"; then
         return 1
     fi
     
     return 0
+}
+
+# Function: check_environment
+# Purpose: Validate environment setup (Python, scripts, directories)
+# Args: None
+# Returns:
+#   0: Environment is valid
+#   1: Environment validation failed
+# Side effects: Logs validation results
+check_environment() {
+    local errors=0
+    
+    log_debug "Validating environment..."
+    
+    # Check Python availability
+    if ! command -v python3 &> /dev/null; then
+        log_error_with_context "python3 not found in PATH"
+        ((errors++))
+    else
+        local python_version
+        python_version=$(python3 --version 2>&1 || echo "unknown")
+        log_debug "Python version: $python_version"
+    fi
+    
+    # Check repository root
+    if [[ ! -d "$REPO_ROOT" ]]; then
+        log_error_with_context "Repository root not found: $REPO_ROOT"
+        ((errors++))
+    fi
+    
+    # Check Python script
+    if [[ ! -f "$REPO_ROOT/$PYTHON_SCRIPT" ]]; then
+        log_error_with_context "Python script not found: $PYTHON_SCRIPT"
+        log_info "Expected location: $REPO_ROOT/$PYTHON_SCRIPT"
+        ((errors++))
+    fi
+    
+    # Check data directory
+    if [[ ! -d "$REPO_ROOT/data" ]]; then
+        log_warning "Data directory not found: $REPO_ROOT/data (will be created if needed)"
+    fi
+    
+    # Check write permissions for data directory
+    if [[ -d "$REPO_ROOT/data" ]] && [[ ! -w "$REPO_ROOT/data" ]]; then
+        log_error_with_context "Data directory is not writable: $REPO_ROOT/data"
+        ((errors++))
+    fi
+    
+    if [[ $errors -eq 0 ]]; then
+        log_debug "Environment validation passed"
+        return 0
+    else
+        log_error_with_context "Environment validation failed with $errors error(s)"
+        return 1
+    fi
 }
 
 # Function: check_python_script
@@ -129,7 +272,7 @@ validate_menu_choice() {
 #   - Logs error if script not found
 check_python_script() {
     if [[ ! -f "$REPO_ROOT/$PYTHON_SCRIPT" ]]; then
-        log_error "Python script not found: $PYTHON_SCRIPT"
+        log_error_with_context "Python script not found: $PYTHON_SCRIPT"
         log_info "Expected location: $REPO_ROOT/$PYTHON_SCRIPT"
         return 1
     fi
@@ -176,28 +319,140 @@ run_python_script_with_retry() {
     return $exit_code
 }
 
-# Function: capture_command_output
-# Purpose: Capture stdout and stderr from a command for analysis
+# ============================================================================
+# Error Handling Utilities
+# ============================================================================
+
+# Function: _get_error_context
+# Purpose: Get error context for logging (function name, line number)
+# Returns: Context string
+_get_error_context() {
+    local func_name="${FUNCNAME[2]:-unknown}"
+    local line_num="${BASH_LINENO[1]:-0}"
+    local script_name="${BASH_SOURCE[1]:-unknown}"
+    script_name=$(basename "$script_name")
+    
+    if [[ "${LOG_LEVEL:-1}" == "0" ]] || [[ "${LOG_STRUCTURED:-false}" == "true" ]]; then
+        echo "[${script_name}:${func_name}:${line_num}]"
+    fi
+}
+
+# Function: log_error_with_context
+# Purpose: Log error with context information
 # Args:
-#   $1: Command to execute (as string)
+#   $1: Error message
+#   $2: Exit code (optional)
+log_error_with_context() {
+    local message="${1:-}"
+    local exit_code="${2:-}"
+    
+    if [[ -z "$message" ]]; then
+        return 0
+    fi
+    
+    local context
+    context=$(_get_error_context)
+    local full_message="$message"
+    
+    if [[ -n "$context" ]]; then
+        full_message="${context} ${message}"
+    fi
+    
+    if [[ -n "$exit_code" ]] && [[ "$exit_code" =~ ^[0-9]+$ ]]; then
+        full_message="${full_message} (exit code: ${exit_code})"
+    fi
+    
+    log_error "$full_message"
+    log_error_to_file "$full_message"
+}
+
+# Function: safe_execute
+# Purpose: Safely execute a command with error handling
+# Args:
+#   $@: Command and arguments to execute
+# Returns: Exit code of the command
+# Side effects: Logs errors with context
+safe_execute() {
+    local exit_code=0
+    local cmd_args=("$@")
+    
+    if [[ ${#cmd_args[@]} -eq 0 ]]; then
+        log_error_with_context "safe_execute: No command provided"
+        return 1
+    fi
+    
+    log_debug "Executing: ${cmd_args[*]}"
+    
+    # Execute command
+    "${cmd_args[@]}" || exit_code=$?
+    
+    if [[ $exit_code -ne 0 ]]; then
+        log_error_with_context "Command failed: ${cmd_args[*]}" "$exit_code"
+    fi
+    
+    return $exit_code
+}
+
+# Function: capture_command_output
+# Purpose: Capture stdout and stderr from a command for analysis (safe version)
+# Args:
+#   $1: Command to execute (as array elements, not string)
 #   $2: Output file path for stdout
 #   $3: Error file path for stderr (optional)
 # Returns:
 #   Exit code of the command
 # Side effects:
 #   - Creates output files with command output
+# Note: This function expects command as separate arguments, not a string
+# Example: capture_command_output python3 script.py arg1 arg2 output.txt error.txt
 capture_command_output() {
-    local cmd="$1"
-    local output_file="$2"
-    local error_file="${3:-}"
+    local output_file="${1:-}"
+    local error_file="${2:-}"
+    shift 2 2>/dev/null || shift 1 2>/dev/null || true
     
-    if [[ -n "$error_file" ]]; then
-        eval "$cmd" > "$output_file" 2> "$error_file"
-    else
-        eval "$cmd" > "$output_file" 2>&1
+    # Validate inputs
+    if [[ -z "$output_file" ]]; then
+        log_error_with_context "capture_command_output: Missing output file"
+        return 1
     fi
     
-    return $?
+    if [[ $# -eq 0 ]]; then
+        log_error_with_context "capture_command_output: No command provided"
+        return 1
+    fi
+    
+    # Ensure output directory exists
+    local output_dir
+    output_dir=$(dirname "$output_file")
+    if [[ -n "$output_dir" ]] && [[ ! -d "$output_dir" ]]; then
+        mkdir -p "$output_dir" 2>/dev/null || {
+            log_error_with_context "capture_command_output: Cannot create output directory: $output_dir"
+            return 1
+        }
+    fi
+    
+    # Execute command and capture output
+    local exit_code=0
+    if [[ -n "$error_file" ]]; then
+        # Ensure error file directory exists
+        local error_dir
+        error_dir=$(dirname "$error_file")
+        if [[ -n "$error_dir" ]] && [[ ! -d "$error_dir" ]]; then
+            mkdir -p "$error_dir" 2>/dev/null || {
+                log_error_with_context "capture_command_output: Cannot create error directory: $error_dir"
+                return 1
+            }
+        fi
+        "$@" > "$output_file" 2> "$error_file" || exit_code=$?
+    else
+        "$@" > "$output_file" 2>&1 || exit_code=$?
+    fi
+    
+    if [[ $exit_code -ne 0 ]]; then
+        log_debug "Command exited with code $exit_code: $*"
+    fi
+    
+    return $exit_code
 }
 
 # ============================================================================
@@ -320,18 +575,28 @@ run_literature_search_all() {
     log_header_to_file "ORCHESTRATED LITERATURE PIPELINE"
     log_header "ORCHESTRATED LITERATURE PIPELINE"
     
+    local operation_name="full_pipeline"
+    local start_time
+    start_time=$(date +%s)
+    
+    log_operation_start "$operation_name" "Full orchestrated pipeline (search → download → extract → summarize)"
+    
     if ! cd "$REPO_ROOT" 2>/dev/null; then
-        log_error "Cannot change to repository root: $REPO_ROOT"
+        log_error_with_context "Cannot change to repository root: $REPO_ROOT"
+        log_operation_end "$operation_name" 1 0
+        return 1
+    fi
+    
+    if ! check_environment; then
+        log_operation_end "$operation_name" 1 0
         return 1
     fi
     
     if ! check_python_script; then
+        log_operation_end "$operation_name" 1 0
         return 1
     fi
     
-    echo
-    log_info_to_file "🔄 Starting orchestrated literature pipeline..."
-    log_info "🔄 Starting orchestrated literature pipeline..."
     echo
     log_info "Pipeline stages:"
     log_info "  1️⃣  Search academic databases for keywords"
@@ -345,30 +610,36 @@ run_literature_search_all() {
     log_info "  • Clear options (PDFs/Summaries/Library - default: No)"
     echo
     
-    local start_time=$(date +%s)
     log_debug "Pipeline start time: $start_time"
     
     # Use --search which runs the full pipeline interactively
     # Clear options are handled interactively in the Python script
+    local exit_code=0
     if run_python_script_with_retry "--search" 1; then
-        local end_time=$(date +%s)
-        local duration=$(get_elapsed_time "$start_time" "$end_time")
-        echo
-        log_success_to_file "✅ Orchestrated literature pipeline complete in $(format_duration "$duration")"
-        log_success "✅ Orchestrated literature pipeline complete in $(format_duration "$duration")"
-        echo
+        exit_code=0
+    else
+        exit_code=$?
+    fi
+    
+    local end_time
+    end_time=$(date +%s)
+    local duration
+    duration=$(get_elapsed_time "$start_time" "$end_time")
+    
+    echo
+    if [[ $exit_code -eq 0 ]]; then
         log_info "📁 Output locations:"
         log_info "  • Bibliography: data/references.bib"
         log_info "  • JSON index: data/library.json"
         log_info "  • PDFs: data/pdfs/"
         log_info "  • Summaries: data/summaries/"
         echo
-        return 0
+        log_operation_end "$operation_name" 0 "$duration"
     else
-        log_error_to_file "❌ Orchestrated literature pipeline failed"
-        log_error "❌ Orchestrated literature pipeline failed"
-        return 1
+        log_operation_end "$operation_name" "$exit_code" "$duration"
     fi
+    
+    return $exit_code
 }
 
 # Function: run_literature_meta_analysis
@@ -461,28 +732,38 @@ run_literature_search() {
     log_header_to_file "LITERATURE SEARCH (ADD TO BIBLIOGRAPHY)"
     log_header "LITERATURE SEARCH (ADD TO BIBLIOGRAPHY)"
 
+    local operation_name="search"
+    local start_time
+    start_time=$(date +%s)
+    
+    log_operation_start "$operation_name" "Search literature and add to bibliography" "network only"
+
     if ! cd "$REPO_ROOT" 2>/dev/null; then
-        log_error "Cannot change to repository root: $REPO_ROOT"
+        log_error_with_context "Cannot change to repository root: $REPO_ROOT"
+        log_operation_end "$operation_name" 1 0
         return 1
     fi
 
     if ! check_python_script; then
+        log_operation_end "$operation_name" 1 0
         return 1
     fi
 
-    log_info_to_file "Searching literature and adding papers to bibliography (network only)..."
-    log_info "Searching literature and adding papers to bibliography (network only)..."
-
+    local exit_code=0
     if run_python_script_with_retry "--search-only" 1; then
-        log_success_to_file "Literature search complete"
-        log_success "Literature search complete"
-        return 0
+        exit_code=0
     else
-        log_error_to_file "Literature search failed"
-        log_error "Literature search failed"
+        exit_code=$?
         log_info "Check network connection and API availability"
-        return 1
     fi
+    
+    local end_time
+    end_time=$(date +%s)
+    local duration
+    duration=$(get_elapsed_time "$start_time" "$end_time")
+    
+    log_operation_end "$operation_name" "$exit_code" "$duration"
+    return $exit_code
 }
 
 # Function: run_literature_download
@@ -504,28 +785,38 @@ run_literature_download() {
     log_header_to_file "DOWNLOAD PDFs (FOR BIBLIOGRAPHY ENTRIES)"
     log_header "DOWNLOAD PDFs (FOR BIBLIOGRAPHY ENTRIES)"
 
+    local operation_name="download"
+    local start_time
+    start_time=$(date +%s)
+    
+    log_operation_start "$operation_name" "Download PDFs for bibliography entries" "network only"
+
     if ! cd "$REPO_ROOT" 2>/dev/null; then
-        log_error "Cannot change to repository root: $REPO_ROOT"
+        log_error_with_context "Cannot change to repository root: $REPO_ROOT"
+        log_operation_end "$operation_name" 1 0
         return 1
     fi
 
     if ! check_python_script; then
+        log_operation_end "$operation_name" 1 0
         return 1
     fi
 
-    log_info_to_file "Downloading PDFs for bibliography entries without PDFs (network only)..."
-    log_info "Downloading PDFs for bibliography entries without PDFs (network only)..."
-
+    local exit_code=0
     if run_python_script_with_retry "--download-only" 1; then
-        log_success_to_file "PDF download complete"
-        log_success "PDF download complete"
-        return 0
+        exit_code=0
     else
-        log_error_to_file "PDF download failed"
-        log_error "PDF download failed"
+        exit_code=$?
         log_info "Check network connection and PDF availability"
-        return 1
     fi
+    
+    local end_time
+    end_time=$(date +%s)
+    local duration
+    duration=$(get_elapsed_time "$start_time" "$end_time")
+    
+    log_operation_end "$operation_name" "$exit_code" "$duration"
+    return $exit_code
 }
 
 # Function: run_literature_extract_text
@@ -591,12 +882,20 @@ run_literature_summarize() {
     log_header_to_file "GENERATE SUMMARIES (FOR PAPERS WITH PDFs)"
     log_header "GENERATE SUMMARIES (FOR PAPERS WITH PDFs)"
 
+    local operation_name="summarize"
+    local start_time
+    start_time=$(date +%s)
+    
+    log_operation_start "$operation_name" "Generate summaries for papers with PDFs" "requires Ollama"
+
     if ! cd "$REPO_ROOT" 2>/dev/null; then
-        log_error "Cannot change to repository root: $REPO_ROOT"
+        log_error_with_context "Cannot change to repository root: $REPO_ROOT"
+        log_operation_end "$operation_name" 1 0
         return 1
     fi
 
     if ! check_python_script; then
+        log_operation_end "$operation_name" 1 0
         return 1
     fi
 
@@ -606,25 +905,28 @@ run_literature_summarize() {
     ollama_available=$(check_ollama_running)
     
     if [[ "$ollama_available" != "true" ]]; then
-        log_error "Ollama is not running"
+        log_error_with_context "Ollama is not running"
         log_info "Start Ollama with: ollama serve"
         log_info "Then install a model with: ollama pull llama3.2:3b"
+        log_operation_end "$operation_name" 1 0
         return 1
     fi
 
-    log_info_to_file "Generating summaries for papers with PDFs (requires Ollama)..."
-    log_info "Generating summaries for papers with PDFs (requires Ollama)..."
-
+    local exit_code=0
     if run_python_script_with_retry "--summarize" 1; then
-        log_success_to_file "Summary generation complete"
-        log_success "Summary generation complete"
-        return 0
+        exit_code=0
     else
-        log_error_to_file "Summary generation failed"
-        log_error "Summary generation failed"
+        exit_code=$?
         log_info "Check Ollama server status and model availability"
-        return 1
     fi
+    
+    local end_time
+    end_time=$(date +%s)
+    local duration
+    duration=$(get_elapsed_time "$start_time" "$end_time")
+    
+    log_operation_end "$operation_name" "$exit_code" "$duration"
+    return $exit_code
 }
 
 # Function: run_literature_cleanup
@@ -804,6 +1106,183 @@ except Exception:
 PYTHON_EOF
 }
 
+# ============================================================================
+# Operation Logging Helpers
+# ============================================================================
+
+# Function: log_operation_start
+# Purpose: Log operation start with context and parameters
+# Args:
+#   $1: Operation name
+#   $2: Operation description (optional)
+#   $3: Additional parameters (optional)
+# Side effects: Logs to both terminal and file
+log_operation_start() {
+    local op_name="${1:-unknown}"
+    local op_desc="${2:-}"
+    local params="${3:-}"
+    
+    local message="Starting operation: ${op_name}"
+    if [[ -n "$op_desc" ]]; then
+        message="${message} - ${op_desc}"
+    fi
+    if [[ -n "$params" ]]; then
+        message="${message} (${params})"
+    fi
+    
+    log_info_to_file "$message"
+    log_info "$message"
+    log_debug_to_file "Operation start: ${op_name} at $(date '+%Y-%m-%d %H:%M:%S')"
+}
+
+# Function: log_operation_end
+# Purpose: Log operation end with metrics
+# Args:
+#   $1: Operation name
+#   $2: Exit code (0 for success)
+#   $3: Duration in seconds
+#   $4: Additional metrics (optional, format: "key=value,key2=value2")
+# Side effects: Logs to both terminal and file
+log_operation_end() {
+    local op_name="${1:-unknown}"
+    local exit_code="${2:-0}"
+    local duration="${3:-0}"
+    local metrics="${4:-}"
+    
+    local status="completed"
+    local status_color="$GREEN"
+    local status_symbol="✓"
+    
+    if [[ $exit_code -ne 0 ]]; then
+        status="failed"
+        status_color="$RED"
+        status_symbol="✗"
+    fi
+    
+    local message="${status_symbol} Operation ${status}: ${op_name}"
+    if validate_numeric "$duration" 0; then
+        message="${message} (duration: $(format_duration "$duration"))"
+    fi
+    if [[ -n "$metrics" ]]; then
+        message="${message} [${metrics}]"
+    fi
+    
+    if [[ $exit_code -eq 0 ]]; then
+        log_success_to_file "$message"
+        echo -e "${status_color}${message}${NC}"
+    else
+        log_error_to_file "$message (exit code: ${exit_code})"
+        echo -e "${status_color}${message}${NC}"
+    fi
+    
+    log_debug_to_file "Operation end: ${op_name} at $(date '+%Y-%m-%d %H:%M:%S')"
+}
+
+# Function: parse_test_results
+# Purpose: Parse pytest test results with improved regex patterns
+# Args:
+#   $1: Test output file path
+# Returns: Sets global variables: total_tests, passed_tests, failed_tests, skipped_tests
+parse_test_results() {
+    local output_file="${1:-}"
+    
+    if [[ -z "$output_file" ]] || [[ ! -f "$output_file" ]]; then
+        total_tests=0
+        passed_tests=0
+        failed_tests=0
+        skipped_tests=0
+        return 1
+    fi
+    
+    # Improved regex patterns for pytest output
+    # Matches formats like: "1518 passed, 19 skipped in 299.85s"
+    # or: "================= 1518 passed, 19 skipped in 299.85s ================="
+    local summary_line
+    summary_line=$(grep -iE "(passed|failed|skipped|error)" "$output_file" | grep -E "[0-9]+\s+(passed|failed|skipped|error)" | tail -1 || echo "")
+    
+    if [[ -n "$summary_line" ]]; then
+        # Extract numbers with improved patterns
+        # Handle both "N passed" and "N passed," formats
+        passed_tests=$(echo "$summary_line" | grep -oE "\b[0-9]+\s+passed\b" | grep -oE "[0-9]+" | head -1 || echo "0")
+        failed_tests=$(echo "$summary_line" | grep -oE "\b[0-9]+\s+failed\b" | grep -oE "[0-9]+" | head -1 || echo "0")
+        skipped_tests=$(echo "$summary_line" | grep -oE "\b[0-9]+\s+skipped\b" | grep -oE "[0-9]+" | head -1 || echo "0")
+        local error_tests
+        error_tests=$(echo "$summary_line" | grep -oE "\b[0-9]+\s+error\b" | grep -oE "[0-9]+" | head -1 || echo "0")
+        
+        # Add errors to failed count
+        if validate_numeric "$error_tests" 0 && [[ "$error_tests" -gt 0 ]]; then
+            failed_tests=$((failed_tests + error_tests))
+        fi
+        
+        # Validate and calculate total
+        if validate_numeric "$passed_tests" 0 && validate_numeric "$failed_tests" 0 && validate_numeric "$skipped_tests" 0; then
+            total_tests=$((passed_tests + failed_tests + skipped_tests))
+        else
+            log_debug "Could not parse test counts reliably from: $summary_line"
+            total_tests=0
+            passed_tests=0
+            failed_tests=0
+            skipped_tests=0
+            return 1
+        fi
+    else
+        log_debug "No test summary line found in output"
+        total_tests=0
+        passed_tests=0
+        failed_tests=0
+        skipped_tests=0
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function: parse_coverage_results
+# Purpose: Parse pytest coverage results with improved patterns
+# Args:
+#   $1: Test output file path
+# Returns: Sets global variables: total_coverage_full, total_coverage_int, coverage_summary
+parse_coverage_results() {
+    local output_file="${1:-}"
+    
+    if [[ -z "$output_file" ]] || [[ ! -f "$output_file" ]]; then
+        total_coverage_full=""
+        total_coverage_int=""
+        coverage_summary=""
+        return 1
+    fi
+    
+    # Extract coverage summary table (more lines for better capture)
+    coverage_summary=$(grep -A 30 "^TOTAL" "$output_file" | head -35 || echo "")
+    
+    # Improved pattern for coverage percentage
+    # Matches formats like: "61.22%" or "TOTAL ... 61.22%"
+    local total_line
+    total_line=$(grep "^TOTAL" "$output_file" | head -1 || echo "")
+    
+    if [[ -n "$total_line" ]]; then
+        # Extract percentage (last field or field containing %)
+        total_coverage_full=$(echo "$total_line" | awk '{for(i=NF;i>=1;i--) if($i ~ /[0-9]+\.[0-9]+%/) {print $i; exit}}' || echo "")
+        
+        # If not found, try simpler pattern
+        if [[ -z "$total_coverage_full" ]]; then
+            total_coverage_full=$(echo "$total_line" | grep -oE "[0-9]+\.[0-9]+%" | head -1 || echo "")
+        fi
+        
+        # Extract integer part
+        if [[ -n "$total_coverage_full" ]]; then
+            total_coverage_int=$(echo "$total_coverage_full" | grep -oE "^[0-9]+" | head -1 || echo "")
+        fi
+    fi
+    
+    if [[ -z "$total_coverage_full" ]]; then
+        log_debug "Could not extract coverage percentage from output"
+        return 1
+    fi
+    
+    return 0
+}
+
 # Function: run_test_suite
 # Purpose: Execute test suite with coverage analysis and detailed reporting
 # Args: None
@@ -870,7 +1349,6 @@ run_test_suite() {
 
     echo
     log_info_to_file "Running test suite with coverage analysis..."
-    log_info "Running test suite with coverage analysis..."
     log_info "Test mode: $test_mode"
     log_info "Modules: core → llm → literature"
     echo
@@ -910,10 +1388,10 @@ run_test_suite() {
     
     # Stream output in real-time using tee while capturing for parsing
     log_info_to_file "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log_info_to_file "TEST EXECUTION (Real-Time Output)"
+    log_info_to_file "TEST EXECUTION"
     log_info_to_file "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BOLD}TEST EXECUTION (Real-Time Output)${NC}"
+    echo -e "${BOLD}TEST EXECUTION${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo
     
@@ -925,76 +1403,48 @@ run_test_suite() {
     fi
 
     local end_time=$(date +%s)
-    local duration=$(get_elapsed_time "$start_time" "$end_time")
+    local duration
+    duration=$(get_elapsed_time "$start_time" "$end_time")
     
     log_debug "Test execution duration: $duration seconds"
     log_debug "Test exit code: $test_exit_code"
 
-    echo
-    log_info_to_file "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log_info_to_file "TEST SUITE SUMMARY"
-    log_info_to_file "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BOLD}TEST SUITE SUMMARY${NC}"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo
-
-    # Parse test results with improved regex patterns
+    # Parse test results using improved parsing function
     local total_tests passed_tests failed_tests skipped_tests
-    local summary_line
-    summary_line=$(grep -E "passed|failed|skipped" "$test_output_file" | tail -1 || echo "")
-    
-    if [[ -n "$summary_line" ]]; then
-        # Extract numbers using more robust patterns
-        passed_tests=$(echo "$summary_line" | grep -oE "[0-9]+ passed" | grep -oE "[0-9]+" || echo "0")
-        failed_tests=$(echo "$summary_line" | grep -oE "[0-9]+ failed" | grep -oE "[0-9]+" || echo "0")
-        skipped_tests=$(echo "$summary_line" | grep -oE "[0-9]+ skipped" | grep -oE "[0-9]+" || echo "0")
-        
-        # Calculate total from parsed values
-        total_tests=$((passed_tests + failed_tests + skipped_tests))
-        
-        # Validate parsed values are numeric
-        if [[ ! "$passed_tests" =~ ^[0-9]+$ ]] || [[ ! "$failed_tests" =~ ^[0-9]+$ ]] || [[ ! "$skipped_tests" =~ ^[0-9]+$ ]]; then
-            log_warning "Could not parse test counts reliably, using summary line"
-            log_info "Test summary: $summary_line"
-            total_tests=0
-        fi
+    if parse_test_results "$test_output_file"; then
+        log_debug "Parsed test results: total=$total_tests, passed=$passed_tests, failed=$failed_tests, skipped=$skipped_tests"
     else
-        # Try alternative parsing
-        summary_line=$(grep -E "===.*passed.*failed.*skipped|passed.*failed.*skipped.*in" "$test_output_file" | tail -1 || echo "")
-        if [[ -n "$summary_line" ]]; then
-            log_info "Test summary: $summary_line"
-        else
-            log_warning "Could not find test summary in output"
-        fi
+        log_debug "Failed to parse test results, using defaults"
         total_tests=0
         passed_tests=0
         failed_tests=0
         skipped_tests=0
     fi
 
+    # Display concise summary only if we have parsed values
     if [[ "$total_tests" -gt 0 ]]; then
+        echo
+        log_info_to_file "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        log_info_to_file "TEST SUMMARY"
+        log_info_to_file "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${BOLD}TEST SUMMARY${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo
         log_info_to_file "Total tests: $total_tests"
-        log_info "Total tests: $total_tests"
         if [[ "$passed_tests" -gt 0 ]]; then
             log_success_to_file "Passed: $passed_tests"
-            log_success "Passed: $passed_tests"
         fi
         if [[ "$failed_tests" -gt 0 ]]; then
             log_error_to_file "Failed: $failed_tests"
-            log_error "Failed: $failed_tests"
         fi
         if [[ "$skipped_tests" -gt 0 ]]; then
             log_warning_to_file "Skipped: $skipped_tests"
-            log_warning "Skipped: $skipped_tests"
         fi
+        log_info_to_file "Duration: $(format_duration "$duration")"
     fi
 
-    echo
-    log_info_to_file "Duration: $(format_duration "$duration")"
-    log_info "Duration: $(format_duration "$duration")"
-
-    # Parse coverage results
+    # Parse coverage results using improved parsing function
     echo
     log_info_to_file "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     log_info_to_file "COVERAGE ANALYSIS"
@@ -1004,39 +1454,38 @@ run_test_suite() {
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo
 
-    # Extract coverage summary
-    local coverage_summary
-    coverage_summary=$(grep -A 20 "TOTAL" "$test_output_file" | head -25 || echo "")
-    
-    if [[ -n "$coverage_summary" ]]; then
-        echo "$coverage_summary"
-    else
-        log_warning_to_file "Could not parse coverage summary from output"
-        log_warning "Could not parse coverage summary from output"
-    fi
-
-    # Check for coverage threshold
-    local total_coverage
-    total_coverage=$(grep "TOTAL" "$test_output_file" | grep -oE "[0-9]+%" | head -1 | grep -oE "[0-9]+" || echo "")
-    
-    if [[ -n "$total_coverage" ]] && [[ "$total_coverage" =~ ^[0-9]+$ ]]; then
-        echo
-        if [[ "$total_coverage" -ge $COVERAGE_THRESHOLD ]]; then
-            log_success_to_file "Overall coverage: ${total_coverage}% (meets ${COVERAGE_THRESHOLD}% threshold)"
-            log_success "Overall coverage: ${total_coverage}% (meets ${COVERAGE_THRESHOLD}% threshold)"
+    local coverage_summary total_coverage_full total_coverage_int
+    if parse_coverage_results "$test_output_file"; then
+        log_debug "Parsed coverage results: ${total_coverage_full}"
+        
+        if [[ -n "$coverage_summary" ]]; then
+            echo "$coverage_summary"
         else
-            log_warning_to_file "Overall coverage: ${total_coverage}% (below ${COVERAGE_THRESHOLD}% threshold)"
-            log_warning "Overall coverage: ${total_coverage}% (below ${COVERAGE_THRESHOLD}% threshold)"
+            log_warning_to_file "Could not parse coverage summary from output"
+        fi
+        
+        # Display coverage status
+        if validate_numeric "$total_coverage_int" 0 100; then
+            echo
+            if [[ "$total_coverage_int" -ge $COVERAGE_THRESHOLD ]]; then
+                log_success_to_file "Overall coverage: ${total_coverage_full} (meets ${COVERAGE_THRESHOLD}% threshold)"
+            else
+                log_warning_to_file "Overall coverage: ${total_coverage_full} (below ${COVERAGE_THRESHOLD}% threshold)"
+            fi
+        else
+            log_debug "Invalid coverage percentage: ${total_coverage_int}"
+            if [[ -z "$coverage_summary" ]]; then
+                log_warning_to_file "Coverage data not available - check pytest output above"
+            fi
         fi
     else
-        log_debug "Could not extract coverage percentage"
+        log_warning_to_file "Could not parse coverage results from output"
     fi
 
     # Check for HTML coverage report
     if [[ -d "htmlcov" ]]; then
         echo
         log_info_to_file "📊 HTML coverage report generated: htmlcov/index.html"
-        log_info "📊 HTML coverage report generated: htmlcov/index.html"
         log_info "   Open with: open htmlcov/index.html"
     fi
 
@@ -1058,7 +1507,6 @@ run_test_suite() {
             echo "$failed_test_lines"
         else
             log_info_to_file "Review test output above for failure details"
-            log_info "Review test output above for failure details"
         fi
     fi
 
@@ -1069,11 +1517,9 @@ run_test_suite() {
     echo
     if [[ "$test_exit_code" == "0" ]]; then
         log_success_to_file "✅ Test suite completed successfully"
-        log_success "✅ Test suite completed successfully"
         return 0
     else
         log_error_to_file "❌ Test suite completed with failures (exit code: $test_exit_code)"
-        log_error "❌ Test suite completed with failures (exit code: $test_exit_code)"
         return 1
     fi
 }

@@ -22,7 +22,10 @@ def mock_config(tmp_path):
 
 @pytest.fixture
 def sample_result():
-    """Create a sample SearchResult for testing."""
+    """Create a sample SearchResult for testing.
+    
+    Uses a real arXiv paper ID that should have a valid PDF URL.
+    """
     return SearchResult(
         title="Test Paper",
         authors=["Author One", "Author Two"],
@@ -31,7 +34,8 @@ def sample_result():
         url="http://example.com/paper",
         doi="10.1234/test.123",
         source="test",
-        pdf_url="http://example.com/paper.pdf",
+        # Use a real arXiv PDF URL for testing (arXiv:2301.00001 is a real paper)
+        pdf_url="https://arxiv.org/pdf/2301.00001.pdf",
         venue="Journal of Testing"
     )
 

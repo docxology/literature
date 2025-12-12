@@ -100,29 +100,34 @@ def create_single_page_abstract(
             compute_pca,
             cluster_papers,
         )
-        feature_matrix, feature_names = extract_text_features(corpus)
+        logger.debug("Extracting features for graphical abstract PCA 2D...")
+        feature_matrix, feature_names, valid_indices = extract_text_features(corpus)
+        
+        # Filter corpus arrays to match valid indices
+        filtered_titles = [corpus.titles[i] for i in valid_indices if i < len(corpus.titles)]
+        filtered_years = [corpus.years[i] if i < len(corpus.years) else None for i in valid_indices]
+        
+        # Validate alignment
+        if len(feature_matrix) != len(filtered_titles) or len(feature_matrix) != len(filtered_years):
+            raise ValueError(
+                f"Graphical abstract array size mismatch: feature_matrix={len(feature_matrix)}, "
+                f"titles={len(filtered_titles)}, years={len(filtered_years)}"
+            )
+        
         pca_data_2d, pca_model_2d = compute_pca(feature_matrix, n_components=2)
         cluster_labels = cluster_papers(pca_data_2d, n_clusters=5)
         
         ax1 = fig.add_subplot(gs[0, 0])
-        fig_pca_2d = plot_pca_2d(
-            pca_data_2d, corpus.titles, corpus.years,
-            cluster_labels=cluster_labels,
-            explained_variance=pca_model_2d.explained_variance_ratio_,
-            title="PCA Analysis (2D)"
-        )
-        # Copy axes content
-        ax1_original = fig_pca_2d.axes[0]
-        for child in ax1_original.get_children():
-            if hasattr(child, 'get_position'):
-                pos = child.get_position()
-                # Adjust position if needed
-        plt.close(fig_pca_2d)
         
-        # Recreate in subplot
+        # Prepare year data for coloring
+        valid_years = [y for y in filtered_years if y is not None]
+        min_year = min(valid_years) if valid_years else 2000
+        years_array = [y if y else min_year for y in filtered_years]
+        
+        # Recreate in subplot with aligned arrays
         scatter = ax1.scatter(
             pca_data_2d[:, 0], pca_data_2d[:, 1],
-            c=[y if y else min([y for y in corpus.years if y]) for y in corpus.years],
+            c=years_array,
             cmap='plasma', alpha=0.7, s=80, edgecolors='black', linewidth=0.5
         )
         ax1.set_xlabel(f'PC1 ({pca_model_2d.explained_variance_ratio_[0]*100:.1f}%)', 
@@ -144,7 +149,7 @@ def create_single_page_abstract(
         pca_data_3d, pca_model_3d = compute_pca(feature_matrix, n_components=3)
         scatter = ax2.scatter(
             pca_data_3d[:, 0], pca_data_3d[:, 1],
-            c=[y if y else min([y for y in corpus.years if y]) for y in corpus.years],
+            c=years_array,  # Use same aligned years array
             cmap='plasma', alpha=0.7, s=80, edgecolors='black', linewidth=0.5
         )
         ax2.set_xlabel(f'PC1 ({pca_model_3d.explained_variance_ratio_[0]*100:.1f}%)', 

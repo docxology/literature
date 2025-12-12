@@ -38,7 +38,7 @@ def extract_pca_loadings(
     max_features: int = 1000,
     min_df: int = 2,
     max_df: float = 0.95
-) -> Tuple[np.ndarray, np.ndarray, List[str], PCA]:
+) -> Tuple[np.ndarray, np.ndarray, List[str], PCA, List[int]]:
     """Extract PCA loadings from text corpus.
     
     Args:
@@ -49,28 +49,36 @@ def extract_pca_loadings(
         max_df: Maximum document frequency.
         
     Returns:
-        Tuple of (loadings_matrix, transformed_data, feature_names, pca_model).
+        Tuple of (loadings_matrix, transformed_data, feature_names, pca_model, valid_indices).
         loadings_matrix: (n_features, n_components) array of loadings.
         transformed_data: (n_samples, n_components) PCA-transformed data.
         feature_names: List of feature (word) names.
         pca_model: Fitted PCA model.
+        valid_indices: List of original corpus indices that were kept (for alignment).
     """
     if not SKLEARN_AVAILABLE:
         raise ImportError("scikit-learn is required for PCA loadings extraction")
     
     # Extract features
-    feature_matrix, feature_names = extract_text_features(
+    logger.debug(f"Extracting text features for PCA loadings (n_components={n_components})...")
+    feature_matrix, feature_names, valid_indices = extract_text_features(
         corpus, max_features=max_features, min_df=min_df, max_df=max_df
     )
     
+    logger.debug(f"Feature extraction complete: {len(feature_matrix)} samples, {len(feature_names)} features, "
+                f"{len(valid_indices)} valid indices from {len(corpus.texts) if corpus.texts else len(corpus.abstracts)} total")
+    
     # Compute PCA
+    logger.debug("Computing PCA for loadings extraction...")
     transformed_data, pca_model = compute_pca(feature_matrix, n_components=n_components)
+    logger.info(f"PCA loadings computed: {len(transformed_data)} samples, {n_components} components, "
+               f"explained variance: {pca_model.explained_variance_ratio_.sum():.2%}")
     
     # Extract loadings (components_ is already transposed: n_components x n_features)
     # We want n_features x n_components for easier interpretation
     loadings_matrix = pca_model.components_.T
     
-    return loadings_matrix, transformed_data, feature_names, pca_model
+    return loadings_matrix, transformed_data, feature_names, pca_model, valid_indices
 
 
 def get_top_words_per_component(
@@ -379,9 +387,11 @@ def export_all_loadings(
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Extract loadings
-    loadings_matrix, transformed_data, feature_names, pca_model = extract_pca_loadings(
+    logger.debug("Extracting PCA loadings for export...")
+    loadings_matrix, transformed_data, feature_names, pca_model, valid_indices = extract_pca_loadings(
         corpus, n_components=n_components
     )
+    logger.debug(f"Loadings extracted: {len(loadings_matrix)} features, {len(transformed_data)} samples")
     
     # Get top words
     top_words = get_top_words_per_component(
@@ -458,9 +468,11 @@ def create_loadings_visualizations(
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Extract loadings
-    loadings_matrix, transformed_data, feature_names, pca_model = extract_pca_loadings(
+    logger.debug("Extracting PCA loadings for visualizations...")
+    loadings_matrix, transformed_data, feature_names, pca_model, valid_indices = extract_pca_loadings(
         corpus, n_components=n_components
     )
+    logger.debug(f"Loadings extracted: {len(loadings_matrix)} features, {len(transformed_data)} samples")
     
     # Get top words
     top_words = get_top_words_per_component(
@@ -507,12 +519,23 @@ def create_loadings_visualizations(
                 extract_text_features,
                 compute_pca,
             )
-            feature_matrix_2d, _ = extract_text_features(corpus)
+            feature_matrix_2d, _, valid_indices_2d = extract_text_features(corpus)
             pca_data_2d, pca_model_2d = compute_pca(feature_matrix_2d, n_components=2)
+            
+            # Filter corpus arrays to match valid indices
+            filtered_titles = [corpus.titles[i] for i in valid_indices_2d if i < len(corpus.titles)]
+            filtered_years = [corpus.years[i] if i < len(corpus.years) else None for i in valid_indices_2d]
+            
+            # Validate alignment
+            if len(pca_data_2d) != len(filtered_titles) or len(pca_data_2d) != len(filtered_years):
+                raise ValueError(
+                    f"Biplot array size mismatch: pca_data={len(pca_data_2d)}, "
+                    f"titles={len(filtered_titles)}, years={len(filtered_years)}"
+                )
             
             fig_biplot = plot_pca_biplot(
                 pca_data_2d, loadings_matrix, feature_names,
-                corpus.titles, corpus.years,
+                filtered_titles, filtered_years,
                 cluster_labels=None,  # Can add clustering if needed
                 explained_variance=pca_model_2d.explained_variance_ratio_,
                 top_n_words=top_n_words,
@@ -533,7 +556,10 @@ def create_loadings_visualizations(
         outputs['word_vectors'] = vectors_path
         
     except Exception as e:
-        logger.warning(f"Failed to generate some loadings visualizations: {e}")
+        logger.error(f"Failed to generate some loadings visualizations: {e}")
+        import traceback
+        logger.error(f"Loadings visualization error details: {traceback.format_exc()}")
+        logger.debug(f"Full loadings visualization traceback: {traceback.format_exc()}")
     
     return outputs
 

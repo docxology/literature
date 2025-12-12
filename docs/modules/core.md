@@ -82,10 +82,94 @@ except ValueError as e:
 ### Configuration
 
 ```python
-from infrastructure.core import load_config
+from infrastructure.core import load_config, get_config_as_dict, find_config_file
 
+# Load YAML config
 config = load_config(Path("config.yaml"))
+
+# Get config as dictionary
+env_dict = get_config_as_dict(Path("."))
+
+# Find config file
+config_path = find_config_file(Path("."))
 ```
+
+### Progress Tracking
+
+```python
+from infrastructure.core import ProgressBar, SubStageProgress
+
+with ProgressBar(total=100, desc="Processing") as pbar:
+    for i in range(100):
+        pbar.update(1)
+```
+
+### Retry Logic
+
+```python
+from infrastructure.core import retry_with_backoff
+
+@retry_with_backoff(max_attempts=3, base_delay=1.0)
+def risky_operation():
+    # Operation that may fail
+    pass
+```
+
+### Performance Monitoring
+
+```python
+from infrastructure.core import PerformanceMonitor, get_system_resources
+
+with PerformanceMonitor() as monitor:
+    # Your code here
+    pass
+
+resources = get_system_resources()
+print(f"CPU: {resources.cpu_percent}%, Memory: {resources.memory_percent}%")
+```
+
+### Checkpoint Management
+
+```python
+from infrastructure.core import CheckpointManager, StageResult
+
+checkpoint = CheckpointManager()
+if checkpoint.checkpoint_exists():
+    state = checkpoint.load_checkpoint()
+else:
+    # Run pipeline stages
+    checkpoint.save_checkpoint(stage_results)
+```
+
+### Environment Setup
+
+```python
+from infrastructure.core import (
+    check_python_version,
+    check_dependencies,
+    setup_directories
+)
+
+check_python_version(min_version=(3, 10))
+check_dependencies(["pandas", "numpy"])
+setup_directories(["output", "output/figures"])
+```
+
+## Additional Components
+
+### Credentials (`credentials.py`)
+- Credential management from .env and YAML config files
+- Environment variable loading
+- Optional python-dotenv support
+
+### File Operations (`file_operations.py`)
+- Output directory cleanup
+- Final deliverable copying
+
+### Script Discovery (`script_discovery.py`)
+- Script discovery and execution
+- Analysis script finding
+- Orchestrator script discovery
 
 ## See Also
 

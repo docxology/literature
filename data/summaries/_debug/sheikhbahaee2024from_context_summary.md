@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-sentience, target, attention, framework, physics, free, university, deciphering, semantics, evaluating, particular, claims, principle, energy, research
+deciphering, research, particular, framework, principle, physics, energy, evaluating, claims, sentience, free, target, university, semantics, attention
 
 ## Equations Found
 5 equations extracted
