@@ -111,7 +111,7 @@ export LITERATURE_SOURCES="arxiv,semanticscholar"
 
 # LLM settings
 export OLLAMA_HOST="http://localhost:11434"
-export OLLAMA_MODEL="llama3.2:3b"
+export OLLAMA_MODEL="gemma3:4b"
 
 # Logging
 export LOG_LEVEL=1  # 0=DEBUG, 1=INFO, 2=WARN, 3=ERROR

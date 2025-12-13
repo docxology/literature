@@ -5,7 +5,7 @@ Complete guide to generating AI-powered summaries for academic papers.
 ## Prerequisites
 
 - Ollama server running (`ollama serve`)
-- Model installed (e.g., `ollama pull llama3.2:3b`)
+- Model installed (e.g., `ollama pull gemma3:4b`)
 - PDF files in `data/pdfs/` directory
 
 ## Quick Start
@@ -64,7 +64,7 @@ export MAX_PARALLEL_SUMMARIES=1
 export LLM_SUMMARIZATION_TIMEOUT=600
 
 # LLM model
-export OLLAMA_MODEL=llama3.2:3b
+export OLLAMA_MODEL=gemma3:4b
 ```
 
 ### Engine Configuration

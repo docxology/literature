@@ -424,13 +424,13 @@ class LiteratureReporter:
             papers_to_report = [
                 LibraryEntry(
                     citation_key=r.citation_key,
-                    title=r.result.title if r.result else "Unknown",
-                    authors=[],
-                    year=None,
-                    doi=None,
-                    source="unknown",
-                    venue=None,
-                    citation_count=None,
+                    title=getattr(r, 'result', None) and getattr(r.result, 'title', None) or "Unknown",
+                    authors=getattr(r, 'result', None) and getattr(r.result, 'authors', None) or [],
+                    year=getattr(r, 'result', None) and getattr(r.result, 'year', None) or None,
+                    doi=getattr(r, 'result', None) and getattr(r.result, 'doi', None) or None,
+                    source=getattr(r, 'result', None) and getattr(r.result, 'source', None) or "unknown",
+                    venue=getattr(r, 'result', None) and getattr(r.result, 'venue', None) or None,
+                    citation_count=getattr(r, 'result', None) and getattr(r.result, 'citation_count', None) or None,
                     pdf_path=str(r.pdf_path) if r.pdf_path else None,
                     added_date=datetime.now().isoformat(),
                     abstract=""
@@ -448,8 +448,8 @@ class LiteratureReporter:
             download_class = "success" if (download_result and download_result.success) else "failed" if download_result else ""
             summary_class = "success" if (summary_result and summary_result.success) else "failed" if summary_result else ""
             
-            quality = f"{summary_result.quality_score:.2f}" if summary_result else "-"
-            time_taken = f"{summary_result.generation_time:.1f}" if summary_result else "-"
+            quality = f"{summary_result.quality_score:.2f}" if summary_result and hasattr(summary_result, 'quality_score') else "-"
+            time_taken = f"{summary_result.generation_time:.1f}" if summary_result and hasattr(summary_result, 'generation_time') else "-"
             
             html_content += f"""
                 <tr>
@@ -462,23 +462,24 @@ class LiteratureReporter:
                 </tr>
 """
         
-        html_content += """
+        keywords_str = ', '.join(workflow_result.keywords) if workflow_result.keywords else "None"
+        total_time = workflow_result.total_time if hasattr(workflow_result, 'total_time') else 0.0
+        avg_time = total_time / max(1, total_papers)
+        
+        html_content += f"""
             </tbody>
         </table>
         
         <h2>Keywords</h2>
-        <p>{', '.join(workflow_result.keywords)}</p>
+        <p>{keywords_str}</p>
         
         <h2>Timing</h2>
-        <p><strong>Total Time:</strong> {:.1f} seconds</p>
-        <p><strong>Average per Paper:</strong> {:.1f} seconds</p>
+        <p><strong>Total Time:</strong> {total_time:.1f} seconds</p>
+        <p><strong>Average per Paper:</strong> {avg_time:.1f} seconds</p>
     </div>
 </body>
 </html>
-""".format(
-            workflow_result.total_time,
-            workflow_result.total_time / max(1, total_papers)
-        )
+"""
         
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(html_content)

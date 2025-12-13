@@ -18,6 +18,7 @@ from infrastructure.literature.pdf.extractor import (
     extract_pdf_urls_from_html,
     extract_citations,
 )
+from infrastructure.literature.pdf.html_extractor import HTMLTextExtractor
 
 if TYPE_CHECKING:
     from infrastructure.literature.library.index import LibraryIndex
@@ -55,6 +56,9 @@ class PDFHandler:
         
         # Initialize fallback strategies
         self._fallbacks = PDFFallbackStrategies(config)
+        
+        # Initialize HTML text extractor for fallback
+        self._html_extractor = HTMLTextExtractor()
         
         # Ensure download directory exists
         self._downloader._ensure_download_dir()
@@ -370,7 +374,57 @@ class PDFHandler:
                     last_error = download_result[1]
                     last_failure_reason = download_result[2]
 
-        # All attempts failed - provide detailed error message
+        # All PDF download attempts failed
+        # Try HTML text extraction as fallback if we got HTML responses
+        if last_failure_reason in ["html_response", "html_no_pdf_link"]:
+            logger.info(f"PDF download failed, attempting HTML text extraction as fallback...")
+            
+            # Try to fetch HTML content from the first URL that returned HTML
+            html_text_path = output_path.with_suffix('.txt')
+            html_extracted = False
+            
+            # Try URLs in order until we successfully extract HTML text
+            for try_url in urls_to_try[:3]:  # Limit to first 3 URLs to avoid excessive requests
+                try:
+                    import requests
+                    response = requests.get(
+                        try_url,
+                        timeout=download_timeout,
+                        headers={"User-Agent": self._downloader._get_user_agent()},
+                        allow_redirects=True
+                    )
+                    
+                    if response.status_code == 200:
+                        # Check if it's HTML
+                        content_type = response.headers.get("Content-Type", "").lower()
+                        content_sample = response.content[:2048] if hasattr(response, 'content') else b''
+                        
+                        if "text/html" in content_type or self._is_html_content(content_sample):
+                            # Extract text from HTML
+                            extracted_text = self._html_extractor.extract_text(response.content, try_url)
+                            
+                            if extracted_text and len(extracted_text) > 100:  # Ensure we got meaningful content
+                                # Save extracted text
+                                self._html_extractor.save_extracted_text(extracted_text, html_text_path)
+                                
+                                # Update library index with text path (similar to PDF path)
+                                if result and self._library_index:
+                                    citation_key = filename.replace('.pdf', '')
+                                    # Note: We don't update pdf_path for HTML text, but we could track it separately
+                                    logger.info(f"Extracted HTML text saved to {html_text_path} ({len(extracted_text):,} characters)")
+                                
+                                logger.info(f"✓ Extracted HTML text: {html_text_path.name} ({len(extracted_text):,} characters) [Source: {source or 'unknown'}]")
+                                html_extracted = True
+                                break
+                except Exception as e:
+                    logger.debug(f"HTML text extraction attempt failed for {try_url}: {e}")
+                    continue
+            
+            if html_extracted:
+                # Return the text file path instead of raising an error
+                return html_text_path
+        
+        # All attempts failed (including HTML extraction) - provide detailed error message
         error_msg = f"Failed to download PDF after trying {len(attempted_urls)} URL attempt(s)"
         if last_error:
             error_msg = f"{error_msg}: {last_error}"
@@ -384,7 +438,11 @@ class PDFHandler:
         elif last_failure_reason == "html_response":
             error_msg += "\nHTML received instead of PDF: The URL points to a web page, not a direct PDF link.\n"
             error_msg += "  - The PDF may require clicking a download button\n"
-            error_msg += "  - The URL may need to be transformed (already attempted)"
+            error_msg += "  - The URL may need to be transformed (already attempted)\n"
+            error_msg += "  - HTML text extraction was attempted but failed"
+        elif last_failure_reason == "html_no_pdf_link":
+            error_msg += "\nHTML page contains no working PDF URLs.\n"
+            error_msg += "  - HTML text extraction was attempted but failed"
         elif last_failure_reason == "not_found":
             error_msg += "\n404 Not Found: The PDF URL does not exist or has been moved."
         
@@ -401,6 +459,23 @@ class PDFHandler:
             }
         )
 
+    def _is_html_content(self, content: bytes) -> bool:
+        """Check if content appears to be HTML.
+        
+        Args:
+            content: Content bytes to check.
+            
+        Returns:
+            True if content appears to be HTML.
+        """
+        if not content:
+            return False
+        
+        # Check for HTML indicators
+        content_str = content[:1024].decode('utf-8', errors='ignore').lower().strip()
+        html_indicators = ['<!doctype html', '<html', '<head', '<body', '<div', '<script', '<meta']
+        return any(indicator in content_str for indicator in html_indicators)
+    
     def _generate_filename_from_result(self, result: SearchResult) -> str:
         """Generate filename from search result using citation key format.
         

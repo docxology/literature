@@ -213,22 +213,22 @@ lit = LiteratureSearch(config)
 
 ```bash
 # Search for papers (adds to library automatically)
-python3 -m infrastructure.literature.cli search "machine learning" --limit 10
+python3 -m infrastructure.literature.core.cli search "machine learning" --limit 10
 
 # Search and download PDFs
-python3 -m infrastructure.literature.cli search "neural networks" --download
+python3 -m infrastructure.literature.core.cli search "neural networks" --download
 
 # Search specific sources
-python3 -m infrastructure.literature.cli search "transformers" --sources arxiv,semanticscholar
+python3 -m infrastructure.literature.core.cli search "transformers" --sources arxiv,semanticscholar
 
 # List papers in library
-python3 -m infrastructure.literature.cli library list
+python3 -m infrastructure.literature.core.cli library list
 
 # Show library statistics
-python3 -m infrastructure.literature.cli library stats
+python3 -m infrastructure.literature.core.cli library stats
 
 # Export library to JSON
-python3 -m infrastructure.literature.cli library export --output export.json
+python3 -m infrastructure.literature.core.cli library export --output export.json
 
 # NEW: Clean up library (remove papers without PDFs)
 python3 scripts/07_literature_search.py --cleanup
@@ -257,7 +257,7 @@ config = LiteratureConfig(
     download_dir="data/pdfs",
     bibtex_file="data/references.bib",
     library_index_file="data/library.json",
-    timeout=0.1,
+    timeout=30.0,
     sources=["arxiv", "semanticscholar"]
 )
 ```
@@ -277,7 +277,7 @@ Load configuration from environment with `LiteratureConfig.from_env()`:
 | `LITERATURE_RETRY_ATTEMPTS` | Retry attempts for failed requests | 3 |
 | `LITERATURE_RETRY_DELAY` | Base delay for exponential backoff | 5.0 |
 | `LITERATURE_DOWNLOAD_DIR` | PDF download directory | data/pdfs |
-| `LITERATURE_TIMEOUT` | Request timeout (seconds) | 0.1 |
+| `LITERATURE_TIMEOUT` | Request timeout (seconds) | 30.0 |
 | `LITERATURE_BIBTEX_FILE` | BibTeX file path | data/references.bib |
 | `LITERATURE_LIBRARY_INDEX` | JSON index file path | data/library.json |
 | `LITERATURE_SOURCES` | Comma-separated sources | arxiv,semanticscholar |
@@ -426,19 +426,17 @@ The repository includes an interactive script for managing academic literature w
 
 ```bash
 # Basic operations:
-./run.sh --search                  # Search literature (add to bibliography)
-./run.sh --download                # Download PDFs (for bibliography entries)
-./run.sh --summarize               # Generate summaries (for papers with PDFs)
-
-# Maintenance:
-./run.sh --cleanup                 # Remove papers without PDFs from library
-
-# Advanced LLM operations:
-./run.sh --llm-operation review    # Generate literature review synthesis
-./run.sh --llm-operation communication  # Create science communication narrative
-./run.sh --llm-operation compare   # Comparative analysis across papers
-./run.sh --llm-operation gaps      # Identify research gaps
-./run.sh --llm-operation network   # Analyze citation networks
+./run_literature.sh                # Interactive menu with all options
+# Or directly:
+python3 scripts/07_literature_search.py --search     # Search literature (add to bibliography)
+python3 scripts/07_literature_search.py --download-only  # Download PDFs (for bibliography entries)
+python3 scripts/07_literature_search.py --summarize   # Generate summaries (for papers with PDFs)
+python3 scripts/07_literature_search.py --cleanup     # Remove papers without PDFs from library
+python3 scripts/07_literature_search.py --llm-operation review    # Generate literature review synthesis
+python3 scripts/07_literature_search.py --llm-operation communication  # Create science communication narrative
+python3 scripts/07_literature_search.py --llm-operation compare   # Comparative analysis across papers
+python3 scripts/07_literature_search.py --llm-operation gaps      # Identify research gaps
+python3 scripts/07_literature_search.py --llm-operation network   # Analyze citation networks
 
 # Or directly:
 python3 scripts/07_literature_search.py --search-only
@@ -1209,4 +1207,4 @@ The meta_analysis module requires:
 - [`README.md`](README.md) - Quick reference
 - [`meta_analysis/AGENTS.md`](meta_analysis/AGENTS.md) - Meta-analysis documentation
 - [`../AGENTS.md`](../AGENTS.md) - Infrastructure overview
-- [`../../docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) - System architecture
+- [`../../docs/architecture.md`](../../docs/architecture.md) - System architecture

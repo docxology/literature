@@ -23,6 +23,7 @@ from infrastructure.literature.html_parsers.springer import SpringerParser
 from infrastructure.literature.html_parsers.ieee import IEEEParser
 from infrastructure.literature.html_parsers.acm import ACMParser
 from infrastructure.literature.html_parsers.wiley import WileyParser
+from infrastructure.literature.html_parsers.osf import OSFParser
 from infrastructure.literature.html_parsers.generic import GenericParser
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "IEEEParser",
     "ACMParser",
     "WileyParser",
+    "OSFParser",
     "GenericParser",
     "get_parser_for_url",
     "extract_pdf_urls_modular",
@@ -51,6 +53,7 @@ def get_parser_for_url(url: str) -> BaseHTMLParser:
     """
     # Ordered by priority (higher priority first)
     parsers = [
+        OSFParser(),      # High priority for OSF.io
         ElsevierParser(),
         SpringerParser(),
         IEEEParser(),

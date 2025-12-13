@@ -50,9 +50,20 @@ def doi_to_pdf_urls(doi: str) -> List[str]:
     if doi.startswith('10.3389/'):
         candidates.append(f"https://www.frontiersin.org/articles/{doi}/pdf")
 
-    # MDPI
-    if doi.startswith('10.3390/'):
-        candidates.append(f"https://www.mdpi.com/article/10.3390/{doi.split('/', 1)[1]}/pdf")
+    # MDPI (case-insensitive DOI handling)
+    doi_lower = doi.lower()
+    if doi_lower.startswith('10.3390/'):
+        # Try both lowercase and original case
+        doi_part = doi.split('/', 1)[1]
+        candidates.append(f"https://www.mdpi.com/article/10.3390/{doi_part}/pdf")
+        # Alternative pattern with uppercase journal code
+        if doi_part != doi_part.upper():
+            candidates.append(f"https://www.mdpi.com/article/10.3390/{doi_part.upper()}/pdf")
+        # Try direct PDF URL pattern
+        mdpi_parts = doi_part.split('/')
+        if len(mdpi_parts) >= 3:
+            # Pattern: journal/volume/issue/article
+            candidates.append(f"https://www.mdpi.com/{mdpi_parts[0]}/{mdpi_parts[1]}/{mdpi_parts[2]}/{mdpi_parts[-1]}/pdf")
 
     # Nature
     if doi.startswith('10.1038/'):
@@ -62,8 +73,18 @@ def doi_to_pdf_urls(doi: str) -> List[str]:
     if doi.startswith('10.1093/'):
         candidates.append(f"https://academic.oup.com/view-pdf/doi/{doi}")
 
-    # Generic DOI resolver fallback
-    candidates.append(f"https://doi.org/{doi}")
+    # OSF.io (Open Science Framework)
+    # Pattern: 10.31234/osf.io/XXXXX or 10.31219/osf.io/XXXXX
+    osf_match = re.search(r'10\.3123[49]/osf\.io/([a-z0-9_]+)', doi, re.IGNORECASE)
+    if osf_match:
+        osf_id = osf_match.group(1)
+        # OSF.io direct download URL (preferred)
+        candidates.insert(0, f"https://osf.io/{osf_id}/download")
+        # Also try the DOI resolver as fallback
+        candidates.append(f"https://doi.org/{doi}")
+    else:
+        # Generic DOI resolver fallback (only if not OSF.io)
+        candidates.append(f"https://doi.org/{doi}")
 
     return candidates
 
@@ -129,10 +150,26 @@ def transform_pdf_url(url: str) -> List[str]:
         candidates.append(f"https://www.sciencedirect.com/science/article/pii/{pii}/pdfft?isDTMRedir=true&download=true")
 
     # Handle MDPI patterns (often open access)
+    # Pattern 1: mdpi.com/journal/volume/issue/article
     mdpi_match = re.search(r'mdpi\.com/(\d+-\d+)/(\d+)/(\d+)/(\d+)', url)
     if mdpi_match:
         journal, volume, issue, article = mdpi_match.groups()
         candidates.append(f"https://www.mdpi.com/{journal}/{volume}/{issue}/{article}/pdf")
+    
+    # Pattern 2: mdpi.com/article/10.3390/...
+    mdpi_article_match = re.search(r'mdpi\.com/article/(10\.3390/[^/]+)', url, re.IGNORECASE)
+    if mdpi_article_match:
+        doi_part = mdpi_article_match.group(1)
+        candidates.append(f"https://www.mdpi.com/article/{doi_part}/pdf")
+        # Try with version parameter (sometimes needed)
+        candidates.append(f"https://www.mdpi.com/article/{doi_part}/pdf?version={int(__import__('time').time())}")
+    
+    # Pattern 3: Direct PDF URL with version
+    mdpi_pdf_match = re.search(r'mdpi\.com/(\d+-\d+)/(\d+)/(\d+)/(\d+)/pdf', url)
+    if mdpi_pdf_match:
+        journal, volume, issue, article = mdpi_pdf_match.groups()
+        # Try with version parameter
+        candidates.append(f"https://www.mdpi.com/{journal}/{volume}/{issue}/{article}/pdf?version={int(__import__('time').time())}")
 
     # Handle Frontiers patterns (open access)
     frontiers_match = re.search(r'frontiersin\.org/(?:articles|journals)/.+/full$', url)
@@ -157,6 +194,52 @@ def transform_pdf_url(url: str) -> List[str]:
     if biorxiv_match:
         server, content_id = biorxiv_match.groups()
         candidates.append(f"https://www.{server}.org/content/{content_id}.full.pdf")
+
+    # Handle OSF.io (Open Science Framework) patterns
+    # Pattern 1: Direct OSF.io URLs (osf.io/XXXXX)
+    osf_match = re.search(r'osf\.io/([a-z0-9_]+)', url, re.IGNORECASE)
+    if osf_match:
+        osf_id = osf_match.group(1)
+        # OSF.io direct download URL
+        candidates.append(f"https://osf.io/{osf_id}/download")
+    
+    # Pattern 2: DOI URLs containing osf.io (doi.org/10.31234/osf.io/XXXXX)
+    osf_doi_match = re.search(r'10\.3123[49]/osf\.io/([a-z0-9_]+)', url, re.IGNORECASE)
+    if osf_doi_match:
+        osf_id = osf_doi_match.group(1)
+        candidates.append(f"https://osf.io/{osf_id}/download")
+
+    # Handle IEEE Xplore patterns
+    # Pattern 1: ieee.org/document/XXXXX
+    ieee_match = re.search(r'ieee\.org/document/(\d+)', url, re.IGNORECASE)
+    if ieee_match:
+        doc_id = ieee_match.group(1)
+        # Try direct PDF access (works for some open access papers)
+        candidates.append(f"https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber={doc_id}")
+        candidates.append(f"https://ieeexplore.ieee.org/ielx7/{doc_id[:2]}/{doc_id}/0{doc_id}.pdf")
+    
+    # Pattern 2: doi.org/10.1109/... (IEEE DOIs)
+    ieee_doi_match = re.search(r'10\.1109/([^/]+)', url, re.IGNORECASE)
+    if ieee_doi_match:
+        ieee_path = ieee_doi_match.group(1)
+        # Try IEEE Xplore document lookup
+        candidates.append(f"https://ieeexplore.ieee.org/document/{ieee_path.split('.')[-1]}")
+
+    # Handle Preprints.org patterns
+    # Pattern 1: preprints.org/manuscript/XXXXX/download_pub
+    preprints_match = re.search(r'preprints\.org/(?:frontend/)?manuscript/([a-z0-9]+)/download_pub', url, re.IGNORECASE)
+    if preprints_match:
+        manuscript_id = preprints_match.group(1)
+        # Try alternative download patterns
+        candidates.append(f"https://www.preprints.org/manuscript/{manuscript_id}/download")
+        candidates.append(f"https://www.preprints.org/frontend/manuscript/{manuscript_id}/download_pub")
+    
+    # Pattern 2: doi.org/10.20944/preprints...
+    preprints_doi_match = re.search(r'10\.20944/preprints(\d+)\.(\d+)\.v(\d+)', url, re.IGNORECASE)
+    if preprints_doi_match:
+        year, number, version = preprints_doi_match.groups()
+        # Preprints.org doesn't have direct PDF URLs from DOI, but we can try the manuscript page
+        candidates.append(f"https://www.preprints.org/manuscript/{number}/download")
 
     # Remove duplicates while preserving order, and exclude original URL
     seen = set()

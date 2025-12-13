@@ -60,7 +60,7 @@ client = LLMClient()
 # Or with custom config
 config = LLMConfig(
     base_url="http://localhost:11434",
-    default_model="llama3.2:3b",
+    default_model="gemma3:4b",
     temperature=0.7
 )
 client = LLMClient(config)
@@ -123,7 +123,7 @@ response = client.query("...", options=opts)
 
 ```bash
 export OLLAMA_HOST=http://localhost:11434
-export OLLAMA_MODEL=llama3.2:3b
+export OLLAMA_MODEL=gemma3:4b
 export LLM_TEMPERATURE=0.7
 export LLM_MAX_TOKENS=2048
 export LLM_CONTEXT_WINDOW=131072

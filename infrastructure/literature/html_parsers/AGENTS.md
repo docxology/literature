@@ -16,12 +16,19 @@ Abstract base class for all parsers.
 
 ### Publisher-Specific Parsers
 
+- **OSFParser** (osf.py): OSF.io (Open Science Framework) - High priority
 - **ElsevierParser** (elsevier.py): Elsevier/ScienceDirect
 - **SpringerParser** (springer.py): Springer
 - **IEEEParser** (ieee.py): IEEE
 - **ACMParser** (acm.py): ACM
 - **WileyParser** (wiley.py): Wiley
 - **GenericParser** (generic.py): Generic fallback
+
+**OSFParser Features:**
+- Detects OSF.io URLs and DOIs (`10.31234/osf.io/...` or `10.31219/osf.io/...`)
+- Extracts direct download URLs: `https://osf.io/{project_id}/download`
+- Handles OSF.io file browser links and JavaScript-based download buttons
+- High priority (10) to ensure OSF.io pages are parsed before generic parser
 
 ## Usage Examples
 

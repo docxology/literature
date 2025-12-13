@@ -8,10 +8,10 @@ Central repository for academic papers, PDFs, references, and research summaries
 
 ```bash
 # Search across sources and download PDFs
-python3 -m infrastructure.literature.cli search "machine learning" --download --limit 5
+python3 -m infrastructure.literature.core.cli search "machine learning" --download --limit 5
 
-# Interactive menu (options 6 and 7 for literature)
-./run.sh
+# Interactive menu
+./run_literature.sh
 
 # Or directly via Python
 python3 scripts/07_literature_search.py --search     # Search for papers
@@ -22,10 +22,10 @@ python3 scripts/07_literature_search.py --summarize  # Generate summaries
 
 ```bash
 # Show statistics
-python3 -m infrastructure.literature.cli library stats
+python3 -m infrastructure.literature.core.cli library stats
 
 # List recent papers
-python3 -m infrastructure.literature.cli library list --limit 10
+python3 -m infrastructure.literature.core.cli library list --limit 10
 ```
 
 ## Directory Contents

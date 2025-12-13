@@ -207,8 +207,9 @@ python3 -m infrastructure.literature.core.cli search "neural networks" --sources
 
 ```bash
 # Interactive search and summarize with LLM
-./run.sh --search                  # Search literature (add to bibliography)
-./run.sh --summarize               # Generate summaries for existing PDFs
+./run_literature.sh                # Interactive menu (select search or summarize)
+python3 scripts/07_literature_search.py --search     # Search for papers
+python3 scripts/07_literature_search.py --summarize  # Generate summaries
 # Or directly:
 python3 scripts/07_literature_search.py --search     # Search for papers
 python3 scripts/07_literature_search.py --summarize  # Generate summaries

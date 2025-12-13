@@ -55,7 +55,7 @@ export UNPAYWALL_EMAIL=your@email.com
 ```bash
 # Ollama connection
 export OLLAMA_HOST="http://localhost:11434"
-export OLLAMA_MODEL="llama3.2:3b"
+export OLLAMA_MODEL="gemma3:4b"
 
 # Generation defaults
 export LLM_TEMPERATURE=0.7
@@ -103,7 +103,7 @@ from infrastructure.llm import LLMConfig
 
 config = LLMConfig(
     base_url="http://localhost:11434",
-    default_model="llama3.2:3b",
+    default_model="gemma3:4b",
     temperature=0.7,
     max_tokens=2048
 )
@@ -123,7 +123,7 @@ LITERATURE_DEFAULT_LIMIT=25
 LITERATURE_SOURCES=arxiv,semanticscholar
 LITERATURE_USE_UNPAYWALL=true
 UNPAYWALL_EMAIL=your@email.com
-OLLAMA_MODEL=llama3.2:3b
+OLLAMA_MODEL=gemma3:4b
 LLM_TEMPERATURE=0.7
 LOG_LEVEL=1
 ```

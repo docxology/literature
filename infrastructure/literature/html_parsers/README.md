@@ -5,6 +5,7 @@ Publisher-specific HTML parsers for PDF URL extraction.
 ## Components
 
 - **base.py**: Base parser class
+- **osf.py**: OSF.io (Open Science Framework) parser
 - **elsevier.py**: Elsevier/ScienceDirect parser
 - **springer.py**: Springer parser
 - **ieee.py**: IEEE parser
@@ -22,9 +23,10 @@ urls = extract_pdf_urls_modular(html_content, base_url)
 
 ## Features
 
-- Publisher-specific parsing
-- Automatic parser selection
-- Generic fallback
+- Publisher-specific parsing (OSF.io, Elsevier, Springer, IEEE, ACM, Wiley)
+- Automatic parser selection by URL pattern
+- OSF.io direct download URL extraction
+- Generic fallback for unknown publishers
 
 ## See Also
 

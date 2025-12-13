@@ -272,15 +272,15 @@ open htmlcov/index.html
 
 ```bash
 # Search
-python3 -m infrastructure.literature.cli search "machine learning" --limit 10
+python3 -m infrastructure.literature.core.cli search "machine learning" --limit 10
 
 # Library management
-python3 -m infrastructure.literature.cli library stats
-python3 -m infrastructure.literature.cli library list
-python3 -m infrastructure.literature.cli library export --output export.json
+python3 -m infrastructure.literature.core.cli library stats
+python3 -m infrastructure.literature.core.cli library list
+python3 -m infrastructure.literature.core.cli library export --output export.json
 
 # Cleanup
-python3 -m infrastructure.literature.cli library cleanup --no-pdf
+python3 -m infrastructure.literature.core.cli library cleanup --no-pdf
 ```
 
 ## Data Management
@@ -302,7 +302,7 @@ cp data/library.json data/references.bib backup/
 python3 scripts/07_literature_search.py --cleanup
 
 # Validate library
-python3 -m infrastructure.literature.cli library validate
+python3 -m infrastructure.literature.core.cli library validate
 ```
 
 ## Integration Notes
@@ -355,7 +355,7 @@ ollama pull gemma3:4b
 cp data/library.json data/library.json.backup
 
 # Validate
-python3 -m infrastructure.literature.cli library validate
+python3 -m infrastructure.literature.core.cli library validate
 ```
 
 ## See Also
