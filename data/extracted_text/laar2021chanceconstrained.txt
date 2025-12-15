@@ -1,0 +1,1175 @@
+Chance-Constrained Active Inference
+Thijs van de Laar∗, ˙Ismail S ¸en¨ oz∗, Ay¸ ca¨Oz¸ celikkale†, and Henk
+Wymeersch‡
+∗Dept. of Electrical Engineering, Eindhoven University of
+Technology, The Netherlands
+†Dept. of Electrical Engineering, Uppsala University, Sweden
+‡Dept. of Electrical Engineering, Chalmers University of
+Technology, Sweden
+May 7, 2021
+Abstract
+Active Inference (ActInf) is an emerging theory that explains percep-
+tion and action in biological agents, in terms of minimizing a free energy
+bound on Bayesian surprise. Goal-directed behavior is elicited by intro-
+ducing prior beliefs on the underlying generative model. In contrast to
+prior beliefs, which constrain all realizations of a random variable, we pro-
+pose an alternative approach through chance constraints, which allow for
+a (typically small) probability of constraint violation, and demonstrate
+how such constraints can be used as intrinsic drivers for goal-directed be-
+havior in ActInf. We illustrate how chance-constrained ActInf weights
+all imposed (prior) constraints on the generative model, allowing e.g., for
+a trade-oﬀ between robust control and empirical chance constraint vio-
+lation. Secondly, we interpret the proposed solution within a message
+passing framework. Interestingly, the message passing interpretation is
+not only relevant to the context of ActInf, but also provides a general
+purpose approach that can account for chance constraints on graphical
+models. The chance constraint message updates can then be readily com-
+bined with other pre-derived message update rules, without the need for
+custom derivations. The proposed chance-constrained message passing
+framework thus accelerates the search for workable models in general, and
+can be used to complement message-passing formulations on generative
+neural models.
+Index terms — Active Inference, Message Passing, Chance Constraints,
+Variational Bayes
+This is the author’s ﬁnal version of the manuscript, as accepted for publica-
+tion in MIT Neural Computation.
+1
+arXiv:2102.08792v2  [stat.ML]  6 May 2021
+1 Introduction
+Similar to biological agents, learning to make decisions based on observations
+and feedback from the environment is also an essential task for autonomous arti-
+ﬁcial agents. Traditionally, adaptive linear control and model predictive control
+have been successfully applied in this area (Borrelli et al., 2017). Over the
+past few years, reinforcement learning has become the predominant approach
+(Recht, 2019). An emerging alternative perspective to decision making under
+uncertainty isactive inference (ActInf) (Friston, 2010). ActInf is a neuroscience-
+based theory that has been used extensively to explain behavior of biological
+agents in dynamic environments (Friston, 2010).
+ActInf is based in the free energy principle (FEP), and postulates that per-
+ception and action in biological agents minimize a free energy bound on Bayesian
+surprise. The free energy is an information-theoretic measure that bounds the
+current and the future expected statistical surprise, i.e., how unpredictable are
+the observations under a given generative model (GM). The free energy is as-
+sociated with the Kullback-Leibler (KL) divergence (i.e., the distance) between
+the approximate and the true posterior. In particular, according to the free en-
+ergy principle, the agent acts in such a way as to minimize a free-energy bound
+on the surprise, i.e., Bayesian surprise which, informally speaking, provides a
+quantiﬁcation of the diﬀerence between the agent’s predictions about the sys-
+tem behavior and the observed system behavior. Minimization of free energy is
+closely related to variational Bayesian methods, reinforcement learning (Sallans
+and Hinton, 2001; Tschantz et al., 2020; Sajid et al., 2021), and deep generative
+models (Ueltzh¨ oﬀer, 2018; Fountas et al., 2020), another set of popular ma-
+chine learning approaches (Goodfellow et al., 2014). ActInf is closely related to
+message passing on graphical models (de Vries and Friston, 2017; Friston et al.,
+2017), and several widely used message passing algorithms, including (loopy) be-
+lief propagation, variational message passing and expectation propagation can
+be derived as ﬁxed-point equations of the (Bethe) free energy (Heskes, 2003;
+Yedidia et al., 2005; Dauwels, 2007; Zhang et al., 2017). This relation has been
+harnessed to develop elegant automated methods for ActInf (Schw¨ obel et al.,
+2018; van de Laar and de Vries, 2019).
+In addition to investigation of motivating connections with the behavior
+of the biological systems (Friston et al., 2006; Ramstead et al., 2018), ActInf
+has been successfully utilized in applications in the traditional stochastic control
+scenarios, such as linear quadratic Gaussian (LQG) control and similar standard
+problems such as maze problems (Hoﬀmann and Rostalski, 2017; Ueltzh¨ oﬀer,
+2018; Schw¨ obel et al., 2018; Baltieri and Buckley, 2019; Millidge et al., 2020;
+Imohiosen et al., 2020), and exploration-exploitation balancing in multi-armed
+bandit problems (Markovic et al., 2021).
+Despite these promising developments, the ActInf framework lacks certain
+desirable features present in model predictive control. In particular, there is no
+oﬀ-the-shelf standard ActInf formulation that allows inclusion of chance con-
+straints in the problem setting. Chance constraints provide an attractive ap-
+proach for on-line decision making for uncertain systems (Mesbah, 2016), i.e.,
+2
+systems where the dynamics are not fully known or the system contains certain
+components that are best modeled in a stochastic manner. In such settings, con-
+straints on the system behavior, such as the agent remaining in a given region of
+the environment with a given probability, cannot directly be encoded in terms
+of prior beliefs. In contrast to approaches that constrain all realizations of the
+random variables, chance constraints allow for a (typically small) probability of
+constraint violation, which can signiﬁcantly improve performance since chance
+constraints enable the decision maker trade performance with probability of
+constraint violation (Blackmore et al., 2011).
+This paper proposes a computationally tractable approach to chance-constrained
+decision making, and applies it to an ActInf context. We include chance con-
+straints in the ActInf objective (i.e., the free energy) by using the Lagrangian
+formalism. We then solve the Lagrangian optimization problem by variational
+calculus. Finally, we show that the proposed solution not only leads to a mod-
+ular and scalable message passing framework for ActInf problems, but also pro-
+vides a general purpose message passing framework that can account for chance
+constraints on graphical models in general. We claim the following main con-
+tributions:
+1. We show that the analytic solution to the chance-constrained free energy
+problem yields posterior beliefs in the form of truncated mixtures. (The-
+orem 1)
+2. We show how this solution can be interpreted in terms of message passing
+on a factor-graph representation of the generative model. (Theorem 2)
+3. Consequently, our results provide a message passing framework that is
+speciﬁcally designed to account for chance constraints.
+Message passing is inherently modular, and (variational) message update
+rules can be pre-derived and stored in a lookup table for later use (Korl, 2005;
+van de Laar, 2019). The chance-constrained message updates can then be readily
+combined with these pre-derived rules, without the need for laborious deriva-
+tions. Our results illustrate that the proposed framework can successfully ﬁnd
+solutions so that the rate of constraint violation speciﬁed in the original problem
+and the one that is actually observed during the closed-loop operation are close.
+The results also illustrate how to balance the constraints on the actions and the
+states through the usage of a tuning parameter, which enables exploration of
+diﬀerent trade-oﬀs between immediate and delayed intervention.
+2 Problem Statement
+We start by deﬁning a general factorized generative model f with respect to
+an (arbitrary) collection of variables x. As a notational convention, individual
+variables are indexed by i,j ∈ V, and factors by a,b,c ∈ F, unless stated
+3
+otherwise. The model then factorizes as
+f(x) =
+∏
+a∈F
+fa(xa) , (1)
+with non-negative real functions fa, and where xa ⊂xcollects the arguments of
+fa. In a probabilistic generative model, the individual factors usually represent
+conditional probability distributions. Probabilistic inference is then concerned
+with obtaining an (approximate) posterior belief qj(xj) ∝
+∫
+f(x)dx\j over a
+variable of interest xj, where x\j indicates the integration over all model vari-
+ables except xj.
+We now brieﬂy recap how the computation of these beliefs can be performed
+eﬃciently and automated over a factor graph (Loeliger et al., 2004), and how
+this process can be interpreted as a Bethe free energy minimization problem
+(Yedidia et al., 2005). With these concepts ﬁrmly in place, we move to chance
+constraints and the formal problem statement in Sec. 2.4.
+2.1 Factor Graphs for Marginal Belief Computation
+A factor graph can be used to visually represent a factorized function. In this
+paper we use the bi-partite factor graph representation. A bi-partite factor
+graph
+G= (F,V,E) ,
+consists of variable-nodes V, factor-nodes F, and edges Ethat connect variable-
+nodes with factor-nodes. A variable-node i ∈V is connected to a factor-node
+a∈F by an edge (i,a) ∈E if (and only if) the variable xi is an argument of the
+factor-function fa. An example section of a graph is drawn in Fig.1, where the
+circle and square represent a variable- and factor-node respectively. We write
+fb xj... ...→
+µbj(xj)
+µjb(xj)
+←
+Figure 1: Bi-partite subgraph of a model around a variable-node j (circle) and
+factor-node b (square), with indicated messages. Ellipses represent a continua-
+tion of the model.
+the neighborhood of a variable-node ias F(i), which collects all factor-nodes in
+Fthat are direct neighbors of i. Similarly, V(a) collects all variable-nodes in V
+that are direct neighbors of a.
+Suppose we are interested in obtaining a posterior belief qj(xj). The belief
+propagation algorithm (Pearl, 1982) then prescribes we send messages from
+4
+the branches of the graph towards the variable-node of interest, following the
+recursive application of the belief propagation update rules:
+µjb(xj) =
+∏
+a∈F(j)
+a̸=b
+µaj(xj) (2a)
+µbj(xj) =
+∫
+fb(xb)
+∏
+i∈V(b)
+i̸=j
+µib(xi) dxb\j, (2b)
+where xb\j collects all xb with the exception of xj. Here, µjb(xj) represents the
+message from a variable-node j ∈V to a neighboring factor-node b∈F(j); and
+reversely for µbj(xj). These messages are illustrated in Fig. 1. The posterior
+belief can then be expressed as
+qj(xj) = 1
+Zj
+µjb(xj)µbj(xj) , (3)
+with Zj =
+∫
+µjb(xj)µbj(xj) dxj a normalizing constant.
+In practice, for numerical stability, messages are often re-normalized after
+computation. Furthermore, messages are usually scheduled for computation,
+and are often referred to by their position in the schedule instead of their location
+in the graph. We will use a similar notation in Sec. 4. See (Bishop, 2006) for a
+more detailed introduction to (approximate) inference on bi-partite graphs.
+2.2 Bethe Free Energy Interpretation
+The Bethe free energy for a factorized model of the form of (1) is deﬁned as
+F[q] =
+∑
+a∈F
+Ua[qa] −
+∑
+a∈F
+H[qa] + (di −1)
+∑
+i∈V
+H[qi] , (4)
+where di represents the degree of variablexi. Here Ua[qa] = −
+∫
+qa(xa) logfa(xa) dxa
+denotes the average energy for factor fa, and H[qa] = −
+∫
+qa(xa) logqa(xa) dxa
+denotes the entropy. The Bethe free energy is optimized with imposed normal-
+ization and marginalization constraints:
+∫
+qa(xa) dxa\j = qj(xj),∀a∈F,∀j ∈V(a) (5a)
+∫
+qa(xa) dxa = 1,∀a∈F (5b)
+∫
+qi(xi) dxi = 1,∀i∈V , (5c)
+such that the qa and qi represent (approximate) posterior probability distribu-
+tions (beliefs).
+5
+2.3 Free Energy Minimization for Active Inference
+Active Inference usually deﬁnes dynamic models that specialize variables into
+parameters, states, observation and control sequences for past and future times.
+Free energy minimization for ActInf is then presented as a dual objective, where
+minimization of free energy for a model of past variables accounts for state
+and parameter estimation (perception), and free energy minimization of free
+energy for a model of future variables accounts for policy planning (Baltieri and
+Buckley, 2018; van de Laar et al., 2019).
+In the present paper we assume that the current state is observed and that
+model parameters are given. Therefore, this paper only concerns inference for
+policy planning. Extensions for perception are however straightforward. Chance
+constraints only aﬀect inference for planning, and therefore standard techniques
+for state estimation and parameter learning can be employed (van de Laar and
+de Vries, 2019).
+Furthermore, the current paper employs the Bethe Free Energy (BFE) for-
+mulation (4) for policy planning (Schw¨ obel et al., 2018; van de Laar and de Vries,
+2019) instead of the more traditional Expected Free Energy (EFE) (Friston
+et al., 2015). The BFE is known to lack the epistemic qualities of the EFE
+(Schw¨ obel et al., 2018), which can be compensated for by introducing an addi-
+tional mutual information term between the states and the observations to the
+BFE objective (Parr and Friston, 2019). The beneﬁt of the uncompensated BFE
+however, is that traditional message passing algorithms, including (loopy) belief
+propagation, variational message passing, expectation propagation and general-
+ized belief propagation algorithms can all be derived as ﬁxed-point equations of
+the variational free energy by the use of variational calculus, see (Yedidia et al.,
+2000; Heskes, 2003; Yedidia et al., 2005; Dauwels, 2007; Zhang et al., 2017).
+2.4 Chance Constraints
+A chance constraint imposes that the probability mass of a belief qj(xj),j ∈V
+outside of a ‘safe’ region Sj ⊂Xj cannot exceed a pre-set threshold ϵ ∈[0,1].
+Formally, a chance constraint imposes the inequality
+1 −ϵ≤
+∫
+Sj
+qj(xj) dxj
+=
+∫
+Xj
+qj(xj) gj(xj) dxj, (6)
+with
+gj(xj) =
+{
+1 if xj ∈Sj
+0 otherwise .
+Our problem statement then becomes two-fold, namely:
+1. Find the stationary points of the Bethe free energy (4) under the normal-
+ization and marginalization constraints of (5) and chance constraints of
+the form (6) (Theorem 1);
+6
+2. Interpret the retrieval of stationary points of the chance-constrained Bethe
+free energy as message passing on a factor graph (Theorem 2).
+The simulations of Sec. 4 further specialize the model variables into state,
+observation and control sequences and demonstrate the added value of chance
+constraints in an ActInf setting. Crucially, with an interpretation of chance
+constraints in terms of message passing on a factor graph, chance constraints can
+be readily applied to any factorized model. Formulating chance constraints as a
+click-on module for approximate inference then greatly improves the application
+range of chance constraints.
+3 Chance-Constrained Message Passing
+In this section we formulate the method of chance-constrained message passing.
+We identify the stationary points of the chance-constrained Bethe free energy
+and interpret the result in terms of message passing on a factor graph. We
+work towards a practical message-passing update rule for chance-constrained
+variables, as summarized in Algorithm 1. A brief introduction to variational
+calculus is available in Appendix A. Proofs can be found in Appendix B.
+3.1 Stationary Points
+From the Bethe free energy (4) and the constraints of (5), (6), we can construct
+the Lagrangian
+L[q] = F[q] +
+∑
+i∈V
+γi
+[∫
+qi(xi) dxi −1
+]
++
+∑
+a∈F
+γa
+[∫
+qa(xa) dxa −1
+]
++
+∑
+a∈F
+∑
+i∈V(a)
+∫
+ζia(xi)
+[
+qi(xi) −
+∫
+qa(xa) dxa\i
+]
+dxi
++
+∑
+i∈V
+ηi
+[∫
+qi(xi)gi(xi) dxi −(1 −ϵ)
+]
+, (7)
+where the Lagrange multipliers γ,ζ,η enforce the constraints of (5), (6).
+Under strong duality, for the inequality constraint in (6) we have the com-
+plementary slackness condition (Boyd and Vandenberghe, 2004, Ch. 5). This
+condition states that for optimality we haveηi
+[∫
+qi(xi)gi(xi) dxi −(1 −ϵ)
+]
+= 0.
+Therefore, either ηi >0, which implies that the chance constraint of (6) holds
+with equality (active) or ηi = 0, which implies that the chance constraint may
+hold without equality (inactive). In other words, the complementary slackness
+condition requires us to consider two scenarios: i) (6) holds with equality for
+ηi > 0 and ii) (6) is satisﬁed under ηi = 0. Hence, if ηi > 0, the chance
+constraint is activated and enforced with equality.
+In Lemmas 1, 2 we express the stationary points of L[q] in terms of the
+beliefs. The proofs are presented in Appendix B.1 and Appendix B.2.
+7
+Lemma 1.Stationary points of (7) as a functional of qb,b ∈F, are of the form
+q∗
+b(xb) = 1
+Zb
+fb(xb)
+∏
+i∈V(b)
+µib(xi) , (8)
+with
+Zb =
+∫
+fb(xb)
+∏
+i∈V(b)
+µib(xi) dxb
+a normalizing constant.
+Proof. See Appendix B.1.
+Note that the µib have not yet been identiﬁed or interpreted as messages.
+We will explicitly make this connection in Sec. 3.3.
+Lemma 2.Stationary points of (7) as a functional of qj,j ∈V, are of the form
+q∗
+j(xj; ηj) = 1
+Zj(ηj) exp(−ηjgj(xj))
+∏
+a∈F(j)
+µaj(xj) , (9)
+with
+Zj(ηj) =
+∫
+exp(−ηjgj(xj))
+∏
+a∈F(j)
+µaj(xj) dxj
+a normalizer that still depends on ηj.
+Proof. See Appendix B.2.
+Note that, in contrast to (3), this result incorporates an additional expo-
+nential term for ηj. We will identify this multiplier in Sec. 3.2. However, we
+already know that when the chance constraint for j is inactive, hence ηj = 0
+as a consequence of the complementary slackness condition. In this case, (9)
+reduces to (3).
+3.2 Active Chance Constraint
+In this section, we identify the stationary points under active chance constraint.
+The result is stated in Theorem 1.
+Theorem 1. Under active chance constraint, stationary points of (7) as a
+functional of qj,j ∈V are of the form
+q∗
+j(xj; ηj = η∗
+j) =
+
+
+
+1−ϵ
+Φ(0)
+j
+q(0)
+j (xj) if xj ∈Sj
+ϵ
+1−Φ(0)
+j
+q(0)
+j (xj) otherwise, (10)
+8
+with
+q(0)
+j (xj) = q∗
+j(xj; ηj = 0) , (11a)
+Φ(0)
+j =
+∫
+Sj
+q(0)
+j (xj) dxj, (11b)
+η∗
+j = log(ϵΦ(0)
+j ) −log(1 −ϵ) −log(1 −Φ(0)
+j ) . (11c)
+Proof. See Appendix B.3.
+This remarkable result tells us that the corrected belief q∗
+j(xj; ηj = η∗
+j) is
+obtained by scaling the probability mass of the uncorrected belief q(0)
+j (xj) over
+the respective safe and unsafe regions. This deﬁnes the corrected belief as
+a mixture of truncated beliefs. The optimal scaling of (10) ensures that the
+overﬂow is equal to ϵ.
+The complementary slackness condition ensures that the chance constraint
+is only enforced if the probability mass of the unconstrained belief overﬂows the
+‘safe’ region Sj by more than ϵ; i.e., the uncorrected belief is ‘unsafe’ when
+ϵ< 1 −Φ(0)
+j , (12)
+where we refer to Φ (0)
+j as the ‘safe mass’.
+If (12) is satisﬁed, then the posterior density q(0)
+j (xj) is corrected according
+to (10), which ‘pushes’ the probability mass (just) back inside the safe region.
+3.3 Chance-Constrained Message Passing
+In this section, we show that chance constraints (10) can be interpreted as
+auxiliary factor-nodes (with a speciﬁc node-function), and can be enforced by
+belief propagation in an augmented graph.
+Theorem 2. Given a bipartite graph G= (F,V,E) with a variable node j ∈V,
+and an associated Bethe free energy (4) with a chance constraint (6) on the belief
+qj(xj). Then, stationary points of (7) can be obtained by belief propagation on
+an augmented graph G′= (F′,V,E′), where
+F′= F∪ g (13a)
+E′= E∪ (j,g) , (13b)
+and auxiliary node function
+fg(xj) =
+
+
+
+1−ϵ
+Φ(0)
+j
+if xj ∈Sj
+ϵ
+1−Φ(0)
+j
+otherwise. (14)
+Proof. See Appendix B.4.
+9
+Theorem 2 shows that chance-constrained message passing can be seamlessly
+incorporated within the belief propagation framework. Chance constraints sim-
+ply enter the model deﬁnition as auxiliary factors, whose factor function depends
+upon the incoming message, see Fig. 2. Because uncorrected belief (11a) is being
+represented by the (re-normalized) incoming message µjg(xj), this allows for a
+modular application of chance constraints by augmenting the original graphical
+model with auxiliary nodes.
+fb xj
+fg
+... ...→
+µbj(xj)
+µjb(xj)
+←
+µgj (xj)↓ ↑µjg (xj)
+Figure 2: Bi-partite graph around a chance-constrained variable xj, with indi-
+cated auxiliary factor fg (dashed square) and messages. Ellipses represent the
+continued model by an arbitrary (possibly zero) number of connected edges.
+3.4 Gaussian Approximation
+Since the message µgj(xj) introduces discontinuities, the computations for de-
+pendent messages may grow prohibitively complex. For eﬃcient computations,
+it can be helpful to make a Gaussian approximation ˜ qj(xj) to the corrected
+belief q∗
+j(xj; ηj = η∗
+j), e.g., by moment matching. The resulting (approximate)
+message then follows from
+µgj(xj) = ˜q(n)
+j (xj)/µjg(xj) .
+If the message µjg(xj) is also Gaussian, this computation is easily performed by
+subtracting the canonical statistics. This procedure then resembles the expecta-
+tion propagation algorithm (Minka, 2001; Cox and de Vries, 2018). Interestingly,
+the expectation propagation algorithm can also be derived in terms of Bethe free
+energy optimization, where the marginalization constraints (5a) are replaced by
+moment-matching constraints (Zhang et al., 2017). This makes the Gaussian
+approximation consistent with the Lagrangian approach as presented in this
+paper.
+The approximated belief ˜qj(xj) however renders the chance constraint (6)
+inexact. As a result, the approximated belief needs to be iteratively re-corrected:
+q(n)
+j (xj) =
+
+
+
+1−ϵ
+Φ(n−1)
+j
+˜q(n−1)
+j (xj) if xj ∈Sj
+ϵ
+1−Φ(n−1)
+j
+˜q(n−1)
+j (xj) otherwise, (15)
+10
+where n denotes an iteration counter. This leads to the procedure summarized
+in Alg. 1, and depicted in Fig. 3.
+Algorithm 1 Chance-constrained message passing with Gaussian approxima-
+tion
+Given a Gaussian inbound message µjg(xj)
+Compute the uncorrected belief q(0)
+j (xj) through (11a)
+Compute the safe mass Φ (0)
+j through (11b)
+Initialize the approximated belief ˜q(0)
+j (xj) = q(0)
+j (xj)
+Initialize the iteration counter n= 0
+while ϵ+ δ <1 −Φ(n)
+j do
+% Chance constraint is violated with some tolerance δ
+Increase the counter n←n+ 1
+Compute the corrected belief q(n)
+j (xj) through (15)
+Approximate ˜q(n)
+j (xj) ≈q(n)
+j (xj) by Gaussian moment matching
+Compute Φ(n)
+j =
+∫
+Sj
+˜q(n)
+j (xj) dxj, the safe mass of the approximated belief
+end while
+return The message µgj(xj) = ˜q(n)
+j (xj)/µjg(xj)
+With this algorithm, we have derived a practical chance-constrained message
+update from the ﬁrst principles. The message update can be readily applied to
+any continuous variable that requires a chance constraint. Note however, that
+when multiple chance constraints are imposed on the model, the message pass-
+ing algorithm itself becomes an iterative procedure because of circular message
+dependencies. For example, a message incoming to an auxiliary node g might
+(indirectly) depend on a message that exits another auxiliary node h. In turn,
+this exiting message depends on the incoming message to h(1), which depends
+on the message exiting g, etcetera. In order to break this circular message
+dependency, uninformative messages can be used to initialize the algorithm.
+4 Simulations
+In this section we simulate a drone that aims to elevate itself above a given height
+threshold with a preset probability, under the inﬂuence of a stochastic vertical
+wind. We deﬁne the drone elevation level over time byx= {x0,...,x t,...,x L},xt ∈
+R, and actions (ascension velocity) a = {a0,...,a t,...,a L},at ∈R. A time-
+dependent mw,t deﬁnes the expected wind velocity that acts upon the agent.
+The discrete-time stochastic system is deﬁned as:
+wt ∼N(mw,t,vw)
+xt+1 = xt + at + wt,
+where vw deﬁnes the wind velocity variance.
+11
+Sj
+˜q(n−1)
+j (xj) Φ(n−1)
+j
+xj
+Sj
+ϵ
+q(n)
+j (xj)
+˜q(n)
+j (xj)
+xj
+Figure 3: Example of beliefs as computed by Algorithm 1. The top ﬁgure
+evaluates the probability mass within the “safe” zone. The bottom ﬁgure applies
+the correction (solid curve) and approximates the corrected belief by Gaussian
+moment matching (dashed curve).
+We deﬁne an agent that directly observes its elevation level and has knowl-
+edge of the statistical system properties mw,t and vw. The agent models future
+states of the system with a ﬁxed time horizon T. As a shorthand notation,
+we write the future (including current) states xt = {xt,...,x t+T}and control
+variables ut = {ut,...,u t+T−1}. For notational convenience, we drop the t
+subscript from these collections. The agent model at time t is deﬁned as:
+ft(x,u) =
+t+T−1∏
+k=t
+px,k(xk+1|uk,xk)pu(uk) , (16)
+with a respective state transition model and control prior
+px,k(xk+1|uk,xk) = N(xk+1|xk + uk + mw,k,vw) (17a)
+pu(uk) = N
+(
+uk|0,λ−1)
+. (17b)
+We factorize and constrain the variational posterior distribution such that
+(van de Laar and de Vries, 2019)
+qt(x\t,u) = qt(x\t)
+t+T−1∏
+k=t
+δ(uk −ak) , (18)
+12
+where x\t indicates the collection of latent states (the state sequence xwithout
+the observed current state xt). The goal of the agent controller then becomes
+to ﬁnd the policy πt = {at,...,a t+T−1}that minimizes the Bethe free energy
+F[qt; xt,πt] =
+∫
+···
+∫
+qt(x\t,u) log qt(x\t,u)
+ft(x,u) dx\tdu, (19)
+under the normalization and marginalization constraints of (5) and chance con-
+straints
+1 −ϵ≤
+∫
+S
+qx,k(xk) dxk, ∀k∈{t+ 1,...,t + T},
+where the safe region S= (1,∞) and violation probability ϵare identical for all
+future state variables.
+4.1 Graphical Model and Schedule
+As detailed in Sec. 3, Bethe free energy minimization under chance constraints
+can be performed by message passing on an augmented model. The graphical
+representation of the augmented model is depicted in Fig. 4.
+xt px,k
+ukmw,k vw
+pu
+λ
+xk+1
+fx,k+1
+...
+k=t:t+T−1
+Figure 4: Augmented graphical representation of the agent model (16). Circles
+and squares indicate variable- and factor-nodes respectively. Auxiliary factor-
+nodes (14) are dashed, and dark circles indicate observed variables or ﬁxed
+parameters. Ellipses indicate a continuation of the framed section until the
+lookahead time horizon.
+13
+. . . + +
+xk+1
+. . .
+fx,k+1mw,k
+N
+vw
+uk N λ
+1
+→
+2 ↓
+3 ↓
+4
+→
+5
+→
+6↑
+7
+→
+A
+←
+B ↓
+C
+←
+D
+←
+E ↑
+F↑
+G
+←
+H
+←
+px,k
+Figure 5: Augmented agent model (16), with px,k expanded according to (17)
+(dashed rectangle), and indicated forward (numbers) and backward (letters)
+message passing schedules for optimization of (19). Circle and square nodes
+indicate variable- and factor-nodes respectively. Dark nodes indicate observed
+variables or ﬁxed parameters, and auxiliary factor-nodes (14) are dashed. El-
+lipses indicate a continuation of the model. Dark messages are computed by the
+variational update rule, see (Winn and Bishop, 2005; Dauwels, 2007).
+The schedule comprises a forward-backward scheme, as illustrated in Fig. 5.
+Four message updates in Fig. 5 are of particular interest. Firstly, since (18)
+constrains the belief over controls to a point-mass, it follows that
+µ(i)
+2 (uk) = δ(uk −a(i−1)
+k ) ,
+where i counts the number of schedule (forward-backward) iterations. The
+schedule is initialized with a(0)
+k = 0 for all k ≥t. Secondly, µ(i)
+B (xk+1) takes on
+the role of µjg(xj) in Alg. 1. Because the noise in the model is Gaussian, this
+message will be an (unnormalized) Gaussian as well. Therefore, by application
+of Alg. 1, the third message of interest, µ(i)
+6 (xk+1) is computed. For the initial
+forward pass, µ(0)
+B (xk+1) = 1 is considered uninformative. Fourthly, µ(i)
+F (uk)
+carries information upward to the control variables. Because the variational
+posterior is chosen to factorize between the state and control sequence (18), the
+µ(i)
+F (uk) message is computed by a variational update rule as detailed in (Winn
+and Bishop, 2005) and (Dauwels, 2007).
+14
+The action for the next iteration then follows from
+q(i)
+u,k(uk) ∝µ(i)
+F (uk) µ(i)
+G (uk)
+a(i)
+k = mode q(i)
+u,k(uk) .
+Iterating the schedule then corresponds with an expectation maximization scheme.
+The expectation step of this scheme computes the µ(i)
+F (uk) message from the ac-
+tions a(i−1)
+k . The maximization step then chooses the updated actions a(i)
+k as the
+current MAP-estimate of uk. The schedule is iterated until the policy converges.
+Message passing simulations1 are performed with the ForneyLab probabilis-
+tic programming toolbox (Cox et al., 2019), version 0.11.3.
+4.2 Control Law
+Note that the Bethe free energy of (19) is still a function of the observed current
+elevation xt. We can then evaluate the optimal action at as a function of the
+current elevation xt (the control law), for a given wind proﬁle, chance constraint
+and model parameters. In order to gain an intuition for controller behavior, we
+ﬁx mw,t = 0 for all t. We plot the control law in Fig. 6, for varying values of
+the lookahead horizon T, chance constraint threshold ϵ, wind variance vw and
+control prior precision λ.
+The top-left diagram shows that with growing lookahead horizon T, the
+agent starts intervening at higher elevation. With this anticipatory eﬀect the
+agent prepares for events in the more distant future. The top-right diagram also
+shows that the agent intervenes at higher elevation with decreasing ϵ. When
+violation of the constraint grows less desirable, the agent must intervene earlier
+in order to assure that suﬃcient probability mass is present in the safe region.
+Also note that no further action is proposed beyond an intervention threshold.
+Once the agent is suﬃciently elevated, no corrections are proposed until the
+agent wanders (or is forced) below the intervention threshold. The bottom-left
+ﬁgure shows a similar eﬀect for growing wind velocity variance vw. When the
+system grows more stochastic, chance constraint abidance is ensured by inter-
+vening at higher elevations. Finally, the bottom-right ﬁgure illustrates what
+happens when the chance constraint is combined with a Gaussian prior con-
+straint on control. Increasing the control prior precision λ penalizes immediate
+correction. For low precisions (low penalty on control magnitude), the slope of
+the control law below the intervention threshold is equal to 1, and compensation
+is immediate. Control grows more robust with growing precision, at the cost of
+prolonged chance constraint violation.
+4.3 Comparison Against a Goal-Driven Agent
+In order to illustrate the diﬀerence in behavior between a chance- and a goal-
+driven ActInf agent, we compare the results of Fig. 6 with an ActInf agent
+1Source code for the simulations is available for download athttp://biaslab.github.io/
+materials/cc_simulations.zip
+15
+Figure 6: Slices of the control law for mw,t = 0 ,S = (1 ,∞), varied around
+reference setting T = 1,ϵ = 0.01,vw = 0.2,λ = 10−12 (black curves). Dashed
+vertical lines indicate the minimal safe elevation.
+where the chance constraint is replaced by a goal prior. We use the graphical
+model deﬁnition of Fig. 4 and deﬁne the auxiliary node function as a ﬁxed
+prior fx,k+1(xk+1) = N(xk+1|mx,ϑx) for all t ≤k ≤t+ T −1. We choose
+mx = 2, and the variance ϑx = 0.18478 such that the overﬂow of the safe region
+1 −
+∫
+Sfx,k+1(xk+1) dxk+1 ≈0.01 resembles the situation for ϵ = 0 .01. The
+message passing schedule then follows the deﬁnition of Fig. 5, where µ(i)
+6 (xk+1)
+is no longer computed by Alg. 1 and propagates the ﬁxed goal prior instead.
+Fig. 7 shows the resulting control law for mw,t = 0,T = 1,vw = 0.2 and varying
+λ.
+The results of Fig. 7 show that the control for the goal-driven agent grows
+more robust with increasing λ– similar to the control law for the chance-driven
+agent (Fig. 6, bottom right). For the smallest λ, the control law for the prior-
+driven agent resembles the corresponding control law for the chance-driven agent
+(dotted curve) only for elevations x <2. For elevations x >2, the goal-driven
+agent proposes downward corrections, while the chance-driven agent proposes
+no corrections. This comparison illustrates how a chance-driven agent avoids
+unnecessary interventions.
+16
+Figure 7: Slices of the control law for a goal-driven agent with mw,t = 0,T =
+1,mx = 2 ,ϑx = 0 .18478,vw = 0 .2 with varying λ. The dashed vertical line
+indicates the minimal safe elevation. The black dotted curve represents the
+reference result (λ= 10−12) for the chance-driven agent (Fig. 6, black curves).
+4.4 Simulation Results
+In this section we study an active inference agent in interaction with a simulated
+environment. The action-perception loop is based on (van de Laar and de Vries,
+2019) and consists of four steps at every time t:
+1. Observe the current agent elevation;
+2. Infer a policy from the current elevation and the future expected wind
+velocities by chance-constrained message passing;
+3. Act by selecting the ﬁrst (current) action from the inferred policy;
+4. Execute the selected action in the system and advance the time index by
+one.
+The results for ten thousand independent runs are plotted in Fig. 8 for a
+chance-driven agent (left) and a goal-driven agent (right). The ﬁrst row of
+diagrams plots the expected wind velocity over time, which is identical for each
+run. The sampled wind velocity trajectories wt do vary per run, under inﬂuence
+of the wind velocity variance vw. For 5 ≤t <10 a downward draft attempts
+to push the drone below the minimal safe elevation (dashed). The second row
+plots the drone elevation trajectory for a randomly selected subset of runs.
+Corresponding actions are plotted in the third row. The fourth row evaluates
+the relative number of runs that violate the safe-zone over time.
+It can be seen that both agents undertake corrective actions in order to
+compensate for the downward wind. However, while the chance-driven agent
+(left) only proposes upward corrections below the intervention threshold, the
+goal-driven agent (right) proposes additional downward corrections above the
+17
+Figure 8: Results for ten thousand simulations with varying wind strength over
+time, and T = 1,vw = 0.2,λ = 10−12, for a chance-driven agent (ϵ= 0.01, left),
+and a goal-driven agent ( mx = 2,ϑx = 0.18478, right).
+threshold. Furthermore, it can be seen that the maximal empirical violation for
+the chance-constrained agent mostly remains below the chance constraint tar-
+get violation probability of ϵ= 0.01 (dashed), while the goal-driven agent sys-
+tematically overshoots the target violation probability, i.e. violates the chance
+constraint. Compared to the chance-driven agent, the maximal empirical viola-
+tions for the goal-driven agent are also larger. This eﬀect can be explained in
+terms of the constrained beliefs. Namely, the chance-driven agent constrains the
+posterior beliefs, while the goal-driven agent imposes prior constraints on the
+model. Prior constraints may still be violated by the corresponding posterior
+beliefs, leading to more pronounced empirical violations.
+5 Conclusions
+In this paper, we formulated chance-constrained optimization of the Bethe free
+energy in terms of message passing on a factor graph. We showed that, in the
+factor graph representation of the generative model, chance constraints can be
+18
+imposed by auxiliary factors that force (a speciﬁed portion of) the probability
+mass of the chance-constrained beliefs inside a designated safe-zone. Message
+passing on the augmented graph, with the auxiliary factor-nodes included in
+the graph, then automatically balances the imposed chance constraints with
+additional (prior) constraints on the generative model. Chance constraints can
+thus be interpreted as modular click-on extensions to the generative model,
+similar to conventional factor-nodes (Loeliger et al., 2004), and can thus be
+used to complement message-passing formulations on generative neural models
+(Friston et al., 2017; van de Laar et al., 2018).
+However, because the analytical result for the chance-constrained update
+includes an inherent discontinuity, direct application of this rule may still lead to
+message updates that grow prohibitively complex. To remedy this, we proposed
+an algorithm that approximates the resulting message with a Gaussian form.
+This algorithm oﬀers a tractable formulation of chance-constrained message
+passing. The proposed message passing interpretation of chance constraints then
+vastly enhances the modularity and ﬂexibility of chance-constrained inference,
+and can accelerate the search for workable models (Blei, 2014).
+We demonstrated chance-constrained message passing in the context of ac-
+tive inference. We compared the simulated behavior of a chance-driven agent
+with a goal-driven agent, where the chance constraints are replaced by tradi-
+tional prior beliefs on future outcomes. The results illustrate how the goal-driven
+agent continually proposes corrections, whereas the chance-driven agent seizes
+interventions above a threshold. Chance-constrained ActInf may thus avoid
+unnecessary interventions and reduce the cost of control.
+The results for the chance-driven agent showed that, in the absence of addi-
+tional prior constraints, the empirical chance constraint violation ratio mostly
+remains below the pre-set target violation probability. An added prior con-
+straint on controls robustiﬁes control at the cost of prolonged chance constraint
+violation. Chance-constrained active inference thus weights all imposed con-
+straints on the generative model, allowing e.g., for a trade-oﬀ between robust
+control and empirical chance constraint violation.
+Acknowledgments
+This work was supported, in part, by GN Hearing A/S and the Swedish Research
+Council (under Grants 2015-04011 and 2018-03701).
+Appendix
+A Calculus of Variations
+The calculus of variations oﬀers a principled method for optimizing functionals
+(a function of a function that returns a scalar). We follow (Engel and Dreizler,
+2013) and consider the impact of a variation in a function q(x),x ∈X , on a
+19
+functional L[q]. We deﬁne an inﬁnitesimal variation of q by
+δq
+∆
+= βφ,
+where β →0, and φ(x) is a continuous and diﬀerentiable “test” function.
+The functional derivative δL/δq relates a variation in q to a change in L, by
+(Parr, 1980):
+dL[q+ βφ]
+dβ
+⏐⏐⏐⏐
+β=0
+=
+∫ δL
+δq(x) φ(x) dx. (20)
+The procedure then becomes to apply the operations on the l.h.s. toL, and bring
+it into the form of the r.h.s., which allows us to identify the functional derivative
+δL/δq. The stationary points q∗ are then obtained by setting δL/δq
+!
+= 0 and
+solving for q.
+B Proofs
+B.1 Proof of Lemma 1
+Application of (20) to (7) as a functional of qb, yields
+dL[qb + βφb]
+dβ
+⏐⏐⏐⏐
+β=0
+=
+∫
+φb(xb)
+[
+log qb(xb)
+fb(xb) + 1 +γb −
+∑
+i∈V(b)
+ζib(xi)
+]
+dxb.
+Identifying the functional derivative δL[qb]/δqb and setting it to zero, we obtain
+q∗
+b(xb) = fb(xb) exp
+[ ∑
+i∈V(b)
+ζib(xi) −γb −1
+]
+. (21)
+We now deﬁne µ(xj) = exp ζ(xj) and apply the normalization constraint, which
+recovers (8).
+B.2 Proof of Lemma 2
+Application of (20) to (7) as a functional of qj, yields
+dL[qj + βφj]
+dβ
+⏐⏐⏐⏐
+β=0
+=
+∫
+φj(xj)
+[
+−(dj −1) + γj
+−(dj −1) logqj(xj) +
+∑
+a∈F(j)
+ζja(xj) + ηjgj(xj)
+]
+dxj.
+Identifying the functional derivative δL[qj]/δqj and setting it to zero, yields
+q∗
+j(xj) = exp
+[ 1
+dj −1
+(
+1 −dj + γj +
+∑
+a∈F(j)
+ζja(xj) + ηjgj(xj)
+)]
+, (22)
+20
+which is the ﬁrst expression for q∗
+j.
+We can obtain a second expression for q∗
+j by applying the marginalization
+constraint to the result of Lemma 1. Substituting (8) in (5a),
+q∗
+j(xj) =
+∫
+q∗
+b(xb) dxb\j
+= 1
+Zb
+µjb(xj)
+µbj(xj)
+  ∫
+fb(xb)
+∏
+i∈V(b)
+i̸=j
+µib(xi) dxb\j, (23)
+where we identiﬁed a new quantity µbj(xj) (note the reverse indexing).
+Interestingly, the marginalization result of (23) not only holds for the speciﬁc
+factor b, but for all factors that neighbor j. Therefore, by symmetry, we can
+iterate the relation of (23) for all c∈F(j):
+∏
+c∈F(j)
+q∗
+j(xj) =
+∏
+c∈F(j)
+1
+Zc
+µjc(xj)µcj(xj) .
+We choose to exclude b itself from the iteration on both sides, and obtain
+∏
+c∈F(j)
+c̸=b
+q∗
+j(xj) =
+∏
+c∈F(j)
+c̸=b
+1
+Zc
+µjc(xj)µcj(xj) . (24)
+We substitute (22) in the l.h.s. of (24), and note that the product on the
+l.h.s. now has dj −1 terms, and that neither of these terms depend on c. This
+allows us to remove the dj −1 terms from the exponent of (22), which yields
+exp(1 −dj + γj + ηjgj(xj))
+∏
+a∈F(j)
+µja(xj) =
+∏
+c∈F(j)
+c̸=b
+1
+Zc
+µjc(xj)µcj(xj) .
+Canceling duplicate terms and simplifying, we obtain an expression for µjb
+as identiﬁed in (23):
+µjb(xj) ∝exp(−ηjgj(xj))
+∏
+a∈F(j)
+a̸=b
+µaj(xj) . (25)
+Finally, substituting (25) back in (23) and re-normalizing, we recover (9).
+B.3 Proof of Theorem 1
+We start from (9), and use the deﬁnitions of (11) to obtain
+∫
+Sj
+q∗
+j(xj; ηj) dxj =
+Φ(0)
+j exp(−ηj)
+Φ(0)
+j exp(−ηj) −Φ(0)
+j + 1
+,
+21
+which leads to
+exp(−η∗
+j) =
+(1 −ϵ)(1 −Φ(0)
+j )
+ϵΦ(0)
+j
+.
+We have now identiﬁed the ηj multiplier. Substituting this result back in (9)
+recovers (10), which expresses the corrected belief in terms of the uncorrected
+belief.
+B.4 Proof of Theorem 2
+From (9), we express the uncorrected belief in terms of the messages
+q(0)
+j (xj) = 1
+Z(0)
+j
+∏
+a∈F(j)
+µaj(xj) , (26)
+with Z(0)
+j = Zj(ηj = 0).
+We now construct the augmented graph G′= (F′,V,E′) according to (13),
+and deﬁne a message
+µgj(xj) = fg(xj) , (27)
+with fg(xj) as deﬁned by (14).
+Substituting (26) and (27) in (10) then yields the corrected belief in terms
+of the messages
+q∗
+j(xj; ηj = η∗
+j) = 1
+Z(0)
+j
+µgj(xj)µjg(xj) , (28)
+with
+µjg(xj) =
+∏
+a∈F′(j)
+a̸=g
+µaj(xj) . (29)
+The results of (27), (28) and (29) can be interpreted as belief propagation
+(2), (3) on the augmented graph G′.
+References
+Baltieri, M. and Buckley, C. L. (2018). The modularity of action and perception
+revisited using control theory and active inference. In Artiﬁcial life conference
+proceedings, pages 121–128. MIT Press.
+Baltieri, M. and Buckley, C. L. (2019). Active Inference: Computational Mod-
+els of Motor Control without Eﬀerence Copy. In 2019 Conf. on Cognitive
+Computational Neuroscience.
+22
+Bishop, C. M. (2006). Pattern recognition and machine learning . Springer.
+Blackmore, L., Ono, M., and Williams, B. C. (2011). Chance-constrained
+optimal path planning with obstacles. IEEE Transactions on Robotics ,
+27(6):1080–1094.
+Blei, D. M. (2014). Build, compute, critique, repeat: Data analysis with latent
+variable models. Annual Review of Statistics and Its Application , 1:203–232.
+Borrelli, F., Bemporad, A., and Morari, M. (2017). Predictive control for linear
+and hybrid systems . Cambridge University Press.
+Boyd, S. and Vandenberghe, L. (2004). Convex Optimization. Cambridge Uni-
+versity Press.
+Cox, M. and de Vries, B. (2018). Robust expectation propagation in factor
+graphs involving both continuous and binary variables. In2018 26th European
+Signal Processing Conference (EUSIPCO), pages 2583–2587. IEEE.
+Cox, M., van de Laar, T. W., and de Vries, B. (2019). A factor graph approach
+to automated design of Bayesian signal processing algorithms. International
+Journal of Approximate Reasoning , 104:185–204.
+Dauwels, J. (2007). On Variational Message Passing on Factor Graphs. InIEEE
+Inter. Symp. on Information Theory , pages 2546–2550.
+de Vries, B. and Friston, K. J. (2017). A factor graph description of deep
+temporal active inference. Frontiers in computational neuroscience, 11:95.
+Engel, E. and Dreizler, R. M. (2013). Density functional theory . Springer.
+Fountas, Z., Sajid, N., Mediano, P. A., and Friston, K. (2020). Deep active in-
+ference agents using monte-carlo methods. arXiv preprint arXiv:2006.04176 .
+Friston, K., Rigoli, F., Ognibene, D., Mathys, C., Fitzgerald, T., and Pezzulo,
+G. (2015). Active inference and epistemic value. Cognitive Neuroscience,
+6(4):187–214.
+Friston, K. J. (2010). The free-energy principle: a uniﬁed brain theory? Nature
+Reviews Neuroscience, 11(2):127–138.
+Friston, K. J., Kilner, J., and Harrison, L. (2006). A free energy principle for
+the brain. Journal of Physiology, Paris , 100(1-3):70–87.
+Friston, K. J., Parr, T., and de Vries, B. (2017). The graphical brain: belief
+propagation and active inference. Network Neuroscience, 1(4):381–414.
+Goodfellow, I. J., Pouget-Abadie, J., Mirza, M., Xu, B., Warde-Farley, D.,
+Ozair, S., Courville, A. C., and Bengio, Y. (2014). Generative adversarial
+nets. In NIPS.
+23
+Heskes, T. (2003). Stable ﬁxed points of loopy belief propagation are local
+minima of the bethe free energy. InAdvances in neural information processing
+systems, pages 359–366.
+Hoﬀmann, C. and Rostalski, P. (2017). Linear Optimal Control on Factor
+Graphs - a Message Passing Perspective. In 20th IFAC World Congress ,
+Toulouse, France.
+Imohiosen, A., Watson, J., and Peters, J. (2020). Active inference or control as
+inference? a unifying view. In 1st International Workshop on Active Infer-
+ence.
+Korl, S. (2005). A factor graph approach to signal modelling, system identiﬁca-
+tion and ﬁltering . ETH Zurich.
+Loeliger, H.-A., Dauwels, J., Koch, V. M., and Korl, S. (2004). Signal processing
+with factor graphs: examples. In First International Symposium on Control,
+Communications and Signal Processing, 2004. , pages 571–574. IEEE.
+Markovic, D., Stojic, H., Schwoebel, S., and Kiebel, S. J. (2021). An empir-
+ical evaluation of active inference in multi-armed bandits. arXiv preprint
+arXiv:2101.08699.
+Mesbah, A. (2016). Stochastic model predictive control: An overview and per-
+spectives for future research. IEEE Control Systems Magazine , 36(6):30–44.
+Millidge, B., Tschantz, A., Seth, A. K., and Buckley, C. L. (2020). On the rela-
+tionship between active inference and control as inference. In1st International
+Workshop on Active Inference .
+Minka, T. P. (2001). Expectation propagation for approximate Bayesian infer-
+ence. In Proceedings of the Seventeenth conference on Uncertainty in artiﬁcial
+intelligence, pages 362–369.
+Parr, R. G. (1980). Density functional theory of atoms and molecules. In
+Horizons of Quantum Chemistry , pages 5–15. Springer.
+Parr, T. and Friston, K. J. (2019). Generalised free energy and active inference.
+Biological cybernetics, 113(5):495–513.
+Pearl, J. (1982). Reverend bayes on inference engines: A distributed hierarchical
+approach. In Proc. of the Second AAAI Conference on Artiﬁcial Intelligence ,
+AAAI’82, page 133–136.
+Ramstead, M. J. D., Badcock, P. B., and Friston, K. J. (2018). Answering
+Schr¨ odinger’s question: A free-energy formulation.Physics of Life Reviews .
+Recht, B. (2019). A tour of reinforcement learning: The view from continu-
+ous control. Annual Review of Control, Robotics, and Autonomous Systems ,
+2:253–279.
+24
+Sajid, N., Ball, P. J., Parr, T., and Friston, K. J. (2021). Active inference:
+demystiﬁed and compared. Neural Computation, 33(3):674–712.
+Sallans, B. and Hinton, G. E. (2001). Using free energies to represent Q-values
+in a multiagent reinforcement learning task. In Adv. in neural information
+process. systems, pages 1075–1081.
+Schw¨ obel, S., Kiebel, S., and Markovic, D. (2018). Active Inference, Belief Prop-
+agation, and the Bethe Approximation. Neural Computation , 30(9):2530–
+2567.
+Tschantz, A., Millidge, B., Seth, A. K., and Buckley, C. L. (2020). Reinforce-
+ment learning through active inference. arXiv preprint arXiv:2002.12636 .
+Ueltzh¨ oﬀer, K. (2018). Deep Active Inference. Biological Cybernetics ,
+112(6):547–573.
+van de Laar, T. W. (2019). Automated design of Bayesian signal processing
+algorithms. Eindhoven University of Technology.
+van de Laar, T. W., Cox, M., Senoz, I., Bocharov, I., and de Vries, B. (2018).
+Forneylab: a toolbox for biologically plausible free energy minimization in
+dynamic neural models. In Conference on Complex Systems .
+van de Laar, T. W. and de Vries, B. (2019). Simulating Active Inference Pro-
+cesses by Message Passing. Frontiers in Robotics and AI , 6:20.
+van de Laar, T. W., ¨Oz¸ celikkale, A., and Wymeersch, H. (2019). Applica-
+tion of the free energy principle to estimation and control. arXiv preprint
+arXiv:1910.09823.
+Winn, J. and Bishop, C. M. (2005). Variational message passing. Journal of
+Machine Learning Research, 6(Apr):661–694.
+Yedidia, J. S., Freeman, W., and Weiss, Y. (2005). Constructing free-energy
+approximations and generalized belief propagation algorithms. IEEE Trans-
+actions on Information Theory , 51(7):2282–2312.
+Yedidia, J. S., Freeman, W. T., Weiss, Y., et al. (2000). Generalized belief
+propagation. In NIPS, volume 13, pages 689–695.
+Zhang, D., Wang, W., Fettweis, G., and Gao, X. (2017). Unifying message
+passing algorithms under the framework of constrained Bethe free energy
+minimization. arXiv preprint arXiv:1703.10932 .
+25

@@ -1,0 +1,1236 @@
+Object-Centric Scene Representations using Active Inference
+Toon Van de Maele1 Tim Verbelen1 Pietro Mazzaglia1 Stefano Ferraro1 Bart Dhoedt1
+Abstract
+Representing a scene and its constituent objects
+from raw sensory data is a core ability for en-
+abling robots to interact with their environment.
+In this paper, we propose a novel approach for
+scene understanding, leveraging a hierarchical
+object-centric generative model that enables an
+agent to infer object category and pose in an al-
+locentric reference frame using active inference,
+a neuro-inspired framework for action and per-
+ception. For evaluating the behavior of an active
+vision agent, we also propose a new benchmark
+where, given a target viewpoint of a particular
+object, the agent needs to ﬁnd the best matching
+viewpoint given a workspace with randomly po-
+sitioned objects in 3D. We demonstrate that our
+active inference agent is able to balance epistemic
+foraging and goal-driven behavior, and outper-
+forms both supervised and reinforcement learning
+baselines by a large margin.
+1. Introduction
+Spatial scene understanding is a core ability for enabling
+robots to understand and interact with their environment
+and has been a long-standing challenge in computer vision.
+Humans naturally decompose scenes into object-centric rep-
+resentations and infer information about objects, their ap-
+pearance, their constituent parts, as well as their pose and
+shape in the 3D space (Hinton, 1979). For example, when
+seeing a coffee cup, humans immediately know where to
+reach for the handle, even when the handle is not directly in
+view.
+In the past decade, advances in deep learning have enabled
+to devise systems that can distinguish objects in images, i.e.
+predicting segmentation masks (Minaee et al., 2021), or the
+object pose in 3D (Xiang et al., 2018a; Du et al., 2021) by
+supervised training on a dataset annotated with predeﬁned
+object classes and poses. Also, unsupervised methods have
+been proposed to infer separate objects from one (Eslami
+1IDLab, Ghent University, Belgium. Correspondence to: Toon
+Van de Maele <toon.vandemaele@ugent.be>.
+et al., 2016a; Bear et al., 2020) or multiple (Chen et al.,
+2021) views. In order to have full 3D scene understand-
+ing, other approaches learn representations of complete 3D
+shapes by training on 3D CAD models of objects of inter-
+est (Wu et al., 2015). Such representations can then be used
+to infer objects shape and pose in 3D from one or more
+RGB-D images (Sucar et al., 2020). However, these meth-
+ods typically operate on static inputs and do not allow the
+agent to interact with the scene.
+In contrast, humans learn by actively engaging and inter-
+acting with the world (James et al., 2014). A prevailing
+account of human perception is that the brain builds a gen-
+erative model of the world, constantly explaining its obser-
+vations (Friston et al., 2017), i.e. active inference. In this
+regard, vision is cast as inverting a generative model of the
+scene, in order to infer its constituent objects, their appear-
+ance, and pose (Parr et al., 2021). This is consistent with
+ﬁndings in the brain, where visual inputs are processed by a
+dorsal (“where”) stream on the one hand, representing where
+an object is in the space, and a ventral (“what”) stream on
+the other hand, representing object identity (Mishkin et al.,
+1983).
+In this paper, we propose a novel method for spatial scene
+understanding, using an agent that can actively move the
+camera in the scene. We endow the agent with an object-
+centric generative model, which is optimized by minimizing
+free energy. By also inferring actions that minimize ex-
+pected free energy, the agent engages in active inference
+and balances goal-directed with explorative behavior. To
+evaluate our approach, we present a novel benchmark that
+casts active vision as a task in which an artiﬁcal agent needs
+to reach a goal observation. To demonstrate this, our paper
+proposes the following contributions:
+• We propose a novel hierarchical object-centric gen-
+erative model that factorizes object identity from a
+location in both egocentric and allocentric reference
+frames (Section 3).
+• We developed a new benchmark environment for eval-
+uating the active vision problem. In this environment,
+the agent needs to ﬁnd a particular object by actively
+engaging with the environment through moving the
+camera (Section 4.1).
+arXiv:2302.03288v1  [cs.RO]  7 Feb 2023
+Object-Centric Scene Representations using Active Inference 2
+• We compare performance both quantitatively and qual-
+itatively against two other methods that adopt a su-
+pervised (Xiang et al., 2018a) and a reinforcement
+learning (Mendonca et al., 2021) approach respectively
+(Section 4.2) and show that we perform better on the
+active vision benchmark.
+• We demonstrate that driving active vision through the
+expected free energy is naturally robust against occlu-
+sions, as it will actively explore the environment when
+the target object is initially not in view (Section 4.2).
+2. Related Work
+Object-centric representations: One of the early works
+on decomposing images of scenes into their constituent ob-
+jects is Attend Infer Repeat (Eslami et al., 2016b), where an
+observation is decomposed into object-level representations
+by having a recurrent neural network predicting the parame-
+ters of a spatial transformer network (Jaderberg et al., 2015).
+PSGNets (Bear et al., 2020) introduce graph pooling and
+vectorization operations that convert image feature maps
+into object-centric graph structures. In ROOTS (Chen et al.,
+2021), the authors consider multiple viewpoints from the
+same scene, crop out the objects of each viewpoint, and
+then group them together to encode them with a generative
+query network instance for each object (Eslami et al., 2018).
+In doing so, the objects can be rendered individually and
+aggregated in a full observation. Other methods adopt a
+representation with a ﬁxed number of “slots” that can be
+used to represent objects in the scene. MONet (Burgess
+et al., 2019) recurrently predicts a mask for each available
+slot and then uses a variational autoencoder to encode each
+masked observation. In IODINE (Greff et al., 2020), a joint
+decomposition and representation model is learned with
+ﬁxed slot allocation. To scale this up to more objects, the
+encoders are adapted for predicting proposals in parallel in-
+stead of recurrently (Crawford & Pineau, 2019; Jiang et al.,
+2020). GENESIS in addition learns an autoregressive prior
+for scene generation (Engelcke et al., 2020). Locatello et
+al. introduce the Slot Attention module, which uses an
+attention mechanism to bind input features to the set of
+slots, which proved to be more efﬁcient in terms of both
+memory consumption and runtime (Locatello et al., 2020).
+Object Scene Representation Transformer (Sajjadi et al.,
+2022a) combines slot attention with scene representation
+transformers (Sajjadi et al., 2022b) to learn object-centric
+representations from a set of multiple viewpoints of a scene
+in an end-to-end fashion. When dealing with sequences of
+observations over time, most models learn to predict the dy-
+namics of each object slot separately (Kosiorek et al., 2018;
+Jiang et al., 2020).
+World Models:In the context of reinforcement learning,
+world models have been devised to compress observations
+into a latent state space, and learn a dynamics model to pre-
+dict how actions evolve future states (Ha & Schmidhuber,
+2018). These world models can then be used for planning
+actions (Hafner et al., 2019), or for learning policies in imag-
+ination, achieving state-of-the-art performance on various
+RL benchmarks (Hafner et al., 2020; 2021; Mazzaglia et al.,
+2022). An increasingly popular paradigm, especially in RL
+for robotics, is to provide the agent with a goal observation
+to obtained (Andrychowicz et al., 2017), for which also a
+world model can be leveraged to discover and achieve novel
+goals (Mendonca et al., 2021). A recent line of work tries to
+combine structured latent state spaces, i.e. using different
+slots, for learning world models, typically for object-related
+tasks such as block pushing and stacking (Kipf et al., 2019;
+Watters et al., 2019; Veerapaneni et al., 2020; Lin et al.,
+2020).
+Active Inference:Active inference is a theory that charac-
+terizes perception, planning, and action in terms of proba-
+bilistic inference (Parr et al., 2022), which is applied in vari-
+ous domains ranging from neuroscience (Smith et al., 2020),
+neuropsychology (Parr et al., 2018), biology (Pio-Lopez
+et al., 2022) to robotics and artiﬁcial intelligence (Lanil-
+los et al., 2021). In particular, visual foraging can be
+modeled using active inference agents, although typically
+limited to simulations with discrete observation or action
+spaces (Mirza et al., 2016; Dauc´e, 2018). Van de Maele et al.
+(2022) adopt the active inference framework to learn object-
+centric generative models of 3D objects, called cortical
+column networks (CCN). Similar to the work on structured
+world models, van Bergen & Lanillos (2022) extend the
+IODINE framework with actions to infer policies in a 2D
+sprites environment.
+Scene Representation Benchmark:There exists a multi-
+tude of datasets for learning 3D scene representations, but
+many of these datasets use a static camera (Johnson et al.,
+2016; Yan et al., 2021; Kundu et al., 2022) or use prere-
+corded moving camera frames (Sajjadi et al., 2022b). To the
+best of our knowledge, none of these benchmarks consider
+an active camera that can move in the scene.
+3. Method
+In this section, we describe how our agent carries out scene
+decomposition leveraging a hierarchical generative model.
+We ﬁrst discuss the active inference framework and show
+how optimizing the free energy functional yields a trade-
+off between epistemic foraging and goal-directed behavior.
+Then, we propose a generative model representing a scene
+as a collection of multiple objects with distinct features,
+represented as hidden variables. Next, we describe how to
+instantiate the generative model using deep neural networks,
+and how the agent can be driven towards goal through ex-
+pected free energy minimization, updating its beliefs about
+Object-Centric Scene Representations using Active Inference 3
+the scene representation at every step.
+3.1. Active Inference
+Active inference is a process theory of the brain which states
+that all neuronal processing and action is driven by the min-
+imization of (a bound on) surprise, i.e. free energy (Parr
+et al., 2022). This offers a ﬁrst principles account of un-
+derstanding perception and action as approximate Bayesian
+inference on hidden states and actions of a generative model.
+In general, this generative model is the joint probability
+distribution over sequences of observations ˜o, actions ˜a and
+hidden states ˜s:
+P(˜o,˜a,˜s) =
+∏
+t
+P(ot|st)P(st|st−1,at−1)P(at−1) (1)
+The goal of the agent is then to minimize the variational free
+energy F (Parr et al., 2022), i.e. the negative evidence lower
+bound (Rezende et al., 2014; Kingma & Welling, 2014), by
+introducing the approximate posterior Q(st|ot).
+F =
+∑
+t
+DKL[Q(st|ot)||P(st|st−1,at−1)]
++ EQ(st|ot)[−log P(ot|st)]
+(2)
+Crucially, in active inference the agent also selects actions
+at that it believes will minimize the so-called expected free
+energy G(at) (Parr et al., 2022):
+G(at) = EQ(st+1,ot+1)[−log P(ot+1)  
+Realizing Preferences
++ logQ(st+1|at) −log Q(st+1|at,ot+1)  
+Expected Information Gain
+], (3)
+consisting of a utility term based on a preferred distribu-
+tion of future observations, as well as an information gain
+term. Hence, minimizing expected free energy balances
+goal-directed behavior and epistemic foraging.
+3.2. A Generative Model for Vision
+The agent - an active camera - entails a generative model to
+explain its observations and the effect of its actions thereon.
+In this case, the model should thus describe a 3D scene
+consisting of a set of objects in a workspace while observing
+2D images from viewpoints reached through moving the
+camera. We factorize the generative model of a scene s as a
+hierarchical composition of Kentities ek. In the remainder,
+we assume the scene is static and therefore these entities do
+not change. However, this model could also be extended to
+take the object dynamics into account over time.
+The image the agent observes is constructed through a top-
+down generative model, depicted in Figure 1. Each entity
+ek consists of an identity ik, a translation tk w.r.t. a global
+Figure 1.Graphical representation of the agents’ generative model
+for an object-centric factorization of a scene. Observed variables
+are denoted by blue circles, while unobserved variables are denoted
+by white circles.
+reference frame, and a latent representation of the object
+pose pk,t.
+To compose an observation of a particular viewpoint vt, for
+each entity, an object-centric observation ok,t is generated
+from the identity and pose, which renders the speciﬁc object
+in a particular pose. Next, given the object translation and
+a camera pinhole model, the pixel-coordinates uk,t and
+scale σk,t in the full observation can be generated. The
+resulting observation ot the agent receives as input is then a
+composition of these object-centric observations in a global
+view. Note that the identity and translation parameters are
+consistent over the scene, do not change over time, and are
+therefore not dependent on the action of the agent.
+The action at−1 represents the relative transform the agent
+must take in the global reference frame, in order to reach the
+next viewpoint vt. We parameterize the resulting viewpoint
+as the combination of the location lt in space at which the
+agent wants to direct its gaze, together with the spherical
+coordinates with respect to this look-at point: range rt,
+elevation φt and azimuth θt.
+The factorization of the described generative model is shown
+in Figure 1, and a detailed formal description of the model
+is provided in Appendix A. This kind of decomposition of
+Object-Centric Scene Representations using Active Inference 4
+Figure 2.Flow of the inference process of observation into the distinct latent variables. For each of the K-considered object categories, the
+object pixels are extracted from the observation (red) by a neural network that predicts pixel-center, scale, and a masked crop of the object.
+From this crop, the belief over the pose and identity latent variable is predicted (green) using a CCN. Given the pinhole camera model,
+pixel-wise center, and scale of the object, an estimate of the object’s location are formed which is used to update a particle ﬁlter (blue)
+approximating the belief over the object translation.
+a scene in distinct objects with their respective features, as
+well as the speciﬁcation of actions in our generative model
+might also underpin how the visual system of the brain
+works, and maps to the visual cortices, cerebral attention
+networks, and the oculomotor system (Parr et al., 2021).
+3.3. Scene Perception with SceneCCN
+In active inference, perception is cast as approximate
+Bayesian inference over the hidden variables. At each
+timestep, the agent observes ot and infers approximate pos-
+terior distributions over each hidden variable in a bottom-up
+process. This inference process is amortized using a collec-
+tion of neural network models, which is depicted in Figure 2.
+We ground our approach on Cortical Column Networks
+(CCN) (Van de Maele et al., 2022), which are object-centric
+models that learn the approximate posterior over the la-
+tent pose qθ(pk,t|ok,t) for views of a particular object, by
+predicting observations of novel poses. These consist of
+a separate encoder-decoder model trained separately per
+object category, which is inspired by cortical columns in
+the brain (Hawkins et al., 2017), and reﬂect how toddlers
+typically interact with one object at a time (James et al.,
+2014). This allows these to be efﬁciently trained in parallel
+on a limited dataset consisting of views of one particular
+object, at the cost of poor generalization (i.e. for new object
+categories a new CCN will need to be trained). In addi-
+tion to the pose representation, the encoder also outputs a
+Bernoulli variable qθ(ik|ok,t) which indicates the belief that
+the object of interest is present in the view.
+In order to infer object-centric views ok,t, we learn
+for each object category an object extraction network
+qφ(ok,t,uk,t,σk,t|ot) with parameters φ, which ﬁrst pro-
+duces a mask αk,t which masks anything beside the ob-
+ject category of interest. Based on the masked observation
+ot⊙αk,t, we then predict the center pixel uk,t of where the
+object is present in the observation, as well as the scale σk,t.
+This is then fed into a spatial transformer network (Jader-
+berg et al., 2015), which produces an object-centric crop
+ok,t for the CCN.
+The neural networks comprising these two blocks are opti-
+mized in two separate phases. In the ﬁrst phase, the pose
+representation is learned by training the CCN on an object-
+centric dataset. For each object category, a set of 500 ob-
+servations and viewpoint pairs is collected. The viewpoints
+are sampled uniformly on the surface of a sphere, with a
+ﬁxed radius, while oriented towards the object center. For
+each step during training, two views are randomly sampled,
+and the action is computed as the relative displacement in
+azimuth and elevation. To learn how this action results
+in a transitioned pose representation, we also train a pose
+transition network pθ(pk,2|pk,1,at−1) that models these
+dynamics. For more details about the construction of this
+dataset, the reader is referred to Appendix B.
+The objective is prediction error over transitioned poses,
+given an action:
+L1 = λ1||ok,1 −pθ(ok,1|pk,1)||2 + λ2||ok,2 −pθ(ok,1|pk,1)||2  
+Reconstruction error before transition
++ λ3 ||ok,2 −pθ(ok,2,trans|pk,2,trans)||2  
+Reconstruction error after transition
+(4)
++ λ4 DKL[qθ(pk,2|ok,2)||pθ(pk,2|pk,1,at−1)]  
+Complexity of transition model
+,
+These models are additionally regularized by a KL-
+divergence term between the outputted distributions and
+a standard normal distribution.
+Object-Centric Scene Representations using Active Inference 5
+In the second phase, the object extraction network is trained
+for extracting object-centric crops. To this end, we do not
+collect a new dataset, but instead augment the object-centric
+dataset by scaling and translating the observations, while
+also adding a scaled and translated object from a different
+category to simulate occlusion. On top of this, we add
+random color patches in the background. The model learns
+to extract object-centric crops by minimizing:
+L2 = ||ok,t −qφ(ok,t|uk,t,σk,t,ot)||2  
+Cropping error
++ ||αk,t −ˆαk,t||2  
+Masking error
++ BCE(ik,qθ(ik|ok,t))  
+Identiﬁcation error
+, (5)
+where the ﬁrst two terms are computed as the mean squared
+error between the predicted masks and crops, and the respec-
+tive ground truths. The BCE-term is the binary cross entropy
+loss over the predicted object identity variable. For regular-
+ization purposes, the extracted crop is also fed through the
+(frozen) CCN and the KL-divergence terms from Equation 4
+are also optimized.
+In Appendix A, we show how these loss terms are in effect
+consistent with minimizing the variational free energy of the
+generative model proposed Section 3.2. Also for the exact
+parameterizations of all neural networks, hyperparameters,
+and training details, the reader is referred to Appendix C.
+To infer posterior beliefs over the object translationtk,t in
+an allocentric reference frame, we use the inferred pixel
+coordinates uk,t and scale σk,t of the object. Given the
+absolute viewpoint of our camera and a pinhole camera
+model, we can backproject the pixel coordinate to a ray in
+3D, along which we specify a 3D Gaussian distribution with
+mean at the estimated depth given the scale, and a ﬁxed
+covariance matrix forming an ellipsoid density along the
+ray. To get a better estimate of the object’s position over
+time, this position belief is integrated using a particle ﬁlter.
+When an object is not detected in an observation, we also
+reduce the particle weights that are in view, to also reﬂect
+and integrate the information gained by not observing a
+particular object.
+3.4. Action selection
+Setting an agent’s goal in active inference is done by spec-
+ifying a prior preference in observation space, which the
+agent is expected to obtain. In this case, the preference is
+the log probability of reaching the goal observation ogoal.
+Actions are then selected that minimize the expected free
+energy G, as deﬁned in Equation 3, i.e. scoring how much
+expected observations will realize the preferred observa-
+tions, and how much information these will bring over the
+hidden variables.
+In our case, we mainly focus on the expected information
+gain about the object positionstk, which are the main source
+of uncertainty in the scene. Moreover, since the log likeli-
+hood in observation space (i.e. pixel space) is less mean-
+ingful, we ﬁrst infer the goal object identity, scale and pose
+from ogoal using our SceneCCN, and then score utility w.r.t.
+reaching these factor values.
+The expected free energy for a candidate viewpoint vt+1
+becomes:
+G(vt+1) = EQ(s,ot+1)
+[
+−log P(tk|vt+1,ogoal)  
+Look at goal object position
+−log P(σk,t+1|vt+1,ogoal)  
+at the desired scale
+−log P(pk,t+1|vt+1,ogoal)  
+and desired pose
+(6)
++ logQ(tk,t+1|vt+1) −log Q(tk,t+1|vt+1,ot+1)  
+while searching for the object position.
+]
+This boils down to directing the agent towards looking at the
+goal object at the right pose and scale, while also searching
+for where the object is positioned. We use Monte Carlo sam-
+pling to obtain the best next viewpoint, by sampling 5000
+targets and evaluating G. Instead of sampling uniformly in
+the workspace, we use importance sampling, putting more
+weight on viewpoints that look at positions where the target
+object is more likely positioned given the current beliefs
+of the particle ﬁlter. Once vt+1 is determined, we ﬁnd the
+next action, by moving the camera a step of maximum 5 cm
+towards the target view.
+4. Experiments
+We aim to evaluate whether our proposed generative model
+entails a representation that enables the agent to understand
+the scene and to infer: (i) what the different objects are and
+(ii) where these different objects are located. To this end, we
+design a new environment in which objects from the YCB
+dataset (Calli et al., 2015) are spawned in random positions,
+and the agent can move a camera in the workspace.
+4.1. Active Search Benchmark
+In order to evaluate an active vision agent, we designed a
+benchmark that casts the scene perception problem as a prob-
+lem in which a goal observation has to be reached by a vir-
+tual camera. We created a simulation environment in which
+between one and ﬁve objects from the YCB dataset (Calli
+et al., 2015) are spawned. We consider the master chef can,
+the cracker box, the sugar box, the tomato soup can, and the
+mustard bottle. The positions of the objects are randomly
+generated to be on a table of size 1m x 1m with a uniformly
+randomly sampled color. The goal image is an object-centric
+observation of a target object. In this observation, the other
+Object-Centric Scene Representations using Active Inference 6
+Figure 3.An example of the active vision environment. The left
+image shows the scene, a table with 5 objects from the YCB dataset.
+The green camera shows the current pose of the agent and the blue
+camera shows the target pose of the agent in the environment. The
+middle image shows the object-centric target goal observation in
+which the other objects are not rendered. The right image shows
+the current observation the agent sees.
+objects in the scene are not rendered to have no ambiguity
+on what the target is.
+The agent can move a pinhole camera, and the action space
+is deﬁned as continuous in 6 dimensions, representing the
+relative displacement in the three-dimensional space and the
+Euler angles for the relative rotation. Values in the action
+space lie in the range [−0.5,0.5]. The agent can only move
+over the table with a max height of 0.6 cm. If the action
+moves the camera outside of the environment or inside of
+an object, the resulting pose is clipped.
+The task is considered successful if the agent reaches the
+goal pose within a translation error below 7.5 cm, and a
+rotation error lower than 0.5 rad. The agent starts at an
+initial position with 0 rad azimuth, π
+4 rad elevation, and a
+range of 0.65 m, with respect to the table center. A visual
+representation of the environment, a goal observation, and
+the initial observation of a randomly generated scene is
+shown in Figure 3.
+We benchmark the performance in this environment using
+the following metrics: the success rate (i.e. when the agent
+reaches the goal in less than 350 steps), the azimuth, el-
+evation, and range error of the goal camera position with
+respect to the goal object position. As symmetry in object
+shape can cause a high overall translation error while actu-
+ally having an accurate ﬁnal observation, opted for these
+metrics instead of an error in allocentric 6DOF space.
+We implemented this environment adopting the structure
+of OpenAI gym (Brockman et al., 2016), and the code is
+supplied in the supplementary material.
+4.2. Results
+Baselines: We compare our approach with several baselines
+for solving the benchmark:
+• SceneCCN + AIF: Our agent uses the proposed
+SceneCCN to decompose scene observations into be-
+liefs over separate factors (Section 3.3), and adopts
+the expected free energy objective for action selection
+(Section 3.4).
+• PoseCNN: A supervised model for object segmenta-
+tion and pose estimation of RGBD data (Xiang et al.,
+2018b) trained on the YCB dataset. The agent action
+is acquired by ﬁrst estimating the identity and pose
+directly from both the goal observation and the agents’
+current observation. From these two estimated poses,
+the relative transform is computed, and a 5 cm step
+according to this transform is taken as action. The
+agent executes this process every step until the target
+pose is reached. When the agent does not observe the
+preference the agent stops. Note that PoseCNN has
+access to the depth information, whereas our approach
+has not.
+• PoseCNN + Infogain: The PoseCNN baseline, but
+adding our object position particle ﬁlter. When the
+target object is not in view, we use the information
+gain term over object position similar to our approach.
+• LEXA: A model-based RL agent that adopts unsuper-
+vised exploration, to learn an accurate world model of
+the environment, and goal-conditioned RL, to learn
+to reach goals sampled from the agent experience
+buffer (Mendonca et al., 2021).
+Benchmark Performance:The benchmark consists of 500
+evaluation scenes: 100 for each target object with 1-5 ob-
+jects randomly positioned in the workspace, which has a
+random color. The exact scenes on which we evaluated
+are provided in the supplementary material. The error in
+spherical coordinates with respect to the target object cen-
+ter is plotted in Figure 4. Our approach outperforms the
+PoseCNN baseline, whereas adding information gain also
+improves the vanilla PoseCNN baseline.
+A more detailed breakdown per object is provided in Ta-
+ble 1. Our model consistently outperforms the baselines in
+both in terms of pose error and success rate of reaching the
+target pose according to the environment stop criteria. We
+Figure 4.Box plot representing the azimuth, elevation, and range
+error of the reached position for our approach and the two
+PoseCNN baselines over all scenes of the 25 conﬁgurations.
+Object-Centric Scene Representations using Active Inference 7
+Table 1.Comparison of SceneCCN with PoseCNN on the whole benchmark. We compare over the success rate (% s), azimuth error ∆φ,
+elevation error ∆θand range error ∆r. For each target object, 100 scenes are evaluated. The values are represented as mean ± standard
+error. The best performances are marked in bold.
+% s ∆φ ∆θ ∆r
+PoseCNN
+Master chef can 17.0 1 .333±0.088 0.418±0.029 0.203±0.018
+Cracker box 24.0 1 .219±0.096 0.387±0.031 0.148±0.013
+Sugar box 16.0 1 .092±0.087 0.447±0.035 0.185±0.015
+Mustard bottle 8.0 1 .466±0.091 0.508±0.041 0.175±0.016
+Tomato soup can 16.0 1 .276±0.100 0.395±0.030 0.218±0.018
+Total 16.2 1 .277±0.042 0.431±0.015 0.186±0.007
+PoseCNN + Infogain
+Master chef can 22.0 1 .198±0.099 0.419±0.034 0.171±0.017
+Cracker box 28.0 1 .115±0.101 0.380±0.036 0.133±0.011
+Sugar box 35.0 0 .978±0.098 0.330±0.032 0.149±0.015
+Mustard bottle 24.0 1 .241±0.100 0.381±0.037 0.138±0.013
+Tomato soup can 33.0 1 .065±0.097 0.327±0.031 0.157±0.018
+Total 28.4 1 .119±0.045 0.367±0.015 0.150±0.007
+SceneCCN + AIF
+Master chef can 84.0 0 .491±0.067 0.138±0.014 0.042±0.005
+Cracker box 66.0 0 .532±0.075 0.290±0.039 0.058±0.007
+Sugar box 69.0 0 .508±0.076 0.232±0.032 0.058±0.006
+Mustard bottle 80.0 0 .420±0.064 0.275±0.041 0.057±0.008
+Tomato soup can 46.0 0 .896±0.085 0.220±0.019 0.120±0.013
+Total 69.0 0 .569±0.034 0.231±0.014 0.067±0.004
+obtain an average success rate of 69%, which is more than
+double than the PoseCNN models with and without info
+gain (28.4% and 16.2% respectively). This shows that using
+an infogain exploration strategy clearly helps in ﬁnding the
+target object, but the object-centric model is also an impor-
+tant success factor. This acknowledges that representations
+learnt by actively interacting with objects might be better
+suited for object understanding than supervised training of
+6DOF pose regression on static views.
+When we disentangle these features separately for the differ-
+ent objects, shown in Table 1, we observe that the azimuth
+error is the highest for the object with the most symmetry
+(i.e. tomato soup can), and the lowest for the object with the
+least symmetry (i.e. the mustard bottle), while this is not
+necessarily reﬂected by the elevation. We also to note that
+the performance of our SceneCCN on the tomato soup can
+underperform compared to the other objects. We attribute
+this to the fact that the CCN model of the tomato soup can
+was less accurate than the ones of the other objects. This
+is probably due to the fact that the tomato soup can was
+rendered in a smaller scale than the others (see Figure 7),
+which made it harder for the models to accurately infer the
+position and pose.
+Comparison with model-based RL:We also evaluated
+Latent Explorer Achiever (LEXA) (Mendonca et al., 2021)
+on a single environment instance with 5 objects in a ﬁxed
+conﬁguration, but with varying goals to reﬂect the origi-
+nal LEXA setup. LEXA sets goals by randomly sampling
+them from a replay buffer acquired through exploration.
+We trained this agent for ∼7M steps1 and compare our ap-
+proach and both PoseCNN approaches on this environment.
+Qualitative results are shown in Figure 5 and show the goal
+observation, and the ﬁnal reached frame for all the baselines
+as well as for our approach. We can see that the LEXA agent
+sometimes is able to reach the goal almost perfectly (second
+and last column) but in other cases, it picks the wrong target
+object.
+The quantitative performance of all approaches in this en-
+vironment is shown in Table 2. We observe that the LEXA
+baseline is only able to solve the task in 11 out of 100
+cases, while our approach was able to solve this 62 times.
+PoseCNN was only able to solve it 17 times and 30 times
+with the added infogain term. Further, we notice the same
+trends as observed in Table 1. While LEXA performs worse
+than the PoseCNN baselines in terms of success rate, the
+range and elevation error are lower. It also has the lowest
+azimuth error of all approaches.
+Exploration vs Exploitation:Finally. we investigate the
+emerging behavior when the agent does not have a goal
+image. The function optimized by the agent then becomes
+1For sample-efﬁciency comparison, we trained SceneCCN us-
+ing 500k samples per object, for a total of 2.5M frames on the
+augmented dataset.
+Object-Centric Scene Representations using Active Inference 8
+Table 2.Comparison with LEXA on the single environment LEXA
+was trained on. 100 goals were randomly selected and used to
+evaluate the performance of the agents on the success rate (% s),
+azimuth error (∆φ), elevation error (∆θ) and range error (∆r).
+% s ∆φ ∆θ ∆r
+PoseCNN 17 1 .824
+±0.494
+0.425
+±0.082
+0.238
+±0.053
+PoseCNN + Infogain 30 1 .195
+±0.398
+0.460
+±0.118
+0.201
+±0.057
+SceneCCN + AIF 62 1.050
+±0.470
+0.187
+±0.083
+0.076
+±0.039
+LEXA 11 1.025
+±0.300
+0.368
+±0.103
+0.138
+±0.030
+the expected free energy without the instrumental terms,
+which boils down to the (negative) infogain over the object
+position (see Equation (6)). In Figure 6, we show this for a
+particular scene in which the ﬁve YCB objects are present.
+At the ﬁrst step, it is clear that the belief over object positions
+has a large variance, but over time the agent iterates and
+attends to different objects, narrowing the variance over
+these speciﬁc object instances. This can be seen by the
+camera’s trajectory shown in black. We observe that over
+multiple timesteps the variance over the object position
+reduces, and the particles mean lies closer to the ground
+truth position of the objects. In this visualization, we show
+that driving behavior through the minimization of G actively
+reduces the ambiguity over the scene.
+Figure 5.Five goals in the environment on which the LEXA agent
+was trained. We show the ﬁnally reached frame for all the baselines
+(PoseCNN, PoseCNN + Infogain, SceneCCN + AIF and LEXA).
+Figure 6.2D projection of the position belief evolution through the
+minimizing of the expected free energy Gusing the SceneCCN
+generative model. The colors indicate the object over which the
+belief is formed. The black circles represent the ground truth
+positions of these objects and the black line shows the trajectory
+taken by the agent.
+5. Conclusion
+In this paper, we proposed a novel object-centric generative
+model that builds a representation for scenes with multiple
+objects using active inference. We developed a new bench-
+mark for evaluating performance on active vision tasks using
+a pinhole camera agent in a 3D environment with a speciﬁc
+move-to goal. Our approach outperforms both a supervised
+pose estimation model and an unsupervised model-based
+RL baseline.
+The main limitation of SceneCCN is that we require a single
+neural network per object type, which will be difﬁcult to
+scale to a world with hundreds of object categories with even
+more different appearances. A potential mitigation would be
+to extend our CCN models to share weights of the different
+encoders, and/or also infer a latent representation for shape
+and appearance as proposed by Ferraro et al. (2022).
+Compared to slot-attention models, we entail a separate slot
+per object entity instead of a slot per object instance. This
+ensures that we require less data to train a single category
+compared to an end-to-end system that has to learn to map
+either of the categories to any slot. However, our approach
+comes the downside that it is more difﬁcult to scale towards
+scenes with multiple objects of a single instance, or to deal
+with heavily cluttered environments of similar categories.
+Currently, our method only considers static environments.
+In future work, we plan to also consider object dynamics
+by adding a dynamics model for each object category that
+given the history of poses and action could predict the next
+pose.
+References
+Andrychowicz, M., Wolski, F., Ray, A., Schneider,
+J., Fong, R., Welinder, P., McGrew, B., Tobin, J.,
+Object-Centric Scene Representations using Active Inference 9
+Pieter Abbeel, O., and Zaremba, W. Hindsight expe-
+rience replay. In Guyon, I., Luxburg, U. V ., Bengio,
+S., Wallach, H., Fergus, R., Vishwanathan, S., and
+Garnett, R. (eds.), Advances in Neural Information Pro-
+cessing Systems , volume 30. Curran Associates,
+Inc., 2017. URL https://proceedings.
+neurips.cc/paper/2017/file/
+453fadbd8a1a3af50a9df4df899537b5-Paper.
+pdf.
+Bear, D., Fan, C., Mrowca, D., Li, Y ., Alter, S., Nayebi,
+A., Schwartz, J., Fei-Fei, L. F., Wu, J., Tenenbaum,
+J., and Yamins, D. L. Learning physical graph rep-
+resentations from visual scenes. In Larochelle, H.,
+Ranzato, M., Hadsell, R., Balcan, M. F., and Lin, H.
+(eds.), Advances in Neural Information Processing
+Systems, volume 33, pp. 6027–6039. Curran Asso-
+ciates, Inc., 2020. URL https://proceedings.
+neurips.cc/paper/2020/file/
+4324e8d0d37b110ee1a4f1633ac52df5-Paper.
+pdf.
+Brockman, G., Cheung, V ., Pettersson, L., Schneider, J.,
+Schulman, J., Tang, J., and Zaremba, W. Openai gym.
+arXiv preprint arXiv:1606.01540, 2016.
+Burgess, C. P., Matthey, L., Watters, N., Kabra, R., Hig-
+gins, I., Botvinick, M., and Lerchner, A. MONet:
+Unsupervised Scene Decomposition and Representa-
+tion. arXiv:1901.11390 [cs, stat], January 2019. URL
+http://arxiv.org/abs/1901.11390. arXiv:
+1901.11390.
+Calli, B., Singh, A., Walsman, A., Srinivasa, S., Abbeel, P.,
+and Dollar, A. M. The ycb object and model set: Towards
+common benchmarks for manipulation research. In 2015
+International Conference on Advanced Robotics (ICAR),
+pp. 510–517, 2015. doi: 10.1109/ICAR.2015.7251504.
+Chen, C., Deng, F., and Ahn, S. ROOTS: Object-
+Centric Representation and Rendering of 3D Scenes.
+arXiv:2006.06130 [cs, stat] , July 2021. URL
+http://arxiv.org/abs/2006.06130. arXiv:
+2006.06130.
+Crawford, E. and Pineau, J. Exploiting Spatial In-
+variance for Scalable Unsupervised Object Tracking.
+arXiv:1911.09033 [cs, stat] , November 2019. URL
+http://arxiv.org/abs/1911.09033. arXiv:
+1911.09033.
+Dauc´e, E. Active Fovea-Based Vision Through
+Computationally-Effective Model-Based Predic-
+tion. Frontiers in Neurorobotics, 12:76, December 2018.
+ISSN 1662-5218. doi: 10.3389/fnbot.2018.00076. URL
+https://www.frontiersin.org/article/
+10.3389/fnbot.2018.00076/full.
+Du, G., Wang, K., Lian, S., and Zhao, K. Vision-based
+Robotic Grasping From Object Localization, Object Pose
+Estimation to Grasp Estimation for Parallel Grippers: A
+Review. Artiﬁcial Intelligence Review, 54(3):1677–1734,
+March 2021.
+Engelcke, M., Kosiorek, A., Parker Jones, O., and Posner,
+H. Genesis: Generative scene inference and sampling of
+object-centric latent representations. OpenReview, 2020.
+Eslami, S. M. A., Heess, N., Weber, T., Tassa, Y ., Szepesvari,
+D., Kavukcuoglu, K., and Hinton, G. E. Attend, infer,
+repeat: Fast scene understanding with generative models.
+In Proceedings of the 30th International Conference on
+Neural Information Processing Systems , NIPS’16, pp.
+3233–3241. Curran Associates Inc., 2016a.
+Eslami, S. M. A., Heess, N., Weber, T., Tassa, Y ., Szepes-
+vari, D., Kavukcuoglu, K., and Hinton, G. E. Attend,
+Infer, Repeat: Fast Scene Understanding with Generative
+Models. arXiv:1603.08575 [cs], August 2016b. URL
+http://arxiv.org/abs/1603.08575. arXiv:
+1603.08575.
+Eslami, S. M. A., Jimenez Rezende, D., Besse, F., Viola,
+F., Morcos, A. S., Garnelo, M., Ruderman, A., Rusu,
+A. A., Danihelka, I., Gregor, K., Reichert, D. P., Buesing,
+L., Weber, T., Vinyals, O., Rosenbaum, D., Rabinowitz,
+N., King, H., Hillier, C., Botvinick, M., Wierstra, D.,
+Kavukcuoglu, K., and Hassabis, D. Neural scene repre-
+sentation and rendering. Science, 360(6394):1204–1210,
+June 2018. ISSN 0036-8075, 1095-9203. doi: 10.1126/
+science.aar6170. URL https://www.science.
+org/doi/10.1126/science.aar6170.
+Ferraro, S., Van de Maele, T., Mazzaglia, P., Verbelen, T.,
+and Dhoedt, B. Disentangling shape and pose for object-
+centric deep active inference models, 2022. URLhttps:
+//arxiv.org/abs/2209.09097.
+Friston, K., FitzGerald, T., Rigoli, F., Schwartenbeck, P.,
+and Pezzulo, G. Active inference: A process theory.
+Neural Comput., 29(1):1–49, jan 2017. ISSN 0899-7667.
+doi: 10.1162/NECO a 00912.
+Greff, K., Kaufman, R. L., Kabra, R., Watters, N., Burgess,
+C., Zoran, D., Matthey, L., Botvinick, M., and Lerch-
+ner, A. Multi-Object Representation Learning with Itera-
+tive Variational Inference. arXiv:1903.00450 [cs, stat],
+July 2020. URL http://arxiv.org/abs/1903.
+00450. arXiv: 1903.00450.
+Ha, D. and Schmidhuber, J. Recurrent world models fa-
+cilitate policy evolution. In Bengio, S., Wallach, H.,
+Larochelle, H., Grauman, K., Cesa-Bianchi, N., and Gar-
+nett, R. (eds.), Advances in Neural Information Process-
+ing Systems, volume 31. Curran Associates, Inc., 2018.
+Object-Centric Scene Representations using Active Inference 10
+Hafner, D., Lillicrap, T. P., Fischer, I., Villegas, R., Ha,
+D., Lee, H., and Davidson, J. Learning latent dynamics
+for planning from pixels. In Proceedings of the 36th
+International Conference on Machine Learning, ICML
+2019, 9-15 June 2019, Long Beach, California, USA ,
+pp. 2555–2565, 2019. URL http://proceedings.
+mlr.press/v97/hafner19a.html.
+Hafner, D., Lillicrap, T., Ba, J., and Norouzi, M. Dream
+to control: Learning behaviors by latent imagination. In
+International Conference on Learning Representations,
+2020.
+Hafner, D., Lillicrap, T. P., Norouzi, M., and Ba, J. Master-
+ing atari with discrete world models. In 9th International
+Conference on Learning Representations, ICLR 2021, Vir-
+tual Event, Austria, May 3-7, 2021, 2021. URL https:
+//openreview.net/forum?id=0oabwyZbOu.
+Hawkins, J., Ahmad, S., and Cui, Y . A Theory of How
+Columns in the Neocortex Enable Learning the Structure
+of the World. Frontiers in Neural Circuits, 11:81, October
+2017. ISSN 1662-5110. doi: 10.3389/fncir.2017.00081.
+URL http://journal.frontiersin.org/
+article/10.3389/fncir.2017.00081/full.
+Hinton, G. E. Some demonstrations of the effects of struc-
+tural descriptions in mental imagery. Cognitive Science
+(COGSCI), 3(3):231–250, 1979.
+Jaderberg, M., Simonyan, K., Zisserman, A., and
+Kavukcuoglu, K. Spatial transformer networks, 2015.
+URL https://arxiv.org/abs/1506.02025.
+James, K. H., Jones, S. S., Smith, L. B., and Swain, S. N.
+Young children’s self-generated object views and ob-
+ject recognition. Journal of Cognition and Develop-
+ment, 15(3):393–401, 2014. doi: 10.1080/15248372.
+2012.749481.
+Jiang, J., Janghorbani, S., de Melo, G., and Ahn, S. Scalor:
+Generative world models with scalable object representa-
+tions. In Proceedings of ICLR 2020, 2020. URL https:
+//openreview.net/pdf?id=SJxrKgStDH.
+Johnson, J., Hariharan, B., van der Maaten, L., Fei-Fei, L.,
+Zitnick, C. L., and Girshick, R. B. CLEVR: A diagnostic
+dataset for compositional language and elementary visual
+reasoning. CoRR, abs/1612.06890, 2016. URL http:
+//arxiv.org/abs/1612.06890.
+Kingma, D. P. and Ba, J. Adam: A Method for
+Stochastic Optimization. arXiv:1412.6980 [cs] , Jan-
+uary 2017. URL http://arxiv.org/abs/1412.
+6980. arXiv: 1412.6980.
+Kingma, D. P. and Welling, M. Auto-Encoding Variational
+Bayes. arXiv:1312.6114 [cs, stat] , May 2014. URL
+http://arxiv.org/abs/1312.6114. arXiv:
+1312.6114.
+Kipf, T., van der Pol, E., and Welling, M. Contrastive
+learning of structured world models. arXiv preprint
+arXiv:1911.12247, 2019.
+Kosiorek, A. R., Kim, H., Posner, I., and Teh, Y . W. Se-
+quential Attend, Infer, Repeat: Generative Modelling of
+Moving Objects. arXiv:1806.01794 [cs, stat], Novem-
+ber 2018. URL http://arxiv.org/abs/1806.
+01794. arXiv: 1806.01794.
+Kundu, A., Tagliasacchi, A., Mak, A. Y ., Stone, A., Do-
+ersch, C., Oztireli, C., Herrmann, C., Gnanapragasam,
+D., Duckworth, D., Rebain, D., Fleet, D. J., Sun, D.,
+Nowrouzezahrai, D., Lagun, D., Pot, E., Zhong, F.,
+Golemo, F., Belletti, F., Meyer, H., Liu, H.-T. D., Laradji,
+I., Greff, K., Yi, K. M., Beyer, L., Sela, M., Sajjadi, M.
+S. M., Radwan, N., Sabour, S., V ora, S., Kipf, T., Wu,
+T., Sitzmann, V ., Du, Y ., and Miao, Y . (eds.).Kubric: A
+scalable dataset generator, 2022.
+Lanillos, P., Meo, C., Pezzato, C., Meera, A. A., Baioumy,
+M., Ohata, W., Tschantz, A., Millidge, B., Wisse, M.,
+Buckley, C. L., and Tani, J. Active inference in robotics
+and artiﬁcial agents: Survey and challenges. CoRR,
+abs/2112.01871, 2021. URL https://arxiv.org/
+abs/2112.01871.
+Lin, Z., Wu, Y .-F., Peri, S., Fu, B., Jiang, J., and Ahn,
+S. Improving generative imagination in object-centric
+world models. In Proceedings of the 37th International
+Conference on Machine Learning, ICML’20. JMLR.org,
+2020.
+Locatello, F., Weissenborn, D., Unterthiner, T., Mahendran,
+A., Heigold, G., Uszkoreit, J., Dosovitskiy, A., and
+Kipf, T. Object-centric learning with slot attention. In
+Larochelle, H., Ranzato, M., Hadsell, R., Balcan, M., and
+Lin, H. (eds.), Advances in Neural Information Process-
+ing Systems, volume 33, pp. 11525–11538. Curran As-
+sociates, Inc., 2020. URL https://proceedings.
+neurips.cc/paper/2020/file/
+8511df98c02ab60aea1b2356c013bc0f-Paper.
+pdf.
+Mazzaglia, P., Verbelen, T., Dhoedt, B., Lacoste, A., and
+Rajeswar, S. Choreographer: Learning and adapting skills
+in imagination. 2022. URL https://openreview.
+net/forum?id=BxYsP-7ggf.
+Mendonca, R., Rybkin, O., Daniilidis, K., Hafner, D.,
+and Pathak, D. Discovering and achieving goals via
+world models. In Advances in Neural Information
+Object-Centric Scene Representations using Active Inference 11
+Processing Systems 34: Annual Conference on Neu-
+ral Information Processing Systems 2021, NeurIPS
+2021, December 6-14, 2021, virtual , pp. 24379–
+24391, 2021. URL https://proceedings.
+neurips.cc/paper/2021/hash/
+cc4af25fa9d2d5c953496579b75f6f6c-Abstract.
+html.
+Minaee, S., Boykov, Y . Y ., Porikli, F., Plaza, A. J., Kehtar-
+navaz, N., and Terzopoulos, D. Image segmentation using
+deep learning: A survey. IEEE Transactions on Pattern
+Analysis and Machine Intelligence, pp. 1–1, 2021. doi:
+10.1109/TPAMI.2021.3059968.
+Mirza, M. B., Adams, R. A., Mathys, C. D., and
+Friston, K. J. Scene Construction, Visual Foraging,
+and Active Inference. Frontiers in Computational
+Neuroscience, 10, June 2016. ISSN 1662-5188.
+doi: 10.3389/fncom.2016.00056. URL http:
+//journal.frontiersin.org/Article/10.
+3389/fncom.2016.00056/abstract.
+Mishkin, M., Ungerleider, L. G., and Macko, K. A. Object
+vision and spatial vision: two cortical pathways.Trends in
+Neurosciences, 6:414–417, January 1983. doi: 10.1016/
+0166-2236(83)90190-x. URL https://doi.org/
+10.1016/0166-2236(83)90190-x.
+Parr, T., Rees, G., and Friston, K. J. Computational
+neuropsychology and bayesian inference. Fron-
+tiers in Human Neuroscience , 12, 2018. ISSN
+1662-5161. doi: 10.3389/fnhum.2018.00061. URL
+https://www.frontiersin.org/articles/
+10.3389/fnhum.2018.00061.
+Parr, T., Sajid, N., Da Costa, L., Mirza, M. B., and
+Friston, K. J. Generative Models for Active Vision.
+Frontiers in Neurorobotics, 15:651432, April 2021. ISSN
+1662-5218. doi: 10.3389/fnbot.2021.651432. URL
+https://www.frontiersin.org/articles/
+10.3389/fnbot.2021.651432/full.
+Parr, T., Pezzulo, G., and Friston, K. J. Active In-
+ference: The Free Energy Principle in Mind, Brain,
+and Behavior . The MIT Press, March 2022. ISBN
+978-0-262-36997-8. doi: 10.7551/mitpress/12441.
+001.0001. URL https://doi.org/10.7551/
+mitpress/12441.001.0001.
+Pio-Lopez, L., Kuchling, F., Tung, A., Pezzulo, G., and
+Levin, M. Frontiers in Computational Neuroscience ,
+16, 2022. ISSN 1662-5188. doi: 10.3389/fncom.2022.
+988977. URL https://www.frontiersin.org/
+articles/10.3389/fncom.2022.988977.
+Rezende, D. J., Mohamed, S., and Wierstra, D. Stochas-
+tic Backpropagation and Approximate Inference in
+Deep Generative Models. arXiv:1401.4082 [cs, stat] ,
+May 2014. URL http://arxiv.org/abs/1401.
+4082. arXiv: 1401.4082.
+Sajjadi, M. S. M., Duckworth, D., Mahendran, A., van
+Steenkiste, S., Paveti´c, F., Luˇci´c, M., Guibas, L. J., Greff,
+K., and Kipf, T. Object scene representation transformer.
+In Advances in Neural Information Processing Systems,
+2022a.
+Sajjadi, M. S. M., Meyer, H., Pot, E., Bergmann, U.,
+Greff, K., Radwan, N., V ora, S., Lucic, M., Duck-
+worth, D., Dosovitskiy, A., Uszkoreit, J., Funkhouser,
+T., and Tagliasacchi, A. Scene Representation Trans-
+former: Geometry-Free Novel View Synthesis Through
+Set-Latent Scene Representations. CVPR, 2022b. URL
+https://srt-paper.github.io/.
+Smith, E. J., Meger, D., Pineda, L., Calandra, R., Ma-
+lik, J., Romero, A., and Drozdzal, M. Active 3d
+shape reconstruction from vision and touch. CoRR,
+abs/2107.09584, 2021. URL https://arxiv.org/
+abs/2107.09584.
+Smith, R., Badcock, P., and Friston, K. J. Recent ad-
+vances in the application of predictive coding and active
+inference models within clinical neuroscience. Psychi-
+atry and Clinical Neurosciences , 75(1):3–13, Septem-
+ber 2020. doi: 10.1111/pcn.13138. URL https:
+//doi.org/10.1111/pcn.13138.
+Sucar, E., Wada, K., and Davison, A. Nodeslam: Neural
+object descriptors for multi-view shape reconstruction.
+In 2020 International Conference on 3D Vision (3DV) ,
+pp. 949–958, nov 2020. doi: 10.1109/3DV50981.2020.
+00105.
+van Bergen, R. S. and Lanillos, P. L. Object-based active
+inference, 2022. URL https://arxiv.org/abs/
+2209.01258.
+Van de Maele, T., Verbelen, T., C ¸atal, O., and Dhoedt, B.
+Embodied Object Representation Learning and Recogni-
+tion. Frontiers in Neurorobotics, 16:840658, April 2022.
+ISSN 1662-5218. doi: 10.3389/fnbot.2022.840658. URL
+https://www.frontiersin.org/articles/
+10.3389/fnbot.2022.840658/full.
+Veerapaneni, R., Co-Reyes, J. D., Chang, M., Janner, M.,
+Finn, C., Wu, J., Tenenbaum, J., and Levine, S. Entity
+abstraction in visual model-based reinforcement learn-
+ing. In Kaelbling, L. P., Kragic, D., and Sugiura, K.
+(eds.), Proceedings of the Conference on Robot Learn-
+ing, volume 100 of Proceedings of Machine Learn-
+ing Research, pp. 1439–1456. PMLR, 30 Oct–01 Nov
+2020. URL https://proceedings.mlr.press/
+v100/veerapaneni20a.html.
+Object-Centric Scene Representations using Active Inference 12
+Watters, N., Matthey, L., Bosnjak, M., Burgess, C. P.,
+and Lerchner, A. COBRA: data-efﬁcient model-based
+RL through unsupervised object discovery and curiosity-
+driven exploration. CoRR, abs/1905.09275, 2019. URL
+http://arxiv.org/abs/1905.09275.
+Wu, Z., Song, S., Khosla, A., Zhang, L., Tang, X., and Xiao,
+J. 3d shapenets: A deep representation for volumetric
+shape modeling. In IEEE Conference on Computer Vision
+and Pattern Recognition (CVPR) , Boston, USA, June
+2015.
+Xiang, Y ., Schmidt, T., Narayanan, V ., and Fox, D. Posecnn:
+A convolutional neural network for 6d object pose estima-
+tion in cluttered scenes. Robotics: Science and Systems
+(RSS), 2018a.
+Xiang, Y ., Schmidt, T., Narayanan, V ., and Fox,
+D. PoseCNN: A Convolutional Neural Net-
+work for 6D Object Pose Estimation in Cluttered
+Scenes. arXiv:1711.00199 [cs] , May 2018b. URL
+http://arxiv.org/abs/1711.00199. arXiv:
+1711.00199.
+Yan, X., Yuan, Z., Du, Y ., Liao, Y ., Guo, Y ., Li, Z., and
+Cui, S. Clevr3d: Compositional language and elemen-
+tary visual reasoning for question answering in 3d real-
+world scenes, 2021. URL https://arxiv.org/
+abs/2112.11691.
+Object-Centric Scene Representations using Active Inference 13
+A. The Generative Model and Variational Free Energy
+The generative model shown in Figure 1 can be formalized as:
+P(s,˜o,˜a) = P(v0)
+T∏
+t=1
+P(vt|vt−1,at−1)P(at−1)
+∏
+k
+P(ot|ok,t,uk,t,σk,t)P(ok,t|ik,pk,t)P(pk,t|pk,t−1,at−1)P(uk,t|tk,vt)P(σk,t|tk,vt)P(ik)P(tk)
+(7)
+where the tilde represents a sequence of the variable over time, and P(s) = ∏
+kP(ik,tk,˜pk).
+The approximate posterior Q(s|˜o) is factorized through the following mean ﬁeld approximation:
+Q(s|˜o) =
+∏
+t
+∏
+k
+Q(uk,t|ot)Q(σk,t|ot)Q(tk|uk,t,σk,t)Q(pk,t|ok,t)Q(ik|ok,t) (8)
+For the generative model and approximate posterior described above, the free energy F is deﬁned as:
+F = EQ(s|˜o)
+[
+log Q(s|˜o) −log P(s,˜o,˜a)
+]
+=
+∑
+t
+∑
+k
+EQ(s|˜o)
+[
+−log P(vt|vt−1,at−1) −log P(at−1)
+]
+  
+Constant
++ DKL
+[
+Q(pk,t|ok,t)||P(pk,t|pk,t−1,at−1))
+]
+  
+Pose Transition Model∗
++ DKL
+[
+Q(ik|ok,t)||P(ik)
+]
+  
+Object category classiﬁcation∗∗
++ DKL
+[
+Q(σk,t|ot)||P(σk,t|tt,vt)
+]
++ DKL
+[
+Q(uk,t|ot)||P(uk,t|tt,vt)
+]
+  
+Object-centric cropping∗∗
++ DKL
+[
+Q(tk|ot)||P(tk)
+]
+  
+Object positions∗∗∗
++ EQ(s|˜o)
+[
+−log P(ok,t|it,pk,t))
+]
+  
+Object-centric observation likelihood∗
++ EQ(s|˜o)
+[
+−log P(ot|ok,t,uk,t,σk,t)
+]
+  
+Full observation likelihood
+(9)
+This decomposes in a number of terms that are optimized in our two training phases. In the ﬁrst phase, we train
+object-centric CCNs, which jointly optimize an object-centric likelihood model pθ(ok,t|ik,pk,t), a pose transition model
+pθ(pk,t|pk,t−1,at−1) and an approximate pose posterior model qφ(pk,t|ok,t) covering the terms denoted with ∗. In the
+second phase, we additionally train a model outputting the object category qφ(ik|ok,t) as well as a model outputting
+object-centric crop parameters qφ(uk,t,σk,t|ot). This is done by optimizing the terms denoted with ∗∗, and noting that
+generating bounding box parameters uk,t and σk,t from object position t and camera viewpoint v is determined by the
+pinhole camera model. Finally, the posterior over positions (denoted with ∗∗∗) is implemented using a particle ﬁlter, and has
+no parameters to optimize. In a similar vein, the remaining terms have no inﬂuence over the learnable parameters or are
+constant terms under the expectation.
+In practice, optimizing the negative log likelihood terms is equivalent to minimizing the mean squared error between the
+reconstructed observation and the ground truth observation. Similarly, optimizing the KL-divergence for a Bernoulli variable
+is equivalent to minimizing the binary cross entropy error over this variable. For this reason, we implemented the loss using
+Object-Centric Scene Representations using Active Inference 14
+Figure 7.A few examples from the object-centric dataset (left) and the augmented dataset (right).
+these terms. Instead of regressing the bounding box parameters, we opted for a spatial transformer that directly transforms
+the input image into an object-centric crop from these parameters, and add a supervised loss to the intermediately computed
+object-speciﬁc mask as this resulted in more stable results.
+B. Object-Centric Datasets
+For each of the considered objects in the YCB dataset, a dataset is created consisting of observation-viewpoint pairs. In this
+work we consider the following objects: master chef can, cracker box, sugar box, tomato soup can, and mustard bottle.
+We only consider observing objects from a ﬁxed distance, as this will allow an agent to use the scale of an object for
+estimating the distance to the object. We then sample all observations from a ﬁxed distance of 40 cm from the object center.
+Points are sampled uniformly on a sphere around around the object center, considering a ﬁxed radius of 40 cm. Both the
+RGB observation and the viewpoints are recorded. For each object category, a dataset of 500 samples is created. Some
+samples from this dataset are shown on the left of Figure 7.
+For training the second phase that considers scene (not object-centric) observations, we do not create a novel dataset. Instead,
+we augment and combine our object-centric observations to lie in a similar distribution to full scenes. To this end, we
+randomly scale and translate the object in the observation to simulate a sense of translation. Then two randomly oriented
+rectangles in different colors are used as a background, which increases robustness to different environments. On top of
+this, we also add a different random object from one of the other categories that is also scaled and translated according to
+the same distribution as the main object. This sometimes occludes the object of interest and makes our model more robust.
+Finally, to add augmentation for training the object identity prediction, in 20% of the cases we remove the object from the
+observation. Some samples from this dataset are shown in Figure 7.
+C. Neural Network Parameters
+There are multiple neural networks working together for the approximate inference of the hidden variables. When the agent
+observes the scene, ﬁrst a fully convolutional neural network estimates which pixels belong to the object of category k, this
+is the observation mask αk,t. The parameterization of this layer is shown in Table 3.
+The observation is then masked using a pixel-wise product ot ⊙αk,t and further processed to predict object identity ik,
+i.e. whether the object of interest is present in the observation. This neural network predicts the parameters for a spatial
+transformer, i.e. the center of the object in pixel space and the object scale directly. Its parameterization is shown in
+Table 4. This directly predicts the scale and normalized center of the object of interest. To get the predicted scale in a
+range for the model to optimize we scale and invert this output hof the neural network using the following transform:
+σk,t = 1/(3.8 ·h+ 0.2).
+Object-Centric Scene Representations using Active Inference 15
+Table 3.conﬁguration of the Masking Neural Network.
+Layer Output Neurons/Filters
+Interpolate to 64x64 -
+Convolutional (1x1) + Leaky ReLU 16
+Convolutional (3x3) + Leaky ReLU 32
+Convolutional (3x3) + Leaky ReLU 64
+Convolutional (3x3) 1
+Median Pool (5x5) -
+Sigmoid -
+Interpolate to 480x480 -
+Table 4.Conﬁguration of the Spatial Transformer Network.
+Layer Output Neurons/Filters
+Interpolate to 32x32 -
+Flatten -
+Linear + Leaky ReLU 256
+Linear + Leaky ReLU 128
+Linear + Leaky ReLU 64
+Linear + ELU 3
+Using the output of the spatial transformer network, the masked observation can be processed into an object-centric
+observation after which this is processed by two neural networks. One predicts the object identity ik or whether the object of
+interest is present in the observation. The parameterization is shown in Table 5.
+Table 5.Conﬁguration of the Identity Estimation Network.
+Layer Output Neurons/Filters
+Convolutional (4x4) + Leaky ReLU 8
+Convolutional (4x4) + Leaky ReLU 16
+Convolutional (4x4) + Leaky ReLU 32
+Convolutional (4x4) + Leaky ReLU 64
+Flatten -
+Linear + Sigmoid 1
+Finally, a CCN is able to estimate a latent variable describing the object pose. This model consists of three neural networks.
+First, an encoder takes an object-centric observation as an input and predicts the parameters of a multivariate Gaussian with
+8 dimensions and with a diagonal covariance matrix. This variable represents the object pose in an object-centric reference
+frame. The details of this model can be found in Table 6. The ﬁnal output of this model is a vector of twice the latent size,
+representing the mean and standard deviation of the multivariate Gaussian. A decoder or likelihood model takes as input a
+sample from this pose distribution and decodes it into a pixel-based observation. Using the transition model, the distribution
+over the pose can be estimated for future viewpoints. The model takes as input the concatenated vector of a sample from the
+current belief over pose and the action. The action in this case is a two-dimensional vector representing the displacement in
+azimuth and elevation, as we only consider observations from a ﬁxed distance.
+These neural networks are trained in two distinct steps, using the same object-centric dataset of 500 observation-viewpoint
+pairs per object. Drawing inspiration from object-centric learning in infants (Smith et al., 2021), the ﬁrst phase focuses
+on learning object-centric representations. While the second phase focuses on learning to decompose the scene into
+object-centric representations. In the ﬁrst phase, the CCN models is optimized on the L1-loss, described in Equation 4. This
+is done using the Adam (Kingma & Ba, 2017) optimizer with the conﬁguration parameters shown in Table 9. In the second
+phase, the other models are optimized by minimizing the L2-loss (Equation 5), again using the Adam (Kingma & Ba, 2017)
+Object-Centric Scene Representations using Active Inference 16
+Table 6.Conﬁguration of the CCN Encoder.
+Layer Output Neurons/Filters
+Convolution (4x4) + Leaky ReLU 8
+Convolution (4x4) + Leaky ReLU 16
+Convolution (4x4) + Leaky ReLU 32
+Convolution (4x4) + Leaky ReLU 64
+Flatten -
+Linear 2 ·8
+Softplus for σoutput -
+Table 7.Conﬁguration of the CCN Decoder.
+Layer Output Neurons/Filters
+Linear 4096
+Unﬂatten to 64x8x8 -
+Convolution (5x5) + Leaky ReLU 64
+Interpolate to 17x17 -
+Convolution (5x5) + Leaky ReLU 64
+Interpolate to 35x35 -
+Convolution (6x6) + Leaky ReLU 32
+Interpolate to 69x69 -
+Convolution (6x6) + Leaky ReLU 16
+Convolution (1x1) 3
+optimizer, but now with a learning rate of 1 ·10−4.
+D. Details on Active Agents
+When we consider the agent driven through expected free energy. A new target viewpointvt+1 is computed every 10 steps,
+or unless the target is reached.
+When estimating the 3D multivariate Gaussian, the mean is placed at the estimated depth along the negative z-direction of
+the camera pose in OpenGL format. The depth is acquired using the following relation with the scale: d= 0.4/σk,t, as
+observations are trained for a distance d= 0.4. The variance is then set at a value of 0.1973/2 along the depth dimension,
+and 0.02 along the other dimensions.
+The particle ﬁlters for estimating the position of the individual objects are initialized with 10k particles. At each step, the
+particles are resampled with a standard deviation of 0.025cm. When the agent does not observe the object in question, all
+particles that are in view of the camera and closer than the nearest (estimated) object, are set to a low value of 10−5 before
+normalization.
+For the implementation, the reader is referred to the supplementary materials.
+Object-Centric Scene Representations using Active Inference 17
+Table 8.Conﬁguration of the CCN Transition Model.
+Layer Output Neurons/Filters
+Linear + Leaky ReLU 128
+Linear + Leaky ReLU 256
+Linear + Leaky ReLU 256
+Linear 2 ·8
+Softplus for σoutput -
+Table 9.Hyperparameters for optimization of the CCN in the ﬁrst stage of training.
+Initial Value Range
+λ1 40 [80,100]
+λ2 40 [80,100]
+λ3 40 [80,100]
+λ4 10 ﬁxed
+Adjust frequency 500 steps -
+Adjust factor 1.01 -
+Learning rate 5 ·10−4 -
+Object-Centric Scene Representations using Active Inference 18
+E. Additional Results
+All approaches are evaluated on a set of ten goals from the environment in which the LEXA agent was trained. The
+qualitative results can be observed in Figure 8. The goal observation is displayed in the top row, while the other goals show
+the ﬁnal reached frame of the agent with a maximum of 350 steps.
+Figure 8.Qualitative results of the scene in which LEXA was trained. In this conﬁguration, ﬁve objects are randomly placed on a table,
+and the agent must reach a goal observation. The top row shows the goal observation, while the other rows show the ﬁnal reached
+observation for each agent. The simulation is stopped after 350 steps.

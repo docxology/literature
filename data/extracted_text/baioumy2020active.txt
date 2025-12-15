@@ -1,0 +1,852 @@
+Active Inference for Integrated State-Estimation, Control, and Learning.
+Mohamed Baioumy Paul Duckworth Bruno Lacerda Nick Hawes
+Abstract— This work presents an approach for control, state-
+estimation and learning model (hyper)parameters for robotic
+manipulators. It is based on the active inference framework,
+prominent in computational neuroscience as a theory of the
+brain, where behaviour arises from minimizing variational free-
+energy. First, we show there is a direct relationship between
+active inference controllers, and classic methods such as PID
+control. We demonstrate its application for adaptive and robust
+behaviour of a robotic manipulator that rivals state-of-the-art.
+Additionally, we show that by learning speciﬁc hyperparame-
+ters, our approach can deal with unmodeled dynamics, damps
+oscillations, and is robust against poor initial parameters. The
+approach is validated on the ‘Franka Emika Panda’ 7 DoF
+manipulator. Finally, we highlight limitations of active inference
+controllers for robotic systems.
+Supplementary Material
+https://github.com/MoBaioumy/active_
+inference_panda_paper.
+I. INTRODUCTION
+It is crucial for intelligent robots to be able to adapt to
+the presence of unmodeled dynamics. This is necessary for
+applications such as aerial vehicles encountering unpredicted
+wind dynamics [1], manipulators handling objects of un-
+known weight [2], and autonomous vehicles on slippery road
+surfaces [3]. Humans are skilled in this regard and recent
+work in robotics has taken inspiration from active inference
+[4], a neuroscientiﬁc theory of the brain and behaviour.
+Active inference provides a framework for understanding
+decision-making of biological agents where optimal behavior
+arises from minimising variational free-energy: a measure
+of the ﬁt between an internal model and (past) sensory
+observations. Additionally, agents act in a fashion that fulﬁlls
+prior beliefs about preferred future observations [5]. This
+framework has been employed to explain and simulate a wide
+range of complex behaviors including abstract rule learning,
+speech generation, planning and navigation [6], [7], [4].
+The active inference controller (AIC) [8], allows an agent
+to jointly perform state-estimation and control by minimiz-
+ing a single quantity: variational free-energy. Subsequent
+work has utilized the AIC in robotics [9], [10], [11]. The
+control and state-estimation parts are coupled and the AIC
+architecture is unusual compared to methods commonly
+used in robotics. Usually, when performing state-estimation
+(for instance using a Kalman or particle ﬁlter [12], [13])
+observations are required. The aim is then to ﬁnd a belief
+state that is close to the true (hidden) state. Additionally,
+Authors are with the Oxford Robotics Institute, University of Oxford,
+United Kingdom. For correspondence: {mohamed, pduckworth, bruno,
+nickh}@robots.ox.ac.uk
+Fig. 1: The Franka Emika Panda 7 DoF manipulator real
+robot (left) and simulated robot in Gazebo (right).
+controllers (such as a PID [14]) require a target state a
+withlong the current state. A PID controller then provides
+a control law to reach the target from the current state. In
+the AIC however, state-estimation requires the target and the
+observations which is usual from a control perspective; those
+are used to produces a ‘biased’ belief. The control part of the
+AIC requires the observation and the ‘biased’ belief. It is thus
+unclear how to systematically tune such a controller (since
+tuning the controller affects state-estimation). Furthermore,
+even slight changes to the parameters of the state-estimation
+component could cause the controller to be unstable.
+This paper has three contributions. First, we present a for-
+mulation which includes a temporal parameter τ. Second, we
+highlight theoretical results showing the exact relationship
+between our formulation and existing methods. For example,
+if our introduced parameter τ approaches zero, the approach
+converts to a classic PID controller. When τ → ∞, the
+approach converts to a ﬁlter. If τ is set to the unity, the for-
+mulation presented in [8] is recovered. The third contribution
+is presenting a method to automatically tune the controller.
+We show that the gains of the controller correspond to the
+covariances of the observation model and that learning the
+optimal covarinaces results in learning the optimal gains for
+the controller. However, the covariances do not converge
+when the systems reaches the target. We thus present an
+alternative by learning the introduced temporal parameter τ.
+This reduces oscillations and improves robustness.
+As a running example throughout the paper, the mass-
+spring-damper [15] system is used. However, we validate
+the approach on a ‘Franka Emika Panda’ 7 DoF manipulator
+in the results section.
+arXiv:2005.05894v2  [cs.RO]  30 Mar 2021
+II. R ELATED WORK
+There are only a few attempts to use active inference in
+robotics and control. In [16] a simulated PR2 robot is con-
+trolled by open-loop active inference but the computational
+complexity made an online implementation unfeasible. In
+[17], the authors use free-energy minimization for adaptive
+body perception. The same authors extended their work to
+include control in [9]. In [10] an implementation of active
+inference is presented with real hardware on a humanoid
+robot capable of performing reaching behaviors with both
+arms along with active head object tracking in the presence
+noisy observations. This work is extended in [18] using deep
+neural networks as function approximators.
+In [11] an approach for control of robotic manipulators
+is presented. Adaptive behaviour is demonstrated against the
+state-of-the-art model-reference adaptive control (MRAC) 1.
+Additionally, in [21], the authors use active inference to
+achieve fault-tolerant control for sensory faults [22], [23].
+The robot can detect whether its sensors are faulty and
+the control law is automatically adjusted to account for the
+detected faults. In [24], free-energy minimization is used to
+improve state-estimation under coloured noise. In [25], [26],
+[27] active inference with factor graphs is proposed as an
+effective control method; however, results are provided only
+for a simulated toy example.
+III. A CTIVE INFERENCE FRAMEWORK
+This section introduces active inference as a general frame-
+work and derives the key equations for free-energy (F). Free-
+energy is used in later sections to achieve state-estimation,
+control and hyperparameter learning.
+A. Variational free energy
+We consider an agent in a dynamic environment that re-
+ceives observation oabout the hidden state s. Given a model
+of the agent’s world, Bayes’ rule can be used to ﬁnd p(s|o).
+However, the normalization term p(o) in Bayes’ rule involves
+calculating an integral making calculations of all but trivial
+examples infeasible. Instead, the agent can approximate the
+posterior distribution p(s|o) with a variational distribution q
+over states, which we can deﬁne to have a simpler form (such
+as a Gaussian). The goal is then to minimize the difference
+between the two distributions. The mismatch between the
+two distribution can be computed using the Kullback Leibler
+(KL) divergence [28], [29]:
+KL(q(s)||p(s|o)) =
+∫
+q(s) ln q(s)
+p(s,o)ds+ lnp(o)
+= F + lnp(o).
+(1)
+The quantity F is referred to as the (variational) free-
+energy and minimizing F minimizes the KL-divergence. F
+1Model-reference adaptive control [19], ﬁnds a control law that will guide
+the system to behave as speciﬁed by a chosen reference model. Another
+common method used for adaptive control is ‘self-tuning adaptive control’,
+which represent the robot as a linear discrete-time model and estimates the
+unknown parameters online, substituting them in the control law [20].
+is also often referred to as the evidence lower bound (ELBO)
+in the Machine Learning community 2. If we choose q(s)
+to be a Gaussian distribution with mean µ, and utilize the
+Laplace approximation [30], the free-energy expression from
+Equation 1 simpliﬁes to:
+F ≈−ln p(µ,o). (2)
+The expression for F is solely dependent on one param-
+eter, µ, which is referred to as the ‘belief state’ or simply
+‘belief’. The objective is to ﬁnd the µ which minimizes F
+and thus minimizing the divergence between q(s) and p(s|o).
+For a robotic manipulator the set of observations ( o) and
+beliefs (µ) are vectors with length depending on the number
+of degrees of freedom.
+Generalised motions (GM) [31] are used to represent the
+(belief) states of a dynamical system, using increasingly
+higher order derivatives of the system state. This means
+that the n-dimensional state µ and its higher order time
+derivatives are combined in ˜µ(i.e. ˜µ= [µ,µ′...]). Similarly,
+observations are combined as ˜ o= [o,o′ ...]. In the context
+of a robotic manipulator, o may represent the sensory obser-
+vation of joint positions, while o′represents the observation
+of joint velocities. Similarly, µ represents the belief about
+all joint positions and µ′ the joint velocities.
+B. Observation model and state transition model
+Taking generalized motions into account, the joint proba-
+bility from Equation (2) can be written as:
+p(˜o,˜µ) = p(˜o|˜µ)p(˜µ) = p(o|µ)p(o′|µ′)p(µ′|µ)p(µ′′|µ′),
+(3)
+where p(o|µ) is the probability of receiving an observation
+o while in (belief) state µ, and p(µ′|µ) is the state tran-
+sition model (also referred to as the dynamic model or the
+generative model). The state transition model predicts the
+state evolution given the current state. These distributions
+are assumed Gaussian according to:
+p(o|µ) = N(g(µ),Σo), p(o′|µ′) = N(g′(µ′),Σo′),
+p(µ′|µ) = N(f(µ),Σµ), p(µ′′|µ′) = N(f′(µ′),Σµ′),
+(4)
+where the functions g(µ) and g′(µ′) represent a mapping
+between observations and states. For many applications in
+robotics the state is directly observable. For instance, in the
+context of a robotic manipulator the state consists of the
+positions and velocities of all joints and the manipulator
+is provided with position and velocity encoders. Thus we
+assume: g(µ) = µ and g′(µ′) = µ′. The functions f(µ)
+and f(µ′) represent the evolution of the belief state over
+time. We encode the agent’s target state µd in f(µ). Our
+contribution is to introduce τ as part of these funcitons:
+f(µ) = ( µd −µ)τ−1 and f′(µ′) = τ−1µ′, where µd is
+the desired state and τ a time scale (explained in Section
+IV-D).
+2Minimizing the ELBO and thus the KL divergence is common in
+variational inference, a method for approximating probability densities [28].
+To simplify notion, we deﬁne the following error terms:
+εµ = µ′ −(µd−µ)τ−1, εµ′ = µ′′ + τ−1µ′, εo = o −µ,
+εo′ = o′−µ′. Now that all the terms have been deﬁned, F
+can be expanded to:
+F = 1
+2
+∑
+i
+(
+ε⊤
+i Σ−1
+i εi + ln|Σi|
+)
++ C, (5)
+where i∈ {o, o′, µ, µ′}, Cis a constant, and the covariance
+matrices are deﬁned in Equation 4. Equation (5) differs from
+the work presented in [11], [10] in the terms with ln |Σ|,
+which are not explicitly included but rather added to the
+constant. The signiﬁcance of this difference is highlighted in
+Section V-A.
+IV. S TATE-ESTIMATION AND CONTROL
+We now introduce how to perform state-estimation and
+control by minimizing F. We show how the estimation step
+biases the belief towards the goal state. The control step
+then steers the system from its observation o to its (biased)
+belief µ. In Section IV-E we show that if τ−1 →∞, the
+approach converts to a classic PID controller. Additionally,
+if τ−1 →0, the approach reduces to a ﬁlter.
+A. State estimation by minimizing free-energy
+Estimating the state of our system is achieved by ﬁnding
+a value µ that minimizes F. Gradient descent is a simple
+way to accomplish that:
+˙˜µ= D˜µ−κµ
+∂F
+∂˜µ, (6)
+where κµ is a tuning parameter and Dis temporal derivative
+operator (Dµ= µ′). The dot refers to the difference between
+two time-steps ( ˙µ= µ[t+1] −µ[t]). Using Equation (6) the
+agent takes one-step in the gradient descent at every time-
+step. In this case the equation expands to:
+˙µ= µ′ + κµΣ−1
+o εo−τ−1κµΣ−1
+µ εµ
+˙µ′ = µ′′ + κµΣ−1
+o′ εo′ −κµΣ−1
+µ εµ−τ−1κµ′Σ−1
+µ′ εµ′
+˙µ′′ = −κµ′Σ−1
+µ εo′
+(7)
+The ﬁrst equation states that belief is reﬁned using the term
+κµΣ−1
+o εo which moves our new belief towards the value
+just observed. Additionally, the termτ−1κµΣ−1
+µ εµ, shifts the
+belief towards the target µd since εµ = µ′ −(µd−µ)τ−1.
+Essentially, this ‘biases’ the belief towards preferred future
+states (target state µd). The degree to which the system is
+biased depends on the the values τ−1 and Σ−1
+µ .
+B. Control by minimizing free-energy
+Next to state-estimation, the agent can apply an action ⅁
+to the environment. In the context of a robotics manipulator
+this is a vector containing torques of all joints. To ﬁnd the
+control action which minimizes F, gradient descent is used:
+˙ a= −κa
+∂F
+∂a = −κa
+∂F
+∂˜o
+∂˜o
+∂a, (8)
+0 2 4 6 8 10 12 14
+Time (s)
+−1.0
+−0.5
+0.0
+0.5
+1.0
+Position (m)
+Belief (μ(t)) about position (x) for different values of τ−1
+Reference
+x (True position)
+μ(τ−1 = 0.1)
+μ(τ−1 = 2)
+μ(τ−1 = 8)
+Fig. 2: Separately performing state-estimation for different
+values of τ−1. Higher values of τ−1 result in more bias.
+where κa is a tuning parameter. The term ∂˜o
+∂a is assumed
+linear, and equal to the identity matrix (multiplied by a
+constant) similar to existing work [11], [10]. Actions are
+then computed as:
+˙ a= −κa(Σ−1
+o (o −µ) + Σ−1
+o′ (o′−µ′)). (9)
+This controller essentially steers the system from its ob-
+served state o to its (biased) belief µ.
+Note how the current control law does not contain any
+information about the dynamical system, it is thus a reactive
+controller. The control law only requires o and µ. This con-
+troller thus operates in the presence of unmodeled dynamics
+similar to a PID controller.
+C. Simultaneous state-estimation and control
+Our approach performs state estimation and control simul-
+taneously. The estimation and control step are dependent.
+This is because the estimation step biases the belief µ
+towards the target µd. The controller then steers the system
+from the observation o to the biased estimated state µ. If
+τ−1 and Σ−1
+µ are large, the belief µis biased more towards
+the target µd.
+To illustrate this, consider the mass-spring-damper system
+given by the equation: ¨x= a(t) −k1x−k2 ˙x, where sis the
+position of the mass, a(t) the control action, k1 the spring
+constant (set to 1N/m), k2 the damping coefﬁcient (set to
+0.1Ns/m) and the system has unit mass. It’s simulated
+with initial conditions x(0) = −0.5m, ˙s(0) = −1m/s
+and a(t) = 0 N. Equations (7) are used to perform state
+estimation. To challenge the system, the initial beliefs are
+inaccurate (µ(0) = 0mand µ′(0) = −1.5m/s). The system
+is simulated for different values of τ−1 and presented in
+Figure 2.
+It is clear that higher values of τ−1 provide more bias
+towards the target. For τ−1 = 8 (green line in Figure 2),
+the estimate is close to the target (black dashed line) and far
+away form the actual position (blue dashed line) as opposed
+to setting τ−1 = 0 .1 (red line), the belief is closer to the
+real trajectory (the latent state). If τ−1 →0, the estimation
+step reduces to a pure estimator, which would follow the
+trajectory without any bias towards the target.
+0 2 4 6 8 10 12 14
+Time (s)
+−0.75
+−0.50
+−0.25
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+Position (m)
+Control behaviour for different values of τ−1
+Reference
+x(τ−1 = 0.1)
+x(τ−1 = 1.2)
+x(τ−1 = 2.4)
+Fig. 3: True position ( x) for different values of τ−1. Higher
+values of τ−1 provide more bias towards the target and thus
+more aggressive control causing overshoot oscillations.
+Enabling control steers the system to its target. The τ−1
+in this case affects how aggressive the controller is. Larger
+values give more bias towards the target, the term (o −µ)
+is larger and thus the controller is more aggressive. Figure 3
+shows an illustration for different values of τ−1.
+D. Understanding the temporal parameter τ
+The generative model speciﬁed by Equations (3) and (4)
+include the function f(µ) which determines how the belief
+state evolves over time i.e. f(µ) = (µd−µ)τ−1.
+The belief state is speciﬁed to evolve over time as the
+derivative between the current belief µand target µd. This
+can be evaluated as the ( µd - µ) divided by a time scale τ.
+The smaller τ, the larger the derivative. If τ approaches zero
+(τ−1 →∞), the value f(µ) approaches ∞. As a results, the
+belief is inﬁnitely biased towards the target and µ≈µd.
+E. Relationship to a classic PID Controller and ﬁlters
+A classic PID controller deﬁnes an error term e= (µd−
+o). The control action is then chosen as:
+a= P ·e+ I
+∫
+edt+ Dde
+dt,
+where P, I and D are tuning parameters.
+For the control law deﬁned by active inference, our (o−µ)
+is similar to the error term. Additionally, as explained in the
+previous section, when τ−1 →∞ then µ ≈µd. Now the
+control law of active inference can be rewritten in terms of
+the error term as:
+˙a= κaΣ−1
+o e+ κaΣ−1
+o′
+de
+dt.
+This means than if τ−1 → ∞, the active inference
+controller is equivalent to a PI Controller i.e. PID with
+D = 0 , a P gain of κaΣ−1
+o′ and an I gain of κaΣ−1
+o . If
+one considers the generalized motions (section III) up to a
+third order, the control law would include a non-zero Dterm.
+The relationship to a pure estimator (plain ﬁlter) is
+straightforward. As previously mentioned, if τ−1 →0, the
+estimation step reduces to a ﬁlter. Essentially, this indicates
+that the estimation step has zero bias towards the target. As
+Figure 2 shows that for very small values of τ−1, the belief
+is close to the latent state (true position) without bias.
+V. L EARNING THE HYPERPARAMETERS
+We have shown that state estimation and control can be
+performed using gradient decent on the free-energy F. In
+addition to using gradient decent of the free energy for state-
+estimation and control, we apply it to learn the hyperparam-
+eters online. Previous work such as [11] does not update
+the hyperprameters online which make the performance
+extremely sensitive to initialization, prone to instabilities and
+reduces overall performance.
+A. Learning model variances
+As illustrated in Section IV-E, the model variances Σ−1
+o
+and Σ−1
+o′ can be considered as gains for the controller, similar
+to the ‘P’ and ‘I’ gains in a PID controller. Additionally, the
+values Σ−1
+µ and Σ−1
+µ′ affect how much the estimation step
+biases the controller towards the desired position.
+We can update Σo and Σo′ using gradient decent on F as:
+˙Σo = −κσ
+∂F
+∂Σo
+, ˙Σo′ = −κσ
+∂F
+∂Σo′
+. (10)
+The presented update rules have several practical issues.
+First, in any high dimensional case, Σo would be a matrix.
+Since in most equations presented so far, the inverse Σ−1
+o
+is used, updating the covariance matrix using Equations 10
+then inverting it would be computationally expensive. A
+workaround is to simply update the inverse covariance matrix
+(the precision matrix), as done in [32]:
+˙Σ−1
+o = −κσ
+∂F
+∂Σ−1o
+, ˙Σ−1
+o′ = −κσ
+∂F
+∂Σ−1
+o′
+. (11)
+Additionally, a lower-bound on the diagonal elements is
+set to keep the matrix positive semi-deﬁnite as suggested in
+[33].
+We demonstrate the effect of updating the covarince by
+keeping Σ−1
+µ′ ﬁxed at 0.5 and Σ−1
+µ will be varied. If Σ−1
+µ is
+too high, the systems suffers from oscillations and overshoot.
+However, if Σ−1
+o and Σ−1
+o′ are updated during run-time, the
+controller shows improved behaviour. Results are shown in
+Figure 4. The convergence of Σ−1
+o occurs when ∂F
+∂Σ−1
+o
+= 0.
+Since the observations change and have a certain level of
+noise, Σo converges to the expected value of εoε⊤
+o. This
+does not necessarily happen upon reaching the target state.
+B. Learning the temporal parameter
+We previously showed the importance importance of
+choosing appropriate values for τ−1: If the value is too high,
+the controller suffers from overshoot and oscillations, see
+Figure 3. On the other hand, a low value results in a slow
+response. Ideally, the value for τ would be high towards the
+start but decrease as the system reaches the target. This is
+the value that minimizes F and can be found using gradient
+descent on F as:
+∂F
+∂τ−1 = −2Σµ′εµ(µd−µ) + 2Σµ′εµ′µ′. (12)
+0 2 4 6 8 10 12 14
+Time (s)
+−0.50
+−0.25
+0.00
+0.25
+0.50
+0.75
+1.00
+Position (m)
+Control behaviour when updating control variances
+Reference
+Σμ = 0.1 no update
+Σμ = 0.6 no update
+Σμ = 0.6 with update
+Fig. 4: Effect of updating the the control variances ( Σ−1
+o and
+Σ−1
+o′ ). When the value of Σ−1
+µ is initialized at high values, the
+system oscillates. Updating Σ−1
+o and Σ−1
+o′ essentially ‘tunes’
+the controller and ensures robust performance.
+0 2 4 6 8 10 12 14
+Time (s)
+−0.50
+−0.25
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+Position (m)
+Control behaviour when updating τ−1.
+Reference
+Σμ = 0.6, τ−1 = 1
+Σμ = 0.6, τ−1 = 2.5
+Σμ = 0.6, τ−1 = 5.5 with updating τ only
+Fig. 5: Effect of updating the value of τ−1 during operation.
+This ﬁgure shows that increasing both Σµ or τ−1 results in
+overshoots and severe oscillations. Rather than tuning Σ−1
+o
+and Σ−1
+o′ , updating τ−1 can be sufﬁcient.
+Note how the inverse τ−1 is updated rather than τ directly.
+Similar to the variances, all previous equations contain τ−1
+and since inverting a matrix is computationally expensive,
+the inverse is directly updated. Additionally, τ−1 requires us
+to deﬁne a lowerbound. The optimization can results in τ−1
+approaching zero which means the controller converts to a
+pure estimator. In this work, τ−1 is set to have a minimum
+value of 0.5 on the diagonal elements and zero elsewhere.
+Using Equation 12, the oscillations can be damped as well
+as improving settling time as shown in Figure 5. Note how
+updating τ−1 only is satisfactory to eliminate the oscillations
+(no update of Σ−1
+o or Σ−1
+o′ is necessary). The convergence
+of τ−1 occurs at µd = µand µ′ = 0 which corresponds to
+the controller settling at its target position. The updates for
+τ will thus retune the controller appropriately until the the
+target is reached. This provides a preference for updating τ
+rather than updating Σ−1
+o or Σ−1
+o′ in most cases.
+C. Limitations
+In the active inference setting, the belief is intentionally
+biased towards the target to achieve control. However, the
+belief is biased and thus not accurate unless the system
+reaches the target. If an accurate belief is required for other
+parts of the robotic system, this could be problematic.
+Additionally, the terms Σ−1
+o and Σ−1
+o′ are deﬁned as part
+of the sensory model. In the context of a ﬁlter, this would
+indicate the level of Gaussian noise affecting the position and
+velocity encoders. However, since the beliefs are biased,Σ−1
+o
+and Σ−1
+o′ converge to a value that is much higher than the
+actual Gaussian noise affecting the system. The values for
+these variables therefore lose their physical meaning. This
+bias can also cause false-positives when reasoning about the
+accuracy of the sensor. Work in [21] explores this problem.
+Finally, since estimation and control are dependent on each
+other, it is not straight-forward to tune all the parameters
+separately. Learning the parameters Σ−1
+o and Σ−1
+o′ boosts the
+performance as shown in the previous section. However, if
+Σ−1
+µ and Σ−1
+µ′ are also updated, the performance decreases
+signiﬁcantly.
+VI. R ESULTS ON A ROBOTIC MANIPULATOR
+This section evaluates the presented approach against the
+active inference controller (AIC) from [11]. We show that
+our approach outperforms the AIC from [11] at the task of
+manipulating different payloads, and setting different initial
+parameters for the variances and different values of τ. More
+results (including time-varying target states) can be found in
+our other work [32], [34].
+A. Robustness of intial settings
+The AIC from [11] achieves adaptive control without an
+explicit dynamics model. However, it is sensitive to the
+initialization of its parameters. By slightly changing Σ−1
+µ
+for instance, the system suffers from severe oscillations and
+never converges to the target state.
+If the AIC is tuned optimally ( Σ−1
+o = 1.5I, Σ−1
+o′ = 0.5I,
+Σ−1
+µ = 0 .1I and Σ−1
+µ′ = 0 .5I), this results in satisfactory
+behaviour. In this case, I refers to the 7x7 identity matrix.
+However, if we vary Σ−1
+µ = 0.1I or to other values ( 0.3I
+and 0.5I), the performance gets considerably worse. In our
+approach, we update τ, Σo and Σo′ online to retune the
+controller. We ran the experiment for a pick-and-place task
+(as in [11]) for several values of Σ−1
+µ and recorded in Table
+I the Mean Absolute Error (MAE) deﬁned as:
+MAE = 1
+nt
+nt∑
+j=1
+|µd−µ|.
+When the AIC is properly tuned Σ−1
+µ = 0 .1I, the two
+cases have the same MAE (tuning does not matter since
+the initialization was optimal). However, when Σ−1
+µ = 0.3I,
+the controller becomes does not converge to the target state
+(visualized in Figure 6) . The MAE increases to more than
+triple its value while in the case of tuning the hyperparam-
+eters, the MAE actually decreases. This is due to the fact
+that increasing Σ−1
+µ makes the controller more aggressive
+and when tuned, it does not oscillate and also has a slightly
+faster response. In a similar fashion, results for changing the
+value of τ−1 are recorded in Table II. Again, the MAE is
+much lower when using our method.
+0.0 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0
+Time [s]
+-1.00
+-0.80
+-0.60
+-0.40
+-0.20
+0.00
+Joint position [rad]
+Joint 1
+0.0 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0
+Time [s]
+0.00
+0.10
+0.20
+0.30
+0.40
+0.50
+0.60Joint position [rad]
+Joint 2
+0.0 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0
+Time [s]
+-0.04
+-0.02
+0.00
+0.02
+0.04
+Joint position [rad]
+Joint 3
+0.0 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0
+Time [s]
+-1.20
+-1.00
+-0.80
+-0.60
+-0.40
+-0.20Joint position [rad]
+Joint 4
+0.0 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0
+Time [s]
+-0.03
+-0.02
+-0.01
+0.00
+0.01
+0.02
+0.03
+Joint position [rad]
+Joint 5
+0.0 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0
+Time [s]
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50Joint position [rad]
+Joint 6
+AIC - No updates AIC - Updating τ, Σo and Σo0 Reference
+Fig. 6: Step response for the 6 joints of the robot arm with and without updating hyperparameters in the AIC. This graphs
+corresponds to the second column of Table I ( Σ−1
+µ = 0.3I). It is clear the updating the hyperparameters reduces oscillations.
+B. Results on adaptive behaviour
+For the last experiment, the robot carries varying payloads.
+All controllers are tuned to have identical performance in
+the no payload case. Subsequently, we test three different
+payloads: m= 1kg, m= 2kg and m= 3kg (max payload
+for the Panda arm). The MAE for these cases is recorded in
+the Table III.
+Σ−1
+µ = 0.1I 0.3I 0.5I
+No updates 0.028 0.088 0.118
+Updating τ−1, Σ−1
+o and Σ−1
+o′ 0.028 0.025 0.032
+TABLE I: MAE for different values of Σ−1
+µ .
+τ−1 = 2I τ −1 = 3I
+No updates 0.091 0.123
+Updating τ−1, Σ−1
+o and Σ−1
+o′ 0.025 0.032
+TABLE II: MAE for different values of τ−1.
+m= 1kg m = 2kg m = 3kg
+AIC no updates 0.024 0.029 0.027
+AIC with updates (ours) 0.020 0.020 0.021
+TABLE III: Mean Absolute Error (MAE) for different pay-
+loads in case of updating hyperparameters and no updates.
+VII. D ISCUSSION AND FUTURE WORK
+In the AIC, actions are not explicitly modelled. In Sec-
+tion III, the generative model was selected to have the form
+p(o,s) which does not explicitly include any notion of an ac-
+tion a. Thus to choose the action that minimizes free-energy,
+the chain rule was utilized (Equation 8). Alternatively, the
+actions could be explicitly added in the generative model
+p(o,s,a). When doing so, this problem can be efﬁciently
+solved using factor graphs [35], [26], [27].
+A key property of the AIC is the coupling between control
+and state-estimation. As shown, to perform any meaningful
+control, the state must be biased towards the target. Thus our
+belief about the true state is only accurate when the systems
+reaches the target. The coupling between estimation and
+control makes some quantities lose their physical meaning.
+For instance Σo does not represent the uncertainty of the
+joint position encoders anymore. It is rather a combination
+of the encoder’s uncertainty and how far the target is form
+the current position. Future work will investigate this further.
+VIII. C ONCLUSIONS
+In this paper we demonstrate how a minimizing a single
+quantity: variational free-energy, effective state-estimation,
+control and learning can be performed for robotic manipula-
+tor. Online estimation of relevant quantities can be achieved
+using gradient descent on the free-energy for each iteration
+of the controller. We introduce a temporal parameter and
+show that when τ approaches zero, the approach converts
+to a PID controller and if τ approaches ∞, it converts
+to a ﬁlter. We then demonstrated the effectiveness of the
+framework for a 7 DOF robotic arm and showed adaptability
+and robustness ourperforming previous work. We showed
+that out approach improves robustness, damps oscillations
+and adapts to different payloads.
+ACKNOWLEDGMENT
+The authors thank Mees Vanderbroeck, Matias Mattamala
+and Charlie Street for helpful comments and feedback. This
+work was supported by UK Research and Innovation and
+EPSRC through the Robotics and Artiﬁcial Intelligence for
+Nuclear (RAIN), and Offshore Robotics for Certiﬁcation of
+Assets (ORCA) hubs [EP/R026084/1, EP/R026173/1].
+REFERENCES
+[1] Jes ´us Enrique Sierra and Matilde Santos. Wind and payload distur-
+bance rejection control based on adaptive neural estimators: applica-
+tion on quadrotors. Complexity, 2019.
+[2] Bin Wei. Adaptive control design and stability analysis of robotic
+manipulators. In Actuators, volume 7, page 89. Multidisciplinary
+Digital Publishing Institute, 2018.
+[3] Bustanul Ariﬁn, Bhakti Yudo Suprapto, Sri Arttini Dwi Prasetyowati,
+and Zainuddin Nawawi. The lateral control of autonomous vehicles:
+A review. In 2019 International Conference on Electrical Engineering
+and Computer Science (ICECOS) , pages 277–282. IEEE, 2019.
+[4] Karl Friston, Thomas FitzGerald, Francesco Rigoli, Philipp
+Schwartenbeck, and Giovanni Pezzulo. Active inference: a process
+theory. Neural computation, 29(1):1–49, 2017.
+[5] Karl Friston. Friston k. the free-energy principle: a rough guide to
+the brain? trends cogn sci 13: 293-301. Trends in cognitive sciences ,
+13:293–301, 07 2009.
+[6] Giovanni Pezzulo, Francesco Rigoli, and Karl J Friston. Hierarchical
+active inference: A theory of motivated control. Trends in cognitive
+sciences, 22(4):294–306, 2018.
+[7] Raphael Kaplan and Karl J Friston. Planning and navigation as active
+inference. Biological cybernetics, 112(4):323–343, 2018.
+[8] Christopher L Buckley, Chang Sub Kim, Simon McGregor, and
+Anil K Seth. The free energy principle for action and perception:
+A mathematical review. Journal of Mathematical Psychology , 81:55–
+79, 2017.
+[9] Pablo Lanillos and Gordon Cheng. Active inference with function
+learning for robot body perception. In International Workshop on
+Continual Unsupervised Sensorimotor Learning, IEEE Developmental
+Learning and Epigenetic Robotics (ICDL-Epirob) , 2018.
+[10] Guillermo Oliver, Pablo Lanillos, and Gordon Cheng. Active inference
+body perception and action for humanoid robots. arXiv preprint
+arXiv:1906.03022, 2019.
+[11] Corrado Pezzato, Riccardo MG Ferrari, and Carlos Hernandez. A
+novel adaptive controller for robot manipulators based on active
+inference. IEEE Robotics and Automation Letters , 2020.
+[12] Rudolph Emil Kalman. A new approach to linear ﬁltering and
+prediction problems. 1960.
+[13] Neil J Gordon, David J Salmond, and Adrian FM Smith. Novel
+approach to nonlinear/non-gaussian bayesian state estimation. In IEE
+proceedings F (radar and signal processing), volume 140, pages 107–
+113. IET, 1993.
+[14] Karl Johan ˚Astr¨om and Tore H ¨agglund. PID controllers: theory,
+design, and tuning, volume 2. Instrument society of America Research
+Triangle Park, NC, 1995.
+[15] Marie Dillon Dahleh and William T Thomson. Theory of vibration
+with applications. Prentice-Hall Inc, 1998.
+[16] L ´eo Pio-Lopez, Ange Nizard, Karl Friston, and Giovanni Pezzulo.
+Active inference and robot control: a case study. Journal of The Royal
+Society Interface, 13(122):20160616, 2016.
+[17] Pablo Lanillos and Gordon Cheng. Adaptive robot body learning and
+estimation through predictive coding. In 2018 IEEE/RSJ International
+Conference on Intelligent Robots and Systems (IROS) , pages 4083–
+4090. IEEE, 2018.
+[18] Cansu Sancaktar and Pablo Lanillos. End-to-end pixel-based deep
+active inference for body perception and action. arXiv preprint
+arXiv:2001.05847, 2019.
+[19] Dan Zhang and Bin Wei. A review on model reference adaptive
+control of robotic manipulators. Annual Reviews in Control , 43:188–
+198, 2017.
+[20] RG Walters and MM Bayoumi. Application of a self-tuning pole-
+placement regulator to an industrial manipulator. In 1982 21st IEEE
+Conference on Decision and Control , pages 323–329. IEEE, 1982.
+[21] Corrado Pezzato, Mohamed Baioumy, Carlos Hernandez Corbato,
+Nick Hawes, Martijn Wisse, and Riccardo Ferrari. Active inference
+for fault tolerant control of robot manipulators with sensory faults. In
+1st International Workshop on Active Inference, ECML/PKDD 2020 ,
+Ghent, Belgium, 2020.
+[22] Youmin Zhang and Jin Jiang. Bibliographical review on reconﬁgurable
+fault-tolerant control systems. Annual Reviews in Control , 32(2):229
+– 252, 2008.
+[23] M.L. Visinsky, J.R. Cavallaro, and I.D. Walker. Robotic fault detection
+and fault tolerance: A survey. Reliability Engineering and System
+Safety, 46:139–158, 1994.
+[24] A. Meera and M Wisse. Free energy principle based state and
+input observer design for linear systems with colored noise. In 2020
+American Control Conference (ACC) , pages 5052–5058, 2020.
+[25] Thijs W van de Laar and Bert de Vries. Simulating active inference
+processes by message passing. Frontiers in Robotics and AI , 6(20),
+2019.
+[26] Thijs van de Laar, Ayc ¸a ¨Ozc ¸elikkale, and Henk Wymeersch. Appli-
+cation of the free energy principle to estimation and control. arXiv
+preprint arXiv:1910.09823, 2019.
+[27] Mees Vanderbroeck, Mohamed Baioumy, Daan van der Lans, Rens
+de Rooij, and Tiis van der Werf. Active inference for robot control: A
+factor graph approach. Student Undergraduate Research E-journal! ,
+5:1–5, 2019.
+[28] Charles W Fox and Stephen J Roberts. A tutorial on variational
+bayesian inference. Artiﬁcial intelligence review, 38(2):85–95, 2012.
+[29] Martin J Wainwright, Michael I Jordan, et al. Graphical models,
+exponential families, and variational inference. Foundations and
+Trends® in Machine Learning , 1(1–2):1–305, 2008.
+[30] Christopher M Bishop. Pattern recognition and machine learning .
+springer, 2006.
+[31] Karl Friston. Hierarchical models in the brain. PLoS computational
+biology, 4(11):e1000211, 2008.
+[32] Mohamed Baioumy, Matias Mattamala, Paul Duckworth, Bruno Lac-
+erda, and Nick Hawes. Adaptive manipulator control using active
+inference with precision learning. In UKRAS20 Conference: ”Robots
+into the real world” Proceedings , Lincoln, United Kingdom, May
+2020.
+[33] Rafal Bogacz. A tutorial on the free-energy framework for modelling
+perception and learning. Journal of mathematical psychology, 76:198–
+211, 2017.
+[34] Mohamed Baioumy, Matias Mattamala, and Nick Hawes. Variational
+inference for predictive and reactive controllers, 2020.
+[35] Hans-Andrea Loeliger, Justin Dauwels, Junli Hu, Sascha Korl, Li Ping,
+and Frank R Kschischang. The factor graph approach to model-based
+signal processing. Proceedings of the IEEE , 95(6):1295–1322, 2007.

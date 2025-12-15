@@ -1,1 +1,0 @@
-Okay, I understand. I will follow these instructions precisely to generate the summary.

@@ -1,0 +1,2687 @@
+arXiv:2111.11107v2  [cs.AI]  11 Apr 2022
+Branching Time Active Inference:
+the theory and its generality
+Th´ eophile Champion tmac3@kent.ac.uk
+University of Kent, School of Computing
+Canterbury CT2 7NZ, United Kingdom
+Lancelot Da Costa l.da-costa@imperial.ac.uk
+Imperial College London, Department of Mathematics
+London SW7 2AZ, United Kingdom
+Wellcome Centre for Human Neuroimaging, University Colleg e London
+London, WC1N 3AR, United Kingdom
+Howard Bowman H.Bowman@kent.ac.uk
+University of Birmingham, School of Psychology,
+Birmingham B15 2TT, United Kingdom
+University of Kent, School of Computing
+Canterbury CT2 7NZ, United Kingdom
+Marek Grze´ s m.grzes@kent.ac.uk
+University of Kent, School of Computing
+Canterbury CT2 7NZ, United Kingdom
+Editor: TO BE FILLED
+Abstract
+Over the last 10 to 15 years, active inference has helped to ex plain various brain mechanisms from habit
+formation to dopaminergic discharge and even modelling cur iosity. However, the current implementations
+suﬀer from an exponential (space and time) complexity class w hen computing the prior over all the possible
+policies up to the time-horizon. Fountas et al (2020) used Mo nte Carlo tree search to address this problem,
+leading to impressive results in two diﬀerent tasks. In this p aper, we present an alternative framework
+that aims to unify tree search and active inference by castin g planning as a structure learning problem.
+Two tree search algorithms are then presented. The ﬁrst prop agates the expected free energy forward in
+time (i.e., towards the leaves), while the second propagate s it backward (i.e., towards the root). Then,
+we demonstrate that forward and backward propagations are r elated to active inference and sophisticated
+inference, respectively, thereby clarifying the diﬀerence s between those two planning strategies.
+Submitted to Neural Networks
+Champion et al.
+Keywords: Active Inference, Variational Message Passing, Tree Searc h, Planning, Free Energy Principle
+1. Introduction
+Active inference is at this point a compelling explanatory a pproach in cognitive neuroscience, and signiﬁcant
+analyses of biologically-realistic implementations in bo th neural and non-neural communication networks has
+been conducted. More speciﬁcally, active inference extend s the free energy principle to generative models with
+actions (Friston et al, 2016; Da Costa et al, 2020a; Champion et al, 2021b) and can be regarded as a form of
+planning as inference (Botvinick and Toussaint, 2012). Thi s framework has successfully explained a wide range
+of neuro-cognitive phenomena, such as habit formation (Fri ston et al, 2016), Bayesian surprise (Itti and Baldi,
+2009), curiosity (Schwartenbeck et al, 2018), and dopamine rgic discharges (FitzGerald et al, 2015). It has also
+been applied to a variety of tasks, such as animal navigation (Fountas et al, 2020), robotic control (Pezzato et al,
+2020; Sancaktar et al, 2020), the mountain car problem (C ¸ at al et al, 2020), the game of DOOM (Cullen et al,
+2018) and the cart pole problem (Millidge, 2019). Many of tho se applications require planning several steps into
+the future in order to be solved successfully. However, as ex plained in more depth in appendix H, an exhaustive
+search over all possible sequences of actions will quickly b ecome intractable, i.e., the number of sequences to explore
+grows exponentially with the time horizon of planning. Figu re 1 illustrates this exponential growth. Exploring
+only a subset of this exponential number of possible sequenc es using a tree search therefore becomes a compelling
+and quite natural alternative.
+St
+S(1)
+S(2)
+S(11)
+S(12)
+S(21)
+S(22)
+Figure 1: Illustration of all possible policies up to two tim e steps in the future when |U|= 2. The state at the
+current time step is denoted by St. Additionally, each branch of the tree corresponds to a poss ible policy, and
+each node SI is indexed by a multi-index (e.g. I = (12)) representing the sequence of actions that led to this
+state. This should make it clear that for one time step in the f uture, there are |U|possible policies, after two
+time steps there are |U|times more policies, and so on until the time-horizon T where there are a total of |U|T
+possible policies, i.e., the number of possible policies gr ows exponentially with the number of time steps for which
+the agent tries to plan.
+2
+Branching Time Active Inference
+But what exactly is active inference? Imagine a basketball p layer at the top of the key (i.e., the area just below
+the net) ready to take a shot. Intuitively, active inference sees the world as a collection of external states such as
+the positions of the net, the player and the ball. The player ( or agent) is equipped with sensors (such as the eyes)
+which allow for measurements of the external states. The pla yer is also able to perform actions in the world such
+as to perform sudden eye movement or simply unfolding his (or her) arms and legs. Furthermore, it is believed
+that the agent stores an internal representation of the exte rnal states, that we shall refer to as the internal states.
+Importantly, the external and internal states are separate d from each other by the Markov blanket (Kirchhoﬀ et al,
+2018), i.e., the sensory information received and actions t aken by the agent. In other words, the external states
+can only modify the internal states indirectly through the o bservations (also called sensory information) made by
+the agent, and the internal states can only modify the extern al states indirectly through the actions taken by the
+agent.
+More formally, active inference builds on a subﬁeld of Bayes ian statistics called variational inference (Fox and Rober ts,
+2012), in which the true posterior distribution is approxim ated with a variational distribution. This method pro-
+vides a way to balance the complexity and accuracy of the post erior distribution. The variational approach is
+only tractable because some statistical dependencies are i gnored during the inference process, i.e., the variational
+distribution is generally assumed to fully factorise, lead ing to the well known mean-ﬁeld approximation:
+Q(X) =
+∏
+i
+Q(Xi), (1)
+where X is the set of all hidden variables of the model, Xi represents the i-th hidden variable, Q(X) is the
+variational distribution (see below) approximating the po sterior P(X|O) where O is the available data, and
+Q(Xi) is the i-th factor of the variational distribution. In 2005, Winn an d Bishop (2005) presented a message-
+based implementation of variational inference, which has n aturally been called variational message passing. And
+more recently, Champion et al (2021b) realised an active inf erence scheme using this variational message passing
+procedure. By combining the Forney factor graph formalism ( Forney, 2001) with the method of Winn and Bishop
+(2005), it becomes possible to create modular implementati ons of active inference (van de Laar and de Vries, 2019;
+Cox et al, 2019) that allows users to deﬁne their own generati ve models without the burden of deriving update
+equations.
+However, as just stated, there is a major bottleneck to scali ng up the active inference framework: the number
+of action sequences grows exponentially with the time-hori zon (see Appendix H for details). In the reinforcement
+learning literature, this explosion is frequently handled using Monte Carlo tree search (MCTS) (Silver et al, 2016;
+Browne et al, 2012; Schrittwieser et al, 2019). This approac h has been applied to active inference in several papers
+(Fountas et al, 2020; Maisto et al, 2021). Fountas et al (2020 ) chose to modify the original criterion used during
+3
+Champion et al.
+the node selection step in MCTS. This step returns the node th at needs to be expanded, and the reinforcement
+learning community uses the upper conﬁdence bound for trees (UCT) introduced by Kocsis and Szepesv´ ari (2006)
+as a selection criterion:
+UCTj = ¯Xj + 2Cp
+√
+2 ln n
+nj
+, (2)
+where n is the number of times the current (parent) node has been expl ored; nj stands for the number of times
+the j-th child node has been explored; Cp >0 is the exploration constant and ¯Xj is the average reward received
+by the j-th child, i.e., the sum of all rewards received by the current node and its descendants divided by nj. The
+child node with the largest UCTj is selected. In their paper, Fountas et al (2020) replaced th is selection criterion
+by:
+U(s,a) = −˜G(s,a) + Cexplore Q(a|s) 1
+1 + N(s,a) (3)
+where U(s,a) indicates the utility of selecting action ain state s; N(s,a) is the number of times that action awas
+explored in state s; Cexplore is an exploration constant equivalent to Cp in the UCT criterion; Q(a|s) is a neural
+network modelling the posterior distribution over actions , which is trained by minimizing the variational free
+energy, and ˜G(s,a) is an estimator of the expected free energy (EFE). The EFE is computed from the following
+equation:
+G(π,τ) = −EQ(θ|π)Q(sτ |θ,π)Q(oτ |sτ ,θ,π)
+[
+ln P(oτ |π)
+]
+(4)
++ EQ(θ|π)
+[
+EQ(oτ |θ,π)H(sτ |oτ ,π) −H(sτ |π)
+]
+(5)
++ EQ(θ|π)Q(sτ |θ,π)H(oτ |sτ ,θ,π ) −EQ(sτ |π)H(oτ |sτ ,π), (6)
+where H(x|y) is the entropy of p(x|y). The computation of the EFE is performed by sampling from th ree distri-
+butions whose parameters are predicted by deep neural netwo rks, i.e., the encoder network modelling Q(sτ ), the
+decoder network modelling P(oτ |sτ ) and the transition network modelling P(sτ |sτ−1,aτ−1). Note that Equation
+(2) was developed by Kocsis and Szepesv´ ari (2006) as a crite rion for selecting nodes during planning, such that the
+selected node minimizes the agent’s regret (c.f. Appendix G for additional details). Equation (3) ﬁnds its origin
+in the Predictor Upper Conﬁdence Bound (PUCB) algorithm int roduced by Rosin (2010). The idea of the PUCB
+algorithm is to use contextual information to predict the no de to select during planning. Equations (2) and (3)
+both aim to select the node that minimizes the agent’s regret , and can therefore be used interchangeably. How-
+ever, Equation (3) requires contextual information and a mo del predicting the node to be selected. Fountas et al
+(2020) proposed to use the neural network modelling Q(a|s) as a predictor. This has the advantage of making the
+predictor very ﬂexible, since neural networks are known to b e general function approximators, but neural networks
+are also expensive to train and lack interpretability.
+4
+Branching Time Active Inference
+To avoid the additional complexity brought by the predictor , this paper makes use of (2), which arises from
+the multi-armed bandit literature (Auer et al, 2002). The id ea is to minimise the agent’s regret to handle the
+trade-oﬀ between exploration and exploitation at the tree- level in an optimal manner.
+A major novelty of our paper is to think about tree search as a d ynamical expansion of the generative model,
+where the past and present is modelled as a partially observa ble Markov decision process (Sondik, 1971) and the
+future is modelled by a tree-like generative model. Importa ntly, our agent treats future states and observations as
+latent variables over which posterior beliefs are computed , and those beliefs encode the uncertainty of our agent
+over future states. In contrast, Fountas et al (2020) are usi ng a maximum a posteriori (MAP) estimate of the
+future hidden states, while performing MCTS. Lastly, the po sterior beliefs held by our agent are computed using
+variational message passing as presented in (Champion et al , 2021b). In comparison, Fountas et al (2020) perform
+amortized inference using an encoder network that predicts the mean and variance of the posterior distribution
+over latent states. Then, (during planning) a MAP estimate i s used as input for the neural network modelling the
+temporal transition. All those neural networks are trained using gradient descent on the variational free energy.
+Overall, the key contribution of our paper is to use MCTS to ex pand or grow the probabilistic graphical model,
+treat future states and observations as latent variables, a nd do inference using variational message passing. Indeed,
+the deﬁnition in (Champion et al, 2021b) of a general message passing procedure for performing active inference
+makes it possible to construct graphical active inference m odels in a modular fashion. In turn, this makes it
+possible to incrementally expand an active inference model as required of our MCTS procedure. It is this message
+passing procedure that makes our approach possible. To our k nowledge, an approach of this kind has never been
+studied before.
+In the following, we ﬁrst provide the requisite background c oncerning Forney factor graphs, variational message
+passing, active inference, and Monte Carlo tree search in Se ctions 2, 3, 4, and 5, respectively. Next, Section 6
+introduces our method that frames planning using a tree as a f orm of Bayesian model extension. Using terminology
+from concurrency theory (Bowman, 2005), we call our new form alism Branching Time Active Inference (BTAI).
+In this domain, models of systems based upon sequences of act ions (the format of policies) are described as
+linear time , while models based upon tree and even graph structures are c alled branching time (Glabbeek, 1990;
+van Glabbeek, 1993; Bowman, 2005). Importantly, BTAI does n ot consider the generative model and the tree
+as two diﬀerent objects, instead, BTAI merges those two objec ts together into a generative model that can be
+dynamically expanded. For a detailed analysis of the proper ties of BTAI, the reader is referred to our companion
+paper (Champion et al, 2021a), which provides an empirical d emonstration of the beneﬁts of BTAI over standard
+active inference (AcI) in the context of a graph navigation t ask. This companion paper also supplies a theoretical
+comparison of BTAI and standard AcI based upon a complexity c lass analysis. Brieﬂy, standard AcI has a space
+complexity class of O(|π|× T ×|S|), where |π|= |U|T is the number of possible policies, |U|is the number of
+5
+Champion et al.
+available actions, T is the time horizon of planning, and |S|is the number of values that the hidden state can
+take. In contrast, the space complexity class of BTAI is O([K + t] ×|S|), where t is the current (i.e. present)
+time point, and K is the number of expansions of the tree performed during plan ning. Importantly, even complex
+applications such as the game of Go can be solved by expanding only a small number of nodes (Silver et al, 2016;
+Schrittwieser et al, 2019). Section 6 is followed by Section 7 that explains the connection between our method
+and the planning strategies used in both active inference an d sophisticated inference (Friston et al, 2021). Finally,
+Section 8 concludes this paper and provides ideas for future research.
+2. Forney Factor Graphs
+A Forney factor graph (Forney, 2001) uses three kinds of node s. The nodes representing hidden and observed
+variables are depicted by white and gray circles, respectiv ely. And the distribution’s factors are represented using
+white squares, which are linked to variable nodes by arrows o r lines. Arrows are used to connect factors to their
+target variable, while lines link factors to their predicto rs. Figure 2 shows an example of a Forney factor graph
+corresponding to the following generative model:
+P(O,S) =
+PO(O|S)PS (S). (7)
+Generally, factor graphs only describe the model’s structu re such as the variables and their dependencies, but
+do not specify the deﬁnition of individual factors. For exam ple, the deﬁnitions of PO and PS are not given by
+Figure 2, and additional information is required to remove t he ambiguity, e.g., PS(S) = N(S; µ,σ) clariﬁes that
+PS is a Gaussian distribution.
+PS
+S
+PO
+O
+Line
+Arrow
+Hidden variable
+Factor
+Observed variable
+Figure 2: This ﬁgure illustrates the Forney factor graph cor responding to the following generative model:
+P(O,S) = PO(O|S)PS (S). The hidden state is represented by a white circle with the v ariable’s name at the
+center, and the observed variable is depicted similarly but with a gray background. The factors of the generative
+model are represented by squares with a white background and the factor’s name at the center. Finally, arrows
+connect the factors to their target variable and lines link e ach factor to its predictor variables.
+6
+Branching Time Active Inference
+3. Variational Message Passing
+We now build on Forney factor graphs and provide an overview o f the method of Winn and Bishop (2005). For
+more details, see Champion et al (2021b), which provided a co mplete derivation of the equations presented below
+from Bayes’ theorem.
+3.1 Winn and Bishop method
+Variational message passing as developed by Winn and Bishop (2005) is an approach for inference based upon the
+mean-ﬁeld approximation, which assumes that the posterior fully factorises, i.e.
+Q(X) =
+∏
+i
+Q(Xi), (8)
+where X is the set of all hidden variables of the model and Xi represents the i-th hidden variable. In this section,
+we focus on the intuition behind the method, starting with th e update equation of an arbitrary hidden state xk:
+ln Q∗
+k(xk) = ⟨ln P(xk|
+pak)⟩∼Qk +
+∑
+cj ∈chk
+⟨ln P(cj |xk,cpkj )⟩∼Qk + C (9)
+where C is a normalizing constant, and ⟨·⟩∼Qk is the expectation over all factors but Qk(xk). (9) tells us that the
+optimal posterior of any hidden states xk only depends on its Markov blanket, i.e., xk’s parents pak, children chk
+and co-parents cpkj . To make (9) more speciﬁc, we assume that each random variabl e of the model is conjugate
+to its parents (i.e., the posterior has the same functional f orm as the prior) and is distributed according to a
+distribution in the exponential family, i.e.,
+ln P(xk|pak) = µk(pak) ·uk(xk) + hk(xk) + zk(pak) (10)
+where µk(pak), uk(xk), hk(xk) and zk(pak) are the parameters, the suﬃcient statistics, the underlyi ng measure
+and the log partition, respectively. Under those two assump tions, (9) can be re-written as:
+Q∗
+k(xk) = exp
+{
+µ∗
+k
+·uk(xk) + hk(xk) + Const
+}
+(11)
+µ∗
+k
+= ˜µk({⟨ui(i)⟩Qi }i∈pak ) +
+∑
+cj ∈chk
+˜µj→k(⟨uj (cj )⟩Qj ,{⟨ul(l)⟩Ql }l∈cpkj ) (12)
+7
+Champion et al.
+where ˜µk is a re-parameterization of µk(pak) in terms of the expectation of the suﬃcient statistics of th e parents of
+xk, and similarly ˜µj→k is a re-parameterization of µj→k. Importantly, uk(xk) and hk(xk) in the optimal posterior
+(11) are the same as in the prior (10), and only the parameters have changed according to (12).
+YPYZPZ PX W PW
+X
+m1 m2 m3 m4
+m5
+µ∗
+Y
+= ˜µY (⟨uZ (Z)⟩QZ ) +˜µX→ Y (⟨uX (X)⟩QX , ⟨uW (W )⟩QW )
+m1
+m2 m3
+m4m5
+Figure 3: This ﬁgure illustrates the computation of the opti mal posterior parameters as a message passing proce-
+dure, which requires the transmission of messages from the p arent ( m2) and child ( m3) factors. Additionally, the
+message from the child factor ( m3) requires the computation of messages from the co-parent ( m4) and child ( m5)
+variables. Also, the message from the parent factor ( m2) requires the computation of a message ( m1) from the
+parent variable.
+To understand the intuition behind (12), let us suppose that we are given the Forney factor graph illustrated
+in Figure 3 and we wish to compute the posterior of Y. Then, the only parent of Y is Z, the only child of Y
+is X and the only co-parent of Y with respect to X is W. Therefore, applying (12) to our example leads to the
+equation presented in Figure 3 whose components can be inter preted as messages. Indeed, each variable (i.e., X,
+Z and W) sends the expectation of its suﬃcient statistics (i.e., a m essage) to the square node in the direction of
+Y (i.e., either PX or PY ). Those messages are then combined using a function (i.e., e ither ˜µY or ˜µX→Y ) whose
+output (i.e., another set of messages) are summed to obtain t he optimal parameters µ∗
+Y . The computation of the
+optimal parameters (12) can then be understood as a message p assing procedure. Also, we provide in Appendix
+C a concrete instance of the approach presented above.
+4. Active Inference
+This section provides a quick overview of the active inferen ce framework, and Appendix H presents a description
+of the exponential complexity class that it exhibits. The re ader is referred to Appendix F for any notations that
+might not be explained here. For a more detailed treatment of the active inference framework, we refer the reader
+to (Champion et al, 2021b; Da Costa et al, 2020a; Smith et al, 2 021).
+8
+Branching Time Active Inference
+4.1 Generative model
+As illustrated in Figure 4, the classic generative model rep resents the world as a sequence of hidden states generating
+observations through the matrix A. The prior over the initial states is deﬁned by the vector D and the transition
+between time steps is encoded by a 3-tensor B, i.e., one matrix per action. Importantly, the random varia ble π
+represents all possible policies up to a given time horizon T and each policy is deﬁned as a sequence of actions,
+i.e., {Ut,...,UT −1}where Uτ ∈{1,...,|U|}∀τ ∈{t,...,T −1}. The prior over the policies is then set such that
+policies with high probability minimise the EFE, which is de ﬁned as follows (Parr and Friston, 2019):
+G(π) ≈
+T∑
+τ=t+1
+[
+DKL[
+expected outcomes
+
+ 
+Q(Oτ |π) ||
+prior preferences
+  
+P(Oτ ) ]  
+risk
++ EQ(Sτ |π)[H[P(Oτ |Sτ )]]  
+ambiguity
+]
+(13)
+where Q(Oτ |π) =∆ ∑
+Sτ P(Oτ |Sτ )Q(Sτ |π), H[ ·] is the Shannon entropy, G is a vector containing as many elements
+as the number of policies, and the i-th element of G represents the cost of the i-th policy. The prior preference s over
+observations P(Oτ ) represent the (categorical) distribution that the agent w ants its observations to be sampled from
+and is traditionally encoded by the vector C. Note that this generalises the concept of reward from reinf orcement
+learning. Indeed, maximising reward can be reformulated as sampling observations from a Dirac delta distribution
+over reward maximising states (Da Costa et al, 2020b).
+S0
+PS0
+... PSt St ... PST ST
+PO0
+O0
+POt
+Ot
+A
+PA
+D
+PD
+B
+PB
+π
+Pπ
+γ
+Pγ
+Figure 4: This ﬁgure illustrates the Forney factor graph of t he entire generative model presented by Friston et al
+(2016). The probability of the initial states is deﬁned by th e vector D, and the matrix A deﬁnes the probability
+of the observations given the hidden states. The B matrices deﬁne the transition between any successive pair o f
+hidden states. This transition depends on the action perfor med by the agent, i.e., on the policy π. Furthermore,
+the prior over the policies has been chosen such that policie s minimizing expected free energy are more probable.
+Finally, the precision parameter γ (which modulates the conﬁdence over which policies to pursu e) is distributed
+according to a gamma distribution.
+9
+Champion et al.
+Lastly, the precision parameter γ has been associated to neuromodulators such as dopamine (Fi tzGerald et al,
+2015; Friston et al, 2013) and can be understood as modulatin g the conﬁdence over the information aﬀorded by
+the expected free energy—e.g., smaller values of γ lead to more stochastic decision-making. Finally, the fram ework
+allows A, B and D to be learned by introducing Dirichlet distributions over t he columns of these tensors such
+that the posterior parameters of A, B and D can be reused in a new trial, as parameters of the prior, givin g an
+empirical prior. Finally, the classic generative model is d eﬁned as follows:
+P(O0:t,S0:T ,π, A,B,D,γ) = P(π|γ)P(γ)P(A)P(B)P(S0|D)P(D)
+t∏
+τ=0
+P(Oτ |Sτ ,A)
+T∏
+τ=1
+P(Sτ |Sτ−1,πτ−1,B) (14)
+P(π|γ) = σ(−γG) P(γ) = Γ(1 ,β )
+P(A) = Dir( a) P(B) = Dir( b)
+P(S0|D) = Cat( D) P(D) = Dir( d)
+P(Oτ |Sτ ,A) = Cat( A) P(Sτ |Sτ−1,πτ−1,B) = Cat( B),
+where G is a vector of size |π|whose i-th element corresponds to the expected free energy of the i- th policy, σ(•) is
+the softmax function, Γ( •), Cat( •) and Dir( •) stand for a gamma, categorical and Dirichlet distribution , respectively,
+πτ−1 ∈{1,...,|U|}is the action prescribed by policy πat time τ−1, O0:t is the set of (random variables representing)
+observations between time step 0 and t, and S0:T is the set of (random variables representing) hidden states between
+time step 0 and T.
+4.2 Variational Distribution
+The most widely used variational distribution (Da Costa et a l, 2020a; Friston et al, 2016) is not fully factorized,
+i.e., the posterior models the inﬂuence of the policy on the h idden states, leading to the following factorization:
+Q(S0:T ,π, A,B,D,γ) = Q(π)Q(A)Q(B)Q(D)Q(γ)
+T∏
+τ=0
+Q(Sτ |π) (15)
+Q(Sτ |π) = Cat( ˆDτ ) Q(π) = Cat( ˆπ )
+Q(γ) = Γ(1 , ˆβ ) Q(D) = Dir( ˆd)
+Q(A) = Dir( ˆa) Q(B) = Dir( ˆb)
+where all variables with a hat correspond to posterior param eters. Notice that the distributions over A, B and D
+remain Dirichlet distributions, and the distributions ove r γ and Sτ remain a gamma and a categorical distribution,
+10
+Branching Time Active Inference
+respectively. Only the distribution over π changes from a Boltzmann to a categorical distribution but b oth are
+discrete distributions.
+Remark 1 By deﬁnition the generative model P(O0:t,S0:T ,π, A,B,D,γ) is a joint probability distribution over
+both the observed ( O0:t) and latent ( S0:T ,π, A,B,D,γ) variables. However, the goal of the variational distribut ion
+Q(S0:T ,π, A,B,D,γ) is to approximate the true posterior P(S0:T ,π, A,B,D,γ|O0:t), which is a distribution over
+the latent variables only. Thus, the approximate posterior Q(S0:T ,π, A,B,D,γ) is also a distribution over the
+latent variables only, and does not contain the observed var iables.
+4.3 Variational Free Energy
+By deﬁnition, the variational free energy (VFE) is the Kullb ack-Leibler divergence between the variational distri-
+bution and the generative model, i.e.
+F = EQ[ln Q(S0:T ,π, A,B,D,γ) −ln P(O0:t,S0:T ,π, A,B,D,γ)] (16)
+= DKL [ Q(x)||P(x|o)] −ln P(o) (17)
+= DKL [ Q(x)||P(x)]
+ 
+complexity
+−EQ(x)[ln P(o|x)]  
+accuracy
+(18)
+where x = {S0:T ,π, A,B,D,γ}refers to the model’s hidden variables, and o = {O0:t}refers to the sequence of
+observations made by the agent. (17) shows that minimising f ree energy involves moving the variational distribution
+Q(x) closer to the true posterior P(x|o) in the sense of KL divergence, and that the variational free energy is an
+upper bound on the negative log evidence. (18) shows the trad e-oﬀ between complexity and accuracy, where the
+complexity penalises the divergence of the posterior Q(x) from the prior P(x) and the accuracy scores how likely
+the observations are given the generative model and current belief of the hidden states.
+To ﬁt the variational distribution as closely as possible to the true posterior, the VFE is minimized w.r.t
+each variational factor, e.g., Q(D) and Q(A). The minimization process can be solved by iterating the up date
+equations of each factor until convergence of the VFE. More d etails and intuition about those updates are given
+by Champion et al (2021b).
+4.4 Action selection
+In active inference, the simplest strategy to select action s is to compute the evidence for all policies under con-
+sideration and then choose the most likely action according to these policies. Mathematically, this amounts to a
+11
+Champion et al.
+Bayesian model average by executing the action with the high est posterior evidence:
+u∗
+t = arg max
+u
+|π|∑
+m=1
+[u= πm
+t ]Q(π= m) (19)
+where |π|is the number of policies, πm
+t is the action predicted at the current time step by the m−th policy, and
+[u= πm
+t ] is an indicator function that equals one if u= πm
+t and zero otherwise.
+5. Monte Carlo Tree Search
+By now, the reader should be familiar with the framework of ac tive inference and how variational message passing
+combined with the Forney factor graph formalism can be used t o compute posterior beliefs. We now turn to the
+last piece of background required to present the method prop osed in this paper: Monte Carlo tree search (MCTS),
+which is based on the multi-armed bandit literature (c.f. Ap pendix G for details).
+5.1 A four step process
+Monte Carlo tree search has been widely used in the reinforce ment learning literature as it enables agents to plan
+eﬃciently when the evaluation of every possible action sequ ence is computationally prohibitive (Silver et al, 2016;
+Browne et al, 2012; Schrittwieser et al, 2019; Fountas et al, 2020). This algorithm essentially builds a tree in which
+each node corresponds to a future state and each edge represe nts the action that led to that state. Initially, the
+tree is only composed of a root node corresponding to the curr ent state. From here, MCTS is a four step process.
+First, a node is selected according to a criterion such as the upper conﬁdence bound for trees (UCT):
+UCTj = ¯Xj + 2Cp
+√
+2 ln n
+nj
+, (20)
+where n is the number of times the current (parent) node has been expl ored, nj stands for the number of times
+the j-th child node has been explored, Cp > 0 is the exploration constant and ¯Xj is the average reward received
+by the j-th child. Note, if the rewards are in [0 ,1], then Cp = 1√
+2 is known to satisfy the Hoeﬀding inequality
+(Browne et al, 2012) and the UCT criterion reduces to:
+UCTj = ¯Xj + 2
+√
+ln n
+nj
+. (21)
+Importantly, the UCT aims to explore highly rewarding paths (exploitation in ﬁrst term), while also visiting rarely
+explored regions (exploration in second term).
+As shown in Figure 5, this criterion is ﬁrst used at the root le vel leading to the selection of a node from the
+root’s children. Then, it is used at the level of the root’s ch ildren, and so on until a leaf node is reached. As
+12
+Branching Time Active Inference
+explained by Kocsis and Szepesv´ ari (2006), UCT is a direct application of the UCB1 criterion to trees, where at
+each level, the allocation strategy must pick a node that is e xpected to lead to the highest reward, and “picking
+the i-th node” can be seen as the i-th action of a multi-armed bandit problem. Once a leaf node h as been selected,
+an expansion step is performed by sampling an action from a di stribution and adding the node corresponding to
+this action as a child of the leaf node, i.e., the leaf node is e xpanded.
+The third step consists of performing virtual rollouts into the future to estimate the average future reward
+obtained from the state corresponding to the newly expanded node. Finally, during the back-propagation step,
+the average reward obtained from the newly expanded state is used to re-evaluate the average quality of all its
+ancestors, and the visit counts of all nodes (in the branch ex plored) are increased. Iterating this four-step process
+until the time budget has been spent gives a fairly good estim ate of the best action to perform next. Figure 5
+summarises the MCTS procedure. In the next section, we prese nt our approach and show how MCTS can be fused
+to active inference by performing a dynamical expansion of t he generative model.
+Selection
+St
+S(1) S(2)
+S(11) S(12)
+Expansion
+St
+S(1) S(2)
+S(11) S(12)
+S(121)
+Simulation
+St
+S(1) S(2)
+S(11) S(12)
+S(121)
+± 1
+Back-propagation
+St
+S(1) S(2)
+S(11) S(12)
+S(121)
+± 1
+± 1
+± 1
+Figure 5: This ﬁgure illustrates the MCTS algorithm as a four step process. First, we start at the node representing
+the current state St and select a node based on the UCT criterion until a leaf node i s reached. Second, the tree
+is expanded to a new node by taking a virtual action from the se lected node. Third, the value of this action is
+estimated by simulating the expected reward following that action. In the simplest version of MCTS, simulations
+are run until a terminal state is reached, e.g., until the gam e ends in Go or Chess. Fourth, the expected value is
+back-propagated to the new node and all of its ancestor nodes . The multi-indices in curly brackets denote action
+sequences taken from the root node, indicating the current s tate of the environment.
+6. Branching Time Active Inference (BTAI)
+In this section, we present a novel active inference agent th at frames planning using a tree as a form of Bayesian
+model extension. Using terminology from concurrency theor y (Bowman, 2005), we call our new formalism, Branch-
+ing Time Active Inference (BTAI). In this domain, models of systems based upon sequenc es of actions (the format
+of policies) are described as linear time , while models based upon tree and even graph structures are c alled branch-
+13
+Champion et al.
+ing time (Glabbeek, 1990; van Glabbeek, 1993; Bowman, 2005). Import antly, we do not consider the generative
+model and the tree as two diﬀerent objects. Instead, we merge t hose two objects together into a generative model
+that can be dynamically expanded.
+Figure 6 illustrates an example of such a model, where for the sake of simplicity, we assume that the matrices
+A, B and D are given to the agent. Furthermore, the random variable rep resenting the policies has been replaced
+by random variables representing actions and the precision parameter γ has been removed, which is a common
+design choice (Fountas et al, 2020). Additionally, we follo w Parr and Friston (2019) by viewing future observations
+as latent random variables. Finally, note that the transiti on between two consecutive hidden states in the future
+(SI\last and SI where I is a multi-index) will only depend on the matrix ¯BI = ¯B(•,•,Ilast), i.e., the matrix
+corresponding to action Ilast that led to the transition from SI\last to SI . The reader is referred to Table 1 for the
+deﬁnition of ¯B and more details about multi-indices can be found in Appendi x F.
+6.1 Prior, Posterior and Target distributions
+Since the generative model is fairly diﬀerent from the standa rd model, we state here its formal deﬁnition:
+P(O0:t,S0:t,U0:t−1,OIt ,SIt ,A,B,D,Θ 0:t−1) = P(S0|D)P(A)P(B)P(D)
+t∏
+τ=0
+P(Oτ |Sτ ,A)
+t−1∏
+τ=0
+P(Uτ |Θ τ )P(Θ τ )
+t∏
+τ=1
+P(Sτ |Sτ−1,Uτ−1,B)
+∏
+I∈It
+P(OI |SI )P(SI |SI\last) (22)
+where It is the set of all non-empty multi-indices already expanded b y the tree search from the current state St,
+the second product ( τ from 0 to t−1) models the uncertainty over action, reﬂecting the focus o n actions rather
+than policies, and SI\last is the parent state of SI . Intuitively, the product over all I ∈It models the future, while
+the rest of the above equation models the past and present. Ad ditionally, we need to deﬁne the individual factors:
+P(S0|D) = Cat( D) P(Uτ |Θ τ ) = Cat( Θ τ )
+P(Oτ |Sτ ,A) = Cat( A) P(OI |SI ) = Cat( ¯A)
+P(Sτ |Sτ−1,Uτ−1,B) = Cat( B) P(SI |SI\last) = Cat( ¯BI )
+P(D) = Dir( d) P(Θ τ ) = Dir( θτ )
+P(A) = Dir( a) P(B) = Dir( b)
+where ¯A and ¯B are deﬁned in Table 1, ¯BI = ¯B(•,•,Ilast) is the matrix corresponding to Ilast and Ilast is the last
+index of the multi-index I, i.e., the last action that led to SI . Importantly, ¯A and ¯B should not be confused with
+˚A and ˚B, ¯A is the expectation of A w.r.t. Q(A), while ˚A is the expectation of the logarithm of A w.r.t. Q(A).
+14
+Branching Time Active Inference
+We now turn to the deﬁnition of the variational posterior. Un der the mean-ﬁeld approximation:
+Q(S0:t,U0:t−1,OIt ,SIt ,A,B,D,Θ 0:t−1) =
+Q(A)Q(B)Q(D)
+t−1∏
+τ=0
+Q(Uτ )Q(Θ τ )
+t∏
+τ=0
+Q(Sτ )
+∏
+I∈It
+Q(OI )Q(SI )
+(23)
+where the individual factors are deﬁned as:
+Q(Sτ ) = Cat( ˆDτ ) Q(Uτ ) = Cat( ˆΘ τ )
+Q(OI ) = Cat( ˆEI ) Q(SI ) = Cat( ˆDI )
+Q(D) = Dir( ˆd) Q(Θ τ ) = Dir( ˆθτ )
+Q(A) = Dir( ˆa) Q(B) = Dir( ˆb),
+where ˆDτ , ˆΘ τ , ˆEI , ˆDI , ˆd, ˆθτ , ˆa and ˆb are the parameters of the factors Q(Sτ ), Q(Uτ ), Q(OI ), Q(SI ), Q(D),
+Q(Θ τ ), Q(A) and Q(B), respectively. Importantly, OI appears in the variational distribution because observati ons
+in the future are treated as hidden variables.
+Finally, we follow Millidge et al (2021) in assuming that the agent aims to minimise the KL divergence between
+the approximate posterior depicting the state of the enviro nment and a target (desired) distribution. Therefore, our
+framework allows for the speciﬁcation of prior preferences over both future hidden states and future observations:
+V(OIt ,SIt ) =
+∏
+I∈It
+V(OI )V(SI ) (24)
+where the individual factors are deﬁned as:
+V(OI ) = Cat( CO), V (SI ) = Cat( CS). (25)
+Importantly, by specifying the value of future observation s and states, CO and CS play a similar role to the vector
+C in active inference, i.e., they specify which observations and hidden states are rewarding.
+To sum up, this framework is deﬁned using three distribution s: the prior deﬁnes the agent’s beliefs before
+sampling any observation; the posterior is an updated versi on of the prior which takes into account past observa-
+tions made by the agent; ﬁnally, the target distribution enc odes the agent’s prior preferences in terms of future
+observations and hidden states.
+15
+Champion et al.
+S0
+PS0
+PS...
+S...
+PSt
+St
+U0PU0
+U...PU...
+PO0 O0
+PO... O...
+POt Ot
+PS(1)
+S(1)
+PS(2)
+S(2)PO(1)O(1) PO(2) O(2)
+PS(22)
+S(22)
+PS(11)
+S(11)
+PS(12)
+S(12)PO(11)O(11)
+Figure 6: This ﬁgure illustrates the new expandable generat ive model allowing planning under active inference.
+The future is now a tree like generative model whose branches correspond to the policies considered by the agent.
+As we will see, these branches can be dynamically expanded du ring planning. Here, the nodes in light gray
+represent possible expansions of the current generative mo del. For the sake of clarity, the random tensor A, B,
+Θ τ and D are not illustrated, i.e., Dirichlet priors over those rand om tensors are not shown.
+6.2 Bayesian belief updates
+In this section, we focus on the set of update equations used t o perform approximate Bayesian inference. These
+update equations rely on variational message passing as pre sented in Section 3, see Champion et al (2021b) as
+well as Winn and Bishop (2005) for details. A key strength of t he message passing approach is the capacity to
+derive and implement these updates within an automatic and m odular toolbox (van de Laar and de Vries, 2019;
+Cox et al, 2019), which in a way similar to automatic diﬀerenti ation alleviates the ﬁnal user from the burden of
+manually deriving complex update equations for each new gen erative model. To simplify our notation, we use two
+operators ⊗and ⊙that we call generalized outer and inner product, respectiv ely. The generalized outer product
+creates an N dimensional tensor from N vectors, while the generalized inner product performs a wei ghted average
+over one dimension of an N dimensional array, cf Appendix A for details. Using these no tations, the ﬁrst set of
+16
+Branching Time Active Inference
+update equations are given by:
+Q∗(D) = Dir
+(ˆd
+)
+where ˆd = d + ˆD0
+t∑
+τ
+(26)
+Q∗(A) = Dir
+(
+ˆa
+)
+where ˆa = a +
+t∑
+τ=0
+⊗
+[
+ˆDτ ,oτ
+]
+(27)
+Q∗(B) = Dir
+(ˆb
+)
+where ˆb = b +
+t∑
+τ=1
+⊗
+[
+ˆDτ−1, ˆΘ τ−1, ˆDτ
+]
+(28)
+Q∗(Θ τ ) = Dir
+(ˆθτ
+)
+where ˆθτ = θτ + ˆΘ τ (29)
+where oτ is the observation made at time τ. Furthermore, this ﬁrst set of equations count (probabilis tically) the
+number of times, an initial hidden state has been observed, a n action has been performed, a state has generated a
+particular observation or an action has led to the transitio n between two consecutive hidden states. For example,
+the posterior parameters ˆa are computed by adding ∑ t
+τ=0 ⊗[ ˆDτ ,oτ ] (i.e., the number of times a state-observation
+pair has been observed during this trial) to the prior parame ters a (i.e., the number of times this same pair has
+been observed during previous trials). The equations for be lief updates are given by:
+Q∗(OI ) = σ
+(˚A ⊙ˆDI
+)
+t∑
+τ
+(30)
+Q∗(SI ) = σ
+(
+˚A ⊙ˆEI + ˚BI ⊙ˆDI\last +
+∑
+J∈chI
+˚BJ ⊙ˆDJ
+) t∑
+τ
+(31)
+Q∗(Uτ ) = σ
+(˚Θ + ˚B ⊙[ ˆDτ , ˆDτ+1]
+) t∑
+τ
+(32)
+Q∗(Sτ ) = σ
+(
+[τ = 0] ˚Dτ + [ τ ̸= 0] ˚B ⊙[ ˆDτ−1, ˆΘ τ−1]
+t∑
++ ˚A ⊙oτ
+t∑
+τ
++[τ = t]
+∑
+J∈cht
+˚BJ ⊙ˆDJ + [ τ ̸= t]˚B ⊙[ ˆDτ+1, ˆΘ τ ]
+)
+(33)
+where σ(•) is the softmax function, ch t are the children (states) of the current states St, ch I are the children (states)
+of the states SI , [predicate] is an indicator function returning one if the p redicate is true and zero otherwise, and
+the deﬁnition of ˚A, ˚B, ˚D and ˚Θ τ are given in Table 1. Note that thanks to the operators ⊗and ⊙, the perception
+(i.e., state-estimation) equations can be intuitively und erstood as a sum of messages, where each message from
+a factor to a variable is the average over all dimensions exce pt the dimension of the variable, e.g., the message
+( ˚A ⊙o0) from Po0 to S0 is the vector obtained by weigthing the rows of ˚A by the elements of o0. Importantly,
+the above update equations are almost identical to the ones u sed in standard active inference, and thus can
+17
+Champion et al.
+be implemented eﬃciently. Indeed, most of the computation r equired is about addition of matrices O(n2) and
+multiplication of matrices O(n3), or their higher dimensional counterparts.
+Notation Meaning
+⟨f(X)⟩PX =∆ EPX [f(X)] The expectation of f(X) over PX
+ψ(•) The digamma function
+˚Θ τ (i) = ⟨ln Θ τ (i)⟩QΘ τ = ψ
+(ˆθτ (i)
+)
+−ψ
+(∑
+k ˆθτ (k)
+)
+The expected logarithm of Θ τ
+˚D(i) = ⟨ln D(i)⟩QD = ψ
+(ˆd(i)
+)
+−ψ
+(∑
+k ˆd(k)
+)
+The expected logarithm of D
+˚A(i,j) = ⟨ln A(i,j)⟩QA = ψ
+(
+ˆa(i,j)
+)
+−ψ
+(∑
+k ˆa(k,j)
+)
+The expected logarithm of A
+˚B(i,j,u) = ⟨ln B(i,j,u)⟩QB = ψ
+(ˆb(i,j,u)
+)
+−ψ
+(∑
+k ˆb(k,j,u )
+)
+The expected logarithm of B
+¯A(i,j) = ⟨A(i,j)⟩QA = ˆa(i,j)∑
+k ˆa(k,j) The expectation of A
+¯B(i,j,u) = ⟨B(i,j,u)⟩QB =
+ˆb(i,j,u)∑
+k ˆb(k,j,u) The expectation of B
+Table 1: Update equations notation. Note that Appendix D pro vides a proof for D.
+6.3 Planning as structure learning
+In this section, we frame planning as a form of structure lear ning where the structure of the generative model is
+modiﬁed dynamically. This method is greatly inspired by the Monte Carlo tree search literature, c.f., Section 5
+for details.
+6.3.1 Selection of the node to be expanded
+The ﬁrst step of planning is to select a node to be expanded. Th e selection process starts at the root node, if the
+root node still has unexplored children, then one of them is s elected. Otherwise, the child node maximizing the
+UCT criterion, where the average reward is replaced by minus the average EFE, is selected, i.e., the selected node
+maximises:
+UCTJ = −¯gJ
+exploitation
++ Cp
+√
+ln n
+nJ  
+exploration
+, (34)
+where J is a multi-index, n is the number of times the root node has been visited, nJ is the number of times the
+child corresponding to the multi-index J was selected, and ¯gJ is the average cost received when selecting the child
+SJ . The UCT criterion can be understood as a trade-oﬀ between exploitat ion and exploration at the tree level,
+which is diﬀerent to the exploitation and exploration dilemm a at the model level. This dilemma is handled by
+the EFE. Also, the notion of cost in the above equation can be d eﬁned in many ways and will be the subject of
+Section 6.3.3. For our purposes, the cost will be equal, or si milar, to the expected free energy, which means that
+18
+Branching Time Active Inference
+the expected free energy drives structure learning. When a r oot’s child is selected, it becomes the new root in the
+above procedure, which is iterated until a leaf node is reach ed.
+6.3.2 Dynamical expansion of the generative model
+Let SI\last denotes the leaf node selected for expansion. When SI\last has been selected, the structure of the
+generative model needs to be modiﬁed by expanding all possib le actions from that node. For each action, we
+expand the generative model by adding a future hidden state w hose prior distribution is given by
+P(SI |SI\last) = Cat( ¯BI ), (35)
+where ¯BI is the matrix corresponding to the last action that led to SI . Finally, we expand the (future) observation
+associated with the new hidden state SI , whose distribution is:
+P(OI |SI ) = Cat( ¯A). (36)
+To sum up, the expansion step is adding two random variables ( SI and OI ) to the generative model, i.e. the
+generative model becomes bigger, and I is added to the set of all non-empty multi-indices already ex panded by
+the tree search ( It). The prior distributions over those newly added random var iables (i.e. SI and OI ) are deﬁned
+using the matrices ¯BI and ¯A, which eﬀectively predict the future states and observation s. After the expansion
+step, the posterior distribution over SI and OI needs to be computed. At least two kinds of inference strateg ies
+can be used. The ﬁrst—global inference—performs variation al message passing over the entire generative model,
+while the second—local inference—only iterates the update equations of the newly expanded nodes, i.e., SI and
+OI , until convergence to the variational free energy minimum.
+6.3.3 Cost evaluation of the expanded nodes
+After expanding the model structure, we need to compute the c ost of the newly expanded node SI . As explained
+in Section 6.3.1, the cost of SI will inﬂuence the probability of expanding SI during future planning iterations. In
+active inference, the classic objective of planning is the e xpected free energy as deﬁned in Section 4.1, i.e.,
+gclassic
+I =∆ DKL[Q(OI )||V(OI )] + EQ(SI )[H[P(OI |SI )]] (37)
+19
+Champion et al.
+where gclassic
+I trades oﬀ risk (ﬁrst summand) and ambiguity (second summand ). Alternatively, one could follow
+Section 5 of Millidge et al (2021) and deﬁne the cost of SI using the free energy of the expected future:
+gfeef
+I = DKL [ Q(OI ,SI )||V(OI ,SI )] (38)
+where V(OI ,SI ) is the target distribution over states and observations. T he target distribution V(OI ,SI ) gen-
+eralises the C matrix in Friston’s model by specifying prior preferences o ver both future observations and fu-
+ture states. Also, this formulation of the cost speaks to the notion of KL divergence minimization proposed by
+Hafner et al (2020).
+Furthermore, due to the mean-ﬁeld approximation of the post erior (23) and the factorised form of the target
+distribution (24), the expression of the cost simpliﬁes to
+gpcost
+I =∆ DKL [ Q(SI )||V(SI )] + DKL [ Q(OI )||V(OI )] . (39)
+Intuitively, the pure cost ( gpcost
+I ) measures how diﬀerent the predicted future hidden states an d observations
+are from desired states and observations. In future researc h, it might be interesting to compare the performance
+and behaviour of gpcost
+I , gfeef
+I and gclassic
+I empirically and theoretically.
+Note that in MCTS, the evaluation of a node’s quality is done b y performing virtual roll-outs, while gpcost
+I ,
+gfeef
+I and gclassic
+I are not. If we let gI be any of those criteria, then we can improve our estimate of t he cost, by
+20
+Branching Time Active Inference
+computing gaverage
+I , i.e., the average cost over N roll-outs of size K. Algorithm 1 presents the pseudo code used
+to estimate gaverage
+I .
+Algorithm 1: Estimation of gaverage
+I
+Input: N the number of virtual roll-outs, K the maximal length of each roll-out.
+gaverage
+I ←0 ; // Initialize roll-out estimate to zero
+repeat N times
+grollout
+I ←gI ; // Initial cost equals cost of SI
+for i←1 to K do
+sample a random action Ui uniformly from the set of unexplored actions;
+perform the expansion of the current node using Ui (Section 6.3.2);
+perform inference on the newly expanded nodes (Section 6.2) ;
+grollout
+I ←grollout
+I + gJ ; // J corresponds to last expanded node
+end
+gaverage
+I ←gaverage
+I + grollout
+I ;
+end
+gaverage
+I ←gaverage
+I /N;
+6.3.4 Propagation of the node cost
+In this section, we let Gaggr
+L be a variable that contains the total cost of the node SL, where L could be any
+multi-index. According to the previous section, we let gL be any of the following evaluation criteria gpcost
+L , gfeef
+L
+and gclassic
+L . Initially, Gaggr
+L equals gL. Also, we let SK be the node that was selected for expansion, and let SI be
+an arbitrary hidden state expanded from SK . The cost of the newly expanded node(s) can be propagated eit her
+forward or backward. The forward propagation (towards the l eaves) leads to the following equation:
+Gaggr
+I ←gI + Gaggr
+K , (40)
+where here Gaggr
+K is the aggregated cost of the parent of SI . Importantly, the symbol ←refers to a programming-
+like assignment (i.e., an incremental update) performed ea ch time the tree is expanded. The backward propagation
+(towards the root) leads to:
+Gaggr
+J ←Gaggr
+J + gI ∀J ∈AI (41)
+where AI corresponds to all ancestors of the newly expanded node SI . We will see in Section 7 that these strategies
+respectively relate to active inference and sophisticated inference (Friston et al, 2021). Finally, since the agent is
+21
+Champion et al.
+free to choose any action, we can back-propagate the (locall y) minimum cost, i.e.,
+Gaggr
+J ←Gaggr
+J + min
+a∈{1,...,|U|}
+gK::a ∀J ∈AI , (42)
+where K :: a is a multi-index obtained from K by adding the action a to the sequence of actions described by K.
+In all cases, the propagation step updates the counter nJ associated with each ancestor SJ of the newly expanded
+hidden state SI ; this counts the number of times the node SJ has been explored (exactly as in MCTS). This
+counter will be used for action selection, as well as for the c omputation of the average cost of SJ —¯gJ —that was
+left undeﬁned by Section 6.3.1. Formally, ¯ gJ is given by:
+¯gJ = 1
+nJ
+Gaggr
+J . (43)
+Remark 2 The forward propagation of the cost presented above will only be used for theoretical purpose in Section
+7. Practical implementation of BTAI should use the backward schemes.
+6.4 Action selection
+The planning procedure presented in the previous section en ds after a pre-speciﬁed amount of time has elapsed or
+when a suﬃciently good policy has been found. When the planni ng is over, the agent needs to choose an action
+to act in its environment. In a companion paper (Champion et a l, 2021a) that presents empirical results of BTAI,
+the actions are sampled from σ(−γg
+N ), where σ(•) is a softmax function, γ is a precision parameter, g is a vector
+whose elements correspond to the cost of the root’s children and N is a vector whose elements correspond to the
+number of visits of the root’s children. Importantly, actio ns with low average cost are more likely to be selected
+than actions with high average cost.
+Alternative approaches to action selection (Browne et al, 2 012) could be studied. For example, one could
+imagine sampling actions from a categorical distribution w ith parameter σ(N), where N is a vector containing
+the nJ of all children of the root node. Or, we could select the actio n corresponding to the root’s child with the
+highest number of explorations nJ . The fact that it has been visited more often means that is has a lower cost
+overall. If there were a tie between several actions, the act ion with the lowest cost would be selected. The study
+of these strategies is left to future research.
+6.5 Action-perception cycle with tree search
+In active inference, the action-perception cycle realises an active inference agent in an inﬁnite loop (van de Laar and d e Vries,
+2019). Each loop iteration begins with the agent sampling an observation from the environment. The observation
+is used to perform inference about the states and contingenc ies of the world, e.g., an impression on the retina
+22
+Branching Time Active Inference
+might be used to reconstruct a three dimensional scene with a representation of the objects that it contains. Then,
+planning is performed by inferring the consequences of alte rnative action sequences. Importantly, only a subset of
+all possible action sequences are evaluated, due to the dyna mical expansion of the generative model. Finally, the
+agent selects an action to perform in the environment by samp ling a softmax function of minus the average cost
+weighted by the precision parameter γ, i.e., σ(−γg
+N ). Therefore, actions with low average cost are more likely t o
+be selected than actions with high average cost. We summaris e our method using pseudo-code in Algorithm 2.
+Algorithm 2: Action-perception cycle with tree search
+while end of trial not reached do
+sample an observation from the environment;
+perform inference using the observation (Section 6.2);
+while maximum planning iteration not reached do
+select a node to be expanded (Section 6.3.1);
+perform the expansion of the node (Section 6.3.2);
+perform inference on the newly expanded nodes (Section 6.2) ;
+evaluate the cost of the newly expanded nodes (Section 6.3.3 );
+propagate the cost of the nodes through the tree, either forw ard or backward (Section 6.3.4);
+end
+select an action to be performed (Section 6.4);
+execute the action in the environment leading to a new observ ation;
+end
+7. Connection between BTAI, active inference and sophisticated inference
+In this section, we explore the relationship between BTAI, a ctive inference (AcI) and sophisticated inference (SI).
+We show that BTAI is a class of algorithms that generalizes Ac I and is related to SI. To do so, we focus on the
+“cost” of a policy for each method. In addition, we need to int roduce the notion of localized and aggregated cost.
+The localized cost of a node SI , denoted Glocal
+I , is the cost of SI in and of itself, i.e., without any consideration of
+the cost of past or future states. The aggregated cost of a nod e SI , denoted Gaggre
+I , is the cost of SI when taking
+into account either the cost of future states that can be reac hed from SI (which is the case in SI) or the cost of
+the past states that an agent has to go through in order to reac h SI (which is the case in AcI).
+7.1 Active inference
+The full framework of active inference was described in Sect ion 4. This section focuses on expressing the expected
+free energy in a recursive form that highlights the relation ship between BTAI and AcI. We start by deﬁning the
+23
+Champion et al.
+notion of localized and aggregated EFE with Deﬁnitions 3 and 4, respectively. Then, we show that in active
+inference (under some assumptions described below), the ag gregated EFE of a policy of size N is given by the
+aggregated EFE of a policy of size N −1 plus the localized EFE received at time t+ N.
+In active inference, a policy is a sequence of actions π = ( Ut,Ut+1,...,UT −1), where T is the time horizon of
+planning, and for convenience, πN denotes a policy of size N, obtained by selecting the ﬁrst N actions of the policy
+π, i.e., πN = ( Ut,Ut+1,...,Ut+N−1) with N ≤T −t. Recall from Section 4, that (in active inference) the expec ted
+free energy of a policy is given by:
+G(π) =
+T∑
+τ=t+1
+G(π,τ) =
+T∑
+τ=t+1
+[
+DKL[Q(Oτ |π)||P(Oτ )] + EQ(Sτ |π)[H[P(Oτ |Sτ )]]
+]
+. (44)
+If instead of letting τ range from t+ 1 to T, we let N range from 1 to T −t, then Equation 44 can be re-written
+as:
+G(π) =
+T −t∑
+N=1
+G(π,t + N) =
+T −t∑
+N=1
+[
+DKL[Q(Ot+N |π)||P(Ot+N )] + EQ(St+N |π)[H[P(Ot+N |St+N )]]
+]
+. (45)
+Additionally, under the assumption that the probability of observations and states are independent of future
+actions, i.e., that ∀j ∈ N>0,Q(Ot+i|πi) ≈ Q(Ot+i|πi+j) and ∀j ∈ N>0,Q(St+i|πi) ≈ Q(St+i|πi+j), π can be
+replaced by πN in the RHS of the above equation, leading to:
+G(π) =
+T −t∑
+N=1
+G(πN ,t + N) =
+T −t∑
+N=1
+[
+DKL[Q(Ot+N |πN )||P(Ot+N )] + EQ(St+N |πN )[H[P(Ot+N |St+N )]]
+]
+. (46)
+Importantly, the elements of the above summation constitut e the localized cost presented in Deﬁnition 3.
+Deﬁnition 3 We deﬁne the localized costreceived at time t+ N after selecting policy πN as:
+Glocal
+πN = G(πN ,t + N) = DKL[Q(Ot+N |πN )||P(Ot+N )] + EQ(St+N |πN )[H[P(Ot+N |St+N )]]. (47)
+Importantly, the localized cost quantiﬁes the amount of ris k and ambiguity received by the agent at time step
+t+ N, assuming that it will follow the policy πN . We now turn to the notion of aggregated cost of a policy of siz e
+N. Deﬁnition 4 states that the aggregated cost of a policy is de ﬁned recursively. Indeed, by deﬁnition, a policy of
+size zero has an aggregated cost of zero, and then, the aggreg ated cost of a policy πN (of size N) is equal to the
+the aggregated cost of πN−1 (of size N −1) plus the localized cost received at time t+ N.
+24
+Branching Time Active Inference
+Deﬁnition 4 We deﬁne the aggregated costof a policy πN of size N as:
+Gaggre
+πN =
+
+
+
+
+
+0 if N = 0
+Gaggre
+πN−1 + Glocal
+πN otherwise
+. (48)
+Equipped with Deﬁnitions 3 and 4, we are now ready to state and prove Theorem 5 using the two Lemmas of
+Appendix E.
+Theorem 5 Under the assumption that the probability of observations a nd states are independent of future actions,
+i.e., ∀j ∈N>0,Q(Ot+i|πi) ≈Q(Ot+i|πi+j ) and ∀j ∈N>0,Q(St+i|πi) ≈Q(St+i|πi+j ), the expected free energy can
+be written as:
+G(πN ) ≈Gaggre
+πN = Gaggre
+πN−1 + Glocal
+πN . (49)
+Proof This proof is based on two lemmas demonstrated in Appendix E. Note that in active inference the expected
+free energy is deﬁned as:
+G(π) =
+T∑
+τ=t+1
+G(π,τ). (50)
+Let N denote the size of the policy π, i.e. N = T−t. Note that because π is of size N, then by deﬁnition π= πN ,
+and the above equation can be re-written as:
+G(π) = G(πN ) =
+t+N∑
+τ=t+1
+G(πN ,τ). (51)
+Expanding the summation and using Deﬁnition 3:
+G(πN ) =
+t+N−1∑
+τ=t+1
+G(πN ,τ) + G(πN ,t + N) (52)
+=
+t+N−1∑
+τ=t+1
+G(πN ,τ) + Glocal
+πN . (53)
+If, instead of letting τ range from t+ 1 to t+ N−1, we let irange from 1 to N−1, then the above equation can
+be re-written as:
+G(πN ) =
+N−1∑
+i=1
+G(πN ,t + i) + Glocal
+πN . (54)
+25
+Champion et al.
+Note that ∀i ∈{1,...,N −1},N > i, and thus there exists a ki ∈N>0 such that ∀i ∈{1,...,N −1},N = i+ ki.
+Therefore, we replace N by i+ ki in the above summation:
+G(πN ) =
+N−1∑
+i=1
+G(πi+ki ,t + i) + Glocal
+πN . (55)
+Lemma 11 tells us that under the assumption that the probabil ity of observations and states are independent of
+future actions, ∀ki ∈N>0,G(πi+ki ,t + i) ≈G(πi,t + i), which allows us to remove the ki to get:
+G(πN ) ≈
+N−1∑
+i=1
+G(πi,t + i) + Glocal
+πN . (56)
+Finally, Lemma 12 states that ∑ N−1
+i=1 G(πi,t + i) = Gaggre
+πN−1 , and thus:
+G(πN ) ≈Gaggre
+πN−1 + Glocal
+πN =∆ Gaggre
+πN . (57)
+The above equation will be used in Section 7.4 to show that BTA I generalizes active inference.
+7.2 Sophisticated inference
+Sophisticated inference (Friston et al, 2021) is a new type o f active inference that deﬁnes the EFE recursively
+from the time horizon backward. Intuitively, the agent does not simply ask “what would happen if I did that”,
+but instead wonders “what would I believe about what would ha ppen if I did that”. In other words, the agent is
+exhibiting a form of sophistication, which refers to the fac t of having beliefs about one’s own or another’s beliefs.
+Friston et al (2021) also replaced variational message pass ing by an alternative inference scheme called Bayesian
+Filtering (Fox et al, 2003). While the change of inference me thod is of little relevance to us here, the recursive
+deﬁnition of the EFE is at the core of this section. As explain ed in Section 4.3 of Da Costa et al (2020b), the
+(recursive) EFE of a Markov decision process is given by:
+G(UT −1,ST −1) = DKL [ Q(ST |UT −1,ST −1)||V(ST )] (58)
+G(Uτ ,Sτ ) = DKL [ Q(Sτ+1|Uτ ,Sτ )||V(Sτ+1)] + EQ(Uτ +1,Sτ +1|Uτ ,Sτ )[G(Uτ+1,Sτ+1)] (59)
+26
+Branching Time Active Inference
+where Uτ and Sτ are the action and state at time τ, and V(Sτ ) is the target (i.e., desired) distribution over states
+at time τ. Using our terminology of localized and aggregated cost, th is can be rewritten as:
+G(UT −1,ST −1)  
+Gaggre (UT −1,ST −1)
+= DKL [ Q(ST |UT −1,ST −1)||V(ST )]  
+Glocal(UT −1,ST −1)
+(60)
+G(Uτ ,Sτ )  
+Gaggre (Uτ ,Sτ )
+= DKL [ Q(Sτ+1|Uτ ,Sτ )||V(Sτ+1)]  
+Glocal(Uτ ,Sτ )
++EQ(Uτ +1,Sτ +1|Uτ ,Sτ )[ G(Uτ+1,Sτ+1)  
+Gaggre (Uτ +1,Sτ +1)
+] (61)
+Put simply, the aggregated cost of taking action Uτ in state Sτ can be computed by summing the localized cost
+at time step τ and the expected aggregated cost at time step τ + 1, i.e.,
+Gaggre (Uτ ,Sτ ) = Glocal(Uτ ,Sτ ) + EQ(Uτ +1,Sτ +1|Uτ ,Sτ )[Gaggre (Uτ+1,Sτ+1)] (62)
+Note that for τ = T −1 the second term vanishes because future states beyond the t emporal horizon are ignored,
+and thus Gaggre (UT −1,ST −1) = Glocal(UT −1,ST −1). Also, the above equation will be useful in Section 7.5 to sh ow
+that BTAI is related to sophisticated inference.
+Remark 6 The recursive aspect of Equation 59 is deeply related to dynam ic programming and the interested reader
+is referred to Da Costa et al (2020b) for details about this rel ationship.
+7.3 Branching Time Active Inference (BTAI)
+In BTAI, the (localized) cost of the hidden state SI is deﬁned as Glocal
+I = gI , where gI can be equal to gclassic
+I ,
+gfeef
+I or gpcost
+I , and there are two ways of computing the aggregated cost of SI . We can either propagate the
+localized cost towards the leaves (forward):
+gI ←gI + gI\last (63)
+where the gI\last is the cost of the parent of SI . Alternatively, we can back-propagate the cost towards the root
+gJ ←gJ + gI ∀J ∈A, (64)
+where A corresponds to all ancestors of the newly expanded node SI .
+27
+Champion et al.
+7.4 BTAI as a generalisation of active inference
+To understand the relationship between BTAI and active infe rence, we need to focus on the forward propagation
+of the cost where the cost is given by gclassic
+I . Recall that the update for forward propagation is given by:
+gclassic
+I ←gclassic
+I + gclassic
+I\last , (65)
+where the gI\last is the cost of the parent of SI , i.e., the parent of the newly expanded node. This equation t ells
+us that the aggregated cost of SI is equal to the localized cost of SI plus the aggregated cost of SI\last, i.e.,
+gclassic
+I
+ 
+Gaggre
+I
+←gclassic
+I
+ 
+Glocal
+I
++ gclassic
+I\last
+ 
+Gaggre
+I\last
+⇔ Gaggre
+I = Glocal
+I + Gaggre
+I\last , (66)
+but, then, we also recall (49), i.e.,
+Gaggre
+πN ≈Gaggre
+πN−1 + Glocal
+πN ⇔ Gaggre
+πN ≈Glocal
+πN + Gaggre
+πN−1 . (67)
+The only diﬀerence between Equations 49 and 66 is notational. Indeed, in BTAI (Eq. 49) a policy is represented
+by a multi-index denoting the sequence of actions selected, e.g., I = (1 ,2) corresponds to a policy of size two
+consisting of action one followed by action two. In contrast , in active inference, a policy is a sequence of actions,
+e.g., π2 = (1 ,2) corresponds to the same policy as the one described by I.
+7.5 Relationship between BTAI and sophisticated inference
+The relationship between BTAI and sophisticated inference is slightly more involved. The backward propagation
+equation, i.e.,
+gJ ←gJ + gI ∀J ∈A, (68)
+tells us that when expanding a node SI , we ﬁrst need to compute its localized cost gI and then add gI to the
+aggregated cost of its ancestors SJ where J ∈A. In other words, we can rewrite the backward propagation
+equation as the following: the aggregated cost of an arbitra ry node SJ will equal the sum of its localized cost gJ
+and that of its descendants DJ that have already been evaluated
+Gaggre
+J = Glocal
+J +
+∑
+SK ∈DJ
+Glocal
+K , (69)
+28
+Branching Time Active Inference
+where the descendants are the children, children of childre n, etc. We can further simplify this expression by
+grouping the summands by children of SJ . This leads us to:
+Gaggre
+J = Glocal
+J +
+∑
+SI ∈chJ
+
+Glocal
+I +
+∑
+SK ∈DI
+Glocal
+K
+
+
+
+ 
+Gaggre
+I
+(70)
+= Glocal
+J +
+∑
+SI ∈chJ
+Gaggre
+I , (71)
+where ch J are the children of SJ and DI are the descendants of SI . The above equation has clear similarities to
+Equation (62), which is,
+Gaggre (Uτ ,Sτ ) = Glocal(Uτ ,Sτ ) + EQ(Uτ +1,Sτ +1|Uτ ,Sτ )[Gaggre (Uτ+1,Sτ+1)]. (72)
+However, the second term of the RHS of (62) is an expectation, while the second term of the RHS of (70) is a
+summation over the children that have already been expanded . The expectation in (62) is w.r.t.
+Q(Uτ+1,Sτ+1|Uτ ,Sτ ) = Q(Uτ+1|Sτ+1)Q(Sτ+1|Uτ ,Sτ ), (73)
+where:
+Q(Uτ+1|Sτ+1) >0 ⇔Uτ+1 ∈arg mins
+U∈U
+Gaggre (U,Sτ+1), (74)
+where U is the set of all possible actions, and argmins is deﬁned as:
+M = arg mins
+U∈U
+f(U) ⇔M =
+{
+U ∈U
+⏐
+⏐ f(U) = min
+U′∈U
+f(U′)
+}
+. (75)
+This means that an action is assigned positive probability m ass if and only if it minimises the aggregated cost
+at the next time point Gaggre (Uτ+1,Sτ+1) and a set is required, because multiple actions could have t he same
+minimum cost. Note that if there is a unique minimum, then Q(Uτ+1|Sτ+1) will be a one-hot like distribution
+with a probability of one for the best action.
+To conclude, Equations (62) and (70) suggest that BTAI and SI share a similar notion of EFE, where the
+immediate (or localized) EFE is added to the future (or aggre gated) EFE. Both BTAI and SI propagate the cost
+backward, however, in SI the aggregated EFE (i.e., the back- propagated cost) is weighted by the probability of the
+next action and states, i.e., Q(Uτ+1,Sτ+1|Uτ ,Sτ ). Intuitively, the weighting terms in SI discounts the impa ct of
+the back-propagated cost for unlikely states and (locally) sub-optimal actions. Importantly, those weighting terms
+29
+Champion et al.
+emerge from the recursive deﬁnition of the EFE that relates t o the Bellman equation (Da Costa et al, 2020b). In
+contrast, there are no such weights in BTAI because BTAI ﬁnds its inspiration in active inference.
+8. Conclusion and future works
+In this paper, we have presented a new approach where plannin g is cast as structure learning. Simply put, this
+approach consists of dynamically expanding branches of the generative model by evaluating alternative futures
+under diﬀerent action sequences. The dynamic expansion trad es oﬀ evaluating promising (with repect to the target
+distribution) policies with exploring policies whose outc omes are uncertain. We proposed two diﬀerent tree search
+methods: the ﬁrst in which the nodes’ cost is propagated forw ard from the root node to the leaves; the second in
+which the nodes’ cost is propagated backward from the leaves to the root node. Then, in Section 7 we showed
+that forward propagation of the EFE leads to active inferenc e (AcI) under the assumption that the probability of
+observations and states are independent of future actions, and that backward propagation relates to sophisticated
+inference (SI). This clariﬁes the link between AcI and BTAI, and helps to understand the relationship between
+AcI and SI.
+Importantly, by performing a complexity class analysis, we have shown that while Active Inference suﬀers from
+an exponential complexity class, our approach scales nicel y (linearly) with the number of tree expansions, c.f.,
+Section 3.4.2 of our companion paper (Champion et al, 2021a) . Of course, the total number of possible expansions
+grows exponentially but as has been empirically shown in the reinforcement learning literature, even complex tasks,
+such as chess or the game of go, can be performed eﬃciently wit h MCTS (Silver et al, 2016; Schrittwieser et al,
+2019), i.e., the eﬃciency of MCTS-like approaches relies on the ability to guide the expansion procedure using
+either powerful heuristics (like the EFE) or neural network s or both.
+We also know that humans engage in counterfactual reasoning (Rafetseder et al, 2013), which, in our planning
+context, could involve the consideration and evaluation of alternative (non-selected) sequences of decisions. It
+may be that, because of the more exhaustive representation o f possible trajectories, the classic active inference
+can more eﬃciently engage in counterfactual reasoning. In c ontrast, branching-time active inference would require
+these alternatives to be generated “a fresh” for each counte rfactual deliberation. In this sense, one might argue
+that there is a trade-oﬀ: branching-time active inference pr ovides considerably more eﬃcient planning to attain
+current goals, classic active inference provides a more exh austive assessment of paths not taken.
+Now that we have laid out the mathematics of BTAI, many direct ions of research could be investigated. One
+could for example obtain an intuitive understanding of the m odel’s parameters through experimental study. At
+ﬁrst it might be necessary to restrict oneself to agents with out learning, i.e., inference only. This step should help
+answer questions such as: How does the number of expansions o f the tree and the quality of the prior preferences
+30
+Branching Time Active Inference
+impact the quality of planning? What is the best inference me thod (i.e., local or global inference) to use during
+planning?
+Then, one could consider learning of the transition and like lihood matrices as well as the vector of initial
+states. This can be done in at least two ways. The ﬁrst is to add Dirichlet priors over those matrices/vectors
+and the second would be to use neural networks as function app roximators. The second option will lead to a
+deep active inference agent (Sancaktar and Lanillos, 2020; Millidge, 2020) equipped with tree search that could be
+directly compared to the method of Fountas et al (2020). Incl uding deep neural networks in the framework will
+also enable direct comparison with the deep reinforcement l earning literature (Haarnoja et al, 2018; Mnih et al,
+2013; van Hasselt et al, 2016; Lample and Chaplot, 2017; Silv er et al, 2016). These comparisons will enable the
+impact of epistemic terms to be studied when the agent is comp osed of deep neural networks.
+Another, very important direction for future research woul d be the creation of a biologically plausible imple-
+mentation of BTAI. For example, using artiﬁcial neural netw orks to model the various mappings of the framework
+may provide a neural-based implementation of BTAI that is cl oser to biology. This would especially be the case,
+if the back-propagation algorithm frequently used for lear ning is replaced by the (more biologically plausible)
+generalized recirculation algorithm (O’Reilly, 1996). An other possible approach would be to use populations of
+neurons to encode the update equations of the framework, as w as proposed by Friston et al (2017).
+Whatever technique is chosen for learning and inference, im plementing MCTS in a biologically plausible way
+will be challenging. Indeed, MCTS requires a dynamic expans ion of the search tree used to explore the space of
+possible policies. Each time an expansion is performed, the agent needs to store the associated variables such as:
+the number of visits, the aggregated expected free energy, a nd the posterior beliefs of the newly expanded node.
+Given the fast pace at which planning must be performed to be u seful, slow mechanisms such as synaptic plasticity
+and neurogenesis are likely to be unsuitable for the task. A m ore plausible approach might rely upon a change of
+neuronal activation, which can occur within a few hundred mi lliseconds. One such approach uses a binding pool
+(Bowman and Wyble, 2007) and provides a notion of variable. I n this framework, a variable is composed of two
+parts. First, a token that can be intuitively understood as the variable’s name, a nd second, a type corresponding
+to the variable’s value. The binding pool is then composed of neurons representing the fact that a variable’s name
+is bound (or set) to a speciﬁc value. A localist realisation of a bindi ng pool could be implemented as a 2D array of
+neurons of size “number of tokens” ×“number of types”. However, such a representation is quite i neﬃcient and
+a more compact (i.e. distributed) representation has been d eveloped (Wyble and Bowman, 2006). If variables are
+complex data structures, such as those required by BTAI, the y can be realised in a neural substrate.
+Finally, in this paper, we focused on the UCT criterion for no de selection because it is a standard choice in
+the reinforcement learning literature (Silver et al, 2016; Schrittwieser et al, 2019). However, it would be valuable
+to consider alternative criteria such as Thompson Sampling (Thompson, 1933; Russo et al, 2018; Sajid et al,
+31
+Champion et al.
+2021) or expected improvement (Brochu et al, 2010; Bergstra et al, 2011). For example, Thompson Sampling has
+been shown to improve upon the standard UCT criterion when ap plied to MCTS (Bai et al, 2013), but requires
+additional modelling and we leave this for future research.
+Acknowledgments
+We would like to thank the reviewers for their valuable feedb ack, which greatly improved the quality of the
+present paper. LD is supported by the Fonds National de la Rec herche, Luxembourg (Project code: 13568875).
+This publication is based on work partially supported by the EPSRC Centre for Doctoral Training in Mathematics
+of Random Systems: Analysis, Modelling and Simulation (EP/ S023925/1).
+References
+Auer P, Cesa-Bianchi N, Fischer P (2002) Finite-time analys is of the multiarmed bandit problem. Machine Learning
+47(2):235–256, DOI 10.1023/A:1013689704352, URL https://doi.org/10.1023/A:1013689704352
+Bai A, Wu F, Chen X (2013) Bayesian mixture modelling and infe rence based Thompson sampling in Monte-Carlo
+tree search. In: Proceedings of the Advances in Neural Infor mation Processing Systems (NIPS), Lake Tahoe,
+United States, pp 1646–1654
+Bergstra J, Bardenet R, Bengio Y, K´ egl B (2011) Algorithms f or hyper-parameter optimiza-
+tion. In: Shawe-Taylor J, Zemel R, Bartlett P, Pereira F, Wei nberger KQ (eds) Ad-
+vances in Neural Information Processing Systems, Curran As sociates, Inc., vol 24, URL
+https://proceedings.neurips.cc/paper/2011/file/86e8f7ab32cfd12577bc2619bc635690-Paper.pdf
+Botvinick M, Toussaint M (2012) Planning as inference. Tren ds in Cognitive Sciences 16(10):485 – 488, DOI
+https://doi.org/10.1016/j.tics.2012.08.006
+Bowman H (2005) Concurrency Theory: Calculi an Automata for Modelling Untimed and Timed Concurrent
+Systems. Springer, Dordrecht, URL https://cds.cern.ch/record/1250124
+Bowman H, Wyble B (2007) The simultaneous type, serial token model of temporal attention and working memory.
+Psychological Review 114(1):38–70
+Brochu E, Cora VM, de Freitas N (2010) A tutorial on Bayesian o ptimization of expensive cost functions, with
+application to active user modeling and hierarchical reinf orcement learning. arXiv preprint arXiv:10122599
+32
+Branching Time Active Inference
+Browne CB, Powley E, Whitehouse D, Lucas SM, Cowling PI, Rohl fshagen P, Tavener S, Perez D, Samothrakis S,
+Colton S (2012) A survey of Monte Carlo tree search methods. I EEE Transactions on Computational Intelligence
+and AI in Games 4(1):1–43
+C ¸ atal O, Verbelen T, Nauta J, Boom CD, Dhoedt B (2020) Learni ng perception and planning with deep ac-
+tive inference. In: 2020 IEEE International Conference on A coustics, Speech and Signal Processing, ICASSP
+2020, Barcelona, Spain, May 4-8, 2020, IEEE, pp 3952–3956, D OI 10.1109/ICASSP40776.2020.9054364, URL
+https://doi.org/10.1109/ICASSP40776.2020.9054364
+Champion T, Bowman H, Grze´ s M (2021a) Branching time active inference: empirical study. URL
+https://arxiv.org/abs/2111.11276, available at https://arxiv.org/abs/2111.11276.
+Champion T, Grze´ s M, Bowman H (2021b) Realizing Active Infe rence in Varia-
+tional Message Passing: The Outcome-Blind Certainty Seeke r. Neural Computation
+pp 1–65, DOI 10.1162/neco a 01422, URL https://doi.org/10.1162/neco_a_01422,
+https://direct.mit.edu/neco/article-pdf/doi/10.1162/neco_a_01422/1930278/neco_a_01422.pdf
+Cox M, van de Laar T, de Vries B (2019) A factor graph approach t o automated design of Bayesian
+signal processing algorithms. Int J Approx Reason 104:185– 204, DOI 10.1016/j.ijar.2018.11.002, URL
+https://doi.org/10.1016/j.ijar.2018.11.002
+Cullen M, Davey B, Friston KJ, Moran RJ (2018) Active inferen ce in openai gym: A paradigm
+for computational investigations into psychiatric illnes s. Biological Psychiatry: Cognitive Neu-
+roscience and Neuroimaging 3(9):809 – 818, DOI https://doi .org/10.1016/j.bpsc.2018.06.010, URL
+http://www.sciencedirect.com/science/article/pii/S2451902218301617, computational Methods and
+Modeling in Psychiatry
+Da Costa L, Parr T, Sajid N, Veselic S, Neacsu V, Friston K (202 0a) Active inference on discrete state-spaces:
+A synthesis. Journal of Mathematical Psychology 99:102,44 7, DOI https://doi.org/10.1016/j.jmp.2020.102447,
+URL https://www.sciencedirect.com/science/article/pii/S0022249620300857
+Da Costa L, Sajid N, Parr T, Friston K, Smith R (2020b) The rela tionship between dynamic programming and
+active inference: the discrete, ﬁnite-horizon case. arXiv 2009.08111
+FitzGerald THB, Dolan RJ, Friston K (2015) Dopamine, reward learning, and active infer-
+ence. Frontiers in Computational Neuroscience 9:136, DOI 1 0.3389/fncom.2015.00136, URL
+https://www.frontiersin.org/article/10.3389/fncom.2015.00136
+Forney GD (2001) Codes on graphs: normal realizations. IEEE Transactions on Information Theory 47(2):520–548
+33
+Champion et al.
+Fountas Z, Sajid N, Mediano PAM, Friston KJ (2020) Deep activ e inference agents us-
+ing Monte-Carlo methods. In: Larochelle H, Ranzato M, Hadse ll R, Balcan M, Lin H
+(eds) Advances in Neural Information Processing Systems 33 : Annual Conference on Neu-
+ral Information Processing Systems 2020, NeurIPS 2020, Dec ember 6-12, 2020, virtual, URL
+https://proceedings.neurips.cc/paper/2020/hash/865dfbde8a344b44095495f3591f7407-Abstract.html
+Fox CW, Roberts SJ (2012) A tutorial on variational Bayesian inference. Artiﬁcial Intelligence Review 38(2):85–95,
+DOI 10.1007/s10462-011-9236-8, URL https://doi.org/10.1007/s10462-011-9236-8
+Fox V, Hightower J, Liao L, Schulz D, Borriello G (2003) Bayes ian ﬁltering for location estimation. IEEE Pervasive
+Computing 2(3):24–33, DOI 10.1109/MPRV.2003.1228524
+Friston K, Schwartenbeck P, Fitzgerald T, Moutoussis M, Beh rens T, Dolan R (2013) The anatomy of choice:
+active inference and agency. Frontiers in Human Neuroscien ce 7:598, DOI 10.3389/fnhum.2013.00598, URL
+https://www.frontiersin.org/article/10.3389/fnhum.2013.00598
+Friston K, FitzGerald T, Rigoli F, Schwartenbeck P, Doherty JO, Pezzulo G (2016) Active inference and learning.
+Neuroscience & Biobehavioral Reviews 68:862 – 879, DOI http s://doi.org/10.1016/j.neubiorev.2016.06.022
+Friston K, Da Costa L, Hafner D, Hesp C, Parr T (2021) Sophisti cated Inference. Neural Com-
+putation 33(3):713–763, DOI 10.1162/neco a 01351, URL https://doi.org/10.1162/neco_a_01351,
+https://direct.mit.edu/neco/article-pdf/33/3/713/1889421/neco_a_01351.pdf
+Friston KJ, Parr T, de Vries B (2017) The graphical brain: Bel ief propagation and active inference. Network
+Neuroscience 1(4):381–414, DOI 10.1162/NETN \a\00018, URL https://doi.org/10.1162/NETN_a_00018,
+https://doi.org/10.1162/NETN_a_00018
+van Glabbeek RJ (1993) The linear time — branching time spect rum II. In: Best E (ed) CONCUR’93, Springer
+Berlin Heidelberg, Berlin, Heidelberg, pp 66–81
+Glabbeek RJv (1990) The linear time-branching time spectru m (extended abstract). In: Proceedings of the The-
+ories of Concurrency: Uniﬁcation and Extension, Springer- Verlag, Berlin, Heidelberg, CONCUR ’90, p 278–297
+Haarnoja T, Zhou A, Abbeel P, Levine S (2018) Soft actor-crit ic: Oﬀ-policy maximum entropy deep reinforcement
+learning with a stochastic actor. CoRR abs/1801.01290, URL http://arxiv.org/abs/1801.01290, 1801.01290
+Hafner D, Ortega PA, Ba J, Parr T, Friston KJ, Heess N (2020) Ac tion and perception as divergence minimization.
+CoRR abs/2009.01791, URL https://arxiv.org/abs/2009.01791, 2009.01791
+34
+Branching Time Active Inference
+van Hasselt H, Guez A, Silver D (2016) Deep reinforcement lea rning with double q-learning. In:
+Schuurmans D, Wellman MP (eds) Proceedings of the Thirtieth AAAI Conference on Artiﬁcial
+Intelligence, February 12-17, 2016, Phoenix, Arizona, USA , AAAI Press, pp 2094–2100, URL
+http://www.aaai.org/ocs/index.php/AAAI/AAAI16/paper/view/12389
+Itti L, Baldi P (2009) Bayesian surprise attracts human atte ntion. Vision Re-
+search 49(10):1295 – 1306, DOI https://doi.org/10.1016/j .visres.2008.09.007, URL
+http://www.sciencedirect.com/science/article/pii/S0042698908004380, visual Attention: Psy-
+chophysics, electrophysiology and neuroimaging
+Kirchhoﬀ M, Parr T, Palacios E, Friston K, Kiverstein J (2018 ) The markov blankets of life: autonomy, ac-
+tive inference and the free energy principle. Journal of The Royal Society Interface 15(138):20170,792, DOI
+10.1098/rsif.2017.0792, URL https://royalsocietypublishing.org/doi/abs/10.1098/rsif.2017.0792,
+https://royalsocietypublishing.org/doi/pdf/10.1098/rsif.2017.0792
+Kocsis L, Szepesv´ ari C (2006) Bandit based Monte-Carlo pla nning. In: F¨ urnkranz J, Scheﬀer T, Spiliopoulou
+M (eds) Machine Learning: ECML 2006, 17th European Conferen ce on Machine Learning, Berlin, Germany,
+September 18-22, 2006, Proceedings, Springer, Lecture Not es in Computer Science, vol 4212, pp 282–293, DOI
+10.1007/11871842\29, URL https://doi.org/10.1007/11871842_29
+Kocsis L, Szepesv´ ari C (2006) Bandit based Monte-Carlo pla nning. In: F¨ urnkranz J, Scheﬀer T, Spiliopoulou M
+(eds) Machine Learning: ECML 2006, Springer Berlin Heidelb erg, Berlin, Heidelberg, pp 282–293
+van de Laar T, de Vries B (2019) Simulating active inference p rocesses by message passing. Front Robotics and
+AI 2019, DOI 10.3389/frobt.2019.00020, URL https://doi.org/10.3389/frobt.2019.00020
+Lai T, Robbins H (1985) Asymptotically eﬃcient adaptive all ocation rules. Adv Appl Math 6(1):4–22, DOI
+10.1016/0196-8858(85)90002-8, URL https://doi.org/10.1016/0196-8858(85)90002-8
+Lample G, Chaplot DS (2017) Playing FPS games with deep reinf orcement learning. In: Singh
+SP, Markovitch S (eds) Proceedings of the Thirty-First AAAI Conference on Artiﬁcial Intelli-
+gence, February 4-9, 2017, San Francisco, California, USA, AAAI Press, pp 2140–2146, URL
+http://aaai.org/ocs/index.php/AAAI/AAAI17/paper/view/14456
+Maisto D, Gregoretti F, Friston KJ, Pezzulo G (2021) Active t ree search in large POMDPs. CoRR abs/2103.13860,
+URL https://arxiv.org/abs/2103.13860, 2103.13860
+Millidge B (2019) Combining active inference and hierarchi cal predictive coding: A tutorial introduction and case
+study. URL https://doi.org/10.31234/osf.io/kf6wc
+35
+Champion et al.
+Millidge B (2020) Deep active inference as variational poli cy gradients. Journal of Math-
+ematical Psychology 96:102,348, DOI https://doi.org/10. 1016/j.jmp.2020.102348, URL
+http://www.sciencedirect.com/science/article/pii/S0022249620300298
+Millidge B, Tschantz A, Buckley CL (2021) Whence the Expecte d Free Energy? Neural Com-
+putation 33(2):447–482, DOI 10.1162/neco a 01354, URL https://doi.org/10.1162/neco_a_01354,
+https://direct.mit.edu/neco/article-pdf/33/2/447/1896836/neco_a_01354.pdf
+Mnih V, Kavukcuoglu K, Silver D, Graves A, Antonoglou I, Wier stra D, Riedmiller MA (2013) Playing atari with
+deep reinforcement learning. CoRR abs/1312.5602, URL http://arxiv.org/abs/1312.5602, 1312.5602
+O’Reilly RC (1996) Biologically plausible error-driven le arning using local activation diﬀerences: The
+generalized recirculation algorithm. Neural Comput 8(5): 895–938, DOI 10.1162/neco.1996.8.5.895, URL
+https://doi.org/10.1162/neco.1996.8.5.895
+Parr T, Friston KJ (2019) Generalised free energy and active inference. Biological Cybernetics 113(5):495–513,
+DOI 10.1007/s00422-019-00805-w, URL https://doi.org/10.1007/s00422-019-00805-w
+Pezzato C, Corbato CH, Wisse M (2020) Active inference and be havior trees for reactive action planning and
+execution in robotics. CoRR abs/2011.09756, URL https://arxiv.org/abs/2011.09756, 2011.09756
+Rafetseder E, Schwitalla M, Perner J (2013) Counterfactual reasoning: From childhood to adulthood. Journal of
+experimental child psychology 114(3):389–404
+Rosin CD (2010) Multi-armed bandits with episode context. I n: International Symposium on Artiﬁcial
+Intelligence and Mathematics, ISAIM 2010, Fort Lauderdale , Florida, USA, January 6-8, 2010, URL
+http://gauss.ececs.uc.edu/Workshops/isaim2010/papers/rosin.pdf
+Russo DJ, Van Roy B, Kazerouni A, Osband I, Wen Z (2018) A tutor ial on Thompson sampling. Found Trends
+Mach Learn 11(1):1–96, DOI 10.1561/2200000070, URL https://doi.org/10.1561/2200000070
+Sajid N, Ball PJ, Parr T, Friston KJ (2021) Active Inference: Demystiﬁed and Compared. Neural
+Computation 33(3):674–712, DOI 10.1162/neco a 01357, URL https://doi.org/10.1162/neco_a_01357,
+https://direct.mit.edu/neco/article-pdf/33/3/674/1889396/neco_a_01357.pdf
+Sancaktar C, Lanillos P (2020) End-to-end pixel-based deep active inference for body perception and action. ArXiv
+abs/2001.05847
+Sancaktar C, van Gerven MAJ, Lanillos P (2020) End-to-end pi xel-based deep active inference for body per-
+ception and action. In: Joint IEEE 10th International Confe rence on Development and Learning and Epi-
+36
+Branching Time Active Inference
+genetic Robotics, ICDL-EpiRob 2020, Valparaiso, Chile, Oc tober 26-30, 2020, IEEE, pp 1–8, DOI 10.1109/
+ICDL-EpiRob48136.2020.9278105, URL https://doi.org/10.1109/ICDL-EpiRob48136.2020.9278105
+Schrittwieser J, Antonoglou I, Hubert T, Simonyan K, Sifre L , Schmitt S, Guez A, Lockhart E, Hassabis D,
+Graepel T, Lillicrap TP, Silver D (2019) Mastering Atari, Go , Chess and Shogi by Planning with a Learned
+Model. ArXiv abs/1911.08265
+Schwartenbeck P, Passecker J, Hauser TU, FitzGerald THB, Kr onbichler M, Friston K
+(2018) Computational mechanisms of curiosity and goal-dir ected exploration. bioRxiv
+DOI 10.1101/411272, URL https://www.biorxiv.org/content/early/2018/09/07/411272,
+https://www.biorxiv.org/content/early/2018/09/07/411272.full.pdf
+Silver D, Huang A, Maddison CJ, Guez A, Sifre L, van den Driess che G, Schrittwieser J, Antonoglou I, Panneer-
+shelvam V, Lanctot M, Dieleman S, Grewe D, Nham J, Kalchbrenn er N, Sutskever I, Lillicrap TP, Leach M,
+Kavukcuoglu K, Graepel T, Hassabis D (2016) Mastering the ga me of Go with deep neural networks and tree
+search. Nature 529(7587):484–489, DOI 10.1038/nature169 61, URL https://doi.org/10.1038/nature16961
+Smith R, Friston KJ, Whyte CJ (2021) A step-by-step tutorial on active inference and its application to empirical
+data. URL https://psyarxiv.com/b4jm6/
+Sondik EJ (1971) The optimal control of partially observabl e markov processes. PhD thesis, Stanford University
+URL https://ci.nii.ac.jp/naid/20000916958/en/
+Thompson WR (1933) On the likelihood that one unknown probab ility exceeds another in view of the evidence of
+two samples. Biometrika 25(3/4):285–294, URL http://www.jstor.org/stable/2332286
+Winn J, Bishop C (2005) Variational message passing. Journa l of Machine Learning Research 6:661–694
+Wyble B, Bowman H (2006) A neural network account of binding d iscrete items into working memory using a
+distributed pool of ﬂexible resources. Journal of Vision 6( 6):33–33a
+Appendix A: Generalized inner and outer products
+Generalized outer products: Given N vectors Vi, the generalized outer product returns an N dimensional
+array W, whose element in position ( x1,...,xN ) is given by V1
+x1 ×...×VN
+xN , where Vi
+xj is the xj-th element of the
+i-th vector. In other words:
+W = ⊗
+[
+V1,...,V N
+]
+⇔W(x1,...,xN ) = V1
+x1 ×...×VN
+xN
+∀xj ∈{1,...,|Vj |}∀j ∈{1,...,N }, (76)
+37
+Champion et al.
+where |Vj |is the number of elements in Vj . Also, note that by deﬁnition W is a N-tensor of size |V1|×...×|VN |.
+Figure 7 illustrates the generalized outer product for N = 3.
+dim of V 1
+dim of V 2dim of V 3
+W (i, j, k) =V 1(i)V 2(j)V 3(k)
+V 1
+V 2 V 3
+Figure 7: This ﬁgure illustrates the generalized outer prod uct W = ⊗
+[
+V1,V 2,V 3]
+, where W is a cube of values
+illustrated in red, whose typical element W(i,j,k ) is the product of V1(i), V2(j) and V3(k). Also, the vectors
+Vi ∀i∈{1,...,3}are drawn in blue along the dimension of the cube they corresp ond to.
+Generalized inner products: Given an N-tensor W and M = N−1 vectors Vi, the generalized inner product
+returns a vector Z obtained by performing a weighted average (with weighting c oming from the vectors) over all
+but one dimension. In other words:
+Z = W ⊙
+[
+V1,...,V M
+]
+⇔Z(xj ) =
+∑
+x1∈{1,...,|V 1|}
+}...}
+xM ∈{1,...,|V M |}
+V1
+x1 ×...×W(x1,...,xj ,...,xM ) ×...×VM
+xM
+∀xj ∈{1,...,|Z|}, (77)
+where |Z|denotes the number of elements in Z, and the large summand is over all xr for r∈{1,...,M }\{j}, i.e.,
+excluding j. Also, note that if |W|V i ∀i∈{1,...,M }is the number of elements in the dimension corresponding to
+Vi, then for W ⊙
+[
+V1,...,V M ]
+to be properly deﬁned, we must have |W|V i = |Vi|∀i ∈{1,...,M }where |Vi|is
+the number of elements in Vi. Figure 8 illustrates the generalized inner product for N = 3.
+dim of V 1
+dim of V 2dim of V 3
+W
+V 2 V 3
+Z = W ⊙
+[
+V 2, V3]
+dim of V 1
+Z(i) =∑
+j,kV 2(j)V 3(k)W (i, j, k)
+Z
+Figure 8: This ﬁgure illustrates the generalized inner prod uct Z = W ⊙
+[
+V2,V 3]
+, where W is a cube of values
+illustrated in red with typical element W(i,j,k ). Also, the vectors Z and Vi ∀i∈{2,3}are drawn in blue along
+the dimension of the cube they correspond to.
+38
+Branching Time Active Inference
+Naming of the dimensions: Importantly, we should imagine that each side of W has a name, e.g., if W is
+a 3x2 matrix, then the i-th dimension of W could be named: “the dimension of Vi”. This enables us to write:
+Z1 = W ⊙V1 and Z2 = W ⊙V2, where Z1 is a 1x2 matrix (i.e., a vector with two elements) and Z2 is a 3x1
+matrix (i.e., a vector with three elements). The operator ⊙knows (thanks to the dimension name) that W ⊙V1
+takes the weighted average w.r.t “the dimension of V1”, while W ⊙V2 must take the weighted average over “the
+dimension of V2”.
+In the context of active inference, the matrix A has two dimensions that we could call “the observation
+dimension” (i.e., row-wise) and “the state dimension” (i.e ., column-wise). Trivially, A ⊙oτ will then correspond
+to the average of A along the observation dimension and A ⊙ ˆDτ will correspond to the average of A along the
+state dimension.
+Appendix B: Generalized inner/outer products and other well-known products
+In this section, we explore the relationship between our gen eralized inner and outer products—presented in ap-
+pendix A—and other well known products in the literature.
+Inner product of two vectors
+The inner product of two vectors ⃗ aand ⃗b of the same size is given by:
+⃗ a·⃗b=
+|⃗ a|∑
+i=1
+aibi, (78)
+where ai and bi are the elements of the vectors ⃗ aand ⃗b, respectively, and |⃗ a|is the number of elements in ⃗ a. This
+product is a special case of our generalised inner product, i .e.,
+Z = W ⊙V ⇔Z =
+|W |∑
+i=1
+WiVi, (79)
+where Z is a scalar (a 0-tensor), W and V are two vectors (two 1-tensors) of the same size, and |W|is the number
+of elements in W.
+Inner product of two matrices (Frobenius inner product)
+The inner product of two matrices A and B of same sizes is given by:
+⟨A,B⟩=
+|A|1∑
+i=1
+|A|2∑
+j=1
+aijbij , (80)
+39
+Champion et al.
+where |A|1 is the number of rows in A, |A|2 is the number of columns in A, and aij (bij ) are the elements of the
+matrices A (respectively B). This product is not a special case of our generalised inner product.
+Inner product of two tensors (Frobenius inner product)
+The inner product of two tensors A and B of same sizes is given by:
+⟨A,B⟩=
+|A|1∑
+i1=1
+...
+|A|n∑
+in=1
+a(i1,...,in)b(i1,...,in), (81)
+where a(i1,...,in) and b(i1,...,in) are the elements of the tensors A and B, respectively, and |A|i is the number of
+elements in the i-th dimension of A. This product is not a special case of our generalised inner p roduct.
+Standard matrix multiplication
+Let A be an n×mmatrix and ⃗bbe a vector of size m. The standard matrix multiplication of A by ⃗bis given by:
+⃗ c= A⃗b⇔⃗ ci =
+m∑
+j=1
+Aij⃗bj . (82)
+This is a special case of our generalised inner product, i.e. ,
+⃗ c= A⃗b= A ⊙⃗b. (83)
+Additionally, let A be an n×m matrix and ⃗ abe a vector of size n, then:
+⃗ c= AT ⃗ a⇔⃗ ci =
+n∑
+j=1
+Aji⃗ aj. (84)
+This is a special case of our generalised inner product, i.e. ,
+⃗ c= AT⃗ a= A ⊙⃗ a. (85)
+Note that because the dimensions are “named” (c.f. Appendix A) the operator performs the transposition implic-
+itly.
+Outer product of two vectors
+Given two vectors ⃗ aand ⃗b, there outer product—denoted ⃗ a⊗⃗b—is a matrix deﬁned as:
+40
+Branching Time Active Inference
+⃗ a⊗⃗b=
+
+
+
+
+
+
+a1b1 ... a 1bn
+.
+.
+. ... .
+.
+.
+amb1 ... a mbn
+
+
+
+
+
+
+. (86)
+This outer product is a special case of our generalised outer product, where the operator is applied to only two
+vectors, i.e.
+⃗ a⊗⃗b= ⊗
+[
+⃗ a,⃗b
+]
+. (87)
+Outer product of two tensors
+Given two tensors U and V , the outer product of U and V is another tensor W such that:
+W (i1,...,in,j1,...,jm) = V (i1,...,in)U(j1,...,jm) ∀iα ∈{1,...,|V |α}∀α∈{1,...,n}
+∀jβ ∈{1,...,|U|β }∀β ∈{1,...,m}. (88)
+Given N vectors Vi ∀i∈{1,...,N }, our outer product is a sequence of outer tensor products, i. e.,
+⊗
+[
+V1,...,V N
+]
+=
+[ [
+V1 ⊗tensor V2
+]
+⊗tensor ...
+]
+⊗tensor VN , (89)
+where ⊗tensor and ⊗are the tensor and generalised outer products, respectivel y.
+Kronecker product
+Given two matrices A and B, the Kronecker product of A and B—denoted ⊗K —is a generalisation of the outer
+product from vectors to matrices deﬁned as:
+A ⊗K B =
+
+
+
+
+
+
+a11B ... a 1nB
+.
+.
+. ... .
+.
+.
+am1B ... a mnB
+
+
+
+
+
+
+, (90)
+where aij are the elements of A. Note that even if the Kronecker product is a generalisation of the outer product,
+it is neither a special case nor a generalisation of our gener alized outer product.
+41
+Champion et al.
+Hadamard product
+Given two matrices A and B of the same size, the Hadamard product of A and B is an element-wise product
+deﬁned by:
+C = A ⊙B ⇔cij = aij bij ∀i∈{1,...,|A|1}∀j ∈{1,...,|A|2}, (91)
+where aij , bij and cij are the elements in the i-th row and j-th column of A, B and C, respectively, |A|1 is the
+number of rows in A, and |A|2 is the number of columns in A. This product is unrelated to both our generalised
+inner and outer products.
+Appendix C: Instance of variational message passing
+This appendix provides a concrete instance of the method of W inn and Bishop discussed in Section 3. The
+generative model is as follows:
+P(S,D) = P(S|D)P(D) (92)
+where:
+P(S|D) = Cat( D) (93)
+P(D) = Dir( d). (94)
+Additionally, the variational distribution is given by:
+Q(D) = Dir( ˆd), (95)
+which means that we assume that S is an observed random variable. Let us start with the deﬁniti on of the
+Dirichlet and categorical distributions written in the for m of the exponential family:
+ln P(D) =
+
+
+
+
+
+
+d1 −1
+...
+d|S| −1
+
+
+
+
+
+
+
+ 
+µD (d)
+·
+
+
+
+
+
+
+ln D1
+...
+ln D|S|
+
+
+
+
+
+
+
+ 
+uD(D)
+−ln B(d)  
+zD(d)
+(96)
+42
+Branching Time Active Inference
+ln P(S|D) =
+
+
+
+
+
+
+ln D1
+...
+ln D|S|
+
+
+
+
+
+
+
+ 
+µS (D)
+·
+
+
+
+
+
+
+[S = 1]
+...
+[S = |S|]
+
+
+
+
+
+
+
+ 
+uS (S)
+(97)
+where ·performs an inner product of the two vectors it is applied to, B(d) is the Beta function and |S|is the
+number of values a state can take. The ﬁrst step requires us to re-write Equation 97 as a function of uD(D),
+which is straightforward because µS(D) is just another name for uD(D). Using the fact that the inner product is
+commutative:
+ln P(S|D) =
+
+
+
+
+
+
+[S = 1]
+...
+[S = |S|]
+
+
+
+
+
+
+
+ 
+µS→D(S)
+·
+
+
+
+
+
+
+ln D1
+...
+ln D|S|
+
+
+
+
+
+
+
+ 
+uD(D)
+. (98)
+The second step aims to substitute (96) and (98) into the vari ational message passing equation (9), i.e.
+ln Q∗(D) =
+⣨
+
+
+
+
+
+
+d1 −1
+...
+d|S| −1
+
+
+
+
+
+
+
+ 
+µD (d)
+·
+
+
+
+
+
+
+ln D1
+...
+ln D|S|
+
+
+
+
+
+
+
+ 
+uD(D)
+−ln B(d)  
+zD(d)
+⟩
++
+⣨
+
+
+
+
+
+
+[S = 1]
+...
+[S = |S|]
+
+
+
+
+
+
+
+ 
+µS→D(S)
+·
+
+
+
+
+
+
+ln D1
+...
+ln D|S|
+
+
+
+
+
+
+
+ 
+uD(D)
+⟩
++ Const, (99)
+where ⟨•⟩refers to ⟨•⟩∼QD . Note that in the above equation, di are ﬁxed parameters, therefore there is no posterior
+over d and the ﬁrst expectation ⟨·⟩∼QD can be removed. The third step rests on taking the exponentia l of both
+sides, using the linearity of expectation and factorising b y uD(D) to obtain:
+Q∗(D) = exp
+{
+
+
+
+
+
+
+d1 −1 + ⟨[S = 1] ⟩
+...
+d|S| −1 + ⟨[S = |S|]⟩
+
+
+
+
+
+
+·uD(D) + Const
+}
+, (100)
+where zD(d) have been absorbed into the constant term because it does no t depend on D. The fourth step is a
+re-parameterisation done by observing that ⟨[S = i]⟩is the i-th element of the expectation of the vector uS(S),
+i.e. ⟨uS(S)⟩i = ⟨[S = i]⟩:
+43
+Champion et al.
+Q∗(D) = exp
+{
+
+
+
+
+
+
+d1 −1 + ⟨uS(S)⟩1
+...
+d|S| −1 + ⟨uS(S)⟩|S|
+
+
+
+
+
+
+
+ 
+˜µD (...)+˜µS→D(...)
+·uD(D) + Const
+}
+. (101)
+The last step consists of computing the expectation of ⟨uS(S)⟩i for all i. This can be achieved by realising
+that the probability of an indicator function for an event is the probability of this event, i.e ⟨uS(S)⟩i = ⟨[S =
+i]⟩= Q(S = i) = ˆDi where ˆD is a one hot representation of the observed value for S. Substituting this result in
+Equation 101, leads to the ﬁnal result:
+Q∗(D) = exp
+{
+
+
+
+
+
+
+d1 −1 + ˆD1
+...
+d|S| −1 + ˆD|S|
+
+
+
+
+
+
+·uD(D) + Const
+}
+. (102)
+Indeed, the above equation is in fact a Dirichlet distributi on in exponential family form, and can be re-written
+into its usual form to obtain the ﬁnal update equation:
+Q∗(D) = Dir(
+d + ˆD). (103)
+Appendix D: Expected log of Dirichlet distribution
+Deﬁnition 7 A probability distribution over x parameterized by µ is said to belong to the exponential family if
+its probability mass function P(x|µ ) can be written as:
+P(x|µ ) = h(x) exp
+[
+µ ·T(x) −A(µ )
+]
+, (104)
+where h(x) is the base measure, µ is the vector of natural parameters, T(x) is the vector of suﬃcient statistics,
+and A(µ ) is the log partition.
+Lemma 8 The log partition is given by:
+A(µ ) = ln
+∫
+h(x) exp
+[
+µ ·T(x)
+]
+dx. (105)
+44
+Branching Time Active Inference
+Proof Starting with the fact that P(x|µ ) integrate to one:
+∫
+P(x|µ )dx =
+∫
+h(x) exp
+[
+µ ·T(x) −A(µ )
+]
+dx = 1 (106)
+⇔ 1
+exp A(µ )
+∫
+h(x) exp
+[
+µ ·T(x)
+]
+dx = 1 (107)
+⇔ A(µ ) = ln
+∫
+h(x) exp
+[
+µ ·T(x)
+]
+dx (108)
+Lemma 9 The gradient of the log partition function is the expectation of the suﬃcient statistics, i.e.,
+∂A(µ )
+∂µ = EP (x|µ )
+[
+T(x)
+]
+. (109)
+Proof Restarting with the derivative of the result of Lemma 8:
+∂A(µ )
+∂µ = ∂
+∂µ
+[
+ln
+∫
+h(x) exp
+[
+µ ·T(x)
+]
+dx
+]
+, (110)
+and using the chain rule:
+∂A(µ )
+∂µ = 1∫
+h(x) exp
+[
+µ ·T(x)
+]
+dx
+∂
+∂µ
+[ ∫
+h(x) exp
+[
+µ ·T(x)
+]
+dx
+]
+. (111)
+Note that the denominator of the ﬁrst term is equal to the expo nential of A(µ ), and we can swap the derivative
+and the integral because the limit of integration does not de pend on the parameters µ :
+∂A(µ )
+∂µ = 1
+exp A(µ )
+∫ ∂
+∂µ
+[
+h(x) exp
+[
+µ ·T(x)
+] ]
+dx (112)
+= 1
+exp A(µ )
+∫
+h(x) ∂
+∂µ
+[
+exp
+[
+µ ·T(x)
+] ]
+dx. (113)
+Using the chain rule again:
+∂A(µ )
+∂µ = 1
+exp A(µ )
+∫
+h(x) exp
+[
+µ ·T(x)
+]
+T(x)dx (114)
+=
+∫
+h(x) exp
+[
+µ ·T(x) −A(µ )
+]
+T(x)dx (115)
+=
+∫
+P(x|µ )T(x)dx (116)
+= EP (x|µ )
+[
+T(x)
+]
+. (117)
+45
+Champion et al.
+Theorem 10 If D is distributed according to a Dirichlet distribution Q(D) = Dir(D; ˆd), then: ˚D = EQ(D)
+[
+ln D
+]
+⇔
+˚Di = ψ(di) −ψ(∑
+j dj ).
+Proof Let µ be equal to ˆd −⃗1. Taking the exponential of both sides in Equation 96 and usi ng that ˆd = µ + ⃗1,
+we obtain:
+Q(D) = exp
+{
+
+
+
+
+
+
+ˆd1 −1
+...
+ˆd|S| −1
+
+
+
+
+
+
+
+ 
+µ
+·
+
+
+
+
+
+
+ln D1
+...
+ln D|S|
+
+
+
+
+
+
+
+ 
+T (D)
+−ln B(µ + ⃗1)  
+A(µ )
+}
+, (118)
+where µ is the vector of natural parameters, T(D) is the vector of suﬃcient statistics, A(µ ) is the log partition,
+and B(•) is the beta function. Using the result of Lemma 9:
+˚D =∆ EQ(D)
+[
+T(D)
+]
+= EQ(D)
+[
+ln D
+]
+= ∂A(µ )
+∂µ = ∂
+∂µ
+[
+ln B(µ + ⃗1)
+]
+. (119)
+We now focus on a typical element of ˚D:
+˚Di = ∂
+∂µi
+[
+ln B(µ + ⃗1)
+]
+, (120)
+and use the deﬁnition of the beta function:
+˚Di = ∂
+∂µ i
+[
+ln
+∏
+k Γ(µ k + 1)
+Γ(∑
+k µ k + 1)
+]
+(121)
+= ∂
+∂µ i
+[ ∑
+k
+ln Γ( µ k + 1) −ln Γ( ∑
+k µ k + 1)
+]
+(122)
+= ∂
+∂µ i
+[
+ln Γ( µ i + 1)
+]
+− ∂
+∂µ i
+[
+ln Γ( ∑
+k µ k + 1)
+]
+, (123)
+46
+Branching Time Active Inference
+where Γ( •) is the gamma function. The last step relies on the chain rule :
+˚Di = ∂
+∂(µ i + 1)
+[
+ln Γ( µ i + 1)
+] ∂µ i + 1
+∂µ i  
+=1
+− ∂
+∂(∑
+k µ k + 1)
+[
+ln Γ( ∑
+k µ k + 1)
+] ∂∑
+k µ k + 1
+∂µ i  
+=1
+(124)
+= ∂
+∂(µ i + 1)
+[
+ln Γ( µ i + 1)
+]
+− ∂
+∂(∑
+k µ k + 1)
+[
+ln Γ( ∑
+k µ k + 1)
+]
+(125)
+= ψ(µ i + 1) −ψ(∑
+k µ k + 1) (126)
+= ψ( ˆdi) −ψ(∑
+k ˆdk), (127)
+where we used that ˆd = µ + ⃗1 and the deﬁnition of the digamma function, i.e., ψ(x) = ∂ ln Γ( x)
+∂x .
+Appendix E: Relationship between BTAI and active inference(Lemmas)
+Lemma 11 Under the assumption that the probability of observations a nd states are independent of future actions,
+i.e.,
+∀j ∈N>0, Q(Ot+i|πi) ≈Q(Ot+i|πi+j ) and Q(St+i|πi) ≈Q(St+i|πi+j), (128)
+then:
+∀j ∈N>0, G(πi+j,t + i) ≈G(πi,t + i). (129)
+Proof The proof is straightforward, we start with the following de ﬁnition:
+G(πi+j,t + i) = DKL[Q(Ot+i|πi+j)||P(Ot+i)] + EQ(St+i|πi+j)[H[P(Ot+i|St+i)]]. (130)
+Then, using the assumption that the probability of observat ions and states are independent of future actions, i.e.,
+∀j ∈N>0, Q(Ot+i|πi+j ) ≈Q(Ot+i|πi) and ∀j ∈N>0, Q(St+i|πi+j ) ≈Q(St+i|πi), we get:
+G(πi+j,t + i) ≈DKL[Q(Ot+i|πi)||P(Ot+i)] + EQ(St+i|πi)[H[P(Ot+i|St+i)]] =∆ G(πi,t + i). (131)
+47
+Champion et al.
+Lemma 12 The aggregated cost for an arbitrary N is given by:
+Gaggre
+πN =
+N∑
+i=1
+G(πi,t + i), (132)
+Proof The proof is done by induction. The initialisation holds for N = 1, indeed, π1 = {Ut}and by deﬁnition:
+G(π1)
+ 
+Gaggre
+π 1
+=
+t+1∑
+τ=t+1
+G(π1,τ) = DKL[Q(Ot+1|π1)||P(Ot+1)] + EQ(St+1|π1)[H[P(Ot+1|St+1)]]
+ 
+Glocal
+π 1
+, (133)
+⇔Gaggre
+π1 = Gaggre
+π0 + Glocal
+π1 , (134)
+because by deﬁnition Gaggre
+π0 = 0. Then, assuming that Gaggre
+πN = ∑ N
+i=1 G(πi,t + i) holds for some N, we show
+that its hold for N + 1 as well. By deﬁnition:
+Gaggre
+πN+1 = Gaggre
+πN + Glocal
+πN+1 , (135)
+and:
+Glocal
+πN+1 = G(πN+1,t + N + 1). (136)
+Using the inductive hypothesis and the above two equations:
+Gaggre
+πN+1 =
+N∑
+i=1
+G(πi,t + i) + G(πN+1,t + N + 1) (137)
+=
+N+1∑
+i=1
+G(πi,t + i). (138)
+Appendix F: Notation
+In this appendix, we introduce the notation used throughout this paper. The following sub-sections describe the
+notation related to sets of numbers, tensors, probability d istributions, global variables, multi-indices and random
+variables, respectively.
+48
+Branching Time Active Inference
+Sets of numbers
+Deﬁnition 13 Let N>0 be the set of all strictly positive integers deﬁned as:
+N>0 = {x∈N |x> 0}, (139)
+where N is the set of all natural numbers.
+Deﬁnition 14 Let R>0 be the set of all strictly positive real numbers deﬁned as:
+R>0 = {x∈R |x> 0}, (140)
+where R is the set of all real numbers.
+Tensors
+Deﬁnition 15 An n-tensor is an n-dimensional array of values. Each element of an n-tensor is indexed by an
+n-tuple of non-negative integers, i.e., (x1,...,xn) where xi ∈N>0 ∀i∈{1,2,...,n}.
+Deﬁnition 16 Let T be an n-tensor. The element of T indexed by the n-tuple (x1,...,xn) is a real number
+denoted by T(x1,...,xn).
+Example 1 Let T be a 2-tensor deﬁned as:
+T =
+
+
+
+1 2
+3 4
+
+
+ . (141)
+Then T(1,1) = 1 , T(1,2) = 2 , T(2,1) = 3 and T(2,2) = 4 .
+Remark 17 A 0-tensor is a scalar, a 1-tensor is a vector, and a 2-tensor is a matrix.
+Deﬁnition 18 Let T be an n-tensor. The size of T is a vector of size ndenoted |T|whose i-th element corresponds
+to the size of the i-th dimension of T.
+Example 2 Let T be a 2-tensor deﬁned as:
+T =
+
+
+
+1 2 3
+4 5 6
+
+
+ . (142)
+Then |T|1 = 2 and |T|2 = 3 .
+49
+Champion et al.
+Deﬁnition 19 Let T be an n-tensor. A 1-sub-tensor of T is a 1-tensor obtained by selecting a 1-dimensional
+slice of T, i.e.,
+T(x1,...,xi−1,•,xi+1,,...,x n), (143)
+where • represents the selection of a 1-dimensional slice of T, and the values of all xj̸=i must be set to speciﬁc
+values in {1,...,|T|j }. Figure 9 (left) illustrates the notion of a 1-dimensional s lice.
+X3
+X2X1
+T
+T (x1,•, x3)
+X3
+X2X1
+T
+T (x1,•,•)
+Figure 9: This ﬁgure illustrates the notion of a 1-dimension al slice (on the left) and of a 2-dimensional slice (on
+the right).
+Deﬁnition 20 Let T be an n-tensor and m<n . An m-sub-tensor of T (denoted W) is an m-tensor obtained
+by selecting an m-dimensional slice of T, i.e.,
+W = T(x1,...,xi1−1,•,xi1+1,......,xim −1,•,xim+1,...,xn), (144)
+where ik ∈{1,...,n}∀k ∈{1,...,m}are indices representing the dimension being selected. Nat urally, the k-th
+dimension of W corresponds to the ik-th dimension of T for k ∈{1,...,m}. Importantly, the sextuple of dots in
+the middle of the expression represents that there will be m symbols “ • ”, i.e., one for each dimension selected.
+Figure 9 (right) illustrates the special case of a 2-dimensional slice, i.e., m= 2 .
+Example 3 Let T be a 3-tensor such that:
+• |T|1 = 2
+• T(1,x2,x3) = 1 , ∀(x2,x3) ∈{1,...,|T|2}×{1,...,|T|3}
+• T(2,x2,x3) = 2 , ∀(x2,x3) ∈{1,...,|T|2}×{1,...,|T|3}.
+Then T(1,•,•) is a 2-sub-tensor of T full of ones, and T(2,•,•) is a 2-sub-tensor of T full of twos.
+50
+Branching Time Active Inference
+Probability distributions
+Deﬁnition 21 A random n-tensor is an n-tensor over which we have an n-dimensional probability dis tribution.
+Remark 22 A random variable is a random 0-tensor, a random vector is a ra ndom 1-tensor, and a random
+matrix is a random 2-tensor.
+Deﬁnition 23 An n-tensor T is said to represent a joint distribution over a set of n random variables
+{X1,...,Xn}if:
+P(X1 = x1,...,Xn = xn) = T(x1,...,xn). (145)
+For conciseness, if T represents P(X1,...,Xn) we let:
+P(X1,...,Xn) = Cat(T). (146)
+Remark 24 If T represents P(X1,...,Xn), then the sum of its elements must equal one.
+Remark 25 In contrast, if T is a random n-tensor, then:
+P(X1,...,Xn|T) = Cat(T), (147)
+which means that the joint probability over X1,...,Xn is represented by T, and because T is a random tensor
+(taking values in the set of valid n-tensors Tn, i.e., the set of all n-tensors whose elements sum up to one), we
+must specify which instance of T ∈Tn should be used to deﬁne the joint distribution over X1,...,Xn.
+Deﬁnition 26 An m-tensor Ris said to represent a conditional distributionover a set of mrandom variables
+{X1,...,Xm}if:
+P(X1 = x1,...,Xn = xn|Xn+1 = xn+1,...,Xm = xm) = R(x1,...,xm). (148)
+For conciseness, if R represents P(X1,...,Xn|Xn+1,...,Xm) we let:
+P(X1,...,Xn|Xn+1,...,Xm) = Cat(R). (149)
+Remark 27 If Rrepresents P(X1,...,Xn|Xn+1,...,Xm), then the elements of the n-sub-tensor R(•,...,•,xn+1,...,xm)
+must sum to one ∀xi ∈{1,...,|R|i}∀i∈{n+ 1,...,m}.
+51
+Champion et al.
+Remark 28 If R is a random m-tensor, then:
+P(X1,...,Xn|Xn+1,...,Xm,R) = Cat(R). (150)
+Remark 29 Importantly, deﬁnition 26 uses the symbol T to represent P(X1,...,Xn) and deﬁnition 23 uses the
+symbol R to represent P(X1,...,Xn|Xn+1,...,Xm). Throughout this document, diﬀerent symbols will be used for
+representing joint and conditional distributions.
+Deﬁnition 30 Let R be a random m-tensor representing P(X1,...,Xn|Xn+1,...,Xm,R) and k = m−n be the
+number of variables upon which the variables X1,...,Xn are conditioned. Having a Dirichlet prior over R means
+that:
+P(R) =
+|R|n+1∏
+i1=1
+...
+|R|m∏
+ik=1
+Dir
+(
+r(i1,...,ik,•)
+)
+, (151)
+where r is an (m+ 1)-tensor such that the 1-sub-tensor r(i1,...,ik,•) contains the parameters of the Dirichlet prior
+over P(X1,...,Xn|Xn+1 = i1,...,Xm = ik). For conciseness, we denote the prior over R as:
+P(R) = Dir(r). (152)
+Remark 31 Deﬁnition 30 implicitly means that if V is a 1-tensor then Dir(V) represents a Dirichlet distribution.
+However, if V is an m-tensor (with m̸= 1 ) then Dir(V) represents a product of Dirichlet distributions.
+Remark 32 If Ris a random m-tensor representing P(X1,...,Xn|Xn+1,...,Xm,R), then its prior will be a product
+of |Xn+1|×...×|Xm|Dirichlet distributions, where |Xi|is the number of values that Xi can take. Additionally,
+each Dirichlet distribution will have |X1|×...×|Xn|parameters stored in the last dimension of r, where r is the
+tensor storing the parameters of the prior over R, i.e. P(R) = Dir(r).
+Example 4 Let A be a random 2-tensor representing P(O|S,A), then the Dirichlet prior over A is given by:
+P(A) = Dir(a) =∆
+|A|2∏
+i=1
+Dir
+(
+a(i,•)
+)
+, (153)
+where |A|2 is the number of values that S can take (i.e., the number of hidden states).
+52
+Branching Time Active Inference
+Example 5 Let B be a random 3-tensor representing P(Sτ+1|Sτ ,Uτ ,B), then the Dirichlet prior over B is given
+by:
+P(B) = Dir(b) =∆
+|B|2∏
+i1=1
+|B|3∏
+i2=1
+Dir
+(
+b(i1,i2,•)
+)
+, (154)
+where |B|2 is the number of values that Sτ can take (i.e., the number of hidden states) and |B|3 is the number of
+values that Uτ can take (i.e., the number of actions).
+Global labels
+Deﬁnition 33 The number of actions available to the agent is denoted |U|.
+Deﬁnition 34 The number of states in the environment is denoted |S|.
+Deﬁnition 35 The number of observations that the agent can make is denoted |O|.
+Deﬁnition 36 The number of policiesthat the agent can pick from is denoted |π|.
+Deﬁnition 37 The time point representing the present is a natural number denoted t.
+Deﬁnition 38 The time-horizon (i.e., the time point after which the agent stops modelling t he sequence of
+hidden states) is a natural number denoted T.
+Multi-indices
+Deﬁnition 39 A multi-index is a sequence of indices denoted by:
+I = ( i1,...,in), (155)
+where ij ∈D∀ j ∈{1,...,n}, and in this paper D= {1,...,|U|}.
+Remark 40 Multi-indices are used to index random variables such that SI is the hidden state obtained after taking
+the sequence of actions described by I, and OI is the random variable representing the observation genera ted by
+SI .
+Deﬁnition 41 The last index of a multi-index is denoted Ilast, i.e., Ilast is the last element of the sequence I.
+Deﬁnition 42 The one-hot representation of the action corresponding to Ilast is denoted ⃗Ilast.
+Deﬁnition 43 Given a multi-index I, I\last corresponds to the sequence of actions described by I without the
+last element.
+53
+Champion et al.
+Remark 44 In Section 6, when a hidden state (i.e., SI ) is indexed by I, then SI\last will be the parent of SI .
+Deﬁnition 45 Given an expandable generative model, It is the set of all multi-indices already expandedfrom
+the current state St.
+Remark 46 In Section 6 each time a hidden state (i.e., SI ) is added to the generative model, I is added to the
+set of all multi-indices already expanded It.
+Random variables and parameters of their distributions
+Remark 47 Parameters of the posterior distributions are recognizabl e by the hat notation, e.g., ˆa, ˆb and ˆd will
+be posterior parameters, while a, b and d will be prior parameters.
+Remark 48 The expected logarithm of an arbitrary tensor X representing a conditional or a joint distribution is
+denoted ¯X, e.g. ¯A = EQ(A)[ln A] and ¯B = EQ(B)[ln B].
+Deﬁnition 49 Let Uτ be a random variable taking values in {1,...,|U|}indexing all possible actions. The prior
+distribution over Uτ is a categorical distribution represented by Θ τ . The posterior distribution over Uτ is a
+categorical distribution represented by ˆΘ τ .
+Deﬁnition 50 Let Sτ be a random variable taking values in {1,...,|S|}indexing all possible states. The prior
+and posterior distributions over Sτ are categorical distributions represented by diﬀerent ten sors depending on the
+generative model being considered. Therefore, those distri butions are deﬁned in Sections 4 and 6.
+Deﬁnition 51 Let Oτ be an observed random variable taking values in {1,...,|O|}indexing all possible observa-
+tions. The prior distribution over Oτ is a categorical distribution conditioned on Sτ and represented by the random
+matrix A. There is no posterior distribution over Oτ because Oτ is observed, i.e., realised.
+Deﬁnition 52 Let OI be a random variable taking values in {1,...,|O|}indexing all possible observations. The
+prior distribution over OI is a categorical distribution conditioned on SI and represented by the random matrix ¯A.
+Note that OI refers to an observation in the future and is therefore a hidd en variable. The posterior distribution
+over OI is a categorical distribution represented by ˆEI .
+Deﬁnition 53 Let SI be an random variable taking values in {1,...,|S|}indexing all possible states. The prior dis-
+tribution over SI is a categorical distribution conditioned on SI\last and represented by the matrix ¯BI =∆ ¯B(•,•,Ilast).
+The posterior distribution over SI is a categorical distribution represented by ˆDI .
+Deﬁnition 54 Let A be a |O|×|S|random matrix deﬁning the probability of an observation Oτ given the hidden
+state Sτ . The prior distribution over A is a product of Dirichlet distributions whose parameters ar e stored in a
+54
+Branching Time Active Inference
+|S|×|O|matrix a. The posterior distributions over A is also a product of Dirichlet distribution, but the paramet ers
+are stored in a |S|×|O|matrix ˆa.
+Deﬁnition 55 Let B be a |S|×|S|×|U|random 3-tensor deﬁning the probability of transiting from Sτ to Sτ+1
+when taking action Uτ . The prior distribution over B is a product of Dirichlet distributions whose parameters ar e
+stored in a |S|×|U|×|S|3-tensor b. The posterior distribution over B is also a product of Dirichlet distributions,
+but the parameters are stored in a |S|×|U|×|S|3-tensor ˆb.
+Deﬁnition 56 Let D be a random vector of size |S|deﬁning the probability of the initial state S0. The prior
+distribution over D is a Dirichlet distribution whose parameters are stored in a vector d of size |S|. The posterior
+distribution over D is also a Dirichlet distribution, but the parameters are sto red in a vector ˆd of size |S|.
+Deﬁnition 57 Let Θ τ ∀τ ∈{0,...,t −1}be a random vector of size |U|deﬁning the probability of the action Uτ .
+The prior distribution over Θ τ is a Dirichlet distribution whose parameters are stored in a vector θτ of size |U|.
+The posterior distribution over Θ τ is also a Dirichlet distribution, but the parameters are sto red in a vector ˆθτ of
+size |U|.
+Deﬁnition 58 Let γ be a random variable taking values in R>0. The prior distribution over γ is a gamma
+distribution with shape parameter α = 1 and rate parameter β ∈R>0. The posterior distribution over γ is a
+gamma distribution with shape parameter ˆα = 1 and rate parameter ˆβ ∈R>0.
+Deﬁnition 59 Let π be a random variable taking values in {1,...,|π|}indexing all possible policies. The prior
+distribution over π is a softmax function of the vector G multiplied by minus the precision γ. Note that G is a
+vector of size |π|whose i-th element is the expected free energy of the i-th policy. The posterior distribution over
+π is a categorical distribution whose parameters are stored i n a vector ˆπ of size |π|.
+Appendix G: Multi-armed bandit problem
+In the multi-armed bandit problem, the agent is prompted wit h K actions (one for each bandit’s arm). Pulling
+the i-th arm returns a reward sampled from the reward distributio n Pi(X) associated to this arm. Let µi be the
+mean of the i-th reward distribution and Ti(n) be the number of times the i-th bandit has been selected after n
+plays. To solve the bandit problem, one needs to come up with a n allocation strategy that selects the action that
+minimises the agent’s regret deﬁned as:
+Rn = µ∗n−
+K∑
+i=1
+µiE[Ti(n)], (156)
+55
+Champion et al.
+where µ∗ is the average reward of the best action. Note that an upper bo und of E[Ti(n)] is derived by ﬁrst upper
+bounding Ti(n), and then using: the Chernoﬀ-Hoeﬃng bound, the Bernstein in equality and some properties of
+p-series, c.f., proof of Theorem 1 in Auer et al (2002) for deta ils. So, if we ﬁrst assume that,
+UCB1i =
+√
+1
+1
+¯Xi
+√
+1
+1  
+exploitation
++
+√
+2 ln n
+ni  
+exploration
+, (157)
+where ni is the number of times the i-th action has been selected, and ¯Xi is the average reward received after
+taking the i-th action. Then, the main result of Auer et al (2002) was to sh ow that if an allocation strategy was
+using the UCB1 criterion to select the next action, the expec ted regret of this allocation strategy will grow at most
+logarithmically in the number of plays n, i.e., O(ln n). In addition, since it is known that the expected regret of
+the (best) allocation strategy grows at least logarithmica lly in n (Lai and Robbins, 1985), we say that the UCB1
+criterion resolves the exploration / exploitation trade-o ﬀ, i.e., the UCB1 criterion ensures that the expected regret
+grows as slowly as possible.
+Appendix H: The exponential complexity class
+In this appendix, we precisely pinpoint the exponential com plexity class that is addressed in this paper, but ﬁrst,
+we introduce a multi-index notation. Multi-indices will he lp us to refer to hidden states in the future. Naturally
+enough the indexes inside the multi-indices will correspon d to the actions the agent will have to perform to reach
+the hidden state, e.g., S(123) corresponds to a hidden state at time t+ 3 obtained by performing action 1 at time t,
+2 at time t+ 1 and 3 at time t+ 2. Using this notation, Figure 10 depicts all the possible p olicies up to two time
+steps in the future and the associated hidden states. Import antly, Figure 10 shows that the number of policies
+grows exponentially with the number of time steps for which t he agent tries to plan. Therefore, the deﬁnition
+of the prior over the policies, i.e., P(π|γ) = σ(−γG), exhibits an exponential space and time complexity class
+because the agent needs to store and compute the |U|T parameters of P(π|γ), where T is the time-horizon.
+56
+Branching Time Active Inference
+St
+S(1)
+S(2)
+S(11)
+S(12)
+S(21)
+S(22)
+Figure 10: Illustration of all possible policies up to two ti me steps in the future when |U|= 2. The state at the
+current time step is denoted by St. Additionally, each branch of the tree corresponds to a poss ible policy, and
+each node SI is indexed by a multi-index (e.g. I = (12)) representing the sequence of actions that led to this
+state. This should make it clear that for one time step in the f uture, there are |U|possible policies, after two
+time steps there are |U|times more policies, and so on until the time-horizon T where there are a total of |U|T
+possible policies, i.e., the number of possible policies gr ows exponentially with the number of time steps for which
+the agent tries to plan.
+To show that this exponential explosion is not only a theoret ical problem and also appears in practice, we
+modiﬁed the DEMO MDP maze.m of the SPM 1 package in two ways. First, we allowed the agent to plan N
+time steps in the future as follows:
+% V = Allowable policies (N moves into the future), nu = number of actions
+V = [];
+for i1 = 1:nu, i2 = 1:nu, .., iN = 1:nu
+V(:,end + 1) = [i1;i2; .. ;iN];
+end
+Second, we used the “tic” and “toc” functions provided by Mat lab to track the execution time required to
+execute the function “ spm maze search” where the parameters of the model are assumed to be known alr eady
+by the agent:
+tic
+% Start a timer used to evaluate the execution time of spm_maze_search
+MDP = spm_maze_search(mdp,8,START,END,128,1);
+toc % Display the time elapsed since the last call to tic
+Figure 11 presents the results of our simulations for N from 2 to 6. Under a logarithmic scale on the time axis,
+the experimental results show that the graph is almost a perf ect line, which provides empirical evidence for an
+1. Statistical parametric mapping (SPM) is a software packa ge created by the Wellcome Department of Imaging Neuroscien ce
+at University College London, which was initially develope d to carry out statistical analyses of functional neuroimag -
+ing data. Today, SPM also contains MatLab simulations imple menting active inference agents (among other things), c.f.
+https://www.fil.ion.ucl.ac.uk/spm/.
+57
+Champion et al.
+exponential time explosion. Note that the simulation for N = 7 crashed after trying to allocate an array of 9.5GB
+(space explosion). In section 5, we presented an approach pr oposed to deal with the exponential complexity class
+that arises during planing, yet is fundamentally similiar t o active inference. This eﬀectively means that our paper
+shows how standard active inference can be made more eﬃcient and scale to longer time horizons.
+2 3 4 5 6
+100
+101
+102
+103
+N
+Time
+Figure 11: This ﬁgure shows the time required to execute the f unction “ spm maze search” when the agent is
+allowed to plan N time steps in the future (for N from 2 to 6). A logarithmic scale is used on the time axis.
+58

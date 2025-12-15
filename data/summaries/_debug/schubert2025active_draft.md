@@ -1,1 +1,0 @@
-Okay, I understand. I will adhere to these instructions and provide a response that meets all the specified requirements.

@@ -1,0 +1,968 @@
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+REINFORCEMENT LEARNING THROUGH
+ACTIVE INFERENCE
+Alexander Tschantz
+Sackler Centre for Consciousness Science
+Evolutionary & Adaptive Systems Research Group
+University of Sussex
+Brighton, UK
+tschantz.alec@gmail.com
+Beren Millidge
+University of Edinburgh
+Edinburgh, UK
+s1686853@sms.ed.ac.uk
+Anil K. Seth
+Sackler Centre for Consciousness Science
+Evolutionary & Adaptive Systems Research Group
+University of Sussex
+Brighton, UK
+Canadian Institute for Advanced Research
+Christopher L. Buckley
+Evolutionary & Adaptive Systems Research Group
+University of Sussex
+Brighton, UK
+ABSTRACT
+The central tenet of reinforcement learning (RL) is that agents seek to maximize
+the sum of cumulative rewards. In contrast, active inference, an emerging frame-
+work within cognitive and computational neuroscience, proposes that agents act
+to maximize the evidence for a biased generative model. Here, we illustrate how
+ideas from active inference can augment traditional RL approaches by (i) furnish-
+ing an inherent balance of exploration and exploitation, and (ii) providing a more
+ﬂexible conceptualization of reward. Inspired by active inference, we develop and
+implement a novel objective for decision making, which we term thefree energy of
+the expected future. We demonstrate that the resulting algorithm successfully bal-
+ances exploration and exploitation, simultaneously achieving robust performance
+on several challenging RL benchmarks with sparse, well-shaped, and no rewards.
+1 I NTRODUCTION
+Both biological and artiﬁcial agents must learn to make adaptive decisions in unknown environ-
+ments. In the ﬁeld of reinforcement learning (RL), agents aim to learn a policy that maximises the
+sum of expected rewards (Sutton et al., 1998). This approach has demonstrated impressive results
+in domains such as simulated games (Mnih et al., 2015; Silver et al., 2017), robotics (Polydoros &
+Nalpantidis, 2017; Nagabandi et al., 2019) and industrial applications (Meyes et al., 2017).
+In contrast, active inference (Friston et al., 2016; 2015; 2012; 2009) - an emerging framework from
+cognitive and computational neuroscience - suggests that agents select actions in order to maximise
+the evidence for a model that is biased towards an agent’s preferences. This framework extends
+inﬂuential theories of Bayesian perception and learning (Knill & Pouget, 2004; L Grifﬁths et al.,
+2008) to incorporate probabilistic decision making, and comes equipped with a biologically plau-
+sible process theory (Friston et al., 2017a) that enjoys considerable empirical support (Friston &
+Kiebel, 2009).
+Although active inference and RL have their roots in different disciplines, both frameworks have
+converged upon similar solutions to the problem of learning adaptive behaviour. For instance, both
+frameworks highlight the importance of learning probabilistic models, performing inference and
+efﬁcient planning. This leads to a natural question: can insights from active inference inform the
+development of novel RL algorithms?
+Conceptually, there are several ways in which active inference can inform and potentially enhance
+the ﬁeld of RL. First, active inference suggests that agents embody a generative model of their pre-
+1
+arXiv:2002.12636v1  [cs.LG]  28 Feb 2020
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+ferred environment and seek to maximise the evidence for this model. In this context, rewards are
+cast as prior probabilities over observations, and success is measured in terms of the divergence
+between preferred and expected outcomes. Formulating preferences as prior probabilities enables
+greater ﬂexibility when specifying an agent’s goals (Friston et al., 2012; Friston, 2019a), provides a
+principled (i.e. Bayesian) method for learning preferences (Sajid et al., 2019), and is consistent with
+recent neurophysiological data demonstrating the distributional nature of reward representations
+(Dabney et al., 2020). Second, reformulating reward maximisation as maximizing model evidence
+naturally encompasses both exploration and exploitation under a single objective, obviating the need
+for adding ad-hoc exploratory terms to existing objectives. Moreover, as we will show, active infer-
+ence subsumes a number of established RL formalisms, indicating a potentially uniﬁed framework
+for adaptive decision-making under uncertainty.
+Translating these conceptual insights into practical beneﬁts for RL has proven challenging. Current
+implementations of active inference have generally been conﬁned to discrete state spaces and toy
+problems (Friston et al., 2015; 2017b;c) (although see (Tschantz et al., 2019a; Millidge, 2019; Catal
+et al., 2019)). Therefore, it has not yet been possible to evaluate the effectiveness of active inference
+in challenging environments; as a result, active inference has not yet been widely taken up within
+the RL community.
+In this paper, we consider active inference in the context of decision making 1. We propose and
+implement a novel objective function for active inference - the free energy of the expected future
+- and show that this quantity provides a tractable bound on established RL objectives. We evalu-
+ate the performance of this algorithm on a selection of challenging continuous control tasks. We
+show strong performance on environments with sparse, well-shaped, and no rewards, demonstrating
+our algorithm’s ability to effectively balance exploration and exploitation. Altogether, our results
+indicate that active inference provides a promising complement to current RL methods.
+2 A CTIVE INFERENCE
+Both active inference and RL can be formulated in the context of a partially observed Markov de-
+cision process POMDPs (Murphy, 1982). At each time step t, the true state of the environment st
+evolves according to the stochastic transition dynamics s t ∼p(st|st−1,at−1), where a ∈Rda de-
+notes an agent’s actions. Agents do not necessarily have access to the true state of the environment,
+but may instead receive observations ot ∈Rdo, which are generated according to ot ∼p(ot|st). In
+this case, agents must operate on beliefs st ∈Rds about the true state of the environmentst. Finally,
+the environment generates rewards rt according to rt ∼p(rt|st)2.
+The goal of RL is to learn a policy that maximises the expected sum of rewardsE[∑∞
+t=0 γtrt] (Sutton
+et al., 1998). In contrast, the goal of active inference is to maximise the Bayesian model evidence
+for an agent’s generative modelpΦ(o,s,θ), where θ∈Θ denote model parameters.
+Crucially, active inference allows that an agent’s generative model can be biased towards favourable
+states of affairs (Friston, 2019b). In other words, the model assigns probability to the parts of
+observation space that are both likely and beneﬁcial for an agent’s success. We use the notation
+pΦ(·) to represent an arbitrary distribution encoding the agent’s preferences.
+Given a generative model, agents can perform approximate Bayesian inference by encoding an ar-
+bitrary distribution q(s,θ) and minimising variational free energy F= DKL
+(
+q(s,θ)∥pΦ(o,s,θ)
+)
+.
+When observations o are known,Fcan be minimized through standard variational methods (Bishop,
+2006; Buckley et al., 2017), causing q(s,θ) to tend towards the true posterior p(s,θ|o). Note that
+treating model parameters θas random variables casts learning as a process of inference (Blundell
+et al., 2015).
+In the current context, agents additionally maintain beliefs over policies π = {a0,...,a T}, which
+are themselves random variables. Policy selection is then implemented by identifying q(π) that
+minimizes F, thus casting policy selection as a process of approximate inference (Friston et al.,
+2015). While the standard free energy functional Fis generally deﬁned for a single time point t,
+1A full treatment of active inference would consider inference and learning, see (Buckley et al., 2017) for
+an overview.
+2We use x and p(·) to denote the generative process and x and p(·) to denote the agent’s generative model.
+2
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+π refers to a temporal sequence of variables. Therefore, we augment the free energy functional F
+to encompass future variables, leading to the free energy of the expected future ˜F. This quantity
+measures the KL-divergence between a sequence of beliefs about future variables and an agent’s
+biased generative model.
+The goal is now to infer q(π) in order to minimise ˜F. We demonstrate that the resulting scheme
+naturally encompasses both exploration and exploitation, thereby suggesting a deep relationship
+between inference, learning and decision making.
+3 F REE ENERGY OF THE EXPECTED FUTURE
+Let xt:T denote a sequence of variables through time, xt:T = {xt,..., xT}. We wish to minimize the
+free energy of the expected future ˜F, which is deﬁned as:
+˜F= DKL
+(
+q(o0:T,s0:T,θ,π )∥pΦ(o0:T,s0:T,θ)
+)
+(1)
+where q(ot:T,st:T,θ,π ) represents an agent’s beliefs about future variables, and pΦ(ot:T,st:T,θ)
+represents an agent’s biased generative model. Note that the beliefs about future variables include
+beliefs about future observations, ot:T, which are unknown and thus treated as random variables3.
+In order to ﬁnd q(π) which minimizes ˜Fwe note that (see Appendix C):
+˜F= 0 ⇒DKL
+(
+q(π) ∥
+(
+−e−˜Fπ
+))
+= 0 (2)
+where
+˜Fπ = DKL
+(
+q(o0:T,s0:T,θ|π) ∥pΦ(o0:T,s0:T,θ)
+)
+(3)
+Thus, the free energy of the expected future is minimized when q(π) = σ(−˜Fπ), or in other words,
+policies are more likely when they minimise ˜Fπ.
+3.1 E XPLORATION & EXPLOITATION
+In order to provide an intuition for what minimizing ˜Fπ entails, we factorize the agent’s generative
+models as pΦ(o0:T,s0:T,θ) = p(s0:T,θ|o0:T)pΦ(o0:T), implying that the model is only biased in
+its beliefs over observations. To retain consistency with RL nomenclature, we treat ‘rewards’ r as
+a separate observation modality, such that pΦ(ot:T) speciﬁes a distribution over preferred rewards.
+We describe our implementation of pΦ(ot:T) in Appendix E. In a similar fashion, q(ot:T|st:T,θ,π )
+speciﬁes beliefs about future rewards, given a policy.
+Given this factorization, it is straightforward to show that −˜Fπ decomposes into an expected infor-
+mation gain term and an extrinsic term (see Appendix B)4:
+−˜Fπ ≈−Eq(o0:T|π)
+[
+DKL
+(
+q(s0:T,θ|o0:T,π)∥q(s0:T,θ|π)
+)]
+  
+Expected information gain
++ Eq(s0:T,θ|π)
+[
+DKL
+(
+q(o0:T|s0:T,θ,π )∥pΦ(ot:T)
+)]
+  
+Extrinsic term
+(4)
+Maximizing Eq.4 has two functional consequences. First, it maximises the expected information
+gain, which quantiﬁes the amount of information an agent expects to gain from executing some
+policy. As agents maintain beliefs about the state of the environment and model parameters, this
+term promotes exploration in both state and parameter space.
+3For readers familiar with the active inference framework, we highlight that the free energy of the expected
+future differs from expected free energy (Friston et al., 2015). We leave a discussion of the relative merits to
+future work.
+4The approximation in Eq. 4 arises from the approximation q(s0:T ,θ|o0:T ,π) ≈p(s0:T ,θ|o0:T ,π), which
+is justiﬁable given that q(·) represents a variational approximation of the true posterior (Friston et al., 2017a).
+3
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+Second, it minimizes the extrinsic term - which is the KL-divergence between an agent’s (policy-
+conditioned) beliefs about future observations and their preferred observations. In the current con-
+text, it measures the KL-divergence between the rewards an agent expects from a policy and the
+rewards an agent desires. In summary, selecting policies to minimise ˜Finvokes a natural balance
+between exploration and exploitation.
+3.2 R ELATIONSHIP TO PROBABILISTIC RL
+In recent years, there have been several attempts to formalize RL in terms of probabilistic inference
+(Levine, 2018), such as KL-control (Rawlik, 2013), control-as-inference (Kappen et al., 2012), and
+state-marginal matching (Lee et al., 2019). In many of these approaches, the RL objective is broadly
+conceptualized as minimising DKL
+(
+p(o0:T|π)∥pΦ(o0:T)
+)
+5. In Appendix D, we demonstrate that
+the free energy of the expected future ˜Fprovides a tractable bound on this objective:
+˜F≥ DKL
+(
+p(ot:T|π)∥pΦ(ot:T)
+)
+(5)
+These results suggest a deep homology between active inference and existing approaches to proba-
+bilistic RL.
+4 I MPLEMENTATION
+In this section, we describe an efﬁcient implementation of the proposed objective function in the
+context of model-based RL. To select actions, we optimise q(π) at each time step, and execute the
+ﬁrst action speciﬁed by the most likely policy. This requires (i) a method for evaluating beliefs about
+future variables q(st:T,ot:T,θ|π), (ii) an efﬁcient method for evaluating Fπ, and (iii) a method for
+optimising q(π) such that q(π) = σ(−Fπ)
+Evaluating beliefs about the futureWe factorize and evaluate the beliefs about the future as:
+q(st:T,ot:T,θ|π) = q(θ)
+T∏
+t=τ
+q(oτ|sτ,θ,π )q(sτ|sτ−1,θ,π )
+q(oτ|sτ,θ,π ) = Eq(sτ|θ,π)
+[
+p(oτ|sτ)
+]
+q(sτ|sτ−1,θ,π ) = Eq(sτ−1|θ,π)
+[
+p(sτ|sτ−1,θ,π )
+]
+(6)
+where we have here factorized the generative model as p(oτ,sτ,θ|π) =
+p(oτ|sτ,π)p(sτ|sτ−1,θ,π )p(θ). We describe the implementation and learning of the likeli-
+hood p(oτ|sτ,π), transition model p(sτ|sτ−1,θ,π ) and parameter prior p(θ) in Appendix E.
+Evaluating ˜Fπ Note that −˜Fπ = ∑t+H
+τ=t −˜Fπτ, where H is the planning horizon. Given beliefs
+about future variables, the free energy of the expected future for a single time point can be efﬁciently
+computed as (see Appendix G):
+−˜Fπτ ≈Eq(sτ,θ|π)
+[
+DKL
+(
+q(oτ|sτ,θ,π )∥pΦ(oτ)
+)]
++ H[q(oτ|π)] −Eq(sτ|π)
+[
+H[q(oτ|sτ,π)]
+]
+  
+State information gain
++ H[q(sτ|sτ−1,θ,π )] −Eq(θ)
+[
+H[q(sτ|sτ−1,π,θ )]
+]
+  
+Parameter information gain
+(7)
+In the current paper, agents observe the true state of the environment s t, such that the only partial
+observability is in rewards rt. As as a result, the second term of equation 7 is redundant, as there is
+no uncertainty about states. The ﬁrst (extrinsic) term can be calculated analytically (see Appendix
+E). We describe our approximation of the ﬁnal term (parameter information gain) in Appendix G.
+5We acknowledge that not all objectives follow this exact formulation.
+4
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+Optimising the policy distribution We choose to parametrize q(π) as a diagonal Gaussian. We
+use the CEM algorithm (Rubinstein, 1997) to optimise the parameters of q(π) such that q(π) ∝
+−Fπ. While this solution will fail to capture the exact shape of −Fπ, agents need only identify the
+peak of the landscape to enact the optimal policy.
+The full algorithm for inferring q(π) is provided in Algorithm 1.
+Algorithm 1:Inference of q(π)
+Input: Planning horizon H — Optimisation iterations I — Number of candidate policies J —
+Current state st — Likelihood p(oτ|sτ) — Transition distribution p(sτ|sτ−1,θ,π ) — Parameter
+distribution P(θ) — Global prior pΦ(oτ)
+Initialize factorized belief over action sequences q(π) ←N(0,I).
+for optimisation iteration i= 1...I do
+Sample J candidate policies from q(π)
+for candidate policy j = 1...J do
+π(j) ∼q(π)
+−˜Fj
+π = 0
+for τ = t...t+ H do
+q(sτ|sτ−1,θ,π (j)) = Eq(sτ−1|θ,π(j))
+[
+p(sτ|sτ−1,θ,π (j))
+]
+q(oτ|sτ,θ,π (j)) = Eq(sτ|θ,π(j))
+[
+p(oτ|sτ)
+]
+−˜Fj
+π ←− ˜Fj
+π + Eq(sτ,θ|π(j))
+[
+DKL
+(
+q(oτ|sτ,θ,π (j))∥pΦ(oτ)
+)]
++
+H[q(sτ|sτ−1,θ,π (j))] −Eq(θ)
+[
+H[q(sτ|sτ−1,π(j),θ)]
+]
+end
+end
+q(π) ←reﬁt(−˜Fj
+π)
+end
+return q(π)
+5 E XPERIMENTS
+To determine whether our algorithm successfully balances exploration and exploitation, we investi-
+gate its performance in domains with (i) well-shaped rewards, (ii) extremely sparse rewards and (iii)
+a complete absence of rewards. We use four tasks in total. For sparse rewards, we use theMountain
+Car and Cup Catchenvironments, where agents only receive reward when the goal is achieved. For
+well-shaped rewards, we use the challengingHalf Cheetahenvironment, using both the running and
+ﬂipping tasks. For domains without reward, we use the Ant Mazeenvironment, where there are no
+rewards and success is measured by the percent of the maze covered (see Appendix H for details on
+all environments).
+For environments with sparse rewards, we compare our algorithm to two baselines, (i) a reward
+algorithm which only selects policies based on the extrinsic term (i.e. ignores the parameter infor-
+mation gain), and (ii) avariance algorithm that seeks out uncertain transitions by acting to maximise
+the output variance of the transition model (see Appendix E). Note that the variance agent is also aug-
+mented with the extrinsic term to enable comparison. For environments with well-shaped rewards,
+we compare our algorithm to the maximum reward obtained by a state-of-the-art model-free RL
+algorithm after 100 episodes, the soft-actor-critic (SAC) Haarnoja et al. (2018), which encourages
+exploration by seeking to maximise the entropy of the policy distribution. Finally, for environments
+without rewards, we compare our algorithm to a random baseline, which conducts actions at random.
+The Mountain Car experiment is shown in Fig. 1A, where we plot the total reward obtained for each
+episode over 25 episodes, where each episode is at most 200 time steps. These results demonstrate
+that our algorithm rapidly explores and consistently reaches the goal, achieving optimal performance
+in a single trial. In contrast, the benchmark algorithms were, on average, unable to successfully
+explore and achieve good performance. We qualitatively conﬁrm this result by plotting the state
+space coverage with and without exploration (Fig. 2B). Our algorithm performs comparably to
+benchmarks on the Cup Catch environment (Fig. 1B). We hypothesize that this is because, while
+5
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+0 20
+Episodes
+0.0
+0.5
+1.0Average returns
+Mountain Car
+0 20 40
+Episodes
+0
+500
+1000
+Cup Catch
+0 50 100
+Episodes
+250
+0
+250
+500
+Cheetah Flip
+0 50 100
+Episodes
+200
+0
+200
+400
+A B C D Cheetah Run
+FEEF Reward Variance SAC
+Figure 1: (A) Mountain Car:Average return after each episode on the sparse-reward Mountain
+Car task. Our algorithm achieves optimal performance in a single trial. (B) Cup Catch:Average
+return after each episode on the sparse-reward Cup Catch task. Here, results amongst algorithms
+are similar, with all agents reaching asymptotic performance in around 20 episodes. (C & D) Half
+Cheetah: Average return after each episode on the well-shaped Half Cheetah environment, for the
+running and ﬂipping tasks, respectively. We compare our results to the average performance of SAC
+after 100 episodes learning, demonstrating our algorithm can perform successfully in environments
+which do not require directed exploration. Each line is the mean of 5 seeds and ﬁlled regions show
++/- standard deviation.
+the reward structure is technically sparse, it is simple enough to reach the goal with random actions,
+and thus the directed exploration afforded by our method provides little beneﬁt.
+Figure 1 C&D shows that our algorithm performs substantially better than a state of the art model-
+free algorithm after 100 episodes on the challenging Half Cheetah tasks. Our algorithm thus demon-
+strates robust performance in environments with well-shaped rewards and provides considerable
+improvements in sample-efﬁciency, relative to SAC.
+Finally, we demonstrate that our algorithm can perform well in environments with no rewards, where
+the only goal is exploration. Figure 2B shows that our algorithms rate of exploration is substantially
+higher than that of a random baseline in the ant-maze environment, resulting in a more substantial
+portion of the maze being covered. This result demonstrates that the directed exploration afforded by
+minimising the free energy of the expected future proves beneﬁcial in environments with no reward
+structure.
+Taken together, these results show that our proposed algorithm - which naturally balances explo-
+ration and exploitation - can successfully master challenging domains with a variety of reward
+structures.
+1.0
+ 0.5
+ 0.0 0.5
+Position
+0.06
+0.04
+0.02
+0.00
+0.02
+0.04
+0.06
+Velocity
+State Coverage (FEEF)
+1.0
+ 0.5
+ 0.0 0.5
+Position
+0.06
+0.04
+0.02
+0.00
+0.02
+0.04
+0.06
+Velocity
+State Coverage (Reward)
+FEEF Random
+0
+20
+40
+60
+80
+100Maze coverage (percent)
+A B C Ant Maze Coverage
+Figure 2: (A & B) Mountain Car state space coverage: We plot the points in state-space visited
+by two agents - one that minimizes the free energy of the expected future (FEEF) and one that
+maximises reward. The plots are from 20 episodes and show that the FEEF agent searches almost
+the entirety of state space, while the reward agent is conﬁned to a region that be reached with random
+actions. (C) Ant Maze Coverage: We plot the percentage of the maze covered after 35 episodes,
+comparing the FEEF agent to an agent acting randomly. These results are the average of 4 seeds.
+6
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+6 D ISCUSSION
+Despite originating from different intellectual traditions, active inference and RL both address fun-
+damental questions about adaptive decision-making in unknown environments. Exploiting this con-
+ceptual overlap, we have applied an active inference perspective to the reward maximization ob-
+jective of RL, recasting it as minimizing the divergence between desired and expected futures. We
+derived a novel objective that naturally balances exploration and exploitation and instantiated this
+objective within a model-based RL context. Our algorithm exhibits robust performance and ﬂexibil-
+ity in a variety of environments known to be challenging for RL. Moreover, we have shown that our
+algorithm applies to a diverse set of reward structures. Conversely, by implementing active infer-
+ence using tools from RL, such as amortising inference with neural networks, deep ensembles and
+sophisticated algorithms for planning (CEM), we have demonstrated that active inference can scale
+to high dimensional tasks with continuous state and action spaces.
+While our results have highlighted the existing overlap between active inference and RL, we end
+by reiterating two aspects of active inference that may be of utility for RL. First, representing pref-
+erences as a distribution over observations allows for greater ﬂexibility in modelling and learning
+non-scalar and non-monotonic reward functions. This may prove beneﬁcial when learning natural-
+istic tasks in complex nonstationary environments. Second, the fact that both intrinsic and extrinsic
+value are complementary components of a single objective - the free energy of the expected fu-
+ture - may suggest new paths to tackling the exploration-exploitation dilemma. Our method also
+admits promising directions for future work. These include investigating the effects of different dis-
+tributions over reward, extending the approach to models which are hierarchical in time and space
+(Friston et al., 2018; Pezzulo et al., 2018), and investigating the deep connections to alternative
+formulations of probabilistic control.
+ACKNOWLEDGEMENTS
+AT is funded by a PhD studentship from the Dr. Mortimer and Theresa Sackler Foundation and the
+School of Engineering and Informatics at the University of Sussex. BM is supported by an EPSRC
+funded PhDS Studentship. CLB is supported by BBRSC grant number BB/P022197/1. AT and AKS
+are grateful to the Dr. Mortimer and Theresa Sackler Foundation, which supports the Sackler Centre
+for Consciousness Science. AKS is additionally grateful to the Canadian Institute for Advanced
+Research (Azrieli Programme on Brain, Mind, and Consciousness).
+AUTHOR CONTRIBUTIONS
+A.T, B.M and C.L.B contributed to the conceptualization of this work. A.T and B.M contributed
+to the coding and generation of experimental results. A.T, B.M, C.L.B, A.K.S contributed to the
+writing of the manuscript.
+REFERENCES
+Marc G. Bellemare, Sriram Srinivasan, Georg Ostrovski, Tom Schaul, David Saxton, and Remi
+Munos. Unifying count-based exploration and intrinsic motivation. 2016. URL http:
+//arxiv.org/abs/1606.01868.
+Christopher M Bishop. Pattern recognition and machine learning. springer, 2006.
+Charles Blundell, Julien Cornebise, Koray Kavukcuoglu, and Daan Wierstra. Weight uncertainty in
+neural networks. 2015. URL http://arxiv.org/abs/1505.05424.
+Christopher L Buckley, Chang Sub Kim, Simon McGregor, and Anil K Seth. The free energy
+principle for action and perception: A mathematical review.Journal of Mathematical Psychology,
+81:55–79, 2017.
+Ozan Catal, Johannes Nauta, Tim Verbelen, Pieter Simoens, and Bart Dhoedt. Bayesian policy
+selection using active inference. 2019. URL http://arxiv.org/abs/1904.08149.
+7
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+Konstantinos Chatzilygeroudis, Vassilis Vassiliades, Freek Stulp, Sylvain Calinon, and Jean-
+Baptiste Mouret. A survey on policy search algorithms for learning robot controllers in a handful
+of trials. 2018. URL http://arxiv.org/abs/1807.02303.
+Nuttapong Chentanez, Andrew G. Barto, and Satinder P. Singh. Intrinsically motivated reinforce-
+ment learning. In L. K. Saul, Y . Weiss, and L. Bottou (eds.), Advances in Neural Information
+Processing Systems 17, pp. 1281–1288. MIT Press, 2005. URL http://papers.nips.cc/
+paper/2552-intrinsically-motivated-reinforcement-learning.pdf .
+Kashyap Chitta, Jose M. Alvarez, and Adam Lesnikowski. Deep probabilistic ensembles: Approxi-
+mate variational inference through KL regularization. 2018. URLhttp://arxiv.org/abs/
+1811.02640.
+Kurtland Chua, Roberto Calandra, Rowan McAllister, and Sergey Levine. Deep reinforcement learn-
+ing in a handful of trials using probabilistic dynamics models. InAdvances in Neural Information
+Processing Systems, pp. 4754–4765, 2018a.
+Kurtland Chua, Roberto Calandra, Rowan McAllister, and Sergey Levine. Deep reinforcement
+learning in a handful of trials using probabilistic dynamics models. 2018b. URL http://
+arxiv.org/abs/1805.12114.
+Maell Cullen, Ben Davey, Karl J Friston, and Rosalyn J Moran. Active inference in openai gym: A
+paradigm for computational investigations into psychiatric illness. Biological psychiatry: cogni-
+tive neuroscience and neuroimaging, 3(9):809–818, 2018.
+Will Dabney, Zeb Kurth-Nelson, Naoshige Uchida, Clara Kwon Starkweather, Demis Hassabis,
+R´emi Munos, and Matthew Botvinick. A distributional code for value in dopamine-based rein-
+forcement learning. Nature, pp. 1–5, 2020.
+Ildefons Magrans de Abril and Ryota Kanai. A uniﬁed strategy for implementing curiosity and
+empowerment driven reinforcement learning. arXiv preprint arXiv:1806.06505, 2018.
+Stanislav Fort, Huiyi Hu, and Balaji Lakshminarayanan. Deep ensembles: A loss landscape per-
+spective. 2019. URL http://arxiv.org/abs/1912.02757.
+Karl Friston. A free energy principle for a particular physics. arXiv preprint arXiv:1906.10184 ,
+2019a.
+Karl Friston. A free energy principle for a particular physics. 2019b. URL https://arxiv.
+org/abs/1906.10184v1.
+Karl Friston and Stefan Kiebel. Predictive coding under the free-energy principle. 364(1521):1211–
+1221, 2009. ISSN 1471-2970. doi: 10.1098/rstb.2008.0300.
+Karl Friston, Spyridon Samothrakis, and Read Montague. Active inference and agency: optimal
+control without cost functions. Biological cybernetics, 106(8-9):523–541, 2012.
+Karl Friston, Francesco Rigoli, Dimitri Ognibene, Christoph Mathys, Thomas Fitzgerald, and Gio-
+vanni Pezzulo. Active inference and epistemic value. 6(4):187–214, 2015. ISSN 1758-8936. doi:
+10.1080/17588928.2015.1020053.
+Karl Friston, Thomas FitzGerald, Francesco Rigoli, Philipp Schwartenbeck, Giovanni Pezzulo, et al.
+Active inference and learning. Neuroscience & Biobehavioral Reviews, 68:862–879, 2016.
+Karl Friston, Thomas FitzGerald, Francesco Rigoli, Philipp Schwartenbeck, and Giovanni Pezzulo.
+Active inference: a process theory. Neural computation, 29(1):1–49, 2017a.
+Karl Friston, Thomas FitzGerald, Francesco Rigoli, Philipp Schwartenbeck, and Giovanni Pezzulo.
+Active inference: A process theory. 29(1):1–49, 2017b. ISSN 1530-888X. doi: 10.1162/NECO
+a 00912.
+Karl J Friston, Jean Daunizeau, and Stefan J Kiebel. Reinforcement learning or active inference?
+PloS one, 4(7), 2009.
+8
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+Karl J. Friston, Marco Lin, Christopher D. Frith, Giovanni Pezzulo, J. Allan Hobson, and Sasha
+Ondobaka. Active inference, curiosity and insight. 29(10):2633–2683, 2017c. ISSN 0899-7667.
+doi: 10.1162/neco a 00999. URL https://doi.org/10.1162/neco_a_00999.
+Karl J. Friston, Richard Rosch, Thomas Parr, Cathy Price, and Howard Bowman. Deep temporal
+models and active inference. 90:486–501, 2018. ISSN 0149-7634. doi: 10.1016/j.neubiorev.
+2018.04.004. URL http://www.sciencedirect.com/science/article/pii/
+S0149763418302525.
+David Ha and J¨urgen Schmidhuber. Recurrent world models facilitate policy evolution. InAdvances
+in Neural Information Processing Systems, pp. 2450–2462, 2018.
+Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft actor-critic: Off-
+policy maximum entropy deep reinforcement learning with a stochastic actor. arXiv preprint
+arXiv:1801.01290, 2018.
+Danijar Hafner, Timothy Lillicrap, Ian Fischer, Ruben Villegas, David Ha, Honglak Lee, and James
+Davidson. Learning latent dynamics for planning from pixels. arXiv preprint arXiv:1811.04551,
+2018.
+Danijar Hafner, Timothy Lillicrap, Jimmy Ba, and Mohammad Norouzi. Dream to control: Learning
+behaviors by latent imagination. arXiv preprint arXiv:1912.01603, 2019.
+Rein Houthooft, Xi Chen, Yan Duan, John Schulman, Filip De Turck, and Pieter Abbeel. Curiosity-
+driven exploration in deep reinforcement learning via bayesian neural networks. arXiv preprint
+arXiv:1605.09674, 2016a.
+Rein Houthooft, Xi Chen, Yan Duan, John Schulman, Filip De Turck, and Pieter Abbeel. VIME:
+Variational information maximizing exploration. 2016b. URL http://arxiv.org/abs/
+1605.09674.
+Lukasz Kaiser, Mohammad Babaeizadeh, Piotr Milos, Blazej Osinski, Roy H. Campbell, Konrad
+Czechowski, Dumitru Erhan, Chelsea Finn, Piotr Kozakowski, Sergey Levine, Afroz Mohiuddin,
+Ryan Sepassi, George Tucker, and Henryk Michalewski. Model-based reinforcement learning for
+atari. 2019. URL http://arxiv.org/abs/1903.00374.
+Hilbert J Kappen, Vicenc ¸ G´omez, and Manfred Opper. Optimal control as a graphical model infer-
+ence problem. Machine learning, 87(2):159–182, 2012.
+Hyoungseok Kim, Jaekyeom Kim, Yeonwoo Jeong, Sergey Levine, and Hyun Oh Song. EMI:
+Exploration with mutual information. 2018. URL http://arxiv.org/abs/1810.01176.
+Diederik P. Kingma and Max Welling. Auto-encoding variational bayes. 2013. URL http:
+//arxiv.org/abs/1312.6114.
+David C Knill and Alexandre Pouget. The bayesian brain: the role of uncertainty in neural coding
+and computation. TRENDS in Neurosciences, 27(12):712–719, 2004.
+Thomas L Grifﬁths, Charles Kemp, and Joshua B Tenenbaum. Bayesian models of cognition. 2008.
+Lisa Lee, Benjamin Eysenbach, Emilio Parisotto, Eric Xing, Sergey Levine, and Ruslan Salakhutdi-
+nov. Efﬁcient exploration via state marginal matching. arXiv preprint arXiv:1906.05274, 2019.
+Felix Leibfried, Sergio Pascual-Diaz, and Jordi Grau-Moya. A uniﬁed bellman optimality principle
+combining reward maximization and empowerment. In Advances in Neural Information Process-
+ing Systems, pp. 7867–7878, 2019.
+Sergey Levine. Reinforcement learning and control as probabilistic inference: Tutorial and review.
+arXiv preprint arXiv:1805.00909, 2018.
+D. V . Lindley. On a measure of the information provided by an experiment. 27(4):986–
+1005, 1956. ISSN 0003-4851, 2168-8990. doi: 10.1214/aoms/1177728069. URL https:
+//projecteuclid.org/euclid.aoms/1177728069.
+9
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+Richard Meyes, Hasan Tercan, Simon Roggendorf, Thomas Thiele, Christian B¨uscher, Markus Ob-
+denbusch, Christian Brecher, Sabina Jeschke, and Tobias Meisen. Motion planning for industrial
+robots using reinforcement learning. Procedia CIRP, 63:107–112, 2017.
+Beren Millidge. Deep active inference as variational policy gradients. 2019. URL http://
+arxiv.org/abs/1907.03876.
+Atanas Mirchev, Baris Kayalibay, Maximilian Soelch, Patrick van der Smagt, and Justin Bayer.
+Approximate bayesian inference in spatial environments. 2018. URL http://arxiv.org/
+abs/1805.07206.
+V olodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A Rusu, Joel Veness, Marc G Belle-
+mare, Alex Graves, Martin Riedmiller, Andreas K Fidjeland, Georg Ostrovski, et al. Human-level
+control through deep reinforcement learning. Nature, 518(7540):529–533, 2015.
+Shakir Mohamed and Danilo Jimenez Rezende. Variational information maximisation for intrin-
+sically motivated reinforcement learning. 2015. URL http://arxiv.org/abs/1509.
+08731.
+KP Murphy. A survey of pomdp solution techniques: Theory.Models, and algorithms, management
+science, 28, 1982.
+Anusha Nagabandi, Gregory Kahn, Ronald S Fearing, and Sergey Levine. Neural network dynamics
+for model-based deep reinforcement learning with model-free ﬁne-tuning. In 2018 IEEE Interna-
+tional Conference on Robotics and Automation (ICRA), pp. 7559–7566. IEEE, 2018.
+Anusha Nagabandi, Kurt Konoglie, Sergey Levine, and Vikash Kumar. Deep dynamics models for
+learning dexterous manipulation. arXiv preprint arXiv:1909.11652, 2019.
+Brendan O’Donoghue, Ian Osband, Remi Munos, and V olodymyr Mnih. The uncertainty bellman
+equation and exploration. arXiv preprint arXiv:1709.05380, 2017.
+Masashi Okada and Tadahiro Taniguchi. Variational inference MPC for bayesian model-based rein-
+forcement learning. 2019. URL http://arxiv.org/abs/1907.04202.
+Pierre-Yves Oudeyer and Frederic Kaplan. What is intrinsic motivation? a typology of computa-
+tional approaches. Frontiers in neurorobotics, 1:6, 2009.
+Thomas Parr and Karl J Friston. The active construction of the visual world. Neuropsychologia,
+104:92–101, 2017.
+Thomas Parr, Dimitrije Markovic, Stefan J Kiebel, and Karl J Friston. Neuronal message passing
+using mean-ﬁeld, bethe, and marginal approximations. Scientiﬁc reports, 9(1):1–18, 2019.
+Deepak Pathak, Pulkit Agrawal, Alexei A Efros, and Trevor Darrell. Curiosity-driven exploration
+by self-supervised prediction. In Proceedings of the IEEE Conference on Computer Vision and
+Pattern Recognition Workshops, pp. 16–17, 2017.
+Giovanni Pezzulo, Emilio Cartoni, Francesco Rigoli, L ´eo Pio-Lopez, and Karl Friston. Active
+inference, epistemic value, and vicarious trial and error. Learning & Memory , 23(7):322–338,
+2016.
+Giovanni Pezzulo, Francesco Rigoli, and Karl J. Friston. Hierarchical active inference: A theory
+of motivated control. Trends in Cognitive Sciences , 22(4):294 – 306, 2018. ISSN 1364-6613.
+doi: https://doi.org/10.1016/j.tics.2018.01.009. URL http://www.sciencedirect.com/
+science/article/pii/S1364661318300226.
+Athanasios S Polydoros and Lazaros Nalpantidis. Survey of model-based reinforcement learning:
+Applications on robotics. Journal of Intelligent & Robotic Systems, 86(2):153–173, 2017.
+Konrad Rawlik, Marc Toussaint, and Sethu Vijayakumar. On stochastic optimal control and rein-
+forcement learning by approximate inference. In Twenty-Third International Joint Conference on
+Artiﬁcial Intelligence, 2013.
+10
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+Konrad Cyrus Rawlik. On probabilistic inference approaches to stochastic optimal control. 2013.
+Reuven Y Rubinstein. Optimization of computer simulation models with rare events. European
+Journal of Operational Research, 99(1):89–112, 1997.
+Noor Sajid, Philip J Ball, and Karl J Friston. Demystifying active inference. arXiv preprint
+arXiv:1909.10863, 2019.
+J¨urgen Schmidhuber. A possibility for implementing curiosity and boredom in model-building neu-
+ral controllers. In Proc. of the international conference on simulation of adaptive behavior: From
+animals to animats, pp. 222–227, 1991.
+J¨urgen Schmidhuber. Simple algorithmic principles of discovery, subjective beauty, selective at-
+tention, curiosity & creativity. In International Conference on Discovery Science , pp. 26–38.
+Springer, 2007.
+Philipp Schwartenbeck, Johannes Passecker, Tobias U Hauser, Thomas HB FitzGerald, Martin
+Kronbichler, and Karl J Friston. Computational mechanisms of curiosity and goal-directed
+exploration. 8:e41703, 2019. ISSN 2050-084X. doi: 10.7554/eLife.41703. URL https:
+//doi.org/10.7554/eLife.41703.
+Pranav Shyam, Wojciech Ja´skowski, and Faustino Gomez. Model-based active exploration. arXiv
+preprint arXiv:1810.12162, 2018.
+Pranav Shyam, Wojciech Jakowski, and Faustino Gomez. Model-based active exploration.
+In International Conference on Machine Learning , pp. 5779–5788, 2019. URL http://
+proceedings.mlr.press/v97/shyam19a.html.
+David Silver, Julian Schrittwieser, Karen Simonyan, Ioannis Antonoglou, Aja Huang, Arthur Guez,
+Thomas Hubert, Lucas Baker, Matthew Lai, Adrian Bolton, et al. Mastering the game of go
+without human knowledge. Nature, 550(7676):354–359, 2017.
+Susanne Still and Doina Precup. An information-theoretic approach to curiosity-driven reinforce-
+ment learning. 131(3):139–148, 2012. ISSN 1611-7530. doi: 10.1007/s12064-011-0142-z.
+Jan Storck, Sepp Hochreiter, and J ¨urgen Schmidhuber. Reinforcement driven information acquisi-
+tion in non-deterministic environments. In Proceedings of the international conference on artiﬁ-
+cial neural networks, Paris, volume 2, pp. 159–164. Citeseer, 1995.
+Yi Sun, Faustino Gomez, and Juergen Schmidhuber. Planning to be surprised: Optimal bayesian
+exploration in dynamic environments. 2011. URL http://arxiv.org/abs/1103.5708.
+Richard S Sutton, Andrew G Barto, et al. Introduction to reinforcement learning, volume 135. MIT
+press Cambridge, 1998.
+Bjrn Ivar Teigen. An active learning perspective on exploration in reinforcement learning. 2018.
+URL https://www.duo.uio.no/handle/10852/62823.
+Alexander Tschantz, Manuel Baltieri, Anil K. Seth, and Christopher L. Buckley. Scaling active
+inference. 2019a. URL http://arxiv.org/abs/1911.10601.
+Alexander Tschantz, Anil K. Seth, and Christopher L. Buckley. Learning action-oriented models
+through active inference. pp. 764969, 2019b. doi: 10.1101/764969. URL https://www.
+biorxiv.org/content/10.1101/764969v1.
+Sebastian Tschiatschek, Kai Arulkumaran, Jan Sthmer, and Katja Hofmann. Variational inference
+for data-efﬁcient model learning in POMDPs. 2018. URL http://arxiv.org/abs/1805.
+09281.
+Kai Ueltzhffer. Deep active inference. 112(6):547–573, 2018. ISSN 0340-1200, 1432-0770. doi:
+10.1007/s00422-018-0785-7. URL http://arxiv.org/abs/1709.02341.
+Manuel Watter, Jost Tobias Springenberg, Joschka Boedecker, and Martin Riedmiller. Embed to
+control: A locally linear latent dynamics model for control from raw images. 2015. URL http:
+//arxiv.org/abs/1506.07365.
+11
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+Grady Williams, Paul Drews, Brian Goldfain, James M Rehg, and Evangelos A Theodorou. Aggres-
+sive driving with model predictive path integral control. In 2016 IEEE International Conference
+on Robotics and Automation (ICRA), pp. 1433–1440. IEEE, 2016.
+Yarin Gal, Rowan McAllister, and Carl Edward Rasmussen. Improving PILCO with bayesian neural
+network dynamics models. In Data-Efﬁcient Machine Learning workshop, 2016.
+12
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+A R ELATED WORK
+Active inference There is an extensive literature on active inference within discrete state-spaces,
+covering a wide variety of tasks, such as epistemic foraging in saccades (Parr & Friston, 2017;
+Friston, 2019b; Schwartenbeck et al., 2019), exploring mazes (Friston et al., 2015; Pezzulo et al.,
+2016; Friston et al., 2016), to playing Atari games (Cullen et al., 2018). Active inference also comes
+equipped with a well-developed neural process theory (Friston et al., 2017a; Parr et al., 2019) which
+can account for a substantial range of neural dynamics. There have also been prior attempts to
+scale up active inference to continuous RL tasks (Tschantz et al., 2019a; Millidge, 2019; Ueltzhffer,
+2018), which we build upon here.
+Model based RL Model based reinforcement learning has been in a recent renaissance, with im-
+plementations vastly exceeding the sample efﬁciency of model-free methods, while also approaching
+their asymptotic performance (Ha & Schmidhuber, 2018; Nagabandi et al., 2018; Chua et al., 2018a;
+Hafner et al., 2018). There have been recent successes on challenging domains such as Atari (Kaiser
+et al., 2019), and high dimensional robot locomotion (Hafner et al., 2018; 2019) and manipulation
+(Nagabandi et al., 2019) tasks. Key advances include variational autoencoders (Kingma & Welling,
+2013) to ﬂexibly construct latent spaces in partially observed environments, Bayesian approaches
+such as Bayes by backprop (Houthooft et al., 2016a), deep ensembles (Shyam et al., 2018; Chua
+et al., 2018a), and other variational approaches (Okada & Taniguchi, 2019; Tschiatschek et al., 2018;
+Yarin Gal et al., 2016), which quantify uncertainty in the dynamics models, and enable the model
+to learn a latent space that is useful for action (Tschantz et al., 2019b; Watter et al., 2015). Finally,
+progress has been aided by powerful planning algorithms capable of online planning in continuous
+state and action spaces (Williams et al., 2016; Rubinstein, 1997).
+Intrinsic Measures Using intrinsic measures to encourage exploration has a long history in RL
+(Schmidhuber, 1991; 2007; Storck et al., 1995; Oudeyer & Kaplan, 2009; Chentanez et al., 2005).
+Recent model-free and model based-intrinsic measures that have been proposed in the literature in-
+clude policy-entropy (Rawlik, 2013; Rawlik et al., 2013; Haarnoja et al., 2018),state entropy (Lee
+et al., 2019), information-gain (Houthooft et al., 2016b; Okada & Taniguchi, 2019; Kim et al.,
+2018; Shyam et al., 2019; Teigen, 2018), prediction error (Pathak et al., 2017), divergence of en-
+sembles (Shyam et al., 2019; Chua et al., 2018b), uncertain state bonuses (Bellemare et al., 2016;
+O’Donoghue et al., 2017), and empowerment (de Abril & Kanai, 2018; Leibfried et al., 2019; Mo-
+hamed & Rezende, 2015). Information gain additionally has a substantial history outside the RL
+framework, going back to (Lindley, 1956; Still & Precup, 2012; Sun et al., 2011).
+B D ERIVATION FOR THE FREE ENERGY OF THE EXPECTED FUTURE
+We begin with the full free energy of the expected future and decompose this into the free energy of
+the expected future given policies, and the negative policy entropy:
+˜F= Eq(o,s,θ,π)[log q(o,s,θ,π ) −log pΦ(o,s,θ)]
+= Eq(π)[ ˜Fπ] −H[q(π)]
+(8)
+We now show the free energy of the expected future given policies can be decomposed into extrinsic
+and information gain terms:
+˜Fπ = Eq(o,s,θ,π)[log q(o,s,θ,π ) −log pΦ(o,s,θ)]
+= Eq(o,s,θ|π)[log q(s,θ|π) + logq(o|s,θ,π ) −log p(s,θ|o) −log pΦ(o)]
+≈Eq(o,s,θ|π)[log q(s,θ|π) + logq(o|s,θ,π ) −log q(s,θ|o,θ) −log pΦ(o)]
+= Eq(o,s,θ|π)[log q(s,θ|π) −log q(s,θ|o,π)] + Eq(o,s,θ|π)[log q(o|s,θ,π ) −log pΦ(o)]
+−˜Fπ = Eq(o,s,θ|π)[log q(s,θ|o,π) −log q(s,θ|π)] + Eq(o,s,θ|π)[log pΦ(o) −log q(o|s,θ,π )]
+= Eq(o|π)
+[
+DKL
+(
+q(s,θ|o,π)∥q(s,θ|π)
+)]
+  
+Expected Information Gain
+−Eq(s,θ|π)
+[
+DKL
+(
+q(o|s,θ,π )∥pΦ(o)
+)]
+  
+Extrinsic Value
+(9)
+13
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+Where we have assumed that p(s,θ|o) ≈q(s,θ|o,π). We wish to minimize ˜Fπ, and thus maximize
+−˜Fπ. This means we wish to maximize the information gain and minimize the KL-divergence
+between expected and preferred observations.
+By noting that q(s,θ|o,π) ≈q(s|o,π)q(θ|s), we can split the expected information gain term into
+state and parameter information gain terms:
+Eq(o|π)
+[
+DKL
+(
+q(s,θ|o,π)∥q(s,θ|π)
+)]
+= Eq(o|π)q(s,θ|o,π)
+[
+log q(s,θ|o,π) −log q(s,θ|π)
+]
+= Eq(o|π)q(s,θ|o,π)
+[
+log q(s|o,π) + logq(θ|s) −log q(s|θ,π) −log q(θ)
+]
+= Eq(o|π)q(s,θ|o,π)
+[
+log q(s|o,π) −log q(s|θ,π)]
+]
++ Eq(o|π)q(s,θ|o,π)
+[
+log q(θ|s) −log q(θ)
+]
+= Eq(o|π)q(θ)
+[
+DKL
+(
+q(s|o,π)∥q(s|θ)
+)]
+  
+Expected State Information Gain
++ Eq(s|θ)
+[
+DKL
+(
+q(θ|s)∥q(θ)
+)]
+  
+Expected Parameter Information Gain
+(10)
+C D ERIVATION OF THE OPTIMAL POLICY
+We derive the distribution forq(π) which minimizes ˜F:
+˜F= DKL
+(
+q(o,s,θ,π )∥pΦ(o,s,θ)
+)
+= Eq(o,s,θ,π)[log q(o,s,θ|π) + logq(π) −log pΦ(o,s,θ,π )]
+= Eq(π)
+[
+Eq(o,s,θ|π)[log q(π) −[log pΦ(o,s,θ) −log q(o,s,θ|π)]
+]
+= Eq(π)
+[
+log q(π) −Eq(o,s,θ|π)[log pΦ(o,s,θ) −log q(o,s,θ|π)]
+]
+= Eq(π)
+[
+log q(π) −
+[
+−Eq(o,s,θ|π)[log q(o,s,θ|π) −log pΦ(o,s,θ)]
+]]
+= Eq(π)
+[
+log q(π) −log e−
+[
+−Eq(o,s,θ|π)[log q(o,s,θ|π)−log pΦ(o,s,θ)]
+]]
+= Eq(π)
+[
+log q(π) −log e−DKL
+(
+q(o,s,θ|π)∥pΦ(o,s,θ)
+)]
+= DKL
+(
+q(π)∥e−DKL
+(
+q(o,s,θ|π)∥pΦ(o,s,θ)
+))
+= DKL
+(
+q(π) ∥e−˜Fπ
+)
+(11)
+D D ERIVATION OF RL BOUND
+Here we show that the free energy of the expected future is a bound on the divergence between
+expected and desired observations. The proof proceeds straightforwardly by importance sampling
+on the approximate posterior and then applying Jensen’s inequality:
+DKL
+(
+q(ot:T|π)∥pΦ(ot:T)
+)
+= Eq(ot:T|π)
+[
+log q(ot:T|π) −log pΦ(o)
+]
+= Eq(ot:T|π)
+[
+log
+(∫
+dx1:T
+∫
+dθ1:T
+q(ot:T,st:T,θt:T|π)q(st:T,θt:T|ot:T)
+pΦ(ot:T)q(st:T,θt:T|ot:T)
+)]
+≤Eq(ot:T,st:T,θt:T|π)
+[
+log
+(q(ot:T,st:T,θt:T|π)
+pΦ(ot:T,st:T,θt:T)
+)]
+≤DKL
+(
+q(ot:T,st:T,θ|π)∥pΦ(ot:T,st:T,θ)
+)
+= ˜F
+(12)
+14
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+E M ODEL DETAILS
+In the current work, we implemented our probabilistic model using an ensemble-based approach
+(Chua et al., 2018a; Fort et al., 2019; Chitta et al., 2018). Here, an ensemble of point-estimate
+parameters θ= {θ0,...,θ B}trained on different batches of the dataset Dare maintained and treated
+as samples as from the posterior distribution p(θ|D). Besides consistency with the active inference
+framework, probabilistic models enable the active resolution of model uncertainty, capture both
+epistemic and aleatoric uncertainty, and help avoid over-ﬁtting in low data regimes (Fort et al.,
+2019; Chitta et al., 2018; Chatzilygeroudis et al., 2018; Chua et al., 2018b).
+This design choice means that we use a trajectory sampling method when evaluating beliefs about fu-
+ture variables (Chua et al., 2018a), as each pass through the transition model p(st|st−1,θ,π ) evokes
+Bsamples from st.
+Transition model We implement the transition model as p(st|st−1,θ,π ) as
+N(st; fθ(st−1),fθ(st−1)), where fθ(·) are a set of function approximators fθ(·) =
+{fθ0(·),...,f θB(·)}. In the current paper, fθi(st−1) is a two-layer feed-forward network with
+400 hidden units and swish activation function. Following previous work, we predict state deltas
+rather than the next states (Shyam et al., 2018).
+Reward model We implement the reward model as p(oτ|sτ,θ,π ) = N(oτ; fλ(sτ),1), where
+fλ(sτ) is some arbitrary function approximator6. In the current paper, fλ(sτ) is a two layer feed for-
+ward network with 400 hidden units and ReLU activation function. Learning a reward model offers
+several plausible beneﬁts outside of the active inference framework, as it abolishes the requirement
+that rewards can be directly calculated from observations or states (Chua et al., 2018a).
+Global prior We implement the global prior pΦ(o) as a Gaussian with unit variance centred
+around the maximum reward for the respective environment. We leave it to future work to explore
+the effects of more intricate priors.
+F I MPLEMENTATION DETAILS
+For all tasks, we initialize a dataset Dwith a single episode of data collected from a random agent.
+For each episode, we train the ensemble transition model and reward model for 100 epochs, using
+the negative-log likelihood loss. We found cold-starting training at each episode to lead to more
+consistent behaviour. We then let the agent act in the environment based on Algorithm 1, and
+append the collected data to the dataset D.
+We list the full set of hyperparameters below:
+Hyperparameters
+Hidden layer size 400
+Learning rate 0.001
+Training-epochs 100
+Planning-horizon 30
+N-candidates (CEM) 700
+Top-candidates (CEM) 70
+Optimisation-iterations (CEM) 7
+G E XPECTED INFORMATION GAIN
+In Eq. 4, expected parameter information gain was presented in the form Eq(s|θ)DKL
+(
+q(θ|s)∥q(θ)
+)
+.
+While this provides a nice intuition about the effect of the information gain term on behaviour, it
+cannot be computed directly, due to the intractability of identifying true posteriors over parameters.
+We here show that, through a simple application of Bayes’ rule, it is straightforward to derive an
+6Formally, this is an observation model, but we retain RL terminology for clarity.
+15
+Published as a workshop paper at “Bridging AI and Cognitive Science” (ICLR 2020)
+equivalent expression for the expected information gain as the divergence between the state likeli-
+hood and marginal, given the parameters, which decomposes into an entropy of an average minus
+an average of entropies:
+Eq(s|θ)DKL
+(
+q(θ|s)∥q(θ)
+)
+= Eq(s|θ)q(θ|s)
+[
+log q(θ|s) −log q(θ)
+]
+= Eq(s,θ)
+[
+log q(s|θ) + logq(θ) −log q(s) −log q(θ)
+]
+= Eq(s,θ)
+[
+log q(s|θ) −log q(s)
+]
+= Eq(θ)q(s|θ)
+[
+log q(s|θ)
+]
+−Eq(θ)q(s|θ)
+[
+log Eq(θ)q(s|θ)
+]
+= −Eq(θ)H
+[
+q(s|θ)
+]
++ H
+[
+Eq(θ)q(s|θ)
+]
+(13)
+The ﬁrst term is the (negative) average of the entropies. The average over the parameters θ is
+achieved simply by averaging over the dynamics models in the ensemble. The entropy of the likeli-
+hoods H[p(s|θ)] can be computed analytically since each network in the ensemble outputs a Gaus-
+sian distribution for which the entropy is a known analytical result. The second term is the entropy
+of the average H[Ep(θ)p(s|θ)]. Unfortunately, this term does not have an analytical solution. How-
+ever, it can be approximated numerically using a variety of techniques for entropy estimation. In our
+paper, we use the nearest neighbour entropy approximation (Mirchev et al., 2018).
+H E NVIRONMENT DETAILS
+The Mountain Car environment ( S⊆ R2A⊆ R1) requires an agent to drive up the side of a hill,
+where the car is underactuated requiring it ﬁrst to gain momentum by driving up the opposing hill.
+A reward of one is generated when the agent reaches the goal, and zero otherwise. The Cup Catch
+environment (S⊆ R8A⊆ R2) requires the agent to actuate a cup and catch a ball attached to its
+bottom. A reward of one is generated when the agent reaches the goal, and zero otherwise. The
+Half Cheetah environment ( S⊆ R17A⊆ R6) describes a running planar biped. For the running
+task, a reward of v−0.1||a||2 is received, where vis the agent’s velocity, and for the ﬂipping task,
+a reward of ϵ−0.1||a||2 is received, where ϵis the angular velocity. The Ant Maze environment
+(S⊆ R29A⊆ R8) involves a quadruped agent exploring a rectangular maze.
+16

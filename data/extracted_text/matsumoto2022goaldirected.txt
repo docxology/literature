@@ -1,0 +1,1024 @@
+Goal-directed Planning and Goal Understanding by
+Active Inference: Evaluation Through Simulated and
+Physical Robot Experiments
+Takazumi Matsumoto, Wataru Ohata, Fabien C. Y. Benureau and Jun Tani∗
+1Okinawa Institute of Science and Technology, 904-045, Japan
+∗Corresponding author: jun.tani@oist.jp
+Abstract
+We show that goal-directed action planning and generation in a teleological framework can be
+formulated using the free energy principle. The proposed model, which is built on a variational
+recurrent neural network model, is characterized by three essential features. These are that (1)
+goals can be speciﬁed for both static sensory states, e.g., for goal images to be reached and dynamic
+processes, e.g., for moving around an object, (2) the model can not only generate goal-directed
+action plans, but can also understand goals by sensory observation, and (3) the model generates
+future action plans for given goals based on the best estimate of the current state, inferred using past
+sensory observations. The proposed model is evaluated by conducting experiments on a simulated
+mobile agent as well as on a real humanoid robot performing object manipulation.
+Keywords: active inference; teleology; goal-directed action planning
+1 Introduction
+In studying contemporary models of goal-directed actions of biological and artiﬁcial agents, it is
+worthwhile to consider these models from the perspective of a teleological framework. Teleology is
+a philosophical idea that originated in the days of Plato and Aristotle. It holds that phenomena
+appear not by their causes, but by their end results. While teleology is controversial and largely
+abandoned as a means of explaining physical phenomena, the idea has been extended for modeling
+action generation. A teleological account explains actions by specifying the state of affairs or the
+event toward which the actions are directed [1, 2]. More simply, actions are generated to achieve
+purposes or goals. In psychology, Csibra et al. [ 3] proposes that a goal-directed action can be
+explained by a well-formed teleological representation consisting of 3 elements: (1) a goal, (2)
+actions intended to achieve the goal, and (3) constraints, which are physical conditions that impose
+limits on possible actions. In a well-formed teleological representation of an action, the action
+should be seen as an effective means to achieve the goal within the constraint of reality. This account
+predicts that agents who represent goal-directed actions in this way should be able to infer unseen
+1
+arXiv:2202.09976v1  [cs.RO]  21 Feb 2022
+goals or unseen reality constraints, given the two remaining elements. Csibra et al. [3] veriﬁed this
+hypothesis by showing that even year-old infants can perform such inferences in their experiments.
+Brain-inspired models for goal-directed action have been developed in various forms. Most
+brain-inspired models are based on forward models [4–6] for predicting sensory outcomes of an
+action to be executed. For goals given in terms of a preferred sensory state at the distal (terminal)
+step, optimal action sequences leading to the goal under assumed constraints, such as a minimal
+torque change criterion, can be obtained inversely using the forward model. Recently, Friston and
+colleagues [7, 8] advanced the idea of goal-directed action using a forward model by incorporating
+a Bayesian perspective. Goal-directed planning for achieving the preferred sensory states is
+formulated under the framework of active inference [9–11] based on the free energy principle [12].
+The aforementioned studies on goal-directed action can be expanded in various ways. One
+such possibility concerns the goal representation. Although goals in the aforementioned models
+are represented by a particular sensory state at each time step or at the distal step, some classes of
+on-going processes can also be goals for generating actions. For example, one can say ”I got up
+early this morning to run.” In this case, the goal is not a particular destination, but the process of
+running. In the teleological framework, goals or the purpose of actions could be states, events, or
+processes which could be either speciﬁc or abstract and conceptual. What sorts of models could
+incorporate such diverse forms of goal representations? Another possibility for exploration is to
+incorporate the capability for inferring unseen goals or unseen reality constraints provided with
+the remaining two elements among actions, constraints and goals, as described by Csibra et al. [3].
+For the purpose of examining these possibilities, the current study proposes a novel model by
+extending our prior goal-directed planning model, GLean [13]. GLean was developed following the
+free energy principle [12] and it operates in the continuous domain using PV-RNN, a variational
+recurrent neural network model [14]. The newly proposed model, T-GLean, has three new key
+features compared to GLean. First, goals can be speciﬁed either by temporal processes (such as
+the earlier example of ”going out for a run”) or static sensory states, for example, ”going to the
+corner store.” Second, the model can infer goals by sensory observation, as well as by generating
+goal-directed action plans. This allows agents using the T-GLean model to anticipate goals and
+future actions by observing the actions of another agent. Third, the model generates future action
+plans for given goals based on the best estimate of the current hidden state using the past sensory
+observation. While this feature is not necessarily novel, given that functions of sensory reﬂection or
+postdiction [15] have been examined using deterministic generative RNN models [16] and Bayesian
+probabilistic generative models [ 8], this feature is added to the model so that robots utilizing
+T-GLean can generate goal-directed plans online while actions are being executed, whereas GLean
+can only generate plans ofﬂine.
+Our proposed model is evaluated in Section 4 by conducting two experiments using two robot
+setups. The ﬁrst experiment uses a simple simulated mobile robot that can navigate an environment
+with an obstacle, and the second experiment uses a physical humanoid robot with a larger degree of
+freedom that tracks and manipulates objects. In both experiments, the robots are trained to achieve
+two different types of goals. For the mobile robot, one type of goal is to reach a speciﬁed position
+while avoiding collisions with obstacles, and the other type of goal is to move around a speciﬁc
+object repeatedly. For the humanoid robot, one type of goal is to grasp an object and then to place
+it at a speciﬁed position and the other type of goal is to lift an object up and down repeatedly. In
+both experiments, the trained robots are evaluated in generating goal-directed actions for speciﬁed
+goals, as well as to infer corresponding unseen goals for given sensory sequences. We also touch
+on generating action plans based on the rationality principle [3]. The following section describes
+2
+related studies in more detail so that readers can understand easily how the proposed model has
+been developed by extending and modifying those prior proposed models.
+2 Related studies
+First we look in detail at how a goal-directed action can be generated using the forward model.
+Kawato et al. [4] proposed that multiple future steps of proprioception (joint angles) as well as
+the distal position in task coordinate space of an arm robot can be predicted, given the motor
+torque at each time step, by training the forward dynamics model and the kinematic model that are
+implemented in a feed-forward network cascaded in time. After training, optimal motor commands
+to achieve the desired positions at the distal step following the minimal torque change criterion
+can be computed by using the prediction error information generated in the distal step. In order
+to deal with the hidden state problem encountered by real robots navigating with limited sensors,
+Tani [17] extended this model by implementing the forward dynamics model in a recurrent neural
+network (RNN) with deterministic latent variables. It was shown that a physical mobile robot can
+generate optimal, goal-directed navigation plans with the minimum travel distance criterion in a
+hidden state environment using that proposed model. Figure 1a depicts the scheme of goal-directed
+planning using a forward dynamics model implemented in an RNN.
+(a)
+ (b)
+ (c)
+Figure 1: Prior models for generating goal-directed behaviors. ( a) Forward model using latent
+variables, ( b) active inference model using probabilistic latent variables, and ( c) GLean as an
+extension of active inference.
+In this graphical representation, at, dt, zt and ¯xt denote the action, deterministic latent variable,
+probabilistic latent variable, and sensory prediction at time step t, respectively. ˆxT is the sensory
+goal image at the distal step T. Within the scheme of the forward model and active inference,
+the policy is a sequence of actions that is optimized such that the error between the sensory goal
+image and the preferred image at T can be minimized (the minimization criterion such as the travel
+distance is omitted for brevity.)
+Friston and colleagues [ 7, 8] formulated goal-directed actions by extending the framework
+of active inference [ 9–11] based on the free energy principle [ 12]. The major advantage of this
+approach, compared to the aforementioned conventional forward model, is that the model can cope
+with uncertainty that originates from the stochastic nature of the environment by incorporating a
+Bayesian framework. Originally, the free energy principle was developed as a theory for perception
+3
+under the framework of predictive coding, wherein probabilistic distributions of past latent vari-
+ables in generative models are inferred for the observed sensation by minimizing the free energy.
+Later, active inference was developed as a framework for action generation wherein action policies
+as well as the probabilistic distribution of future latent variables in generative models are inferred
+by minimizing the so-called expected free energy. Minimizing the expected free energy Gai f for the
+future maximizes both the epistemic value shown in the ﬁrst and the second terms, and extrinsic
+value in the third term in Equation 1.
+Gai f =
+T
+∑
+t>tc
+−Eq(zt,xt|π)
+
+ log p(zt|xt) −log q(zt|π)  
+epistemic value
++ log P(xt)  
+extrinsic value
+
+ (1)
+where π is an optimal policy or a sequence of actions, q() is the posterior predictive distribution,
+and tc is the current time step. The extrinsic value represents how much the sensory outcomes
+expected in the generated future plan are consistent with the preferred outcomes. The epistemic
+value, on the other hand, represents the expected information gain with predicted outcomes. This
+means that this value indicates the expected decrease of uncertainty with regard to the hidden
+state provided by the sensory observation. In summary, an optimal action policy for achieving the
+preferred sensory outcomes and the reduction of uncertainty of the hidden states can be generated
+by minimizing the expected free energy. Figure 1b depicts this framework wherein the probabilistic
+latent variables z0:T, as well as an action policy, a0:T are inferred by minimizing the expected free
+energy.
+Although Friston and colleagues [7, 8] implemented this framework mostly in discrete space,
+Hafner et al. [18] proposed an analogous model implemented in continuous state problems.
+Matsumoto and Tani [13] proposed another type of goal-directed action plan generation model,
+GLean, which is based on the free energy principle using a variational RNN. The main difference of
+this scheme from those proposed by Friston and colleagues [7, 8] and by Hafner et al. [18] is that an
+optimal goal-directed plan is obtained by inferring the lower dimensional probabilistic latent space,
+instead of the higher dimensional action space. The graphical model of the scheme is depicted in
+Figure 1c, wherein the proprioception ¯xp
+t and the exteroception ¯xe
+t at each time step t are predicted
+by the learned generative model using the probabilistic latent variable zt and deterministic latent
+variable dt. For a given preferred goal represented as an exteroceptive state at the distal step T
+as ˆxT, a proprioceptive-exteroceptive sequence expected to reach this goal state is searched by
+inferring an optimal sequence of the posterior distribution of the latent variables q(z1:T) by means
+of minimizing the expected free energy Ggl as shown in Equation 2.
+Ggl = −Eq(zT |ˆxT )
+[
+p(xT|dT)
+]
+  
+goal error
++
+( T
+∑
+t=tc
+DKL
+[
+q(zt|ˆxT)||p(zt|dt−1)
+])
+  
+complexity
+(2)
+Here, the expected free energy is represented by a sum of two terms, namely the goal error at the
+distal step, shown in the ﬁrst term, and the complexity summed over all future steps, shown in
+the second term. Complexity is the divergence between the posterior predictive distribution and
+the prior distribution of the probabilistic latent variables, and is described in more detail later in
+Section 3. By minimizing this form of free energy, plans reaching the preferred goal states, but
+following well-habituated trajectories learned during learning, can be generated. We note that this
+4
+model does not infer the policy directly. Instead, the motor command or action a at each time step
+is computed by means of the proprioceptive error feedback by sending the prediction of the next
+step proprioception as the target to the motor controller when the agent generates movement.
+3 The Proposed Model
+Our newly proposed model, T-GLean, is an extension of GLean [13] with a novel goal represen-
+tation scheme. Each goal is represented by its category, e.g., reaching or cycling, associated with
+optional parameters, e.g., for position or speed. The network is designed to output the expected
+goal at each time step based on learning, as shown in Figure 2.
+Figure 2: Overview of the newly proposed model.
+When the current preferred goal is given at each time step, the posterior predictive distribution is
+updated in the direction of minimizing the divergence between the preferred goal and the expected
+goal at each time step. This generates the expected exteroceptive and proprioceptive trajectory
+leading to the goal. In addition, the network can infer unseen goals from the observation of on-
+going sensory inputs. For a given exteroceptive trajectory, the posterior distribution is updated
+in the direction of minimizing the divergence between the given exteroceptive trajectory and its
+reconstructed trajectory. This generates the expected goal in the outputs at each time step. This
+model utilizes the PV-RNN architecture, which leverages the idea of multiple timescale RNN [13, 19]
+with the expectation of development of a functional hierarchy through learning. The network is
+operated in three modes, each of which minimizes free energy as its loss function. In learning mode,
+predictive models are learned using provided training sequences by minimizing the evidence free
+energy. In online action generation mode, a future goal-directed plan is generated by minimizing
+the expected free energy while the past sensory experience is reﬂected by minimizing the evidence
+free energy. As this occurs in real time, the past sensory experience is constantly updated online. In
+the goal inference mode, the expected goal is inferred using the observed exteroceptive sequence by
+minimizing the evidence free energy. The following sub-sections describe the model in more detail.
+5
+3.1 Model architecture
+Figure 3: Graphical description of the employed architecture.
+Figure 3 depicts the employed architecture as a graphical model consisting of three layers of
+PV-RNN. It is similar to the architecture employed in [ 13], with the modiﬁcation introduced in
+[20] that has the top-down connection from higher layers to lower layers dl+1 →dl in the same
+time step, rather than from the previous time step. The graphical model shows the RNN unrolled
+into to the past as well as to the future, with the current time step at tc. Each layer indexed by l
+contains the stochastic variable z, from which zp
+l,t is sampled from the prior distribution, and zq
+l,t is
+the posterior distribution, as well as the deterministic latent variable dl,t, for each time step t. Note
+that deterministic variables take as input the deterministic variable from the layer above except on
+the top layer. The output of the bottom layer (L1) is split into proprioception ¯xp
+t , exteroception ¯xe
+t ,
+expected goal ¯gt, and distal probability ¯st. Unless noted otherwise, the preferred goal ˆg is given
+at all time steps as a target. Where available, the observed proprioception xp
+t and exteroception
+xe
+t are used as targets for error minimization. The distal probability at time step ¯st (omitted from
+the diagram for brevity) is the probability of achieving the expected goal at t. When the distal
+probability at a particular time step becomes the highest among those at all other time steps and it
+exceeds a predeﬁned threshold value, it is assumed that the preferred goal is achieved in this time
+step. During training, ˆs is a one-hot vector in the time dimension with a single peak at the time step
+6
+the goal is actually achieved. The output ( ¯x, ¯g) and targets (x, ˆg) are softmax encoded; however,
+for brevity, the output layer that decodes the network output into raw output for the agent is not
+shown in this ﬁgure. In subsequent subsections, we will describe in more detail the aforementioned
+modes on which the network can operate. We do not make a complete derivation of PV-RNN in
+this paper, but focus on key aspects of this model.
+3.2 Learning
+Based on the graph connectivity shown in Figure 3, the forward computation of PV-RNN is
+given in Equation 3. The internal state of each PV-RNN cellhl,t at time step t and level l is computed
+as a sum of the connectivity weight multiplication of zl,t, hl,t−1, and hl+1,t (if l is not the top layer).
+The connectivity weight matrix W is indexed from layer to layer and from unit to unit. For brevity,
+bias terms have been omitted.
+hl,t =
+(
+1 −1
+τl
+)
+hl,t−1 + 1
+τl
+(
+Wl,l
+d,ddl,t−1 + Wl,l
+z,dzl,t + Wl+1,l
+d,d dl+1,t
+)
+,
+dl,t = tanh(hl,t),
+dl,0 = 0.
+(3)
+Where τl is the MTRNN time constant of layer l.
+The stochastic variable z follows a Gaussian distribution. Each sample of the prior distribution
+zp
+t for layer l is computed as shown in in Equation 4.
+µp
+l,t =
+{
+0, if t = 1
+tanh(Wl,l
+d,zµp dl,t−1), otherwise
+σp
+l,t =
+{
+1, if t = 1
+exp(Wl,l
+d,zσp dl,t−1), otherwise
+zp
+l,t = µp
+l,t + σp
+l,t ⊙ϵ.
+(4)
+Where ϵ is a random noise sample such that ϵ ∼N(0, I). Samples of the posterior distribution
+zq
+t are computed as shown in Equation 5. The A variable is a vector for each z unit and sequence.
+For brevity, here we assume we have a single sequence. If an output sequence is generated using
+the posterior adapted during training, the corresponding training sequence should be regenerated.
+During goal inference and plan generation, the A variables are inferred by the error regression
+process, as will be described later.
+µq
+l,t = tanh(Aµ
+l,t),
+σq
+l,t = exp(Aσ
+l,t),
+zq
+l,t = µq
+l,t + σq
+l,t ⊙ϵ.
+(5)
+To compute the output at time step t, there are three steps. First, the network output o is computed
+from d1,t, as in Equation 6. This uses the output from layer 1 and treats the output layer as layer 0.
+ot = W1,0
+d,o d1,t. (6)
+7
+We then compute the predicted probability distribution output ¯x. For this purpose, we use a
+softmax function to represent the probability distribution of the i-th dimension of the output as in
+Equation 7.
+¯xi,j
+t = exp(oi,j
+t )
+∑j exp(oi,j
+t )
+. (7)
+where ¯xi,j
+t is the predicted probability that the j-th softmax element of the i-th output is on.
+For explaining the learning scheme following the principle of free energy minimization, we ﬁrst
+describe the model in terms of free energy. For brevity, we will assume there is a single layer only.
+This is shown graphically in Figure 4.
+Figure 4: Network during training.
+During learning, the evidence free energy shown in Equation 8 is minimized by iteratively
+updating the posterior of z as well as the RNN learning parameters W at each time step for all
+training sequences.
+F(x, ˆg, z) =
+T
+∑
+t=1
+(
+w ·DKL
+[
+q(zt|xt:T, ˆgt:T)||p(zt|dt−1)
+]
+  
+complexity
+−Eq(zt|xt:T, ˆgt:T )
+[
+log P(xt, gt|dt)
+  
+accuracy
+])
+. (8)
+Where x and ˆg are the observed sensory states and preferred goal, respectively, whiled and z are
+the deterministic and probabilistic latent states, respectively. Free energy in this work is modiﬁed
+by inclusion of the meta-prior w, which weights the complexity term. w is a hyperparameter that
+affects the degree of regularization, similar to β in Variational Autoencoders [21]. We also note that
+since we are dealing with sequences of actions, the free energy is a summation over all time steps in
+the sequence.
+The ﬁrst term, complexity, is computed as the Kullback–Leibler (KL) divergence between the
+prior and approximate posterior distributions. This can be expressed as follows:
+DKL
+[
+q(zt|xt:T, ˆgt:T)||p(zt|dt−1)
+]
+=
+∫
+q(zt|xt:T, ˆgt:T) log q(zt|xt:T, ˆgt:T)
+p(zt|dt−1) dzt (9)
+8
+Since we have µ and σ for both prior p and posterior q distributions, they can be expressed as
+follows:
+p(zt|dt−1) = 1√
+2π(σp
+t )2
+exp
+[
+−1
+2
+(
+zt −µp
+t
+σp
+t
+)2]
+,
+q(zt|xt:T, ˆgt:T) = 1√
+2π(σq
+t )2
+exp
+[
+−1
+2
+(
+zt −µq
+t
+σq
+t
+)2]
+.
+(10)
+Thus, continuing from Equation 9, complexity can be computed as:
+∫
+q(zt|xt:T, ˆgt:T) log q(zt|xt:T, ˆgt:T)
+p(zt|dt−1) dzt = log σp
+t
+σq
+t
++ (µq
+t −µp
+t )2 + (σq
+t )2
+2(σp
+t )2 −1
+2 (11)
+For brevity, a case of a single z-unit with a (µ, σ) pair is shown here. In practice we can have
+multiple z-units, each with independent (µ, σ), and in that case the RHS is a summation over all (µ,
+σ), as will be shown later in the experimental section. The second term of Equation 8, accuracy, can
+be computed using the probability distribution estimated in the softmax outputs. During learning,
+Equation 8 is used as the loss function with the Adam optimizer, as noted Section 4.
+3.3 Online goal-directed action plan generation
+A key difference between our newly proposed model, T-GLean, and our previous model, GLean,
+is the idea that the goal expectation ¯gt is generated at every time step instead of expecting the
+goal sensory state at the distal time step. Intuitively, this means that at every time step, the agent
+expects a goal state that the on-going action sequence will achieve. An advantage of this model
+scheme is that goals can be represented not only by distal sensory states to be achieved, but also
+by continuously changing sensory sequences. Another key feature of T-GLean is that the model
+generates plans online, in real-time, while the agent is acting on the environment, whereas our
+prior study using GLean showed only an ofﬂine plan generation scheme. In T-GLean the network
+maintains the observed sensory sequence in a past window while allocating a future window for
+the future time steps. In the past window, evidence free energy is minimized online by updating
+the posterior at each time step in order to situate all the latent variables to the observed sensory
+sequence. In the future window, the error between the preferred goal and the expected goal output
+is minimized for all steps by updating the posterior predictive distribution in the window iteratively,
+of which computation can be performed by minimizing the expected free energy. The future plan
+for achieving the preferred goals can be generated once the evidence free energy in the past window
+is minimized, i.e., the latent variables are well situated to the past sensory observation. This scheme
+is referred to as online error regression [16] and analogous models can be seen also in [8, 22]. The
+scheme is shown graphically in Figure 5.
+9
+Figure 5: The network during planning with a planning window covering from tc −winp to
+tc + win f where tc is current time step.
+Within the planning window, there is the past window of lengthwinp and the future window of
+length win f . In the current implementation, the length of the planning window is ﬁxed, while the
+past window is allowed to grow up to half the length of the planning window. The current time
+step tc is one step ahead of the end of the past window. At the next sensorimotor time step, sensory
+information at tc becomes part of the past window, and tc moves forward one step, shrinking the
+future window. Once the past window is ﬁlled, the entire planning window slides one step to
+the right, discarding the oldest entry in the past window. During online planning, the network
+minimizes the plan free energy Fplan by optimizing the posterior zq at all time steps within the past
+and future windows. The plan free energy consists of the sum of the evidence free energy Fe within
+the past window and the expected free energy G within the future window. This is expressed in
+Equation 12.
+Fe(x, ˆg, z) =
+t=tc
+∑
+t=tc−winp
+(
+w ·DKL
+[
+q(zt|xt:tc , ˆgt:tc )||p(zt|dt−1)
+]
+−Eq(zt|xt:tc , ˆgt:tc )
+[
+log P(xt, gt|dt)
+])
+,
+G( ˆg, z) =
+t=tc+win f
+∑
+t=tc
+(
+w ·DKL
+[
+q(zt|ˆgt:tc+win f )||p(zt|dt−1)
+]
+−Eq(zt|ˆgt:tc+win f )
+[
+log P( ¯gt|dt)
+])
+,
+Fplan = Fe + G.
+(12)
+3.4 Goal inference
+Finally, before closing the current model section, we describe how future goals can be inferred
+from observed sensory sequences. Figure 6 shows a graphical model accounting for the mechanism
+of the goal inference with observation of the exteroception, but without actually generating actions.
+By observing the exteroception sequence from time step tc −winp to the current time step tc, the
+posterior zq at each step in the past window is optimized for minimizing the error between the
+10
+observed and reconstructed exteroceptions. This results in inference of the expected goal ¯gt for
+every time step t, both in the past and future. The network predicts simultaneously both the
+exteroception and proprioception for future steps leading to the inferred goal. We note that this
+scheme could be applied to the problem of inferring goals of other agents through observation of
+their movements, provided that the coordinate transformation between the allocentric view and
+the egocentric view can be made. For simplicity, the current study does not delve into this view
+coordinate transformation problem.
+Figure 6: Network during goal inference.
+Equation 13 shows the modiﬁed evidence free energy used for goal inference, where only the
+observation of exteroception is used.
+Fg(xe, z) =
+t=tc
+∑
+t=1
+(
+w ·DKL
+[
+q(zt|xe
+t:tc )||p(zt|dt−1)
+]
+−Eq(zt|xe
+t:tc )
+[
+log P(xe
+t |dt)
+])
+. (13)
+4 Experiments
+In order to test our proposed model, we conducted two experiments, one using a simulated
+agent and the other using a physical robot. In Experiment 1 (Section 4.1), we used a simulated
+mobile agent in 2D space in order to examine the model’s capacity in generating goal-directed
+actions and in understanding goals from sensory observation. Experiment 2 (Section 4.2) was
+carried out to test the model’s scalability in the real world setting by using a humanoid robot
+with higher degrees of freedom. T-GLean is implemented using LibPvrnn, a custom C++ library
+implementing PV-RNN that is currently under development. It is designed to be lightweight and
+to operate in real-time so interaction between agent and experimenter is possible. A pre-release
+version is available under an open source license with instructions on reproducing the simulated
+agent experiments.
+11
+4.1 Experiment 1: simulated mobile agent in a 2D space
+We conducted a set of experiments using a simulated mobile agent that can generate goal-
+directed action plans based on supervised learning of sensorimotor experiences in order to evaluate
+the performance of T-GLean in the following four respects.
+1. Generalization in learning for goal-directed plan generation;
+2. Goal-directed plan generation for different types of goals;
+3. Goal understanding from sensory observation for different types of goals;
+4. Rational plan generation.
+Following our previous work [13], we ﬁrst evaluate the generalization capability of the proposed
+model for reaching untrained goal positions using a limited number of teaching trajectories. The
+second test examines how the model can generate goal-directed plans and execute them for different
+types of goals, in this case reaching speciﬁed goal positions and cycling around an obstacle. The
+third test demonstrates the capability of the model to infer different types of goals from observed
+sensation (exteroception). The fourth test examines the model’s capability to generate optimal
+travel plans to reach speciﬁed goals under the constraint of the minimal travel time.
+In each test, the simulated agent is in a square workspace with (x, y) coordinates in the range
+of [0.0, 1.0] for both x and y. The agent always starts at position (0.5, 0.1). In the center of the
+workspace is a ﬁxed obstacle of size (0.3, 0.05). The agent does not directly sense the workspace
+coordinates. Instead it observes a relative bearing and distance (θt, δt) to a ﬁxed reference point
+at (0.0, 0.5) as exteroception. The simulated agent controller handles conversion to and from the
+workspace coordinates to relative bearing-distance as the robot moves. At the onset of each test
+trial, the experimenter sets the preferred goal as a vector ( ˆgα
+t , ˆgβ
+t ). ˆgβ
+t is a three dimensional one-hot
+vector, with each bucket representing reaching, clockwise cycling, and counter-clockwise cycling
+goals, respectively. ˆgα
+t is set as the goal x coordinate if the reaching goal is set. Otherwise it is left as
+0. As the network estimates the distal probability ¯st at each time step, the agent stops at the time
+step with the maximum estimated distal probability provided that it exceeds a threshold value,
+assuming that the goal is achieved at that point.
+Unless stated otherwise, the experiments have different training data and separately trained
+networks; however, network parameters are identical between networks. Parameters used for each
+layer of the RNN are as shown in Table 1. Each network was trained for 100,000 epochs, using the
+Adam optimizer with parameters α = 0.001, β1 = 0.9, β2 = 0.999. During planning, the parameters
+are slightly modiﬁed to α = 0.04, 500 iterations per sensorimotor time step, and a planning window
+length of 70. The meta-prior w remains the same in all cases.
+12
+Table 1: PV-RNN parameters for Experiment 1. Rd and Rz refer to the number of deterministic (d)
+units and probabilistic (z) units respectively. wt=1 refers to the meta-prior setting at the ﬁrst time
+step (in our previous work this was referred to as wI).
+Layer
+1 2 3
+Rd 60 40 20
+Rz 6 4 2
+τ 2 4 8
+w 0.0001 0.0005 0.001
+wt=1 1.0 1.0 1.0
+4.1.1 Experiment 1A: Generalization in plan generation by learning
+In order to evaluate how well the network can generalize goal positions in the goal area with
+a limited number of teaching trajectories, we prepared four teaching datasets with decreasing
+numbers of goal locations to be reached as shown in Figure 7. The goal locations are on a line in the
+range x = [0.2, 0.8], y = 0.9. The agent accelerates up to speed to a branching point, and then either
+turns left or right to the side of the obstacle, before moving toward the goal position. As the agent
+approaches the goal position, it decelerates to a stop.
+13
+(a)
+ (b)
+(c)
+ (d)
+Figure 7: Testing goal generalization by reducing the number of training samples (a) 25 training
+samples (b) 13 training samples (c) 7 training samples (d) 4 training samples
+The maximum trajectory length is 70, although the distal step occurs at around 40 time steps. To
+account for randomness in training, ﬁve networks with different initial random seeds are trained
+for each of the four datasets, for 20 trained networks in total. Untrained test goals were drawn from
+a uniformly random distribution in the range [0.2, 0.8]. Each network was tested with ten untrained
+goals, with the results averaged over all test goals and networks for each dataset.
+To evaluate goal generalization, we considered the difference between the ﬁnal agent position
+reached at the end of plan execution and the preferred goal at the end for each test trial, as well as
+the plan free energy that remained. The difference between agent position and goal is expressed as
+the root-mean-square deviation, normalized to the range of ¯gα (NRMSD). The result is summarized
+in Figure 8.
+14
+Figure 8: Comparison of goal deviation and residual free energy for different numbers of training
+goals.
+We observed that the network achieved stable goal-position generalization when at least 7
+training trajectories are used. Also, it can be seen that the plan free energy was minimized in a
+similar manner.
+4.1.2 Experiment 1B: Goal-directed plan generation for different types of goals
+For this test, we used a more complex set of teaching trajectories, containing three distinct
+goals with signiﬁcantly different patterns. The ﬁrst goal, shown in Figure 9a, is similar to the
+previous goal-reaching trajectories shown in Figure 7a; however, this scenario is ill-posed. That
+is, the trajectories alternate between short and long paths for the same goal position. This set
+of teaching trajectories will also be reused in Experiment 1C and Experiment 1D. We note that
+while the training data themselves are not ill-posed, due to generalization, the learning outcome is
+ill-posed. We will revisit this issue in Section 4.1.4. The second and the third goals, consisting of the
+two training trajectories shown in Figure 9b, involve the agent cycling around the central obstacle
+in a clockwise direction and a counter-clockwise direction, respectively. For the reaching goal, once
+the agent reaches the goal position, the distal step is set and the remaining steps are padded with
+the ﬁnal value, i.e., the agent remains stationary. Unlike the reaching goal, the cycling goals have
+no distal step. The training sequence demonstrates a single cycle; however, it is desirable for the
+agent to continue the action indeﬁnitely. There are a total of 27 teaching trajectories in this training
+dataset, each of which has a length of 70 time steps.
+15
+(a)
+ (b)
+Figure 9: Teaching trajectories used for Experiment 1B, with both goal reaching and cycling goals.
+(a) 25 reaching trajectories, with both short and long paths (b) 2 cycling trajectories, in the clockwise
+and counter-clockwise directions
+We evaluated how precisely the agent can generate movement trajectories for achieving goals
+speciﬁed. In Table 2 we summarize the results for the reaching and cyclic goals. For the reaching
+goal, as used previously, average NRMSD is given for 10 random untrained goal positions. For the
+cyclic goal, NRMSD between the agent’s movement and the training sequence for the entire 70 time
+step sequence is taken, and averaged for ﬁve clockwise and counter-clockwise orbits each. In the
+latter case, normalization is done over the entire dataset range rather than the goal range. Table 2
+conﬁrms that both types of goals can be achieved within minimal range of goal error.
+Table 2: Deviation from the ground truth, given as normalized RMS.
+Reaching Cycling
+NRMSD 0.033241 0.028158
+Figure 10 shows three examples of trajectories generated for three goal categories, with trajecto-
+ries of motion in the left panel, the representative network values in the middle, and the expected
+free energy for the past window and the evidence free energy in the future window in the right
+panel. We observed that plan generation stabilized quickly after the onset of travel by minimizing
+the expected free energy, and the network was able to accurately estimate the distal step in the
+case of reaching the goal. Although the future plan trajectory was constantly changing due to the
+scheme of online plan generation and the error regression in the past, the motor plan generated was
+stably executed at each sensorimotor time step. It can be also observed that the evidence free energy
+in the past window continued to converge in all three plots, meaning that all latent variables were
+gradually situated to the behavioral context. Therefore, the deviation of the executed trajectory
+from the planned trajectory was limited. The full observed temporal processes can be seen in the
+recorded videos of the simulations at this link.
+16
+(a)
+(b)
+(c)
+Figure 10: Examples of trajectories generated for three different goal categories, (a) reaching, (b)
+clockwise cycle, and (c) counter-clockwise cycle from the results of Experiment 1B. The left column
+shows a view of the 2D workspace, with the generated plan trajectory, shown as a solid line with
+dots at each time step and the goal position if available. The agent is represented by a triangle, with
+the agent’s position history trailing behind it and overlaid on the plan trajectory.The subset along
+the bottom (enlarged for visibility) is the expected goal, the left-most horizontal bar is ¯gα, while the
+three vertical bars is ¯gβ; the left vertical bar represents reaching, the middle bar represents clockwise
+and the right bar represents counter-clockwise goals. The height of the vertical bar represents the
+probability (conﬁdence) of this goal. The distal step, if available, is also shown both as a circle
+in 2D and in text in the top right. The middle column shows the plan in terms of exteroceptive
+trajectory in the top as well as the observed exteroception trajectory and preferred goal (encoded
+for display as scalar values 1, 0 and -1 for reaching, clockwise and counter-clockwise respectively)
+in dotted lines in the bottom, with the vertical black bar representing the current sensorimotor time
+step. The right column shows the evidence free energy (dark purple) and the expected free energy
+(light green) in the top and Z information, a measure of how much of a contribution is made by the
+probabilistic (z) units in each layer (darker lines are higher layers), equal to DKL [q||N] where N is
+the unit normal distribution.
+17
+4.1.3 Experiment 1C: Goal inference by sensory observation
+Next, we evaluated how precisely the network trained in Experiment 1B can infer goals as well
+as future movement trajectories by observing movement trajectories in terms of the exteroception
+sequence. In this experiment, four movement trajectories achieving different goals are prepared,
+which reach goals located left and right of the goal line, clockwise cycling, and counter-clockwise
+cycling. The four test trajectories, shown in Figure 11, were generated in the same way as the
+training data, but with untrained goal positions for the reaching goals and with a slight variation
+and extended length for the cycling goals.
+(a)
+ (b)
+(c)
+ (d)
+Figure 11: Test trajectories used for goal inference, color coded by the type of goal. These trajectories
+represent agent actions for (a) reaching goal located on the left, (b) reaching goal located on the
+right, (c) clockwise cycling, and (d) counter-clockwise cycling. The reaching trajectories and the
+cycling trajectories are 40 and 90 steps long, respectively.
+Figure 12 shows the anticipated trajectories and goals at different points in time as the network
+observed the goal-reaching trajectories in Figures 11a and 11b.
+18
+(a)
+ (b)
+ (c)
+(d)
+ (e)
+ (f)
+Figure 12: Anticipated goal and trajectories as the network observes the reaching trajectories at
+different time steps during the observation of travels. The colored dots represent the anticipated
+trajectory, while the solid gray line is the observed trajectory. The time step is shown in the top
+right. ( a – c) Agent observing the trajectory reaching to the left goal, ( d – f) agent observing the
+trajectory reaching to the right goal.
+Initially, at t = 1 (Figures 12a & 12d), before the agent observes any movement, the network
+makes a guess based on the learned prior distribution. Since the goal-reaching trajectories are
+most frequent in the teaching trajectory distribution, reaching a goal is inferred as a default goal
+when observing the movement trajectory at the starting point. Several steps later, at around t = 8
+(Figures 12b & 12e), the movement trajectory branches either left or right around the obstacle. We
+observed that in the case of the goal located on the left, the network initially anticipates a longer
+path going around the right side of the obstacle before observing that the movement trajectory goes
+around the other side of the obstacle. The observed phenomenon is due to the fact that the teaching
+trajectories contain two possible paths reaching the same goal position. Therefore, the network can
+generate two possible movement trajectory plans in the current ill-posed setting. This issue will be
+revisited in Section 4.1.4. The anticipated goal coordinate ¯gα is reﬁned as the movement trajectory
+approaches the goal area. By t = 32 (Figures 12c & 12f), the goal is fully anticipated.
+19
+Figure 13 shows the trajectories and goals inferred for the observed cyclic trajectories shown in
+Figures 11c and 11d.
+(a)
+ (b)
+ (c)
+(d)
+ (e)
+ (f)
+Figure 13: Anticipated goal and trajectories as the network observes the cyclic trajectories. The
+colored dots represent the anticipated trajectory, while the solid gray line is the observed trajectory.
+The time step is shown in the top right. (a – c) Agent following the counter-clockwise cyclic goal
+trajectory, (d – f) agent following the clockwise cyclic goal trajectory.
+Until t = 22 the observed trajectories are mostly indistinguishable from the reaching trajectories,
+of which the occurrence probability was learned as high in the prior distribution, the network infers
+goal reaching as the default goal from these observations. While the observed movement trajectory
+begins to enter a cyclic trajectory after t = 22, it still takes some time for the network to correctly
+infer the ongoing goal as cyclic. During this time, free energy increases, an example of which is
+shown in Figure 14. This is analogous to a ‘surprising’ observation. After some time, the goals are
+inferred correctly as the cycling goals as shown in Figures 13c and 13f for the counter-clockwise
+and clockwise cases, respectively. The free energy is reduced accordingly at this moment, as also
+shown in Figure 14, which shows a generated plan, the plan free energy, and z information in the
+counter-clockwise case. We note that the activity of z units (z information) also rises and stays
+20
+elevated to contribute to producing the correct inference of possible goals.
+Figure 14: Network inferring the counter-clockwise cycling goal while observing the movement
+trajectory in the left panel. The center panel shows the inferred plan in the top and the observed
+exteroception in the bottom. Note the peak in the free energy before the goal is correctly inferred in
+the right panel.
+We assume that the agent can recognize consecutive switching of goals from observation; thus,
+we also tested a scenario wherein the agent ﬁrst observes a clockwise cycling trajectory, then a
+counter-clockwise trajectory, and a goal-reaching trajectory, all in one continuous sequence. This is
+a challenging test, since the network was not trained to cope with such dynamic goal switching.
+A video of this experimental result is provided at this link. In the animation it can be seen that
+the network inferred the changing goals successfully. However, the anticipated future trajectories
+were quite unstable toward the end of the trial. As we observed that free energy becomes quite
+large, it is presumed that the goal inference from the observation may take a relatively long time
+for convergence of the free energy for unlearned situations. Therefore, it may be difﬁcult for the
+network to catch up to the goal switching if it occurs too frequently.
+4.1.4 Experiment 1D: Goal-directed planning enforcing the well-posed condition
+In Experiment 1B, the network was trained using teaching trajectories that included alternative
+trajectories reaching similar goal positions as shown in Figure 9a. This made the goal-directed
+planning ill-posed since the network cannot determine an optimal plan between two possible
+choices under the current deﬁnition of the expected free energy. Figure 15 shows an illustrative
+example as the result of the ill-posed goal-directed planning where we see that both a short and
+long path can be generated for the same goal.
+21
+(a)
+ (b)
+Figure 15: Examples of ill-posed goal-directed planning. (a) Generation of a short path reaching the
+goal (39 time steps) and (b) an alternative long path to the same goal (44 time steps).
+Conventionally, it has been shown that the problem of ill-posed, goal-directed planning can be
+transformed into a well-posed one by adding adequate constraints, including joint torque mini-
+mization [4] and travel distance minimization [17]. The current experiment shows an examination
+of the case using the travel time minimization constraint by adding an additional cost term in the
+plan free energy Fplan shown previously in Equation 12. The modiﬁed plan free energy F′
+plan is
+shown in Equation 14.
+γt = t log P(st|dt),
+F′
+e (x, ˆg, z) =
+t=tc
+∑
+t=tc−winp
+(
+w ·DKL
+[
+q(zt|xt:tc , ˆgt:tc )||p(zt|dt−1)
+]
+−Eq(zt|xt:tc , ˆgt:tc )
+[
+log P(xt, gt|dt) −kγt
+])
+,
+G′( ˆg, z) =
+t=tc+win f
+∑
+t=tc
+(
+w ·DKL
+[
+q(zt|ˆgt:tc+win f )||p(zt|dt−1)
+]
+−Eq(zt|ˆgt:tc+win f )
+[
+log P( ¯gt|dt) −kγt
+])
+,
+F′
+plan = F′
+e + G′.
+(14)
+Where γ is the added cost term for minimizing the travel time. This cost can be expressed by the
+summation of the estimated distal probability distribution P(st|dt) multiplied by the time step
+length at each time step over all time steps in the plan window. For this experiment, we set the
+weight of the travel time cost k = 0.1.
+To evaluate the effect of adding the constraint for travel-time minimization, we prepared three
+separately trained networks and four untrained goal positions that are shown with numbers
+overlaid on the training trajectories in Figure 16. The goal positions are selected to avoid the edges
+(lack of training trajectories) and the center (no difference in trajectory length).
+22
+Figure 16: Training trajectories overlaid with the four untrained test goals.
+The generated action plans for these test goal positions were classiﬁed as ‘short’ if the shorter of
+the possible paths was generated. Plan generation was repeated for each test goal position with
+1000 different samples. The resultant probabilities for generating the shorter plans for each goal
+position with and without travel time cost are shown in Figure 17.
+Figure 17: Comparison of the probability of shorter plans being generated for each test goal position
+with and without adding the travel time minimization (TTM).
+Without introducing the travel time cost γ, the probability of generating the short plans was
+around 50%, which is consistent with the ratio in the teaching trajectory set. This probability
+increased to over 90% with the addition of travel time cost to the plan free energy. These results
+conﬁrm that the current modiﬁed model supports goal-directed plan generation in a well-posed
+manner.
+23
+4.2 Experiment 2: object manipulation by a physical humanoid robot
+In order to verify the performance of the proposed model in a complex physical world, we
+conducted experiments involving object manipulation by a humanoid robot, Torobo, manufactured
+by Tokyo Robotics Inc. Torobo was placed in front of an object manipulation workspace where a red
+cylindrical object was located for manipulation. Two types of goal-directed actions were considered.
+One was to grasp the object located at an arbitrary position in the workspace (36cm ×31cm) with
+both arms and then place it at a speciﬁed goal position on the goal platform (42cm wide) ﬁxed at
+one end of the workspace. The other type of goal was to grasp the object located at an arbitrary
+position in the workspace and to swing it up and down. The Torobo humanoid robot, red cylinder
+object, workspace, and goal platform are shown in Figure 18.
+Figure 18: The Torobo humanoid robot, with the workspace, goal platform and object.
+The neural network controlled Torobo’s two arms (6 degrees of freedom for each arm) and
+hip joints (2 degrees of freedom) to perform these goal-directed actions (total of 14 joint angles).
+The reading of these joint angles represents the proprioception of Torobo. Torobo can track the
+position of the red cylinder located in the workspace using a camera mounted in its head. The
+object position is constantly tracked by controlling the pitch and yaw of the camera head to keep
+the target object centered in the camera’s ﬁeld of view. The red cylinder is visually located using
+YOLOv3 [23]. Therefore, the pitch and yaw of the head indicates the position of the object, and are
+considered to represent the exteroception of Torobo. Thus, exteroception can be represented by
+only a two-dimensional vector instead of a high-dimensional camera image. This simpliﬁcation in
+visual image processing was necessary in order to generate goal-directed actions in real-time.
+We conducted two experiments with Torobo. In Experiment 2A, we evaluated the performance
+in generating goal-directed planning and its execution in a similar fashion to Experiment 1B in
+Section 4.1.2, and in Experiment 2B we evaluated the capability of the network for goal inference
+by observation. The parameters used for each layer of the RNN are as shown in Table 3. As
+in Experiment 1, the network was trained for 100,000 epochs, using the Adam optimizer with
+a learning rate α = 0.001, β1 = 0.9, β2 = 0.999. In order to maintain real-time operation with
+the robot, planning uses different parameters of α = 0.1 and 100 error regression iterations per
+sensorimotor time step.
+24
+Table 3: PV-RNN parameters for Experiment 2. Parameter settings are identical to Experiment 1,
+only using a larger τ to compensate for longer sequences.
+Layer
+1 2 3
+Rd 60 40 20
+Rz 6 4 2
+τ 2 10 20
+w 0.0001 0.0005 0.001
+wt=1 1.0 1.0 1.0
+The training dataset consists of 120 trajectories for one of the goal-directed actions, grasping
+then placing, and 80 trajectories for the other type of goal-directed action, grasping then swinging.
+The object is located at a random position within the workspace for each sample of the teaching
+trajectories. The goal position for placing is also randomly selected along the goal platform’s width.
+At each sensorimotor time step, we recorded 12 joint angles for both arms and 2 joint angles for the
+hip joints representing the proprioception and 2 head joint angles representing the exteroception
+along with a 3D vector representing the preferred goal and 1D scalar for the distal step marker.
+The preferred goal ( ˆgα, ˆgβ) is represented in a similar manner to Experiment 1 wherein ˆgβ is a 2D
+one-hot vector representing either goal of grasping-placing or grasping-swinging, and ˆgα is a scalar
+representing the preferred goal position in the width direction of the goal platform in the case of
+the grasping-placing goal.
+4.2.1 Experiment 2A: Goal-directed plan generation and execution
+To evaluate the performance of goal-directed plan generation and execution with the physical
+robot, we measured the RMS deviation to the ground truth, normalized to the data range, as shown
+in Experiment 1B. To examine the performance for achieving the grasping and placing goal, the
+experimenter placed the object at an arbitrary goal position on the goal platform, allowing Torobo
+to recognize the goal position by visual tracking. This position was marked as the ground truth.
+The object was then placed at a random position in the workspace, and the network started to
+generate action plans to achieve this speciﬁed goal while Torobo executed the generated motor
+plan simultaneously, in real-time. The difference between the ﬁnal position of the placed object and
+the ground truth was then measured for 10 random goal positions. In the case of examining the
+grasping and swinging goal, the object was placed in three different positions in the workspace,
+and then the resulting robot trajectory in the swinging phase was compared to the closest teaching
+trajectory in the swinging phase. The result is shown in Table 4.
+Table 4: Deviation from the ground truth for Experiment 2A, given as normalized RMS.
+Grasping-placing Grasping-swinging
+NRMSD 0.10053 0.01514
+Compared to the results obtained in Section 4.1.2, the network generated a similar low deviation
+for achieving the grasping and swinging goal, while the deviation was higher for the grasping
+25
+and placing goal. This is likely due to the relatively low precision in tracking the object, especially
+when placing the object on the goal platform, which was located at the far edge of the workspace.
+Figure 19 presents two plots showing an example of the plans generated when given the two types
+of goals. Example videos showing these experimental results can be seen at this link.
+(a)
+ (b)
+Figure 19: Plots generated while the robot is executing the goal-directed plan. Top to bottom: the
+sensorimotor history (goal inset on the top right, enlarged for visibility), current generated plan,
+Z information, and free energy (dark orange: evidence FE, light green: expected FE). Note that
+only a selected number of joint angles are shown for clarity. (a) An example of grasping-placing,
+as it reaches the distal step (red line), and (b) an example of grasping-swinging, which can cycle
+indeﬁnitely.
+4.2.2 Experiment 2B: Goal understanding
+Finally, the experimental results for goal understanding are brieﬂy described. In this experiment,
+the object was moved by the experimenter emulating the manipulation of the object by Torobo
+for each goal type. Torobo observed this object movement using object tracking while Torobo
+remained in the initial posture, except for its head joints, used for object tracking. The network in
+Torobo inferred the expected goal and predicted the future movement trajectory in terms of the
+sensory sequence, as shown in Experiment 1B. This experiment was repeated 5 times for each of the
+goal-directed grasping actions, placing and swinging. The network was judged to have correctly
+inferred the goal if the anticipated goal stably matched the experimenter’s actions, before plan
+execution or the experimenter’s actions ended. A video showing this experiment can be seen at this
+26
+link.
+The result of this experiment was that the network inferred the goal correctly with 60% probabil-
+ity while observing the placing actions with 100% probability while observing the swinging actions.
+However, we note that the capability of the network to correctly infer the goal and future actions
+requires the actions of the human grasping the cylindrical object to closely match the robot’s own
+learned movement image, which is not easy for humans to consistently reproduce. Particularly in
+the case of grasping-placing, precise timing and position in grasping and placing become critical
+and the loss of precision in the visual tracking of the object at longer distances posed additional
+challenges. When the demonstrated actions deviated from those learned by the network, we
+observed that the free energy increased instead of decreasing over time, which produced unreliable
+results. A future study should investigate methods of making the network more robust in order to
+better tolerate unreliable human factors, which would be encountered in real world settings.
+5 Discussion
+The current study proposed a novel model for goal-directed action, planning, and execution
+under a teleological framework using the free energy principle. The proposed model, T-GLean,
+is characterized by three features. First, goals can be speciﬁed either by a speciﬁc sensory state
+expected at a distal step or dynamically changing sensory sequences. Second, goals can be inferred
+by observed sensory sequences. Third, the goal-directed plan is generated by situating the latent
+state to the observed sensation by means of the online inference.
+The proposed model was evaluated by conducting two experiments, the ﬁrst using a simulated
+mobile agent for navigation and the second using a physical humanoid for object manipulation.
+The results of experiments using a simulated mobile agent showed that generalization in generation
+of reaching movements to unlearned goal positions is sufﬁcient with a relatively small number of
+training samples, with modest improvement as the number of teaching trajectories is increased. It
+was also shown that both types of goal-directed plan generation and their execution, i.e., reaching a
+speciﬁed position and cycling could be performed precisely. Furthermore, it was demonstrated that
+goals could be inferred adequately from the observed sensation, even in the case of dynamically
+changing goals. Finally, it was shown that the network could generate goal-directed reaching plans
+with the shortest path when an additional cost for travel time minimization was added to the
+original plan free energy formula. This conﬁrms that the current model using this modiﬁed plan
+free energy can generate optimal goal-directed plans under well-posed conditions.
+In the results of the experiments scaled up to using a real humanoid robot, it was shown that
+goal-directed plan generation and execution, as well as goal inference by observation could be
+performed with reasonable performance for two different goal-directed actions, grasping-placing
+and grasping-swinging, although their performance was slightly worse compared to the simulated
+mobile agent case. This could be due to various real world constraints, including limited precision
+in the visual tracking system and in motor control, as well as unreliable human behavioral factors
+in demonstrating emulated goal-directed actions to the robot. There is still plenty of room for
+improving performance in such real-world situations by making technical efforts in various regards.
+Various research topics can be considered for extending the current study in the future. One
+interesting topic would be to examine how robots can deal with unexpected environmental changes,
+using the current model. For example, if Torobo fails to grasp the object or drops it, can it recover
+from the failure by generating a new recovery action plan? It would be interesting to examine how
+27
+much such an unexpected situation can be recognized by inferring the latent state by means of
+minimization of the evidence free energy applied to the past window. This may require additional
+learning of various failure situations so that novel situations can be adequately handled through
+generalization, while maintaining well-posed solutions for normal situations.
+Another direction for future study would be further scaling up in action and goal complexity by
+introducing a language modality. By using the power of rich linguistic expressions, it is expected
+that various complex goals can be represented in a compositional manner. It is, however, very likely
+that it will be quite difﬁcult to learn an adequate amount of language relevant to goal-directed
+actions with different levels of complexity at once. With regard to this problem, one plausible
+but challenging approach may be the introduction of developmental pathways in learning. It
+would be natural to start by learning a set of simple goal representations that could be achieved by
+some primitive behaviors. When learning proceeds further, more complex goal-directed actions
+could be learned by means of compositions of the prior-learned action primitives associated with
+corresponding compositional linguistic expressions. This might lead to acquisition of a more
+abstract goal representation at the conceptual level.
+References
+[1] Scott R Sehon. Goal-directed action and teleological explanation. Causation and Explanation,
+pages 155–170, 2007.
+[2] Guido L ¨ohrer. Actions, reason explanations, and values. Tutti i diritti riservati, page 17, 2016.
+[3] Gergely Csibra, Szilvia B´ır´o, Orsolya Ko ´os, and Gy ¨orgy Gergely. One-year-old infants use
+teleological representations of actions productively. Cognitive Science, 27(1):111–133, 2003.
+[4] Maeda Kawato, Y Maeda, Y Uno, and R Suzuki. Trajectory formation of arm movement
+by cascade neural network model based on minimum torque-change criterion. Biological
+cybernetics, 62(4):275–288, 1990.
+[5] R Chris Miall and Daniel M Wolpert. Forward models for physiological motor control. Neural
+networks, 9(8):1265–1279, 1996.
+[6] Mitsuo Kawato. Internal models for motor control and trajectory planning. Current opinion in
+neurobiology, 9(6):718–727, 1999.
+[7] Karl Friston, Francesco Rigoli, Dimitri Ognibene, Christoph Mathys, Thomas Fitzgerald, and
+Giovanni Pezzulo. Active inference and epistemic value. Cognitive neuroscience, 6(4):187–214,
+2015.
+[8] Thomas Parr and Karl J Friston. Generalised free energy and active inference. Biological
+cybernetics, 113(5):495–513, 2019.
+[9] Karl Friston, J´er´emie Mattout, and James Kilner. Action understanding and active inference.
+Biological cybernetics, 104(1):137–160, 2011.
+[10] Karl Friston, Spyridon Samothrakis, and Read Montague. Active inference and agency:
+optimal control without cost functions. Biological cybernetics, 106(8):523–541, 2012.
+28
+[11] Manuel Baltieri and Christopher L Buckley. An active inference implementation of phototaxis.
+In Artiﬁcial Life Conference Proceedings 14, pages 36–43. MIT Press, 2017.
+[12] Karl Friston. A theory of cortical responses. Philosophical transactions of the Royal Society B:
+Biological sciences, 360(1456):815–836, 2005.
+[13] Takazumi Matsumoto and Jun Tani. Goal-directed planning for habituated agents by active
+inference using a variational recurrent neural network. Entropy, 22(5):564, May 2020. ISSN
+1099-4300. doi: 10.3390/e22050564. URL http://dx.doi.org/10.3390/e22050564.
+[14] Ahmadreza Ahmadi and Jun Tani. A novel predictive-coding-inspired variational rnn model
+for online prediction and recognition. Neural computation, 31(11):2025–2074, 2019.
+[15] Shinsuke Shimojo. Postdiction: its implications on visual awareness, hindsight, and sense of
+agency. Frontiers in psychology, 5:196, 2014.
+[16] Jun Tani. Learning to generate articulated behavior through the bottom-up and the top-down
+interaction processes. Neural networks, 16(1):11–23, 2003.
+[17] Jun Tani. Model-based learning for mobile robot navigation from the dynamical systems
+perspective. IEEE Transactions on Systems, Man, and Cybernetics, Part B (Cybernetics) , 26(3):
+421–436, 1996.
+[18] Danijar Hafner, Timothy Lillicrap, Jimmy Ba, and Mohammad Norouzi. Dream to control:
+Learning behaviors by latent imagination. arXiv preprint arXiv:1912.01603, 2019.
+[19] Yuichi Yamashita and Jun Tani. Emergence of functional hierarchy in a multiple timescale
+neural network model: a humanoid robot experiment. PLoS computational biology , 4(11):
+e1000220, 2008.
+[20] Wataru Ohata and Jun Tani. Investigation of the sense of agency in social cognition, based
+on frameworks of predictive coding and active inference: A simulation study on multimodal
+imitative interaction. Frontiers in Neurorobotics, 14:61, 2020. ISSN 1662-5218. doi: 10.3389/fnbot.
+2020.00061. URL https://www.frontiersin.org/article/10.3389/fnbot.2020.00061.
+[21] Diederik P . Kingma and Max Welling. Auto-encoding variational bayes. In Yoshua Bengio and
+Yann LeCun, editors, 2nd International Conference on Learning Representations, ICLR 2014, Banff,
+AB, Canada, April 14-16, 2014, Conference Track Proceedings, 2014. URL http://arxiv.org/abs/
+1312.6114.
+[22] Martin V Butz, David Bilkey, Dania Humaidan, Alistair Knott, and Sebastian Otte. Learning,
+planning, and control in a monolithic neural event inference architecture. Neural Networks, 117:
+135–144, 2019.
+[23] Joseph Redmon and Ali Farhadi. Yolov3: An incremental improvement, 2018.
+29

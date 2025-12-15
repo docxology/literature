@@ -1,0 +1,1064 @@
+An Active Inference Model of Mouse
+Point-and-Click Behaviour
+Markus Klar1[0000−0003−2445−152X] , Sebastian Stein1[0000−0003−1828−4008],
+Fraser Paterson1[0009−0003−4392−7092], John H.
+Williamson1[0000−0001−8085−7853], and Roderick
+Murray-Smith1[0000−0003−4228−7962]
+University of Glasgow, Glasgow, Scotland, UK
+Abstract.We explore the use of Active Inference (AIF) as a com-
+putational user model for spatial pointing, a key problem in Human-
+Computer Interaction (HCI). We present an AIF agent with continu-
+ous state, action, and observation spaces, performing one-dimensional
+mouse pointing and clicking. We use a simple underlying dynamic sys-
+tem to model the mouse cursor dynamics with realistic perceptual de-
+lay. In contrast to previous optimal feedback control-based models, the
+agent’s actions are selected by minimizing Expected Free Energy, solely
+based on preference distributions over percepts, such as observing click-
+ing a button correctly. Our results show that the agent creates plausible
+pointing movements and clicks when the cursor is over the target, with
+similar end-point variance to human users. In contrast to other models
+of pointing, we incorporate fully probabilistic, predictive delay compen-
+sation into the agent. The agent shows distinct behaviour for differing
+target difficulties without the need to retune system parameters, as done
+in other approaches. We discuss the simulation results and emphasize
+the challenges in identifying the correct configuration of an AIF agent
+interacting with continuous systems.
+Keywords:Mouse Pointing·Computational Interaction·Active Infer-
+ence·Continuous Systems·Perceptual Delay·Simulation Intelligence
+1 Introduction
+Pointing is a fundamental interaction technique andHuman-Computer Inter-
+action (HCI)has a long history of studying human pointing behaviour [18].
+Pointing is a way of communicating information through an interface by ma-
+nipulating a user-controlled cursor into spatial partitions corresponding to ac-
+tions; typically, these are discrete actions like selecting a menu item. Modelling
+pointing behaviour is crucial in engineering interactions well-suited to human
+capabilities, or in predicting the behaviour of users in using an existing interface
+without real users in the loop. As a prevalent and tractable interaction problem,
+it has attracted substantial attention in the HCI literature. HCI has historically
+focused on high-level descriptive models of pointing using summary statistics.
+arXiv:2510.14611v1  [cs.HC]  16 Oct 2025
+2 M. Klar et al.
+Fitts’ Law [5, 6, 14] is the classic model, and relates the expected time taken
+to acquire a target (with a certain tolerated error rate) to the size and distance
+of the target from the cursor origin. While such models are effective in explain-
+ing movement time and are simple to apply, they do not attempt to model the
+detailed process of target acquisition itself, and do not consider click dynamics.
+Insights into complete cursor trajectories would enable more precise prediction
+of user intentions and the development of improved assistive tools.
+One way to improve this understanding is to build a fine-grained, compu-
+tational, generative model of the human user that synthesizes the entire target
+acquisition process. Approaches to model whole pointing trajectories have been
+introduced, e.g. in [3, 16, 4, 15, 13], often with models derived from a control-
+theoretic perspective, such as the Minimum Jerk model [7] or the E-LQG [25].
+Other approaches have applied machine learning to derive policies that emulate
+human behaviour from data [1, 2, 10]. These classical models typically rely on
+the design of cost or reward functions, which are often defined by a combination
+of the distance between the cursor and the target and the control effort required
+to reach it. They are also typically deterministic in that they do not model
+or represent uncertainty explicitly, some even requiring a predefined movement
+time. Furthermore, in contrast to our approach, these focus on cursor movement
+only and clicking is usually not included, or seen as a separate task.
+We propose the application of active inference (AIF) [19] to create a pointing
+model that is fully probabilistic, predictive and formulates the problem in terms
+of preferences over observations, rather than rewards. Different behaviour for
+difficult targets, which occurs in real user data (see Fig. 1), should emerge from
+greater uncertainty in the target acquisition rather than changed model and re-
+ward parameters – which is often the case in the classical models of pointing
+mentioned above. As an underlying model, we make use of the well-understood
+Second-Order Lag model which is commonly used to model human mouse point-
+ing [23, 16, 4]. Using such a simple system to represent the human motor control
+system allows us to focus on the AIF agent’s inference and control. We addi-
+tionally apply perceptual noise and delay in order to achieve a more human-like
+behaviour [20, 21]. AIF is a widely-applicable model of the behaviour of or-
+ganisms that unifies Bayesian models of perception with a probabilistic model
+for action under uncertainty. It postulates behaviour as a process of reducing
+surprise to drive the environment into preferred configurations and minimizing
+uncertainty that might, in the future, lead to disfavoured states.
+Recently there has been interest in bringing active inference concepts into
+the study and practice of HCI, see reviews such as [17] and [26]. Stein et al. [24]
+explored ordinal selection with AIF, i.e., selecting the target from a set of dis-
+crete elements, but modelling pointing with AIF has not been explored. In the
+context of pointing, AIF offers a fundamentally different perspective. An AIF
+formulation frames pointing as a continuous process of minimizing prediction
+error by continuously updating internal beliefs based on sensory input. Active
+inference defines the goals of a (simulated) user in terms of a distribution over
+desired observations. For example, rather than moving the cursor exactly to the
+An Active Inference Model of Mouse Point-and-Click Behaviour 3
+1.0
+ 0.5
+ 0.0
+Time [s]
+800
+1000
+1200
+1400
+1600
+1800Cursor Position [px]
+1.0
+ 0.5
+ 0.0
+Time [s]
+Fig.1: Mouse cursor trajectories (green lines) and clicks (green crosses) of one
+human user pointing and clicking at targets (red) with different distance (850px,
+537px, 225px) and different widths (left: 100px, right: 20px).t= 0indicates the
+momentofacorrectclick.Theerrorbarsshowtheend-pointstandarddeviations.
+centre of the target, the user might be satisfied as long as there is a high chance
+of clicking the button correctly. However, AIF has typically been applied in dis-
+crete contexts or in restricted forms. Modelling pointing, at the level of dynamic
+trajectory generation, requires a continuous representation of actions (such as
+potentials to be propagated to a simulated motor system), states, and obser-
+vations (such as cursor position). We propose an AIF model that is capable of
+modelling fine-grained pointing behaviour in this continuous setting, and which
+generalises to different tasks and environments.
+In summary, our contributions are:
+–A continuous active inference formulation of point and click behaviour which
+does not rely on arbitrary discretisations, appropriately models perceptual
+noise and delay, and provides probabilistic predictions of cursor trajectories.
+–An empirical study of a classical 1D pointing task with our active infer-
+ence model, including a comparison of pointing trajectories with behaviour
+observed in a user study.
+2 Active Inference for Continuous Dynamic Systems with
+Observation Noise and Perceptual Delay
+Control of a human limb is an example of the general problem of control of a
+dynamic system. Section A describes the notation for such continuous system
+dynamics, how the agent constructs a belief about the states, dynamics and
+noise, as well as how it updates them. Specific adaptations of the standard
+general active inference approach in our model include:
+4 M. Klar et al.
+– System Dynamics:The general equations are described in Section A.1. In
+the context of modelling a human pointing with a mouse, the system state
+may be a combination of the cursor’s position and velocity and whether the
+mouse button is being clicked. The observation reflects the user’s visual,
+proprioceptive, or haptic perceptions, which are noisy by nature.
+– Probabilistic Beliefs of AIF Agentare constructed about the states,
+dynamics and noise: 1. Belief about system stateQs :=N(µ s, Σs). 2. Be-
+lief about parameters of the system dynamicsQθ :=N(µ θ, Σθ). 3. Belief
+about noise in observationsQp := exp(N(µp, Σp)). Each of these beliefs is
+represented by the mean and covariance matrix of a (multivariate) Gaus-
+sian distribution. Since the belief about the noiseQp describes the standard
+deviation of the different noise factors and thus needs to be positive at all
+times, we choose a log-normal distribution for robustness.
+– BeliefUpdatemechanismsaremostlystandard,andaredescribedinSec-
+tion A.2. To efficiently update the agent’s belief after performing an action,
+we use an Unscented Kalman filter (UKF) which can be used to propagate
+Gaussian random variables through system dynamics [27, 11].
+– Action Selectionis based on minimising Expected Free Energy (EFE) as
+describedinSectionA.3.Sincethesecalculationsrequirealotofcomputation
+time, especially when the horizonNis large, the evaluation in this work will
+exclude simulations with information gain.
+– Perceptual Delayis modelled by constructing a belief abouts(t−τ)for
+a given perceptual delay ofτ∈Ntimesteps and updating this belief using
+the observationo(t−τ)obtained in stept. Before action selection, the agent
+uses its generative model and the last actions to create a temporary belief
+abouts(t)by sequential updates. Additionally, we let the agent know about
+the exact target location only after the initial delay (see Section 3.2).
+3 1D Mouse Pointing with Active Inference
+We now demonstrate how AIF can be applied to simulate a human user per-
+forming a 1D-mouse pointing task. In such a task, the user is asked to position a
+mouse cursor within a one-dimensional target whose size and distance is varied
+systematically. A detailed description about the pointing task is provided in Sec-
+tion C. We simulate single trials which terminate as soon as the button is clicked
+successfully or after two seconds. Due to numerical constraints, both the canvas
+and the targets are scaled down by a factor of 1000. Furthermore, the initial po-
+sition is recalculated to be centred at the origin. All shown results are however
+rescaled to the original size. We apply our model to investigate whether a cursor
+controlled with AIF: 1. allows us to model mouse clicking based on probabilistic
+beliefs about the system and preference distributions; 2. shows similar variabil-
+ity to observed human movements; and 3. can model the variety of behavioural
+strategies shown for different target difficulties without separate models for each.
+The complete interaction loop of the agent with the system is depicted as a block
+diagram in Fig. 2 and provided as pseudo code in Section B.2.
+An Active Inference Model of Mouse Point-and-Click Behaviour 5
+3.1 The Generative Process and Model
+To simulate human pointing, we need to build a model for the pointing technique
+and interface. In Active Inference terms, this means that we construct a gener-
+ative process that plays the role of the ‘real world’. The agent can interact with
+the process via a Markov Blanket which also defines what the agent observes.
+The agent also constructs a generative model of the world, which can be different
+from the real world. We decided to keep the system dynamics identical, however,
+the generative model is governed by the agent’s belief about system parameters
+(which may be wrong or uncertain). Our model has two main components, the
+arm dynamics and the finger dynamics, and an additional logic for mouse clicks.
+Arm DynamicsAs a basis for our simulated arm dynamics we choose a
+Second-Order Lag model [23, 16, 4]. The state of this system is given by the
+cursor positions 1 and velocitys 2. The agent controls the accelerationa1 that
+is applied to the cursor. When moving a computer mouse over a desk in a
+reasonable area, there is no force pulling the mouse to a certain stable position.
+Therefore we decided to set the cursor’s stiffness to zero. However, damping is
+still applied with a factor ofd >0.
+Finger DynamicsTo model the index finger pressing the left mouse button,
+we use a simple First-Order Lag system [23] with stiffnessk >0. A click is
+only initiated when the displacement applied to the mouse button exceeds a
+threshold, requiring the agent to release the button before being able to click
+again. Therefore, both the previous button displacements 3 and the current
+button displacements 4 must be present in the system state. The agent can
+increase or decrease this force with a second actiona2.
+After time-discretisation with∆t= 0.02, the combined system dynamics
+which take statesand actionaand obtain the new state are therefore given by
+fθ :R 4 ×R 2 →R 4, f θ(s, a) =
+
+
+s1 +∆t s2
+s2 −∆t d s2 +∆t a1
+s4
+s4 −∆t k s4 +∆t a2
+
+
+,(1)
+whered >0is the damping parameter of the cursor andk >0is the stiffness
+parameter of the finger. The observation function is given by
+gθ :R 4 →R 5, g θ(s) =
+
+
+s1
+s4
+c
+c∧
+ 
+|s1 −T| ≤W
+2
+
+c∧
+ 
+|s1 −T| ≤W
+2
+
+−c
+
+
+,(2)
+c= (s 3 < αc)∧(s 4 > αc)(3)
+and contains the cursor position, the current button displacement, whether the
+mousehasbeenclicked,whetherthebuttonhasbeenhit,andwhetherthebutton
+6 M. Klar et al.
+was missed. The parametersTand widthW >0are the target centre and width,
+respectively, andαc >0is the clicking threshold. Thus, both functions depend
+on the system parametersθ= [d, k, T, W, αc].
+Click logicThe observation of clicks works as follows. If the previous but-
+ton displacement was below and the current button displacement is above the
+threshold, a click is issued andc= 1. In any other casec= 0. 1 If, addition-
+ally, the cursor position is inside the target, i.e.,
+ 
+|s1 −T| ≤W
+2
+
+, the button is
+clicked successfully, i.e.,g(s)4 = 1(otherwiseg(s) 4 = 0). The last entry of the
+output represents a negative feedback for clicking outside the button, such as a
+beep tone commonly used in studies [16]. As such,g(s)5 =−1when a misclick
+happens (otherwiseg(s) 5 = 0). We intentionally add this observation to allow
+the agent to have a specific preference ofnotobserving a misclick.
+Since human perception is inherently subject to noise, we add Gaussian
+noise to the agent’s observations of cursor position and button displacement.
+We assume that the other components of output are observed without any
+disturbances, leading to an observation ofo= [o 1, o2, g(s)3, g(s)4, g(s)5]with
+o1 ∼ N(g(s)1, σp
+1)ando 2 ∼ N(g(s)2, σp
+2). Except otherwise noted, we use the
+parameters shown in Section B.1.
+3.2 Belief Priors and Perceptual Delay
+We explore agents that are supposedly well-trained in the pointing task, i.e.,
+the means of the prior belief about the system parametersQθ are close to the
+real values while the uncertainty is small. However, to model the initial delay of
+perceiving the target, we initialise the agent’s belief about the target location
+to be centred at the initial position and have a high uncertainty, i.e., the agent
+believes that the target could appear anywhere on the display. In summary, the
+agent’s initial beliefQθ is given by
+µθ = [d, k,0.0,0.03, αc], Σθ =diag
+
+0.2,0.2,0.9,0.02,10 −62
+.(4)
+After the delay period, we update the belief to include the correct target position
+Tand widthWwith low uncertainty, that is,
+µθ = [d, k,T,W, αc], Σθ =diag
+
+0.2,0.2,10 −6,10−6,10 −62
+.(5)
+Note that we keep some uncertainty about the damping and stiffness. This is due
+to the fact that an agent with pristine knowledge about all system parameters
+would not need to infer the system state from noisy observations. Instead, its
+internal model of the world would allow for perfect prediction of the cursor
+trajectory and clicking, resulting in super-human performance. However, to keep
+the sources of uncertainty in check, we provide the agent with full knowledge
+about the amount of observation noise, i.e.Qp is given by
+µp = [σp
+1, σp
+2], Σp = 10−8I2.(6)
+1 Following the convention thatTrueis represented as1andFalseas0.
+An Active Inference Model of Mouse Point-and-Click Behaviour 7
+In future work,Q θ andQ p might also be inferred by interacting with the
+system over a longer time period.
+The agent starts with a reasonable initial belief about the system state, that
+is
+µs = [0.0,0.0,0.0,0.0], Σ s =diag([0.001,0.0001,0.00005,0.00005] 2).(7)
+We address the time a perceived signal takes to be processed by a human as
+follows. We delay observations that the agent received from the system after
+applying an action byτ= 5timesteps (=100ms). To compensate for this per-
+ceptual delay, the agent keeps a belief about the state before the delay,Qs(t−τ)
+(instead oft). Prior to planning its next action, the agent then predicts the
+system state at timetusing its internal model. This is achieved by sequentially
+updating a temporary copy˜Qs(t−τ)ofQ s(t−τ)by using actions applied during
+the delaya(t+i), i=−τ, . . . ,−1, until arriving at˜Qs(t)(see Section A.2, 1.).
+After planning and performing the next action, the agent uses the “old” action
+a(t−τ)and, if available, delayed observation fromo(t−τ)to obtain the belief
+Qs(t−τ+ 1). This belief then serves as an initial point for the next planning
+step.
+Preference prior
+s2s1
+-d
+*
+a1 a2
+s4
+-kThreshold
+Environment
+System dynamics
+Inside test
+Click logic
+Agent
+c
+UKF ...
+Delay compensation
+Perceptual delay
+ 𝜏  steps
+Activeinference
+planning
+ActuationSensing
+Sys. param. prior
+a(t)
+pc
+o(t- 𝜏 )
+Qs(t)
+s4 s1
+αc
+Qθ
+N
+K
+o(t)
+System noise
+prior
+Qd
+UKFVI
+Delay z- 𝜏 
+z-1 z-1 z-1 ... z-1 z-1 z-1
+UKF UKF
+Action buffer ( 𝜏  steps)
+a(t- 𝜏 )
+a(t- 𝜏 +1) a(t-1)a(t- 𝜏 +2)
+Observation update
+a(t)
+Active inference
+*
+[T, W]
+σp1 +
++
+NoiseNoise
++
+σp2 +Perceptual model
+Markov blanket
+Solid: real
+ Bold: distributions
+Dashed: discrete 
+Target
+QS(t- 𝜏 )~
+z-1
+Finger
+Arm
+ActionsState prior QS0
+Fig.2: A block diagram showing the interaction loop of the agent (upper) and
+the environment (lower). The agent includes a perceptual model, predictive delay
+compensation and min-EFE action planning. The simulated environment con-
+sists of a first and second-order lag modelling cursor and finger dynamics, along
+with click handling logic. See Algorithm 1 for full details.
+8 M. Klar et al.
+3.3 Preference Prior
+The agent’s goal is to control the generative process described in Section 3.1
+in the same way a human does, i.e., such that the target button is clicked as
+accurately and fast as possible. To model this in a natural way with Active
+Inference, we define the agent’s preference distribution as a marginal distribution
+on the observations of the cursor positiono1, button clicko4, and misclicko5,
+Pc
+o1,o4,o5 =N
+
+[T,1.0,0.0],diag
+
+[0.01,0.01,0.001] 2
+
+.(8)
+The mean of this distribution is centred around the cursor being at the target’s
+centre, the button being successfully clicked, and not getting negative feedback
+on a misclick. Adding the additional preference of not observing a misclick en-
+sures that the agent only clicks when it is certain enough that the cursor is on
+the button. Scaling the diagonal values of the covariance matrix allows creating
+agents that have different focus on speed versus accuracy, a classical trade-off
+that is present in human aimed movements [5, 22, 9].
+The parameters used in the results are manually fitted to the data of one
+user performing the pointing task described in Section C.1 and more details
+about the fitting process can be found in Section B.1. We additionally present
+the effect of changing individual parameters in Section D. It is important to
+mention that we – other than previous optimal control based approaches – use
+the same parameter set for all targets. The qualitatively different behaviours
+emerge from the properties of the AIF agent instead.
+4 Results
+We investigate whether the AIF agent is able to produce movements which are
+similar to human-controlled movements, despite the simplicity of the underlying
+model. In particular, we are interested in the amount of variability produced by
+the agent compared to a human performing the same task.
+4.1 AIF Agent Performs Pointing Task
+Fig. 3 shows a time-series view of how the AIF agent performs the pointing task.
+Before obtaining knowledge about the target position (before0.1s), the agent
+keeps the cursor close to the centre. During the fast surge movement (an initial
+ballistic phase of a mouse movement, [16]), the agent’s perception of the cursor
+position (left plot) is subject to increased uncertainty due to the larger impact
+of the perceptual delay. After slowing down close to the target, the agent regains
+a more precise belief about the cursor position and ultimately manages to click
+on the target. The resulting corrective movements are commonly observed in
+human pointing. In the right plot, the button displacement is represented. The
+initiation of a click is prompted upon attaining a threshold ofαc = 0.05. Given
+that the preference distribution is shaped by the observation of not missing the
+button, the agent only clicks when it believes that the cursor is inside the target.
+An Active Inference Model of Mouse Point-and-Click Behaviour 9
+0.0 0.2 0.4
+Time [s]
+800
+1000
+1200
+1400
+1600
+1800Cursor Position [px]
+s1(t)
+o1(t)
+o1(t )
+Qs
+1(t )
+Qs
+1(t)
+target
+hit
+0.0 0.2 0.4
+Time [s]
+0.100
+0.075
+0.050
+0.025
+0.000
+0.025
+0.050
+0.075
+0.100
+Mouse Button Displacement
+s3(t)
+o2(t)
+o2(t )
+Qs
+3(t )
+Qs
+3(t)
+threshold
+hit
+Fig.3: Mouse cursor and button displacement for one trial of the AIF agent
+from the start at 900 toT= 1750,W= 60px. The plot shows the real states(t)
+(blue), the agent’s belief abouts(t−τ)at timet(purple) and the prediction of
+s(t)used for planning (green). The ribbon displays +/- 3 standard deviations.
+4.2 AIF Agent Follows Fitts’ Law
+Fitts’ Law describes a logarithmic relationship between the ratio of a target
+distance to target width and the time for humans to reliably acquire it. It is
+usually given in the Shannon form:MT=a+b·log 2
+ 
+1 +D
+W
+
+, whereMTis the
+movement time,aandbare empirical constants,Dis the distance to the target,
+andWis the width of the target along the axis of motion [5, 14]. The log ratio
+termlog 2
+ 
+1 +D
+W
+
+is called theindex of difficulty (ID)and is measured in bits;
+larger values indicate targets which are more difficult to acquire.
+If our model is a plausible model of human pointing, it should follow this
+relationship. If it is well-tuned for a specific configuration (such that we emulate
+a realistic human motor system with a particular pointing device), we should
+recover similar coefficientsa, bas in experimental data. Fig. 4 shows the Fitts’
+Law evaluation for the AIF agent and a human user side-by-side. The AIF agent
+follows the characteristic pattern of Fitts’ Law with an identical slopebas the
+user, while having a shorter constant delaya.
+4.3 AIF Agent Shows Changing Behaviour for Different Targets
+Fig. 5 shows the trajectories produced by the AIF agent and a human user, split
+up by target size. As predicted by Fitts’ Law, movements of both agent and
+human, are longer for more difficult targets, i.e., smaller targets (right plots) or
+targets with larger distance from the initial position at 900px. Similar to the
+human, if targets are smaller or further away, the agent-controlled cursor often
+shows one or multiple sub-movements, i.e., shorter corrective movements, after
+the surge phase.
+10 M. Klar et al.
+3.25
+2.67
+1.70
+3.92
+3.32
+2.25
+5.44
+4.80
+3.61
+ID
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4Movement Time [s]
+Linear Regression (a = 0.22, b = 0.09, r2 = 0.51)
+(a) AIF Agent
+1.70
+3.61
+5.44
+3.25
+3.92
+4.80
+2.67
+2.25
+3.32
+ID
+Linear Regression (a = 0.46, b = 0.09, r2 = 0.41) (b) User
+Fig.4: Following Fitts’ Law, human pointing movements show a linear relation-
+ship between movement time and the index of difficulty (ID). The simulation
+with AIF shows a similar trend. The data is fitted with a linear regression model.
+Simulation:a= 0.22, b= 0.09, r2 = 0.51; User:a= 0.46, b= 0.09, r2 = 0.41.
+Another characteristic of human behaviour is that it shows higher end-point
+variance for larger targets. The end-point variance of the AIF agent’s move-
+ments shows a similar trend, which is displayed via the error bars next to the
+trajectories in Fig. 5. Similar to the user, for large targets (left plots in Fig. 5),
+the endpoints of the agent’s movements are skewed towards the starting point,
+showing that the agent makes use of the target size.
+5 Discussion
+Implications of the resultsThe results indicate that a full active inference
+model of target acquisition and click actuation with appropriate perceptual de-
+lays leads to behaviours that are comparable to human performance. The gross
+behaviour, as quantified by the Fitts’ law plots, indicates human-like pointing
+capacity, even without precise calibration. The AIF agent also shows realistic
+end-point variance and makes use of the target size. Unlike optimal control meth-
+ods, where parameters have to be fit not just for each user but for each target,
+a single parameterisation leads to plausible pointing behaviour across targets
+spanning a range of indices of difficulty. The AIF agent’s predictive models can
+compensate for the delayed observations with variability that appears to corre-
+spond well to human pointing in the presence of the well-known latency in the
+visual system. The combination of cursor movement and clicking enables inter-
+esting interactions, even in a simple model as ours, such as updating the belief
+about the cursor position by observing a click or misclick.
+LimitationsOur model has a radically simplified representation of human
+perception and motor control as a second-order system with Gaussian-corrupted
+observations and fixed perceptual delay. Our parameterisations are hand-tuned
+and validated on the data of a single user. Our agent has a relatively short time
+horizonasaconsequenceofthecomputationalcostofsample-basedinferenceand
+An Active Inference Model of Mouse Point-and-Click Behaviour 11
+0.5
+ 0.0
+Time [s]
+0
+250
+500
+750
+1000
+1250
+1500
+1750Cursor Position [px]
+0.5
+ 0.0
+Time [s]
+0.5
+ 0.0
+Time [s]
+0.5
+ 0.0
+Time [s]
+0
+250
+500
+750
+1000
+1250
+1500
+1750Cursor Position [px]
+0.5
+ 0.0
+Time [s]
+0.5
+ 0.0
+Time [s]
+Fig.5: Cursor trajectories for the AIF agent (upper row, blue) and a human user
+(lower row, green) for different target sizes (from left to right: 100px, 60px, 20px).
+The crosses mark mouse clicks, the red areas display the targets.t= 0indicates
+the moment of a correct click. The error bars show the end-point standard devi-
+ations. The averages for the different target sizes are: Agent:(17.63,10.08,4.74),
+User:(19.48,13.02,4.81).
+12 M. Klar et al.
+the consequent effect of “sample starvation” on policy selection. These inference
+limitations have an implicit effect on the parameterisation of the agent – for
+example, action selection is challenging if no sequence of actions in the time
+horizon brings the predicted state close to the “correct click” state. This can also
+lead to oscillating behaviour, as in Fig. 5, which is not as pronounced in humans.
+The computational effort involved in the variational inference procedure and
+limit the amount of plans that can be evaluated. However, our approach using
+UKF with Monte Carlo sampled rollouts inference makes our fully continuous
+formulation viable.
+OutlookOur model is a working AIF model of human pointing, but it re-
+quiredsignificantcustomdevelopment.Thereisaclearneedforsoftwarebuilding
+blocks to make progress in AIF-based modelling of human interaction: reusable
+modelsandcomponentsappropriateforHCItasks.Weuseasimplelinearsystem
+as our forward model and a similarly simplified perceptual model with known
+delay. There remains opportunity to explore more authentic biomechanical mod-
+els of the arm, or stronger perceptual models that, e.g. add uncertainty about
+the perceptual delay, properly account for motor delays, or include models of
+foveated vision. Although our model reproduces behaviour qualitatively similar
+to our test user, we have much to explore in calibrating parameters to better
+match human performance. This could involve automatic optimisation of agent
+parameters to align with observed user data, and/or parameters informed di-
+rectlybyestablishedbiomechanicalandperceptualdata.Optimisationcouldalso
+be performed online, with an active inference agent learning system parameters
+during simulated interactions. We also see scope to develop more sophisticated
+metrics to establish what “similar” trajectories are, particularly when quantify-
+ing variability in dynamics. There are obvious extensions of our model to e.g. 2D
+or 3D pointing tasks, but these will likely require better inference, new datasets
+and stronger biomechanical and perceptual models.
+5.1 Conclusion
+We presented an active inference simulation of human pointing and clicking
+behaviour with continuous states, actions, and observations. Despite its simple
+2OL forward model our model generates plausible trajectories across a range
+of target sizes, and it includes a full model of actuation (“click”) planning and
+predictive delay compensation.
+While AIF control of even this elementary system is not straightforward
+– our agent has a profusion of parameters and significant inference challenges
+– our findings suggest that AIF is a promising model for fine-grained inter-
+action models. The inherently probabilistic nature allows for a greater variety
+of cursor trajectories than comparable methods, generating a wide variety of
+plausible behaviours. Our model is the first step towards active inference-based
+user modelling in HCI. Our results indicate that active inference is viable for
+user behavioural models and highlight many open challenges in building more
+sophisticated AIF-based synthetic users.
+The Python code used to create the simulations in this work can be found at
+https://github.com/mkl4r/AIF-Pointing.
+An Active Inference Model of Mouse Point-and-Click Behaviour 13
+References
+1. Cheema, N., Frey-Law, L.A., Naderi, K., Lehtinen, J., Slusallek, P., Hämäläinen,
+P.: Predicting Mid-Air Interaction Movements and Fatigue Using Deep Reinforce-
+ment Learning. In: Proceedings of the 2020 CHI Conference on Human Factors
+in Computing Systems. CHI ’20, pp. 1–13. Association for Computing Machinery,
+Honolulu, HI, USA (2020). https://doi.org/10.1145/3313831.3376701
+2. Dalsgaard, T.-S., Knibbe, J., Bergström, J.: Modeling Pointing for 3D Target Se-
+lection in VR. In: Proceedings of the 27th ACM Symposium on Virtual Reality
+Software and Technology. VRST ’21. Association for Computing Machinery, Osaka,
+Japan (2021). https://doi.org/10.1145/3489849.3489853
+3. Do, S., Chang, M., Lee, B.: A Simulation Model of Intermittently Controlled Point-
+and-Click Behaviour. In: Proceedings of the 2021 CHI Conference on Human Fac-
+tors in Computing Systems. CHI ’21. Association for Computing Machinery, Yoko-
+hama, Japan (2021). https://doi.org/10.1145/3411764.3445514
+4. Fischer, F., Fleig, A., Klar, M., Müller, J.: Optimal Feedback Control for Modeling
+Human–Computer Interaction. ACM Trans. Comput.-Hum. Interact.29(6), 1–70
+(2022). https://doi.org/10.1145/3524122. https://dl.acm.org/doi/10.1145/
+3524122 (visited on 08/30/2024)
+5. Fitts, P.M.: The information capacity of the human motor system in controlling
+the amplitude of movement. Journal of experimental psychology47(6), 381 (1954)
+6. Fitts, P.M., Peterson, J.R.: Information capacity of discrete motor responses. Jour-
+nal of experimental psychology67(2), 103 (1964)
+7. Flash, T., Hogan, N.: The coordination of arm movements: an experimentally con-
+firmed mathematical model. Journal of neuroscience5(7), 1688–1703 (1985)
+8. Friston, K., Da Costa, L., Hafner, D., Hesp, C., Parr, T.: Sophisticated inference.
+Neural Computation33(3), 713–763 (2021)
+9. Guiard, Y., Rioul, O.: A mathematical description of the speed/accuracy trade-off
+of aimed movement. In: Proceedings of the 2015 British HCI Conference, pp. 91–
+100 (2015)
+10. Ikkala, A., Fischer, F., Klar, M., Bachinski, M., Fleig, A., Howes, A., Hämäläinen,
+P., Müller, J., Murray-Smith, R., Oulasvirta, A.: Breathing Life Into Biomechanical
+User Models. In: Proceedings of the 35th Annual ACM Symposium on User Inter-
+face Software and Technology. UIST ’22. Association for Computing Machinery,
+Bend, OR, USA (2022). https://doi.org/10.1145/3526113.3545689
+11. Julier, S.J., Uhlmann, J.K.: Unscented filtering and nonlinear estimation. Proceed-
+ings of the IEEE92(3), 401–422 (2004)
+12. Kingma,D.P.,Welling,M.:Auto-encodingvariationalbayes.arXivpreprintarXiv:1312.6114
+(2013). https://doi.org/10.48550/arXiv.1312.6114
+13. Klar, M., Fischer, F., Fleig, A., Bachinski, M., Müller, J.: Simulating Interaction
+Movements via Model Predictive Control. ACM Trans. Comput.-Hum. Interact.
+30(3) (2023). https://doi.org/10.1145/3577016
+14. MacKenzie, I.S.: Fitts’ Law. In: The Wiley Handbook of Human Computer In-
+teraction, pp. 347–370. John Wiley & Sons, Ltd (2018). https://doi.org/10.
+1002/9781118976005.ch17. https://onlinelibrary.wiley.com/doi/abs/10.1002/
+9781118976005.ch17 (visited on 04/24/2024)
+15. Martín, J.A.Á., Gollee, H., Müller, J., Murray-Smith, R.: Intermittent control as a
+model of mouse movements. ACM Transactions on Computer-Human Interaction
+(TOCHI)28(5), 1–46 (2021)
+14 M. Klar et al.
+16. Müller,J.,Oulasvirta,A.,Murray-Smith,R.:ControlTheoreticModelsofPointing.
+ACM Trans. on Computer-Human Interaction24(4), 27:1–27:36 (2017)
+17. Murray-Smith,R.,Williamson,J.H.,Stein,S.:ActiveInferenceandHuman–Computer
+Interaction, (2024). arXiv: 2412.14741[cs.HC]. https://arxiv.org/abs/2412.14741.
+18. Myers, B.A.: Pick, Click, Flick! The Story of Interaction Techniques. ACM (2024)
+19. Parr, T., Pezzulo, G., Friston, K.J.: Active Inference: The Free Energy Principle
+in Mind, Brain, and Behavior. The MIT Press (2022)
+20. Perrinet, L.U., Adams, R.A., Friston, K.J.: Active inference, eye movements and
+oculomotor delays. Biological cybernetics108, 777–801 (2014)
+21. Priorelli, M., Stoianov, I.P.: Flexible intentions: An Active Inference theory. Fron-
+tiers in Computational NeuroscienceVolume 17 - 2023(2023). https://doi.
+org/10.3389/fncom.2023.1128694. https://www.frontiersin.org/journals/
+computational-neuroscience/articles/10.3389/fncom.2023.1128694
+22. Schmidt, R.A., Zelaznik, H., Hawkins, B., Frank, J.S., Quinn Jr, J.T.: Motor-
+output variability: a theory for the accuracy of rapid motor acts. Psychological
+review86(5), 415 (1979)
+23. Sheridan, T.B., Ferrell, W.R.: Man-machine Systems: Information, Control, and
+Decision Models of Human Performance. M.I.T. Press, Cambridge, USA (1974)
+24. Stein, S., Williamson, J.H., Murray-Smith, R.: Towards Interaction Design with
+Active Inference: A Case Study on Noisy Ordinal Selection. In: 5th International
+Workshop on Active Inference (IWAI 24) (2024)
+25. Todorov, E., Li, W.: A generalized iterative LQG method for locally-optimal feed-
+back control of constrained nonlinear stochastic systems. In: Proceedings of the
+2005, American Control Conference, 2005. Pp. 300–306 (2005)
+26. Vertegaal, R., Merritt, T., Greenberg, S., Tarun, A.P., Li, Z., Fountas, Z.: Interac-
+tive Inference: A Neuromorphic Theory of Human-Computer Interaction, (2025).
+arXiv: 2502.05935[cs.HC]. https://arxiv.org/abs/2502.05935.
+27. Wan, E.A., Van Der Merwe, R.: The unscented Kalman filter for nonlinear esti-
+mation. In: Proceedings of the IEEE 2000 adaptive systems for signal processing,
+communications, and control symposium (Cat. No. 00EX373), pp. 153–158 (2000)
+An Active Inference Model of Mouse Point-and-Click Behaviour 15
+A Active Inference for Continuous Dynamic Systems
+with Control and Observation Noise
+A.1 System Dynamics
+We control a general dynamic system with continuous states, actions, and obser-
+vations with active inference. We take a discrete-time approach, with a constant
+time step∆t. A dynamic system is then described by functions
+st+1 =f θ(st, at),(9)
+ot =g θ(st) +ϵt,(10)
+where (9) maps the current systemstates t ∈R n and anactiona t ∈R m at
+timestept∈Nto the new system states t+1 ∈R n, given some system parameters
+θ. The system’s output (10) is given by a functiongθ :R n 7→R l and may be
+perturbed by constant and/or state-dependent Gaussian noise to obtain the
+agent’sobservationo t ∈R l at time stept.
+A.2 Belief Updates
+A human user will usually only have access to a limited set of system states
+that they observe via output devices such as displays. For instance, although we
+cannot perceive the velocity of a mouse cursor directly (as in a speedometer),
+it is still an important source of information to prevent overshooting a target
+button. The agentinfersthis information by propagating its belief about the
+cursor velocity through its internal model, as explained below.
+The agent has two ways to update its belief about the system stateQ s
+t :
+1. After performing an action, the agent uses its internal model of the world
+to update its belief, resulting in a new beliefQs
+t+1 for timestept+ 1. An ef-
+ficient approach for this is to propagate the agent’s belief through time using
+an Unscented Kalman filter (UKF) [11], which allows the estimation of states
+under nonlinear transition functions with Gaussian belief distributions. It in-
+volves choosing sigma points in the combined space ofQs andQ θ, evaluating
+fθ on these with the chosen actiona t to obtain the correspondings t+1, and
+estimating the parameters of the updated belief distributionQs
+t+1 directly from
+thes t+1 using Maximum Likelihood. Note that during this step we fold in the
+application of the actionat into the transition function that the UKF applies
+to make predictions of the future state under actionat. This update usually
+increases uncertainty, since the agent is uncertain about the current state of the
+world as well as the dynamics.
+2. After a new observation, the agent updates its belief using variational infer-
+ence. This means, that the agent minimizes the variational free energyFwith
+respect to the belief distribution parameters and the noise belief,
+min
+ˆQs
+F
+
+ˆQs, ot
+
+= DKL
+
+Qs
+ ˆQs
+
+−E st∼ ˆQs;σp∼Qp [lnP o(ot|st;σ p)],
+16 M. Klar et al.
+whereQ s is the variational beliefpriorto making the new observation (but
+after having taken the last action), ˆQs is theposteriorbelief, andD KL the
+KL-divergence. The first term has an analytical solution for Gaussian belief dis-
+tributions, whereas the second term requires sampling fromˆQs. For optimization
+via gradient descent, we use the reparameterization trick [12] to backpropagate
+throughn VI
+s samples in each of thekVI update steps. Depending on the knowl-
+edge of observation noise, this step may reduce the agent’s uncertainty.
+A.3 Action Selection
+Ineverytimestept,theagentgeneratesKplansrepresentingsequencesofactions
+with aN-step planning horizon by sampling actions from uniform distributions,
+πj = (a1j, . . . , aNj ),∀j∈ {1, . . . , K}
+aij ∼ U(a, a),
+wherea , aare the lower and upper boundaries for the actions taken by the agent.
+These plans are evaluated with respect to theExpected Free Energy (EFE)[19],
+G(πj) = 1
+N
+NX
+i=1
+Gij(aij)
+Gij(aij) =−EQs
+ij
+h
+DKL
+
+ˆQs
+ij
+ Qs
+ij
+i
+| {z }
+Information Gain
+−Es∼Qs
+ij;σp∼Qp;˜o∼N(g(s),σp), [lnP c(˜o)]
+| {z }
+Pragmatic Value
+,
+whereQ s
+ij are predicted via rollout, i.e. by successively updating the agent’s be-
+lief after performing actionaij as described in Section A.2. Since these rollouts
+are predictions ‘in the agent’s mind’, the beliefs cannot be updated using obser-
+vations here.2 In practice, it is often impossible to calculate these analytically, so
+we approximate based on observations sampled from the current belief. In case
+of perceptual delay, the initial belief distribution is obtained by applying UKF
+with the last performed actions as described in Section 3.2.
+Theinformation gainis approximated by computing the KL-divergence be-
+tweenQ s
+ij and different instances of ˆQs
+ij. This involves takingn IG
+s samples
+s∼Q s
+ij andΞ p ∼Q p which are used to samplenIG
+o observations from the gen-
+erative model each, i.e.˜o∼ N(gθ(s), Ξp). After performing the update after ob-
+servation, as described in Section A.2 for each of these, we obtainnIG =n IG
+s ·nIG
+o
+different instances ofˆQs
+ij.
+Thepragmatic valuerepresents the bias encouraging the agent to take actions
+that result in preferred observations, which are characterized by the preference
+distributionP c. As above, we samplenPV
+s states from the current belief and
+samplen PV
+o observations each to estimate the log-likelihood of these given the
+2 In discrete systems, Sophisticated Inference can be applied to walk the complete tree
+of possible actions and observations. However, even in cases where this is possible it
+is often too computationally expensive [8].
+An Active Inference Model of Mouse Point-and-Click Behaviour 17
+preference distribution. The more likely these observations are, the better they
+and the plan leading to them are in the eyes of the agent.
+Thenextactionischosenasthefirstactionoftheplanwithminimalexpected
+free energy, i.e.at+1 =a 1j, wherej= argmin j∈{1,...,K} G(πj).
+B Implementation Details
+B.1 Parameters
+Our AIF agent has many parameters that can have an influence in the resulting
+trajectories. The following Table 1 gives an overview of these parameters. To
+find suitable parameters that lead to movements similar to those of a human,
+we proceed as follows.
+–We roughly estimate the necessary dampingdand maximal hand controla1
+by comparing the 99% percentile and maxima of accelerations and velocities
+observed in the study to those created by applying the maximal activation
+to the mouse cursor system Eq. (1) for one second.
+–We aim to set the stiffness of the finger dynamic such that the earliest click
+can not happen faster than observed in a user clicking as fast as possible,
+that is≈0.14s per click. However, this had to be relaxed slightly to ensure
+that the agent can click the button consistently.
+–We obtain the reaction time of the agent by computing the first timestep
+after the user exceeds an acceleration threshold of 10px/s2, that isτ≈0.1s.
+–We tune the preference distributionP C such that the resulting behaviour
+shows similar clicks and misclicks as humans.
+The remaining parameters are tuned by visually comparing trajectories and the
+Fitts’ Law results.
+B.2 The Complete Algorithm
+Algorithm 1 shows the pseudo code for the complete interaction loop of an
+AIF agent with the mouse model. Prior to planning the next action, the agent
+compensates for the perceptual delay by estimating the system state at time
+t. This is achieved by sequentially updating the temporary copy˜Qs using the
+previously applied actions (for-loop in planning phase) and the agent’s internal
+model of the system. After planning and performing an action, the agent uses
+the ’old’ action and, if available, delayed observation fromτtimesteps before to
+update the beliefQs(t−τ).
+C Experiment Details
+C.1 User Data Acquisition
+We gather movement data from a simple, PyScript-based application. The task
+is to move the mouse cursor from a start position to a target that appears in one
+18 M. Klar et al.
+VariableDomain Value Description
+d R+ 24.0 Cursor damping
+k R+ 10.0 Button stiffness
+T R ∗ Target position [px]
+W R+ ∗ Target width [px]
+αc R+ 0.05 Click threshold
+∆t R+ 0.02 Time step length [s]
+τ N 5 Perceptual delay [timesteps]
+a R2 (−50.0,−1.0)Control lower bounds
+a R2 (50.0,1.0) Control upper bounds
+Σp R3 ∗∗ Std/Covariance of observation noise
+Qs R4 ×R4×4 ∗∗ State prior
+Qθ R5 ×R5×5 ∗∗ System parameters prior
+Qd R3 ×R3×3 ∗∗ Noise prior
+N N 12 Prediction horizon [timesteps]
+K N 3000 # Plans
+Pc R3 ×R3×3 ∗∗ Preference distribution
+kVI N 30 # Optimization steps for VI
+nVI
+s N 300 # State samples for VI
+ηVI (0,1) 3.0·10 −4 Learning rate for VI
+nIG
+s N X # State samples for Information Gain
+nIG
+o N X # Observation samples for Information Gain
+nPV
+s N 50 # State samples for Pragmatic value
+nPV
+o N 3 # Observation samples for Pragmatic value
+SystemBeliefControlHyper parameters
+Table 1: List of Parameters. The value column shows the commonly used value,
+if not otherwise stated in the paper.∗: Value is given by the task;∗∗: Value is
+explicitly explained in Section 3; X: Value is not used for the results. For details
+see Section A.
+An Active Inference Model of Mouse Point-and-Click Behaviour 19
+Algorithm 1Active Inference for Mouse Point-and-Click
+Require:Parameters in Table 1
+t←1
+Qs(1 +i)←Q s,∀i∈ {−τ, . . . ,0}
+a(1 +i)←0,∀i∈ {−τ, . . . ,−1}
+whileButton not clickeddo
+1. Planning (Section A.3):
+˜Qs(t−τ)←Q s
+( t−τ)
+fori∈ {−τ, . . . ,−1}do
+˜Qs(t+i+ 1)←Update ˜Qs(t+i)using UKF anda(t−i)(Section A.2, 1.)
+end for
+πj ←(a ij)ij,∀i∈ {1, . . . , N}, j∈ {1, . . . , K};aij ∼ U(a, a)
+j←argmin j∈{1,...,K} G(πj)(using ˜Qs(t))
+a(t)←π j(1)
+2. Step System:
+s(t+ 1)←f θ(s(t), a(t))
+o(t−τ+ 1)∼ N(g(s(t+ 1)), σp)
+3. UpdateQs:
+Qs(t−τ+ 1)←UpdateQ s(t−τ)via UKF anda(t−τ)(Section A.2, 1.)
+ift > τthen
+Qs(t−τ+ 1)←UpdateQ s(t−τ+ 1)via VI ando(t−τ+ 1)(Section A.2, 2.)
+end if
+t←t+ 1
+end while
+of six random locations, either to the left or to the right of the start position at
+pixel 900. The width of the canvas is set to 1800 pixels. The distance between
+the start position and the target’s centre is varied between 225, 537, 850 pixels,
+while its width is varied between 20, 60, 100 pixels, resulting in a total of 18
+different targets. The task is performed by six human users, hitting every target
+ten times in a random order, resulting in a total of 1080 movements. We split the
+resulting data into single trials, and removed outliers that showed a movement
+time greater than three standard deviations away from the mean (a depiction of
+the task as well is shown in Fig. 6). Table 2 shows the 18 targets.
+20 M. Klar et al.
+(a) Start position
+ (b) Target
+Fig.6: The task commences by clicking on the designated start position, which
+is represented by the blue line. Subsequently, a red target is displayed, either to
+the right or the left. After clicking on the target, the cursor must be moved back
+to the initial position prior to starting the next trial.
+Target NrPosition Width ID
+1 675 20 3.61
+2 363 20 4.80
+3 50 20 5.44
+4 1125 20 3.61
+5 1438 20 4.80
+6 175 20 5.44
+7 675 60 2.25
+8 363 60 3.32
+9 50 60 3.92
+10 1125 60 2.25
+11 1438 60 3.32
+12 1750 60 3.92
+13 675 100 1.70
+14 363 100 2.67
+15 50 100 3.25
+16 1125 100 1.70
+17 1438 100 2.67
+18 1750 100 3.25
+Table 2: All targets of the pointing task with position, width in pixel, and index
+of difficulty.
+An Active Inference Model of Mouse Point-and-Click Behaviour 21
+D Additional Results
+D.1 Changing Model Parameters
+Changing individual parameters can affect the point and click behaviour of the
+AIF agent heavily. Fig. 7 shows trajectories to the same target (T= 1750,
+W= 30px), while adapting only one parameter. Changing the damping param-
+eter of the mouse cursor model (upper left) defines how steep the slope in the
+surge phase can be, with higher damping leading to a gentler slope (red trajec-
+tories,d= 40). The influence of the planning horizon (upper right) is harder to
+distinguish. If the number of sampled plans during planning is not adjusted, the
+chance of sampling a good plan with a higher horizon is decreased. Also, since
+the agent only applies the first action of the best plan, having a longer plan re-
+duces the influence of this action on the expected free energy, which might lead
+to suboptimal control (long red trajectory). Similarly, adjusting the preference
+of observing a misclick, i.e., changing
+q
+ΣC
+3,3, (lower left) has no clear effect on
+the resulting trajectories. Nonetheless, lower values lead to less misclicks (almost
+no black crosses,
+q
+ΣC
+3,3 = 10−6), while higher values can lead to many misclicks
+(many red crosses,
+q
+ΣC
+3,3 = 0.1). Increasing the agent’s perceptual delay (lower
+right) increases the time to target in most cases (red lines,0.2s reaction time).
+This is not surprising, since with longer delay the agent receives knowledge about
+the target position later and has a higher uncertainty about the cursor position
+after the surge phase (not shown).
+800
+1000
+1200
+1400
+1600
+1800Cursor Position [px]
+Damping of Hand Dynamic
+d = 1
+d = 24
+d = 40
+User
+Prediction Horizon
+N = 3
+N = 12
+N = 20
+User
+1.0
+ 0.8
+ 0.6
+ 0.4
+ 0.2
+ 0.0
+Time [s]
+800
+1000
+1200
+1400
+1600
+1800Cursor Position [px]
+Misclick Preference Variance
+C
+3, 3  = 1e 06
+C
+3, 3  = 0.001
+C
+3, 3  = 0.1
+User
+1.0
+ 0.8
+ 0.6
+ 0.4
+ 0.2
+ 0.0
+Time [s]
+Perceptual Delay
+t = 0.02
+t = 0.1
+t = 0.2
+User
+Fig.7: In each plot, only one parameter is changed while the others are fixed.
+The blue trajectories refer to the agent used in the remaining result section and
+the green trajectories are those of a human user.t= 0indicates the moment of
+a correct click. The crosses mark clicks and the red area the target.

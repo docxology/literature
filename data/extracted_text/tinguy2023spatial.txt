@@ -1,0 +1,1263 @@
+Spatial and Temporal Hierarchy for Autonomous Navigation
+using Active Inference in Minigrid Environment
+Daria de Tinguy 1, Toon Van de Maele2, Tim Verbelen2, and Bart Dhoedt1
+September 16, 2024
+Abstract
+Robust evidence suggests that humans explore their environment using a combination of topological land-
+marks and coarse grained path-integration. This approach relies on identifiable environmental features (topo-
+logical landmarks) in tandem with estimations of distance and direction (coarse grained path-integration) to
+construct cognitive maps of the surroundings. This cognitive map is believed to exhibit a hierarchical struc-
+ture, allowing efficient planning when solving complex navigation tasks. Inspired by the human behaviour,
+this paper presents a scalable hierarchical active inference model for autonomous navigation, exploration,
+and goal-oriented behaviour. The model uses visual observation and motion perception to combine curiosity-
+driven exploration with goal-oriented behaviour. Motion is planned using different levels of reasoning, i.e.
+from context to place to motion. This allows for efficient navigation in new spaces and rapid progress toward
+a target. By incorporating these human navigational strategies and their hierarchical representation of the en-
+vironment, this model proposes a new solution for autonomous navigation and exploration. The approach is
+validated through simulations in a mini-grid environment.
+Active inference; autonomous navigation; spatial hierarchy, temporal hierarchy; predictive coding
+1 Introduction
+The development of autonomous systems that are able to navigate in their environment is a crucial step towards
+building intelligent agents that can interact with the real world. Just as animals possess the ability to navigate
+their surroundings, developing navigation skills in artificial agents has been a topic of great interest in the field
+of robotics and artificial intelligence [1, 2, 3]. This has led to the exploration of various approaches, including
+taking inspiration from animal navigation strategies (e.g building cognitive maps [4]), as well as state-of-the-art
+techniques using neural networks [5]. However, despite significant advancements, there are still limitations in
+both non-neural network and neural network-based navigation approaches [2, 3].
+In the animal kingdom, cognitive mapping plays a crucial role in navigation. Cognitive maps allow animals
+to understand the spatial layout of their surroundings [6, 7, 8], remember key locations, solve ambiguities
+thanks to context [9] and plan efficient routes [9, 10]. By leveraging cognitive mapping strategies, animals can
+successfully navigate complex environments, adapt to changes, and return to previously visited places.
+In the field of robotics, traditional approaches have been explored to develop navigation systems. These
+approaches often rely on explicit mapping and planning techniques, such as grid-based [11, 12] and/or topolog-
+ical maps [13, 14], to guide agent movement. While these methods have shown some success, they suffer from
+limitations in handling complex spatial relationships, dynamic environments as well as scalability issues as the
+environment grows larger [3, 15, 2].
+To overcome the limitations of these non-neural network approaches, recent advancements have focused
+on utilising neural networks for navigation [16, 5, 17, 18]. Neural network-based models, trained on large
+datasets, have shown promise in learning navigational policies directly from raw sensory input. These mod-
+els can capture complex spatial relationships and make decisions based on learned representations. However,
+current neural network-based navigation approaches also face challenges, including the need for extensive train-
+ing data, limitations in generalisation to unseen environments, distinguishing aliased areas and the difficulty of
+handling dynamic and changing environments [2].
+To address these challenges, we propose building world models based on active inference. Active inference
+is a framework combining perception, action, and learning to enable agents to actively explore and understand
+their environment [19, 20]. World models form internal representations of the world, facilitating inference and
+decision-making processes using active inference frameworks [21, 22].
+1
+arXiv:2312.05058v3  [cs.RO]  13 Sep 2024
+Active inference provides a principled approach to agent-environment interactions. By formulating navi-
+gation as an active inference problem, agents can continuously update their beliefs about the environment and
+actively gather information through interactions. This enables them to make informed decisions and effectively
+navigate in the world [23].
+Noting that biological agents are building hierarchically structured models, we construct multi-level world
+models as hierarchical active inference. Hierarchical active inference empowers agents to utilise layers of world
+models, facilitating a higher level of spatial abstraction and temporal coarse-graining. It enables learning com-
+plex relationships in the environment and allows more efficient decision-making processes and robust navigation
+capabilities [24]. By incorporating hierarchical structures into active inference-based navigation systems, agents
+can effectively handle complex environments and perform tasks with greater adaptability [25].
+In this paper, in order to improve the agent’s ability to navigate autonomously and intelligently, we propose
+a hierarchical active inference model composed of three layers. Our proposed system highest layer is able to
+learn the environment structure, remember the relationship between places, and navigate without prior training
+in a familiar yet new world. The second layer, the allocentric model, learns to predict the local structure of
+rooms while the lowest level, our egocentric model, considers the dynamic limitation of the environment. We
+aim to enhance the agent’s ability to navigate through complex and dynamic environments while maintaining
+scalability and adaptability.
+Our contributions can be summarised as follows:
+• We present a system combining hierarchical active inference with world modelling for task agnostic
+autonomous navigation.
+• Our system uses pixel-based, visual observations, which shows promise for real-world scenarios.
+• Our model learns the structure of the environment, its dynamic limitations and forms an internal map of
+the full environment independently of its size, without requiring more computation as the environment
+scales up.
+• Our system can plan long-term without worrying about look-ahead limitations.
+• We evaluate the system in a mini-grid room maze environment [26], showing the efficiency of our method
+for exploration and goal-related tasks, compared against other Reinforcement Learning (RL) models and
+other baselines.
+• We quantitatively and qualitatively assess our work, showing how our hierarchical active inference world
+model fares in accomplishing given tasks, how it resists aliasing, and how it learns the environment
+structure.
+The subsequent sections of this paper will delve into the details of our proposed approach, including the
+theoretical foundations of active inference and hierarchical active inference, the architecture of our navigation
+system, experimental results, and a comprehensive discussion of the advantages and limitations of our approach.
+2 Related work
+Navigating complex environments is a fundamental challenge for both humans and artificial agents. To solve
+navigation, traditional approaches often address simultaneous localisation and mapping (SLAM) by building
+a metric (grid) map [11, 12] and/or topological map of the environment [13, 14]. Although there is progress
+in this area, Placed et al. [3] state that active SLAM still lack autonomy in complex environments. Current
+approaches are also still lacking in distinct aspects for navigation such as predicting the uncertainty over robot
+location, gaining abstraction over the environment (e.g. having a semantic map instead of a precise 3D map),
+and reasoning in dynamic, changing, spaces. Recent studies have explored the adoption of machine learning
+techniques to add autonomy and adaptive skills in order to learn how to handle new scenarios in real-world
+situations. Reinforcement Learning (RL) typically relies on rewards to stimulate agents to navigate and explore.
+In contrast, our model breaks away from this convention, as it doesn’t necessitate the explicit definition of
+a reward during agent training. Moreover, despite the success of recent machine learning, these techniques
+typically require a considerable amount of training data to build accurate environment models. This training
+data can be obtained from simulation [27, 28], provided by humans (either by labelling as in [29, 30] works or
+by demonstration as in [31] proposition), or by gathering data in an experimental setting [32, 33, 16]. These
+2
+methods all aim to predict the consequences of actions in the environment, but typically poorly generalise
+across environments. As such, they require considerable human intervention when deploying these systems in
+new settings [2]. We aim to reduce both the human intervention and the quantity of data required for training
+by simultaneously familiarising the agent to the structure and dynamics found in its environment .
+When designing an autonomous adaptable system, nature is a source of inspiration. Tolman’s cognitive map
+theory [34] proposes that brains build a unified representation of the spatial environment to support memory and
+guide future action. More recent studies postulate that humans create mental representations of spatial layouts
+to navigate [6], integrating routes and landmarks into cognitive maps [7]. Additionally, research into neural
+mechanisms suggest that spatial memory is constructed in map-like representation fragmented into sub maps
+with local reference frames [35], while hierarchical planning is processed in the human brain during navigation
+tasks [9]. The studies of Balaguer et al. [9] and Tomov et al. [10] show that hierarchical representations are
+essential for efficient planning for solving navigation tasks. Hierarchies provide a structured approach for agents
+to learn complex environments, breaking down planning into manageable levels of abstraction and enhancing
+navigation capabilities, both spatially (sub-maps) and temporally (time-scales). As such, our model incorporates
+these elements as the foundation of its operation.
+The concept of hierarchical models has gained interest in navigation research [25, 13]. Hierarchical struc-
+tures enable agents to learn complex relationships within the environment, leading to more efficient decision-
+making and enhancing adaptability in dynamic scenarios. There are two main types of hierarchy, both con-
+sidered in our work, temporal -planning over sequence of time- [36, 37, 38, 39] and spatial -planning over
+structures- [24, 40, 41, 13].
+In order to navigate without teaching the agent how to do so, we use the principled approach of active infer-
+ence (AIF), a framework combining perception, action, and learning. It is a promising avenue for autonomous
+navigation [22]. By actively exploring the environment and formulating beliefs, agents can make informed
+decisions. Within this framework, world models play a pivotal role in creating internal representations of the
+environment, facilitating decision-making processes. A few models have been combining AIF and Hierarchical
+models for navigation. Safron et al. [42] proposes a hierarchical model composed of 2 layers of complexity
+to learn the structure of the environment. The lowest level inferring the state of each step while the higher
+level represent locations, created in a more coarse manner. However large, complex, aliased, and/or dynamic
+environments are challenges to this model. Nozari et al. [43] show a hierarchical system by using a Dynamic
+Bayesian Network (DBN) over a naive and an expert agent, the naive learning temporal relationships, with the
+highest level capturing semantic information about the environment and low-level distributions capturing rough
+sensory information with their respective evolution through time. This system however requires expert data to
+train by imitation learning, which limits its performance of the model to the one of the expert. Our study focuses
+on familiarising the model with environmental structures rather than learning optimal policies within environ-
+ments. This approach enhances the model’s autonomy and adaptability to dynamic changes. Furthermore, the
+incorporation of spatial and temporal hierarchical abstractions effectively mitigates aliasing ambiguity, as well
+as extends the agent’s planning horizon for improved decision-making.
+Collectively, these studies provide insights into the cognitive mapping strategies used by humans, the ben-
+efits of hierarchical representations in navigation, and the application of active inference and world models to
+afford decision making in the environment. The concept of hierarchical active inference offers a possible foun-
+dation to achieve robust and efficient navigation through complex and dynamic environments. In this school
+of thought, our work proposes a new alternative to navigate in environments using pixel based hierarchical
+generative models to learn the world and active inference to navigate through it.
+3 Methods
+This section presents a breakdown of the navigation framework proposed in this work. It is divided into several
+subsections, starting with an exploration of world models and their importance in capturing the environment.
+We then delve into active inference, planning through inference, and our hierarchical active inference model.
+Next, we discuss the specific components of our model, including the egocentric model, allocentric model,
+and cognitive map. The subsection on navigation covers key mechanisms such as curiosity-driven exploration,
+uncertainty resolution, and goal-reaching. Finally, we conclude with a brief overview of the training process.
+3
+3.1 World Model
+We will first introduce the concept of world models in the context of navigation. Any agent, artificial or natural,
+can only sense its surroundings through sensory observations and change its surroundings through actions. This
+concept of a statistical boundary, known as a Markov Blanket, plays a crucial role in defining the information
+flow between an agent and its environment [44, 23].
+The agent’s world model can be defined as partially observable, corresponding to a partially observable
+Markov decision process (POMDP). In the framework of active inference those world models are generative,
+they capture how hidden causes generate observations through actions. Given a set of observations o and
+actions a, the agent creates a latent state s, representing its belief about the world. This corresponds to the
+probability distribution P(˜s|˜o, ˜a, π), where tildes are used to denote sequences, defining the agent’s belief states,
+observations, actions, and policies. In this formalism, a policy π is nothing more than a series of actions at:T
+from time t up until some horizon T.
+We assume the world model is Markovian without loss of generality, so that the agent’s statest at time step
+t is only influenced by the prior state st−1 and action at−1.
+Technically, the generative model is factorised as follows, using the notation explained above [38]:
+P(˜s, ˜o, ˜a, π) =P(s0)P(π)
+TY
+t=1
+P(ot|st)P(st|st−1, at−1)P(at−1|π) (1)
+3.2 Active Inference
+The Markov blanket acts as a barrier between the agent and the environment, restricting the agent’s direct
+knowledge of the world’s state. Consequently, the agent must rely on observations to gauge the effects of its
+actions. This necessitates Bayesian inferences to revise beliefs about potential state values, based on observed
+actions and their corresponding observations. In fact, the agent uses the posterior belief P(˜s|˜o, ˜a) to infer its
+belief state s [19].
+In practice, calculating the true posterior in this form, derived purely from Bayes rule, is usually intractable
+directly from the given joint model in Equation 1.
+To prevent this, the agent employs variational inference and approximates the true posterior by some ap-
+proximate posterior distribution Q(˜s|˜o, ˜a), which is in a tractable form [45].
+The estimated posterior distribution can be decomposed as the model proposed in 1:
+Q(˜s|˜o, ˜a) =Q(s0|o0)
+TY
+t=1
+Q(st|st−1, at−1, ot) (2)
+This approximate posterior maps from observations and actions to internal states used to reason about the world.
+The agent is assumed to act accordingly to the Free Energy Principle which states that all agents aim to
+minimise their variational free energy [19]. Given our generative model, we can formalise the variational free
+energy F in the following way [38]:
+F = EQ(˜s|˜a,˜o)[logQ(˜s|˜a, ˜o) − logP (˜s, ˜a, ˜o)]
+= DKL[Q(˜s|˜a, ˜o))||P(˜s|˜a, ˜o)]| {z }
+posterior approximation
+− logP (˜o)| {z }
+log evidence
+= DKL[Q(˜s|˜a, ˜o))||P(˜s, ˜a)]| {z }
+complexity
+−EQ(˜s|˜a,˜o)[logP (˜o|˜s)]| {z }
+accuracy
+(3)
+This equation describes the perception process over past and present observations, wherein minimising the
+variational free energy leads to the approximate posterior becoming increasingly aligned to the true posterior
+beliefs. Essentially, this means that the process involves forming beliefs about hidden states that offer a precise
+and concise explanation of observed outcomes while minimising complexity. Complexity, in this case, is the
+difference between prior and posterior beliefs, indicating how much one adjusts their belief when moving from
+prior to posterior [40].
+4
+3.3 Planning as Inference
+In active inference, agents are expected to take actions that minimise the free energy in the future. Minimising
+free energy w.r.t. to future observations encourages the agent to get additional observations in order to maximise
+its evidence, and can thus be employed as a natural strategy to exploration. However, as future observations and
+actions are not available to the agent, the agent minimises its Expected Free Energy (EFE). To calculate this
+Expected Free Energy G, the effect of adopting several policies (i.e. sequences of actions) on the future free
+energy is analysed.
+G(π) =
+X
+τ
+G(π, τ) (4)
+The expected free energyG(π, τ) for a certain policyπ and timestep τ in the future for the generative model
+is defined as:
+G(π, τ) =EQ(oτ ,sτ |π)[ln(Q(sτ |π) − ln(Q(sτ |oτ , π))]| {z }
+information gain term
+−EQ(oτ ,sτ |π))[ln(P(oτ ))]| {z }
+utility term
+(5)
+The expected free energy naturally balances the agent’s drive towards its preferences, i.e. information gain,
+with the expected uncertainty of the path towards the goal, i.e. utility value [25, 46].
+In order to effectively navigate, sophisticated inference is a key concept in active inference, given current
+knowledge about the environment, it involves selecting policies that take into consideration expected surprise at
+future time steps [47].
+While the dependency on policies in the prior over states can be omitted, the agent’s desire to attain its preferred
+world’s states remains evident regardless of which policy it pursues. The expected free energy is calculated for
+each future timestep the agent considers and is then aggregated to infer the most likely sequence of actions to
+reach a preferred state. This belief over policies is achieved through:
+P(π) =σ(−γG(π)) (6)
+Where σ, the softmax function is tempered with a temperature parameter γ converting the expected free
+energy of policies into a categorical distribution over policies. By using sophisticated inference, planning is
+transformed into an inference problem, with beliefs about policies proportionate to their expected free energy.
+The softmax temperature γ represents the agent’s confidence in its current beliefs over policies. Overall, so-
+phisticated inference allows the agent to plan ahead and optimise its behaviour over time, taking into account
+the uncertainty and complexity of the environment to achieve its goals. In other words, we pass from a belief
+over policies to a belief over the beliefs over policies. This is necessary for high-level cognitive processes such
+as reasoning, planning, and decision-making [25, 47].
+3.4 A hierarchical Active Inference model
+Active inference enables us to plan across a span of time; however, employing a non-hierarchical model that
+captures the environment in a single state or layer exhibits numerous limitations. Those models are often weak
+to aliasing as they lack abstraction to distinguish identical observations. Secondly, they are often limited by
+the model’s look-ahead horizon and is short-term memory by design, making long-term planning hazardous.
+Table 1: Description of the variables used in our mode
+notation associated meaning
+l location, experience
+z place, room, allocentric state
+p pose, position
+s egocentric state
+a action
+o observation
+c collision
+πx policy, sequence of x
+5
+Moreover, those models often lack adaptability in case of unexpected changes in the environment. Finally, the
+larger the environment is, the more computational resources might be required for such a model to form a full
+comprehensive representation [48, 46].
+Therefore, in navigation, hierarchical models are sought after to gain in abstraction, generalisation, and
+adaptability by adding levels to capture hierarchical structures and relationships [25, 49].
+From that perspective, we propose a hierarchical generative model consisting of three layers of reasoning
+functioning at nested timescales, aiming for a more flexible reasoning over time and space (see Fig 1). In order
+of decreasing abstraction level: (a) the cognitive map, creating a coherent topological map, (b) the allocentric
+model, representing space, and (c) the egocentric model, modeling motions. The structure of the environment
+is inferred over time by agglomerating visual observations into representations of distinct places (e.g. rooms)
+while the highest level discover the connectivity structure of the maze as a graph. The full joint distribution of
+the generative model can be written down as in Equation 7, where we explicitly index the three distinct nested
+timescales with T, t and τ respectively:
+Figure 1: Our generative model unrolled in time and levels as defined in Eq.7. The left figure shows the
+graphical model of the 3-layer hierarchical Active inference model consisting of a) the cognitive map, b) the
+allocentric model, and c) the egocentric model, each operating at a different time scale. The orange circles
+represent latent states that have to be inferred, the blue circles denote observable outcomes and the white circles
+are internal variables to be inferred. The right part visualises the representation at each layer. The cognitive
+map is represented as d) a topological graph composed of all the locations ( l) and their connections, in which
+each location is stored in a distinct node. The allocentric model e) infers place representations (z) by integrating
+sequences of state (s) and poses (p), from which the room structure can be generated. The egocentric model f)
+imagines future observations given the current position, state ( s), and possible actions ( a). Here o) depicts an
+actual observation (o) and the predicted observations of the possible actions turn left i), move forward ii), and
+turn right iii).
+6
+P(˜o, ˜z, ˜s, ˜l, π,˜πl, ˜πp) =P(π)
+Y
+T
+P(zT , p0
+T |lT )P(lT |π)P(πl)
+Y
+t
+P(st
+0|zT , pT
+t )P(pT
+t |πl, pT
+0 )P(πp)
+Y
+τ
+P(st
+τ+1|st
+τ , at
+T )P(at
+τ |πp)P(ot
+τ , ct
+τ |st
+τ )
+(7)
+At the top layer of the generative model you have thecognitive map, as depicted in Fig 1a, it operates at the
+coarsest time scale (T). Each tick at this time scale corresponds to a distinct location (lT ), integrating the initial
+positions (pT
+0 ) of the place ( zT ). These locations are represented as nodes in a topological graph, as shown in
+Fig 1d. As the agent moves from one location to another, edges are added between nodes, effectively learning
+the structure of the maze. To maintain the spatial relationship between locations, the agent utilises a continuous
+attractor network (CAN), similar to [50], keeping track of its relative rotation and translation. As a result, the
+cognitive map forms a comprehensive representation of the environment, enabling the agent to navigate and
+gain an understanding of its surroundings.
+The middle layer, the allocentric model, depicted in Fig 1b, plays a vital role in building a coherent formu-
+lation of the environment, referred to as zT . This model operates at a finer time scale ( t), generating a belief
+about the place by integrating a sequence of observations ( sT
+0:t) and poses ( pT
+0:t) to create this representation
+[51, 52]. The resulting place, as shown in Fig 1e and Fig 5, defines the environment based on accumulated
+observations. When the agent transitions from one place to another and the current observations no longer
+align with the previously formed prediction of the place, the allocentric model resets its place description and
+gathers new evidence to construct a representation of the newly discovered room ( zT+1). This advancement
+corresponds to one tick on the coarser time scale, and the mid-level time scale t is reset to 0.
+Then the lowest layer is called the egocentric model, shown in Fig 1c, it operates at the finest time scale
+(τ). This model utilises the prior state ( st
+τ ) and current action ( at
+τ+1) to infer the current observation (ot
+τ+1)
+[38]. By considering its current position, the model generates potential future trajectories while incorporating
+environmental constraints, such as the inability to pass through walls. Fig 1f showcases the current observation
+at the center o) and visualises the imagined potential observations if the agent were to turn left i), right iii), or
+move forward ii).
+It is important to observe that these three levels operate at a different time scale. In spite of the fact that the
+full sequences of variables cover the same time period in the environment, the different layers of the models
+function at separate levels of abstraction. The higher level operates on a coarser timescale, implying that numer-
+ous lower level time-steps occur in a single higher level step. The egocentric model operates on a fine-grained
+time scale τ, and is responsible for dynamic decisions and path integration. The allocentric model operates on
+a coarser time scale t where a sequence of poses p over a period of time t updates a specific location place zT .
+In this model, at any time t, the pose pt and place zT can give back the corresponding observation ot. At the
+topmost layer, the temporal resolution is lowest, where a single tick of the clock corresponds to a distinct loca-
+tion l, associated with the allocentric model at that time. This is done without accounting for the intermediary
+time-steps of the lower layers.
+This hierarchical arrangement allows the agent to reason about its environment further ahead, both tempo-
+rally and spatially. In temporal terms, planning one step at the highest level (such as aiming to change location)
+translates to planning over multiple steps at the lower levels, and this pattern continues throughout the hierarchy.
+In spatial terms, the environment is organised in levels of abstraction, becoming more detailed as one descends
+the hierarchy (for instance, from details of individual rooms to connections between rooms).
+In the following, we will discuss the details of model at each layer of the hierarchy, in a bottom-up approach.
+3.4.1 Egocentric model
+The egocentric model learns its latent state through the joint probability of the agent’s observations, actions,
+policies, belief states and its corresponding approximate posterior. It comprises a transition model for factoring
+in actions when transitioning between states, likelihood models for generating pixel-based observations and
+estimating collision probability based on the state, and a posterior model for integrating past events into the
+present state.
+7
+Figure 2: Generative model for the egocentric level: POMDP depicting the model transition from past and
+present (up to timestep τ) to future (from timestep τ + 1). A state sτ is determined by the corresponding ob-
+servation oτ and influenced by the previous state sτ−1 and action aτ−1, generating the supplementary collision
+observation cτ . The action as well as both observations are assumed observable, indicated by the blue colour.
+In the future, the actions are defined by a policy π influencing the new states in orange and new predictions in
+grey.
+P(˜o, ˜c, ˜s, ˜a) =P(s0)
+TY
+τ=1
+P(sτ |sτ−1, aτ−1)
+TY
+τ=1
+P(oτ , cτ |sτ )
+Q(˜s|˜o, ˜c, ˜a) =Q(s0|o0)
+TY
+τ=1
+Q(sτ |sτ−1, aτ−1, oτ )
+(8)
+The egocentric model continuously updates its beliefs about the state ( s) by incorporating the previous action
+(a) and the most recent visual observation ( o) from the environment [38]. This belief correction process is
+described in Equation 8.
+The incorporation of consecutive states forms the short-term memory of the model. It acquires an inherent
+comprehension of the dynamics of the environment through a process of trial and error, interacting with the
+environmental frontiers (e.g walls). This learning is accompanied by the notion of action and consequences
+introduced by active inference. The observations of the model are visual observations (o) and dynamic collision
+(c) in the environment.
+The egocentric model serves as the lowest level of the overall model and is responsible for predicting
+the dynamic do-ability of policies. It discards any sequence of actions that are deemed impossible based on
+its understanding of the environment. Additionally, the egocentric model plays a crucial role in facilitating
+curiosity-driven exploration by making short-term predictions when the agent is uncertain about the beliefs of
+the allocentric model.
+3.4.2 Allocentric model
+The allocentric model is responsible for generating environment states that describe the surroundings of the
+agent. It relies on Generative Query Networks (GQN) [51, 52]. To form a conception of the agent’s environment,
+its internal belief about the world is updated through interactions with the world, resulting in place (latent state z)
+structured upon positions (p) and corresponding observations (o) [51, 52]. The corresponding joint probability
+distribution P(z, ˜o, ˜p) defining respectively the agent’s belief state, observations, and poses and the approximate
+Posterior of this allocentric model are :
+8
+Figure 3: Generative model for the allocentric levelas a Bayesian network. One place is considered and
+described by a latent variable z. The observations ot depend on both the place described by z and the agent’s
+position pt. From 0 to t, the positions have been visited and are used to infer a belief over the joint distribution.
+Future viewpointpt+1 has not been visited or observed yet. Observed variables are shown in blue, while inferred
+variables are shown in white, and predictions are presented in grey.
+P′(z, ˜o, ˜p) =P(z)
+TY
+t=1
+P(ot|pt, z)P(pt)
+Q′(z|˜o, ˜p) =
+TY
+t=0
+Q(z|ot, pt)
+(9)
+This model therefore condenses chunks of information into a concise description of the environment. In this
+paper, we call one of these chunks a place, but it could also represent a context as defined by Neacsu et al. [40].
+In order to correctly condense information into the appropriate place, sequences of states at the lower level are
+separated using an event boundary based on the prediction error. [53, 54]. Each formed place (statez) represents
+a static structure of the environment. A dynamic environment will result in new places being generated. The
+process of updating or generating a new place involves evaluating the agent’s estimated global position within
+the cognitive map. This assessment results in closing the loop if the place is recognised, or creating a new belief
+if it is not.
+Each new place has its own local reference frame, created with a believed pose as origin.
+3.4.3 Cognitive map
+The cognitive map is responsible for memorising places and matching them with their relative positions in
+global space. It does this by creating nodes which we call experience or location. The creation of several
+experiences generates a metric-topological map of the environment allowing the system to integrate the notion
+of distance and connections between locations.
+A Continuous Attractor Network (CAN) is employed to handle motion integration. This network processes
+successive actions across time steps, allowing the estimation of the agent’s translation and rotation within a 3D
+grid [50]. The CAN’s architecture, featuring interconnected units with both excitatory and inhibitory connec-
+tions, emulates the behaviour observed in navigation neurons known as grid cells, found in various mammals
+[55], internally measuring the expected difference in the robot’s pose (i.e. its coordinates x,y and relative rota-
+tion over the z-axis). The CAN wraps around its edges, accommodating traversing spaces larger than the number
+of grid cells. The activation value of each grid cell represents the model’s belief in the robot’s relative pose, and
+multiple active cells indicate varying beliefs over multiple hypotheses. The highest activated cell represents the
+current most likely pose. Motion and proprioceptive translation modify cell activity, while view-cell linkage
+modifies activity when a place latent state ( z) significantly differs from others. This is determined through a
+cosine similarity score.
+When an experience is stimulated, it adds an activation to the CAN at the stored pose estimate [42, 56].
+Each new combination of position and place (z) generated by the allocentric model develops a new experience
+in the cognitive map that is represented by nodes in a topological graph. Such a node integrates the view cell
+(place), the position, and the pose cell of the visited location [41]. Each place reference frame is mapped in the
+9
+cognitive map global reference frame by remembering the local pose origin of the place reference frame and
+associate it with the location global position. when the agent starts moving for the first time, the global frame is
+created with this first motion as origin of the global reference frame.
+When navigating, context is considered for closing loops.
+When the current belief aligns with a past experience’s place, the corresponding view cell activates. How-
+ever, to resolve potential aliasing, the agent also considers its global position. If the position is determined to be
+too far from the past experience (based on a set threshold), a new place is created. This new place will adapt to
+new visual input without affecting the existing view cell associated with the past experience.
+3.5 Navigation
+The model is trained to learn the structure of the environment, and should, therefore be able to accomplish a va-
+riety of navigating task, regulated through active inference. Therefore, the agent is able to realise the following
+navigation tasks without needing any additional training.
+Exploration. The agent is able to explore an environment by evaluating the surprise it can get from predicted
+paths.
+Goal reaching.The agent can be given an observation as a preference and try to recall any past location match-
+ing this observation and plan the optimal path toward it or search for it.
+To find a suitable navigation policy, we need to evaluate a range of policies, each considering a numer of
+actions. To this end, we define a look-ahead parameter, defining the number of future actions when evaluating
+the candidate policy. As considereing each possible action at each position is untractable with increasing look-
+ahead values, we limit the search to straight line policies as shown in Fig. 4.
+Figure 4: Illustration depicting L-shaped paths encompassing the upper right quadrant of an area surrounding
+the agent. The chosen look-ahead distance in this scenario is 2.
+To establish those effective policies, we imagine a square perimeter around the agent with a width equal to
+the desired look-ahead. This square boundary is subsequently divided into segments, each regarded as distinct
+objectives. Our coverage approach involves crafting L-shaped paths originating from the agent’s position and
+extending towards these segmented goals. By incrementally elongating the vector initiating from the agent, we
+ensure thorough area coverage. This strategy results in every position within the square area being approached
+from two divergent directions, as illustrated in Fig 4 within a quarter of the square area. This methodology
+allows to employ extended look-ahead distances without risking intractable calculations.
+Once those policies are generated, the egocentric model evaluates their plausibility and truncates any se-
+quence of actions leading to a collision with a wall. Using those plausible policies, the agent’s navigation is
+guided by active inference. When the agent holds a high level of confidence in its world belief, its actions are
+determined by the variable weights in the following equation, leading it to either explore or pursue a specific
+goal.
+10
+G(π, T, τ) =W1 · EQ′(oτ ,zT |π)[ln(Q′(zT |π)) − ln(Q′(zT |oτ , π))]| {z }
+Allocentric Exploration
++ W3 · EQ′(oτ |π)[ln(P′(oτ |g))]| {z }
+Allocentric Preference seeking
++ W2 · EQ(oτ ,sτ |π)[ln(Q(sτ |π)) − ln(Q(sτ |oτ , π))]| {z }
+Egocentric Exploration
++ W4 · EQ(oτ |π)[ln(P(oτ |g))]| {z }
+Egocentric Preference seeking
+(10)
+With Q′ and P′ being the approximate posterior and prior of the allocentric model and Q and P the ap-
+proximate posterior and prior of the egocentric model. The weights of this formula are are treated as adaptive
+parameters of the model. If we have a preferred observation g defined, it effectively drives the agent toward
+reaching such an observation. Both the egocentric and allocentric models are used to infer the presence of the
+objective, using the same log preference mechanism. The egocentric model corrects possibly wrong memories
+of the allocentric model on the goal position in the immediate vicinity, it out-weights -with W4- the allocen-
+tric model predictions when there is a discrepancy between the two. Therefore while the egocentric model is
+trusted to infer the objective in its immediate vicinity, the allocentric model is trusted to search this objective
+in memory through all previously visited places, from the latest to the oldest. For long-term planning between
+several places, the model aims to get to the place containing this preferred observation using sophisticated active
+inference over the places leading toward the goal. Concretely a shortest path algorithm such as Dijkstra [57] is
+used to determine the quickest path considering the distance between places, the number of places to cross, and
+the probability of a connection between places, allowing for a more greedy or conservative approach depending
+on the weight we put on probable and improbable connections between places. In this work, the inference is set
+as conservative, and unconnected places are considered unlikely to lead toward the objective faster. The agent
+moves from place to place by setting positions’ observations leading from one place to the next as sub-objective
+C in eq.10. The agent moves by searching this preferred observation g while considering the direction it is
+headed toward to generate appropriate policies.
+In the absence of any preference, the agent doesn’t prioritise any particular observation, thus the weights
+(W3 and W4) associated with preference seeking in both models are zero, prompting the agent to engage in
+exploration instead.
+During exploration, the agent focuses on maximising the predicted information gain based on the expected
+posterior. Since the agent considers having a clear understanding of the environment after characterising a
+place, the uncertainty in observations becomes less relevant. As with the preference seeking, if the allocentric
+model fails to identify a relevant policy to explore new territories, the egocentric model encourages the agent
+to venture beyond its familiar surroundings. It is important to recall that a latent state z describes one place
+and does not encompass the whole environment. Once the model considers that a place does not explain the
+observations anymore it will reset its beliefs and form a new place. To imagine passing from one place to
+another, the cognitive map considers the agent-predicted location to shift the place of reference, this results in
+unvisited locations being much more attractive, as they have highly unexpected predictions, in contrast with
+visited places. An example of each layer’s predictive ability is shown in Fig.10.
+When transitioning between places, the allocentric model’s confidence in the current place drops below a
+pre-defined threshold. In general, a number of steps are needed to build up confidence on the place visited given
+the observations. During this phase, Equation 10 is not employed for navigation. Instead, our primary goal is to
+ascertain the most accurate representation of the environment. To achieve this, the agent formulates hypotheses,
+involving new and memorised places zn and poses pt, which potentially account for the observed data. The
+model strives to acquire additional data to converge towards a single hypothesis, accurately determining its
+spatial position.
+In order to ascertain the best actions for acquiring observations that aid in convergence, Equation 11 is
+applied to each probable hypothesis n.
+11
+G(π, n) =W ·
+X
+t>i
+EQ′(zn,pt|o0:i+t,π)[ln(Q′(zn, pt|π) − ln(Q′(zn, pt|o0:i+t, π))]| {z }
+information gain
+− EQ′(zn,pt|o0:i+t,π)
+
+ln(P(ot))
+
+| {z }
+expected utility
+(11)
+Hypotheses are weighted based on their alignment with the egocentric model’s predictions. A hypothesis
+gains weight if its predictions closely match the expected observations. If no hypothesis stands out, they are
+considered equally probable.
+Whatever the situation we are in, the leading policy is then inferred through:
+P(π) =σ(−γG(π)) (12)
+This effectively cast the planning as an inference problem, and beliefs over policies are proportional to the
+expected free energy. γ value offering a useful balance as it enables elimination of policies that are highly
+unlikely, improving efficiency of planning while also being relatively conservative [47].
+3.6 Training
+In order to effectively train this hierarchical model, the two lower level models are considered independent
+and trained in parallel. To optimise the two ego-allocentric neural network models we first obtain a dataset of
+sequences of action-observation pairs by interacting with the environment. This can be obtained, for instance,
+using a random policy, A-star-like policies, or even by human demonstrations. In this paper, the model was
+trained on a mini-grid environment consisting of 3 by 3 squared rooms of 4 to 7 tiles wide connected by aisles
+of fixed length randomly placed, separated by a closed door in the middle. Each room is assigned a colour
+at random from a set of four: red, green, blue, and purple. In addition, white tiles may be present at random
+positions in the map. The agent could start a training sequence from any door (or near door) position. The
+training was realised on 100 environments per room width going from 4tiles to 7tiles. The agent has a top view
+of the environment covering a window of 7 by 7 tiles, including its own occupied tile. It cannot see behind
+itself, nor through walls or closed doors. The observation the agent interprets is an RGB pixel rendering of
+shape 3x56x56 (see Appendix B.3 Fig 17 for an illustration of an observation). The allocentric model is trained
+on 1000 sequences per room size (4 to 7 tiles), each sequence has a random length of between 15 and 40
+observations in a room that is separated between learning the room structure and predicting the observations
+given the pose and learned place (posterior). The model is optimised through the loss:
+L =
+TX
+t=0
+DKL[Q′ϕ(z|ot, pt)||N(0, 1)] +||ˆot − ot||2 (13)
+The approximate posterior Q’ is modeled by the factorisation of the posteriors after each observation. The
+belief over z can then be acquired by multiplying the posterior beliefs over z for every observation. We train
+an encoder neural network with parameters ϕ to enable the determination of the posterior state z based on
+a single observation and pose combination (ok, sk). The likelihood is optimised using Mean Square Error
+(MSE), which involves the real observation ok and the predicted observation ˆok [52]. To determine a position,
+the agent’s action is incorporated into the subsequent position before being shuffled for predictions.
+The egocentric model is trained on 100 sequences of 400 steps per room size, each full sequence is cut into
+sub-sequences of 20 steps. At each step the model predicts what the observation should be and compares it to
+the real observation, improving its posterior and prior model parameters θ and ϕ through the loss function:
+L =
+TX
+t=1
+DKL[Qϕ(st|st−1, at−1, ot)||Pθ(st|st−1, at−1)] − log[Pξ(ot|st)] (14)
+This model is trained by minimising, in one part, the difference between the expected belief state given the
+couple action, previous history, and the estimated posterior obtained given the action, observation, and updated
+history. And in the second part by minimising the difference between the reconstructed observation and the
+input observation [25], effectively optimising the likelihood parameters ξ. Both the egocentric and allocentric
+models are optimised using Adam[58].
+The cognitive map, originally designed for navigation in mini-grid environments [26], can be re-scaled or
+adapted to different environments without the need for additional training.
+12
+4 Results
+The objective of this paper is to propose a navigation model based on active inference theory in new similar-
+looking environments to which task requirements could be added. There is no definite benchmark to assess task
+agnostic models, thus our model is evaluated upon its particular ability to:
+• Imagine and reconstruct the environments the agent visited
+• Create paths in complex environments
+• Disambiguate visual aliases
+• Use memory to navigate
+In addition, the ability to explore an environment as well as goal-reaching capabilities are compared to
+competing approaches.
+The model is tested in diverse mini-grid maze environments composed of connected rooms. Our agent is
+modelled to achieve autonomous navigation given only pixel-based observations.
+To evaluate the effectiveness of the proposed model, a series of tests have been realised, each focusing on
+a specific aspect of the model. Those experiments range from evaluating the models composing the system to
+assessing its overall navigation performance. Even though the testing grounds are similar to the training set, all
+the tests were performed on environments the agent never saw during training.
+4.1 Space representation
+The model’s capacity to describe the observed place is critical to enable higher-level inferences. Therefore, the
+fewer observations it requires to achieve convergence to an accurate, or at the very least, distinctive represen-
+tation of the environment, the more effectively it can recognise a place and navigate through it from various
+viewpoints. The model’s rapid convergence is crucial, but it also needs to maintain adaptability, which involves
+the capability to incorporate new information about the place in its belief (such as discovering new corridors).
+The following two figures demonstrate the place representation accuracy and convergence speed.
+Figure 5 illustrates the inference process of place descriptions. Within approximately three steps, the main
+features of the environment are captured reasonably accurately based on the accumulated observations. Even
+when encountering a new aisle for the first time at step 11, the model is able to adapt and generate a well-
+imagined representation. Each observation corresponds to the red agent’s clear field of view, as depicted in the
+agent position row (2nd row) of the figure (more details about the observations Appendix B.3).
+Figure 5: Evolution of the place representation in a room as new observations are provided by the moving agent
+(red triangle). The model is able to correctly reconstruct the structure of the room as observations are collected.
+Fig 6 shows the agent consistently achieving a stable place description within around three observations in
+room sizes part of its training. Interestingly, the agent also exhibits the ability to accurately reconstruct larger
+rooms, even though it did not encounter such sizes during training. In particular, stable place descriptions
+for 8-tile wide rooms are attained in approximately five steps. This showcases the agent’s allocentric model
+generalisation abilities beyond the limits of its training. The experiment was conducted over 125 runs in 25
+environments with the agent tasked to predict observations from unvisited poses after each new motion. Fig 7
+demonstrate the significance of the MSE value, used as metric for this experiment, by displaying examples of
+13
+Figure 6: Prediction error of unvisited positions over 25
+runs by room size starting from step 0 where the models
+has no observation.
+Figure 7: Observation ground truth, predicted ob-
+servation and MSE between observations
+predicted observations and their attributed MSE values. In our experiments we set the threshold to 0.5 in order
+to settle on a place to improve over successive steps.
+The model demonstrates its ability to differentiate empty rooms based on their size, colour and shape.
+4.2 Navigation
+Our navigation tests are focused on evaluating the model’s ability to complete a well-defined task, such as
+forming a spatial map through exploration in an aliased environment. The agent is set to perform two tasks,
+environment exploration and goal reaching, without any additional training after learning familiar rooms struc-
+ture.
+Baseline. To establish a baseline for the navigation tasks, we compare our method against:
+• C-BET [16], an RL algorithm combining model-based planning with uncertainty estimation for efficient
+exploration decision-making.
+• Random Network Distillation (RND) [59], integrates intrinsic curiosity-driven exploration to incentivise
+the agent’s visitation of novel states, meant to foster a deeper understanding of the environment.
+• Curiosity [60], leverages information gain as an intrinsic reward signal, encouraging the agent to explore
+areas of uncertainty and novelty.
+• Count-based exploration [61] uses a counting mechanism to track state visitations, guiding the agent
+toward less explored regions.
+• Dreamerv3 [5] represents an advanced iteration of world models for RL, offering the potential to enhance
+navigation by predicting and simulating future trajectories for improved decision-making.
+• A-star Algorithm (Oracle) [62], is a path planning algorithm to which the full layout of the environment
+and its starting position is given to plan the ideal path to take between two points.
+Each of these models propose different RL based exploration strategies for robotics navigation. All baselines
+have been trained and tested on the exact same environments as our model. For each model training details, we
+refer to Appendix B.
+The test environments consist of maze-like rooms that progressively increase in scale, ranging from 9 rooms
+up to 20 rooms, all with a width of 4 tiles.
+4.2.1 Exploration behaviour
+We evaluate to which extent the hierarchical active inference model enables our agent to efficiently explore the
+environment. Without a preferred state leading the model toward an objective, the agent is purely driven by
+epistemic foraging, i.e. maximising information gain, effectively driving exploration [23].
+Our evaluation involves comparing the performance of our model against various models such as C-BET,
+Count, Curiosity, RND models, and an Oracle. These models are tasked with exploring fully new environments
+14
+with configurations ranging from 9 to 20 rooms. While the oracle possesses complete knowledge of the envi-
+ronment and its initial position, other models are only equipped with their top-down view observations (and,
+in the case of the RL models, extrinsic rewards). The RL models are encouraged to explore until they locate a
+predefined goal (white tile); however, the reward associated with the white tile is muted to encourage continued
+exploration. Notably, the DreamerV3 model faces challenges in effective exploration due to its reliance on
+visual observations of the white tile for reward extraction. Consequently, an adapted environment without the
+white tile or specific training would be necessary to employ DreamerV3 as an exploration-oriented agent in this
+study.
+Across more than 30 runs by environment scale, our model demonstrates efficient exploration, in terms of
+coverage and speed, comparable to C-BET and notably outperforming other RL models in all tested environ-
+ments, as depicted in Fig 8 where we can see the percentage of area covered along steps in the environment.
+Moreover, the agent successfully achieves the desired level of exploration more frequently than any other model
+across all configurations, as demonstrated in Table 2. For an exploration attempt to be considered successful, the
+agents must observe a minimum of 90% of the observable environment. This criterion ensures that all rooms are
+observed at least once, without imposing a penalty on the models for not capturing every single corner. Since
+the agents cannot see through walls (see Appendix B.3), entering a room may result in missing the adjacent wall
+corners, but these corners hold limited importance for the agent’s objective. As an unlikely example, missing
+all the corner tiles of each room results in 9% of the environment not being observed (thus no matter the scale
+of the environment). In this exploration task, the oracle stops exploring as soon as the exploration task is done
+(exploring 90% of the maze) as can be seen Fig 8, giving a good idea of what the ideal exploration should look
+like and the threshold they have to reach. However, to further analyse them, the other agents are requested to
+continue exploring upon completion of the task, thus leading to over 90% maze’s coverage in the figures.
+(a) coverage as the exploration progress of all models in 3 by
+3 rooms environments
+(b) coverage as the exploration progress of all models in 3 by
+4 rooms environments
+(c) coverage as the exploration progress of all models in 4 by
+4 rooms environments
+(d) coverage as the exploration progress of all models in 4 by
+5 rooms environments
+Figure 8: The average exploration coverage across all test instances (>30 runs) for each model computed for a
+given environment’s scale. The oracle stops exploring as soon as the exploration task is done (exploring 90%
+of the maze).
+15
+success
+rate (%) models
+environment
+configuration ours C-BET RND curiosity count
+3x3 rooms 93 81 16 32 13
+3x4 rooms 94 87 16 19 0
+4x4 rooms 91 81 26 16 0
+4x5 rooms 81 74 7 23 3
+Table 2: The success rate of each model across all runs in each environment is defined as the percentage of runs
+where the exploration covers at least 90% of the environment.
+4.2.2 Preference seeking behaviour
+To evaluate the exploitative behaviour of the models, we configure all the models mentioned in the baseline
+to navigate towards the single white tile within the environment. This is conducted across environments of
+increasing size, ranging from 9 to 20 rooms. Goal-directed behaviour is induced in our model by setting a
+preferred observation (i.e. the white tile) as typically done in active inference [23, 1]. In our model, the
+reference for the white tile within the environment is not explicitly provided. Instead, the model is tasked
+with the objective of identifying a white tile based on its conceptual understanding of what the colour white
+represents. This approach enables the model to search for and recognise white tiles in its generated observations
+without direct access to the real observation in the tested environment. In the other RL models, an extrinsic and
+intrinsic reward is associated with this white tile in the environment, motivating the agents to explore until they
+reach this tile. The task is considered successful when the agent steps on the single white tile of the maze.
+A run is considered a failure if the agent has not reached the goal in under X number of steps, X depending
+on the world size. All the models, except the oracle, start without knowing their and the goal position in the
+environment. They need to explore until they find the objective. Fig 9 displays all the results by environments.
+The first column shows how much the models explore in average before reaching the goal and their success rate
+in diverse environments. Our model requires, on average, fewer steps than the other models to reach the goal,
+with the exception of the Count model. However, we can observe that Count also has the lowest success rate.
+The Count model often fails to reach the goal when it requires crossing several rooms. Overall our model reaches
+the white tile 89% of the time over all environments (see Table 3), Dreamerv3 is showing a poor performance
+because of over-fitting, not adapting well to new rooms configurations and white tile placement it has never seen
+during training. This observation suggests that Dreamerv3 might require either a comparatively higher degree
+of human intervention or an extended dataset to effectively operate within our environment compared to other
+models.
+The second column illustrates the proportion of goal attainment as the number of steps progresses relatively
+to the oracle’s optimal trajectory, normalised for comparison. Our model stands among the most efficient models
+to reach the goal rapidly, with 80% of the runs reaching the objective in less than ten times the steps taken by
+the oracle in most environments, exception made for the 4 by 5 rooms mazes.
+Finally the third column provides additional information about the proportion of success and failure accord-
+ing to the relative number of steps the oracle needs to reach the goal. From this plot we can observe that most
+models are more likely to fail when the goal is far from the starting position. Our model, C-BET, Count and
+Curiosity models show some failures at relative step 0 or before. It can be linked to the model returning an
+error due to excessive CPU consumption (in the case of C-BET, Count and Curiosity) or by the agent believing
+a non-white tile to be white and sticking to it, terminating the task.
+Our model capacity to re-localise itself after positional disturbances allows us to conduct a supplementary
+experiment we call ”ours wt prior”. After permitting the model to explore the environment, we teleport the
+agent back to its initial position and task it with seeking the goal. This experimental setup is exclusive to our
+model, which relies on a topological internal map for localisation. In contrast, other models in the baseline
+depend on sequential memory.
+Intuitively, one might expect the model to achieve the goal more efficiently due to its internal map. Effec-
+tively, we observe that in 3 by 3 rooms mazes, 80% of successful runs reach the goal in less than three times
+the steps taken by the oracle, over 86% successful runs in total. However, the overall success rate is lower than
+the goal seeking experiments without a prior. This discrepancy arises from various factors such as the quality
+of the map and navigation errors. The map generated during exploration can sometimes be imprecise, leading
+16
+(a) 3 by 3 rooms environments.
+(b) 3 by 4 rooms environments.
+(c) 4 by 4 rooms environments.
+(d) 4 by 5 rooms environments.
+Figure 9: For environments ranging from a) 3 ∗3 to d) 4 ∗5 rooms, results are presented in three graphs. The
+first column displays goal-reaching success rates and average steps. The second column illustrates normalised
+deviations of each model’s performance compared to the oracle, while the third column shows the distribution
+of success and failure based on normalised step deviations compared to the oracle.
+the agent to form erroneous assumptions about the location of the objective or guiding it along sub-optimal
+paths. When the model seeks a goal while having a prior understanding of the environment, it might pursues an
+incorrect objective approximately 35% of the time. In contrast, without any prior knowledge, the agent chases
+an erroneous objective around 29% of the time over all environments and runs. Additionally, the agent seeks a
+path that surely leads to the objective, and doesn’t extrapolate over possible shortcuts. Therefore if the shortest
+path leading to the goal goes through rooms that are not directly connected in the cognitive map, the path won’t
+be optimal. Furthermore, the agent, guided by its priors, may not recognise a room while progressing towards
+17
+the goal. This can result in the creation of a new experience that lacks proper connections to nearby rooms.
+Consequently, the agent might attempt to establish links with familiar rooms or backtrack in an effort to reach
+the room it didn’t initially recognise. Wasting steps on those tasks. The agent’s dependence on stochastic set-
+tings can lead to both failures and successes in similar situations, accounting for these varied outcomes. Despite
+that, the setting shows promise with a success rate comparable to other models.
+Models Oracle Ours C-BET RND Curiosity Ours
+wt prior DreamerV3 Count
+success rate (%) 100% 89% 86% 81% 79% 76% 72% 31%
+Table 3: The success rate of each model across all environments and runs.
+4.3 Qualitative assessments
+Visual assessments of a specific environment are conducted to gain insights into the benefits of using a cognitive
+map for navigation. These assessments also involve evaluating the generated cognitive maps in comparison to
+the actual environment. Additionally, we compare exploration paths taken by various models to gain insights
+into their navigation strategies. Even though that is but a few situations, it allows deeper insight into understand-
+ing the general behaviour of the models, including our own, shedding light on their navigation capabilities and
+the accuracy of our model internal representation. Additional evaluation of our model’s system requirements
+during the tests is available in the Appendix A.
+Figure 10: A trajectory leading toward a previously visited room is imagined by each model’s layer. From
+bottom to top, the egocentric model, characterised by its short-term memory, gradually loses information as
+time progresses. This is evident from step 2 onward, where the front aisle is no longer present after the agent
+makes a few turns without visual input. In contrast, the allocentric model maintains the place description
+over time but encounters difficulty once it moves beyond the current place it occupies. The cognitive map,
+possessing knowledge of the connections between locations, accurately deduces the expected place behind the
+door, resulting in a prediction remarkably similar to the ground truth.
+Our hierarchical model facilitates accurate predictions over extended timescales where the agent navigate
+between different rooms. In contrast, recurrent state space models commonly struggle when tasked to predict
+observations across room boundaries [51] or over long look-ahead [41]. Fig 10 illustrates the prediction capa-
+bilities of each layer over a prolonged imagined trajectory within a familiar environment. The figure showcases
+the predictions that each layer of the model create as we project the imagination into the future, up to the point
+of transitioning to a new room and beyond. The last row demonstrates how the egocentric model gradually loses
+18
+the spatial layout information over time, making it more suitable for short-term planning. The third row high-
+lights the allocentric model’s limitation to a single place in the environment, failing to recognise the subsequent
+room given current beliefs. Lastly, in the second row, the cognitive map’s imagined trajectory accounts for the
+agent’s location and is capable of summoning the appropriate place representation while estimating the agent’s
+motion across space and time. The first row displays the ground truth trajectory, which aligns quite closely with
+the expectations of the cognitive map.
+In order to navigate autonomously, an agent has to localise itself and correct its position given the visual
+information and his internal beliefs over the place. We performed navigation in an highly aliased mini-grid maze
+composed of 4 connected rooms having either the same colour, the same configuration or the same colour and
+configuration but a single white tile of difference, those 4 rooms are depicted in Figure 11 A. The full Figure 11
+illustrates the agent’s exploration of the rooms and its ability to distinguish them without getting confused while
+entering rooms by a different aisle than previously.
+Figure 11: Navigation samples of the agent looping clockwise and anti-clockwise (thus entering from a different
+door) in a new environment of 2 by 2 rooms over 142 steps. The clockwise navigation corresponds to a fully
+new exploration generating new places (see C.) while the anti-clockwise loop leads through explored places. A.)
+a new world composed of 4 close looking rooms (colour or/and shapes), B.) the model associated each room to
+a different experience id corresponding to the place C.) the probability of a new place being created (in blue, the
+most probable place among all possibilities) or an existing place being deemed the most probable to explain the
+environment. The grey bars represent how many new places are considered at once, the number of simultaneous
+hypothesis being considered can be read on the right part of the plot. D.) the imagined place generated for each
+experience id. We can see that experience 1 is not fully accurate, yet it is enough to distinguish it from the other
+rooms given real observations of it.
+Effectively, when the agent identifies a new place, it creates a new experience for it by considering its
+location, Figure 11 B. displays each newly generated experience by a distinct id and colour. To determine
+whether it enters a new place or comes back to a known one, it considers the probability of each place to
+describe the current observations as can be seen in Figure 11 C. The bars represent how many hypotheses are
+considered at each step and the lines represent the probability of the place being a new one or a previously
+visited one. The colour of the lines corresponds to the experience attributed colour in Figure 11 B., blue lines
+being new unidentified places. Figure 11 D. displays the internal representation of the places the agent uses. We
+can see that the rooms are accurately imagined, and even an hesitation in an aisle position in experience 1 is not
+enough to lose the agent.
+In this context the agent was able to successfully navigate and differentiate between rooms in a novel highly
+aliased environment. The agent’s ability to recognise previously visited rooms even when entering from a new
+door indicates its capability to maintain a spatial memory of the environment.
+Extending the experiment depicted in Fig 11, Fig 12 presents the complete trajectory’s information gain
+according to the model. The graph exhibits a distinct pattern when exploring or exploiting, with the agent
+initially exploring the four rooms, as indicated by the fluctuating blue line, then retracing his path in identified
+rooms, indicated by colours relative to their ID. The information gain increases as the agent enters a new room,
+19
+remains relatively steady while traversing within a place, and decreases during transitions between different
+places. When the agent retraces its steps at around step 100, the information gain becomes minimal, indicating
+that the agent has already gained knowledge about these locations. The info gain is higher or lower depending
+on how well he predicted the next observation, meaning the better his initial belief over the place is, the lower
+the maximum accumulated info gain.
+Throughout its exploration, the agent’s curiosity plays a pivotal role, highlighting the significance of infor-
+mation gain in directing the agent’s exploration towards unvisited areas rather than revisiting familiar places.
+Figure 12: Info gain of each visited place. The blue curve correspond to a new place being visited, while the
+coloured curves correspond to previously visited places as presented in Fig 11. The first 100 steps correspond
+to the exploration of the agent of 4 different rooms, while the rest of the navigation correspond to the re-visiting
+of those places. The info gain in a previously visited place is much lower than in a new room.
+Figure 13 provides a direct comparison between the accuracy of the cognitive map’s room reconstruction and
+the corresponding physical environment. This comparison reveals that the estimated map closely aligns with the
+actual map, with only minor discrepancies observed in some blurry passageways and a slight misplacement of
+the aisle in the bottom right room. This shows how important global position estimation is as the cognitive map
+uses believed location to distinguish between two closely looking rooms (purple rooms in the second column
+or blue rooms in third column). This alignment between real and imagined map underscores the fidelity of our
+model’s internal representation in capturing the structural layout of the environment.
+(a) Ground truth map of an environment.
+ (b) Reconstruction by the hierarchical model.
+Figure 13: a) displays the real map while b) is a composition of a cognitive map room’s representations.
+A correct internal mapping and layout structure definition allows our model to exhibit sensible decision-
+making when it comes to exploring the environment. Figure 14 presents an illustrative example of path gener-
+ation for each exploration model in the same environment. The paths are represented by consecutive discrete
+steps from one tile to the next, with the progression from black (initial steps) to white (final steps). The oracle
+Fig 14a shows the most ideal path to observe 95% of the environment. Although lacking initial knowledge of
+the overall environment layout, our model demonstrates intriguing behaviour, as evidenced in Figure 14b. It
+exhibits a looping pattern, passing from the third to the first room. Upon realising the familiarity of the first
+room, the model subsequently alters its course to return to the third room then explore the fourth room instead.
+It results in a complete exploration (100% of the tiles observed) in 212 steps, 151 steps less than C-BET Fig 14c.
+20
+The Count model displays its inability to intelligently takes doors to reach new rooms, over-exploring the same
+environment again and again. It’s inefficiency probably coming from the observations being very aliased.
+(a) Oracle path, observed 95% (561tiles) of the maze in 145
+steps.
+(b) Our model path, observed 100% of the environment in
+212steps (585tiles).
+(c) C-BET model path, observed 100% of the environment in
+363 steps (585 seen tiles).
+(d) Curiosity model path, observed 100% of the environment
+in 400 steps (585 seen tiles).
+(e) RND model path, observed 62% of the environment in 900
+steps (364 seen tiles).
+(f) Count model path, observed 40% of the environment in
+900 steps (235 seen tiles).
+Figure 14: Paths taken by each model during an exploration run in the same 3 by 4 rooms environment.
+Our study demonstrates the capabilities of our agent to identify rooms rapidly, navigate to new places and
+back, while resolving aliases and recognising previously visited environments even when entering from a new
+21
+location.
+5 Discussion
+The discussion section of this paper aims to provide a comprehensive analysis of the proposed hierarchical
+active inference model for autonomous navigation, considering its strengths and limitations. We outline the key
+contributions of our work and discuss the potential future works.
+Hierarchical Active Inference Model. Our proposal introduces a three-layered hierarchical active infer-
+ence model :
+• The cognitive map unifies spatial representation and memorises location characteristics.
+• The allocentric model creates discrete spatial representations.
+• The egocentric model assesses policy plausibility, considering dynamic limitations.
+These layers collaborate at different time scales: the high level oversees the whole environment through lo-
+cations, the allocentric model refines place representations as it change position, and the egocentric model
+imagines action consequences.
+Low Computational Demands. Our hierarchical active inference model has a low computational demands
+regardless of the environment’s scale. This efficiency is particularly valuable as environments scale up, making
+our approach a potential solution for real-world applications.
+Scalability. Our model efficiently learn spatial layouts and their connectivity. There exists the potential for
+our approach to adapt to novel scenarios by incorporating diverse environments into its learning process, thus
+expanding allocentric representations. Furthermore, the possibility of introducing additional higher layers could
+facilitate greater abstraction, transitioning from room-level learning to broader structural insights.
+Task Agnostic. The system doesn’t require task-specific training, promoting adaptability to diverse naviga-
+tional scenarios. It learns environment structures and generalises to new scenarios, demonstrating applicability
+to various objectives.
+Visual based navigation. Leveraging visual cues should enhance our model’s real-world applicability.
+Aliasing Resistant. We show resistance to aliases, distinguishing between identical places and thus ideally
+supporting robust navigation.
+While our approach offers several advantages, it is also important to acknowledge its limitations:
+Environment AdaptationOur model requires adaptation to fully new environments for optimal perfor-
+mance. Training the allocentric model on room-specific data restricts navigation to familiar settings. To
+mitigate this, and generalise to arbitrary environments, we could consider splitting the data by unsupervised
+clustering [63], or by using the model’s prediction error to chunk the data into separate spaces [64].
+Recognition of Changed EnvironmentsOur proposal might struggle to detect environmental changes like
+altered tile colours, although this may not significantly impact navigation performance as a new place will
+replace or be added with the previous one in the cognitive map, it remains an area for improvement.
+In light of these contributions and limitations, our work offers a principled approach to autonomous navi-
+gation. The integration of hierarchical active inference and world modelling enables our agent to navigate and
+explore an environment efficiently. Our model focuses on learning environment structure and leveraging visual
+cues, aligning with the way animals navigate their surroundings, contributing to its real-world applicability.
+Our experimental evaluation in mini-grid room maze environments showcases the effectiveness of our
+method in exploration and goal-related tasks. When compared to other Reinforcement Learning (RL) mod-
+els such as C-Bet [16], Count [61], Curiosity [60], RND [59], DreamerV3 [5], our hierarchical active inference
+world model consistently demonstrates competitive performance in exploration speed and coverage as well as
+goal reaching speed and success rate. Moreover, qualitative assessments show how accurate can the cognitive
+map be compared to the real environment and how the agent is able to differentiate aliasing and use information
+gain to optimise navigation.
+Our comprehensive assessment, both quantitative and qualitative, underscores the adaptability and resilience
+of our approach. As we move forward, there are several avenues for future research. The model’s adaptation
+to new environments could be optimised, and methods for handling changes in familiar environments can be
+explored further. Additionally, exploration and goal-seeking tasks could be improved by adding a layer of
+comprehension to our cognitive map by integrating possible unexplored rooms when planning, in the form
+of potential places to visit [65]. Finally, the scalability and flexibility of our hierarchical structure could be
+22
+extended to more complex, dynamic or realist scenarios such as Memory maze [66] or Habitat [67] to step
+toward real applications. Thus requiring to consider new challenges in place determination.
+In conclusion, by combining principles of active inference and hierarchical learning, our hierarchical active
+inference model presents a preliminary solution holding promise to enhance autonomous agents’ ability to
+navigate complex environments.
+Acknowlegment
+A Additional Tests Analysis
+When the agent faces a door, it opens automatically and closes once the agent is no longer facing it (either by
+passing through or turning away). This feature allows the agent to focus on its motion behaviour.
+Among all the reinforcement learning (RL) models used in this study, an increase in the number of steps
+directly corresponds to larger memory usage, which often results in failure if memory capacity is insufficient. In
+contrast, our approach offers a solution that is notably more efficient, requiring maximum 1G of memory space
+and avoiding scalability concerns associated with environment size. See Table 4 for a layout of the highest
+requirements necessary for an exploration/goal task of maximum 1500 steps. Independently of those results, it
+seems relevant to remarks that all of those evaluated systems are slow. The RL methods grows slower with the
+number of steps, thanks to the memory buffer. While our method is slow because of the hypothesis calculations
+and policies evaluations that are not paralleled and can grow large, depending on the set space dimensions and
+look-ahead.
+model n◦ CPU n◦ GPU used
+Memory (G)
+Ours 2 0 1
+Dreamerv3 2 1 28
+C-BET 2 0 12
+RND 2 0 9
+Curiosity 2 0 11
+Count 2 0 8
+Table 4: Every model exhibits distinct system requirements, the following table highlights the most demanding
+criteria necessary for achieving successful exploration or goal seeking across the 4 by 5 rooms environments’
+configuration.
+B Training Procedures
+Each model necessitated specific considerations, which we will outline below. We’ll start with an overview
+of the training system (see Table 5), followed by a description of the hyperparameters used for each model,
+highlighting any deviations from their source paper, finally we will describe the observations used for each
+system.
+B.1 Systems Requirements
+Each system required different training time to reach the optimal behaviour. All the other RL models were
+trained to optimise their policy contrarily to ours that had a random motion in order to learn the structure of the
+environment.
+23
+model Training
+time (h) n◦ CPU n◦ GPU used
+RAM (G)
+used
+Memory (G) GPU type
+Ours
+egocentric 32 4 1 12 GTX 980
+Ours
+allocentric 95 2 1 2.5 20 GTX 1080
+Dreamerv3 411 5 2 10 30 GTX 1080 Ti
+C-BET 232 10 1 2.6 32 GTX 980
+RND 117 6 1 2.7 10 GTX 980
+Curiosity 90 6 1 3 10 GTX 980
+Count 141 6 1 2.7 11 GTX 980
+Table 5: Training characteristics for considered models. insights into the training specifics of all models are
+provided, encompassing their respective training duration until reaching their finalised versions. Unfortunately,
+the information pertaining to the RAM utilisation by the egocentric model is unavailable.
+B.2 Dataset
+Uniformity in training conditions was achieved by conducting training sessions for all models within identical
+environments, facilitated by the consistent application of a shared seed to generate these environments. The
+training environments consisted of mini-grid room mazes of 3 by 3 rooms configuration. These mazes were
+characterised by a range of room sizes, spanning from 4-tile width to 7-tile width, thereby constituting a total
+of 100 distinct rooms per room size.
+B.3 Hyper-Parameters
+All the benchmark models were trained using pre-set hyper-parameters, with C-BET, Count, Curiosity and
+RND using Parisi et al. [16] described parameters. DreamerV3 uses Hafner et al. [5] proposed work, however
+the behaviour was modified from the original, setting an Exploring task behaviour and a Greedy exploration
+behaviour as the original configuration was under performing in our scenarios.
+Our model was trained using the hyper-parameters in Tab.6 for the allocentric model and Tab.7 for the
+egocentric model
+Layer Neurons/Filters Stride
+PositionalEncoder Linear 9
+Posterior
+Convolutional 16 1 // (kernel:1)
+Convolutional 32 2
+Convolutional 64 2
+Convolutional 128 2
+Linear 2*32
+Likelihood
+Concatenation
+Linear 256*4*4
+Upsample
+Convolutional 128 1
+Upsample
+Convolutional 64 1
+Upsample
+Convolutional 32 1
+Upsample
+Convolutional 3 1
+Table 6: allocentric model parameters
+24
+Figure 15: Schematic view of the generative model. The left part is the encoder that produces a latent distribu-
+tion for every pair of observation, position. This encoder consists of convolutional layers interfiled with FILM
+[68] layers that condition on the positions. This transforms the intermediate representation to encompass the
+spatial information from the viewpoint. The latent distributions are combined to form an aggregated distribu-
+tion over the latent space. A sampled vector is concatenated with the query position from which the decoder
+generates a novel/predicted observation. The decoder mimics the encoder architecture and upsamples the im-
+age and processes it with convolutional layers,interfiled with a FiLM layer that conditions on the concatenated
+information vector.
+Layer Neurons/Filters Stride
+Prior
+Concatenation
+LSTM 256
+Linear 2*32
+Posterior
+Convolutional 8 2
+Convolutional 16 2
+Convolutional 32 2
+Concatenation
+Linear 256
+Linear 64
+ImageLikelihood
+Linear 256
+Linear 32*7*7
+Upsample
+Convolutional 16 1
+Upsample
+Convolutional 8 1
+Upsample
+Convolutional 3 1
+CollisionLikelihood
+Linear 16
+Linear 8
+Linear 1
+Table 7: egocentric model parameters
+25
+Figure 16: The generative model is parameterised by 3 neural networks. The Transition model infers the prior
+probability of going from statest−1 to st under action at−1. The Posterior models the same transition while also
+incorporating the current observationot. Finally the likelihood model decodes a state samplest to a distribution
+over possible observations. These models are used recurrently, meaning they are reused every time step to
+generate new estimates [38].
+26
+B.4. Models Observations
+All models use the agent’s top down vision of the agent, consisting in 7 by 7 tiles with the agent placed at the
+bottom centre of the image, as shown in 17. Our model and DreamerV3 use an RGB view of the environment
+while C-BET, Count, Curiosity and RND use a flat hot-encoded view of the environment as well as an extrinsic
+reward when passing over the single white tile in the environment. We can point out that the agent can’t see
+through walls in RGB image, we can see in Fig.17 a) the environment and the agent’s field of view represented
+by lighter colours. Fig.17 b) shows the actual observation seen by the agent.
+The number of actions C-BET could take was greatly reduced compared to the original work, limiting to
+actions such as forward, left, right and stand-by.
+Figure 17: a) cropped top down view of the environment, b) the RGB view of the agent, each tile of the
+environment are composed of 8 by 8 pixels, generating a 56 by 56 total image. c) the equivalent hot-encoded
+view as a matrix, the numbers and colours are only relevant for the example.
+All RL models had a sparse reward system, with an extrinsic reward generated only when passing on the
+white tile disposed in the environment. Our model does not require rewards, and the goal we desire to set during
+the testing could be any kind of observation.
+References
+[1] P. Schwartenbeck, J. Passecker, T. U. Hauser, T. H. FitzGerald, M. Kronbichler, and K. J. Friston,
+“Computational mechanisms of curiosity and goal-directed exploration,” eLife, vol. 8, p. e41703, may
+2019. [Online]. Available: https://doi.org/10.7554/eLife.41703
+[2] S. Levine and D. Shah, “Learning robotic navigation from experience: principles, methods and recent
+results,” Philosophical Transactions of the Royal Society B: Biological Sciences , vol. 378, no. 1869, dec
+2022.
+[3] J. A. Placed, J. Strader, H. Carrillo, N. Atanasov, V . Indelman, L. Carlone, and J. A. Castellanos, “A survey
+on active simultaneous localization and mapping: State of the art and new frontiers,” IEEE Transactions
+on Robotics, pp. 1–20, 2023.
+[4] D. George, R. Rikhye, N. Gothoskar, J. S. Guntupalli, A. Dedieu, and M. L ´azaro-Gredilla, “Clone-
+structured graph representations enable flexible learning and vicarious evaluation of cognitive maps,”
+Nature Communications, vol. 12, 04 2021.
+[5] D. Hafner, J. Pasukonis, J. Ba, and T. Lillicrap, “Mastering diverse domains through world models,” 2023.
+[6] R. Epstein, E. Z. Patai, J. Julian, and H. Spiers, “The cognitive map in humans: Spatial navigation and
+beyond,” Nature Neuroscience, vol. 20, pp. 1504–1513, 10 2017.
+[7] P. Foo, W. Warren, A. Duchon, and M. Tarr, “Do humans integrate routes into a cognitive map? map- ver-
+sus landmark-based navigation of novel shortcuts.” Journal of experimental psychology. Learning, mem-
+ory, and cognition, vol. 31, pp. 195–215, 04 2005.
+[8] M. Peer, I. K. Brunec, N. S. Newcombe, and R. A. Epstein, “Structuring knowledge with cognitive maps
+and cognitive graphs,” Trends in Cognitive Sciences, vol. 25, no. 1, pp. 37–54, 2021. [Online]. Available:
+https://www.sciencedirect.com/science/article/pii/S1364661320302503
+27
+[9] J. Balaguer, H. Spiers, D. Hassabis, and C. Summerfield, “Neural mechanisms of hierarchical planning in
+a virtual subway network,” Neuron, vol. 90, pp. 893–903, 05 2016.
+[10] M. S. Tomov, S. Yagati, A. Kumar, W. Yang, and S. J. Gershman, “Discovery of hierarchical
+representations for efficient planning,” bioRxiv, 2018. [Online]. Available: https://www.biorxiv.org/
+content/early/2018/12/17/499418
+[11] R. Lakaemper, L. J. Latecki, X. Sun, and D. Wolter, “Geometric robot mapping,” vol. 3429, 04 2005, pp.
+11–22.
+[12] K. Kamarudin, S. M. Mamduh, A. Y . M. Shakaff, and A. Zakaria, “Performance analysis of the microsoft
+kinect sensor for 2d simultaneous localization and mapping (slam) techniques,” Sensors, vol. 14, no. 12,
+pp. 23 365–23 387, 2014. [Online]. Available: https://www.mdpi.com/1424-8220/14/12/23365
+[13] S. S. Ge, Q. Zhang, A. T. Abraham, and B. Rebsamen, “Simultaneous path planning and
+topological mapping (sp2atm) for environment exploration and goal oriented navigation,” Robotics
+and Autonomous Systems , vol. 59, no. 3, pp. 228–242, 2011. [Online]. Available: https:
+//www.sciencedirect.com/science/article/pii/S0921889010002009
+[14] S.-H. Kim, J.-G. Kim, and T.-K. Yang, “Autonomous slam technique by integrating grid and topology
+map,” in 2008 International Conference on Smart Manufacturing Application, 2008, pp. 413–418.
+[15] Z. Li, G. Chen, B. Peng, and X. Zhu, “Robot navigation method based on intelligent evolution,” in 2018
+IEEE 4th Information Technology and Mechatronics Engineering Conference (ITOEC) , 2018, pp. 620–
+624.
+[16] S. Parisi, V . Dean, D. Pathak, and A. Gupta, “Interesting object, curious agent: Learning task-agnostic
+exploration,” CoRR, vol. abs/2111.13119, 2021. [Online]. Available: https://arxiv.org/abs/2111.13119
+[17] Y . Matsuo, Y . LeCun, M. Sahani, D. Precup, D. Silver, M. Sugiyama, E. Uchibe, and J. Morimoto, “Deep
+learning, reinforcement learning, and world models,” Neural Networks , vol. 152, pp. 267–275, 2022.
+[Online]. Available: https://www.sciencedirect.com/science/article/pii/S0893608022001150
+[18] K. Gregor, D. Jimenez Rezende, F. Besse, Y . Wu, H. Merzic, and A. van den Oord, “Shaping
+belief states with generative environment models for rl,” in Advances in Neural Information
+Processing Systems , H. Wallach, H. Larochelle, A. Beygelzimer, F. d'Alch ´e-Buc, E. Fox,
+and R. Garnett, Eds., vol. 32. Curran Associates, Inc., 2019. [Online]. Available: https:
+//proceedings.neurips.cc/paper files/paper/2019/file/2c048d74b3410237704eb7f93a10c9d7-Paper.pdf
+[19] K. Friston, “Life as we know it,” Journal of the Royal Society, Interface / the Royal Society , vol. 10, p.
+20130475, 06 2013.
+[20] K. Friston, T. FitzGerald, F. Rigoli, P. Schwartenbeck, J. O. Doherty, and G. Pezzulo, “Active inference
+and learning,” Neuroscience & Biobehavioral Reviews, vol. 68, pp. 862–879, 2016. [Online]. Available:
+https://www.sciencedirect.com/science/article/pii/S0149763416301336
+[21] D. Ha and J. Schmidhuber, “World models,” CoRR, vol. abs/1803.10122, 2018. [Online]. Available:
+http://arxiv.org/abs/1803.10122
+[22] K. Friston, R. J. Moran, Y . Nagai, T. Taniguchi, H. Gomi, and J. Tenenbaum, “World model
+learning and inference,” Neural Networks , vol. 144, pp. 573–590, 2021. [Online]. Available:
+https://www.sciencedirect.com/science/article/pii/S0893608021003610
+[23] K. Friston, T. FitzGerald, F. Rigoli, P. Schwartenbeck, J. O. Doherty, and G. Pezzulo, “Active inference
+and learning,” Neuroscience & Biobehavioral Reviews, vol. 68, pp. 862–879, 2016. [Online]. Available:
+https://www.sciencedirect.com/science/article/pii/S0149763416301336
+[24] I. Stoianov, D. Maisto, and G. Pezzulo, “The hippocampal formation as a hierarchical generative model
+supporting generative replay and continual learning,” Progress in Neurobiology , vol. 217, p. 102329,
+2022. [Online]. Available: https://www.sciencedirect.com/science/article/pii/S0301008222001150
+28
+[25] O. C ¸ atal, T. Verbelen, T. Van de Maele, B. Dhoedt, and A. Safron, “Robot navigation as
+hierarchical active inference,” Neural Networks , vol. 142, pp. 192–204, 2021. [Online]. Available:
+https://www.sciencedirect.com/science/article/pii/S0893608021002021
+[26] M. Chevalier-Boisvert, L. Willems, and S. Pal, “Minimalistic gridworld environment for openai gym,”
+https://github.com/maximecb/gym-minigrid, 2018.
+[27] F. Sadeghi and S. Levine, “Cad2rl: Real single-image flight without a single real image,” CoRR, vol.
+abs/1611.04201, 2016. [Online]. Available: http://arxiv.org/abs/1611.04201
+[28] M. M ¨uller, A. Dosovitskiy, B. Ghanem, and V . Koltun, “Driving policy transfer via modularity and
+abstraction,” CoRR, vol. abs/1804.09364, 2018. [Online]. Available: http://arxiv.org/abs/1804.09364
+[29] J. Janai, F. G ¨uney, A. Behl, and A. Geiger, “Computer vision for autonomous vehicles:
+Problems, datasets and state-of-the-art,” CoRR, vol. abs/1704.05519, 2017. [Online]. Available:
+http://arxiv.org/abs/1704.05519
+[30] D. Feng, C. Haase-Sch ¨utz, L. Rosenbaum, H. Hertlein, F. Duffhauss, C. Gl ¨aser, W. Wiesbeck,
+and K. Dietmayer, “Deep multi-modal object detection and semantic segmentation for autonomous
+driving: Datasets, methods, and challenges,” CoRR, vol. abs/1902.07830, 2019. [Online]. Available:
+http://arxiv.org/abs/1902.07830
+[31] D. Silver, J. A. Bagnell, and A. Stentz, “Learning from demonstration for autonomous navigation in
+complex unstructured terrain,” The International Journal of Robotics Research , vol. 29, no. 12, pp.
+1565–1592, 2010. [Online]. Available: https://doi.org/10.1177/0278364910369715
+[32] S. Gupta, J. Davidson, S. Levine, R. Sukthankar, and J. Malik, “Cognitive mapping and planning for visual
+navigation,” CoRR, vol. abs/1702.03920, 2017. [Online]. Available: http://arxiv.org/abs/1702.03920
+[33] D. S. Chaplot, D. Gandhi, S. Gupta, A. Gupta, and R. Salakhutdinov, “Learning to explore using active
+neural SLAM,” CoRR, vol. abs/2004.05155, 2020. [Online]. Available: https://arxiv.org/abs/2004.05155
+[34] E. C. Tolman, “Cognitive maps in rats and men.” Psychological review, vol. 55 4, pp. 189–208, 1948.
+[Online]. Available: https://api.semanticscholar.org/CorpusID:42496633
+[35] T. Madl, S. Franklin, K. Chen, R. Trappl, and D. Montaldi, “Exploring the structure of
+spatial representations,” PLOS ONE , vol. 11, no. 6, pp. 1–46, 06 2016. [Online]. Available:
+https://doi.org/10.1371/journal.pone.0157343
+[36] A. Zakharov, M. Crosby, and Z. Fountas, “Episodic memory for learning subjective-timescale models,”
+2020.
+[37] D. Shah, B. Eysenbach, N. Rhinehart, and S. Levine, “RECON: rapid exploration for open-
+world navigation with latent goal models,” CoRR, vol. abs/2104.05859, 2021. [Online]. Available:
+https://arxiv.org/abs/2104.05859
+[38] O. C ¸ atal, S. Wauthier, C. De Boom, T. Verbelen, and B. Dhoedt, “Learning generative state space models
+for active inference,” Frontiers in Computational Neuroscience , vol. 14, 2020. [Online]. Available:
+https://www.frontiersin.org/article/10.3389/fncom.2020.574372
+[39] M. Milford, A. Jacobson, Z. Chen, and G. Wyeth, RatSLAM: Using Models of Rodent Hippocampus for
+Robot Navigation and Beyond, 04 2016, pp. 467–485.
+[40] V . Neacsu, M. B. Mirza, R. A. Adams, and K. J. Friston, “Structure learning enhances concept formation
+in synthetic active inference agents,” PLOS ONE, vol. 17, no. 11, pp. 1–34, 11 2022. [Online]. Available:
+https://doi.org/10.1371/journal.pone.0277199
+[41] O. C ¸ atal, W. Jansen, T. Verbelen, B. Dhoedt, and J. Steckel, “Latentslam: unsupervised multi-sensor
+representation learning for localization and mapping,” CoRR, vol. abs/2105.03265, 2021. [Online].
+Available: https://arxiv.org/abs/2105.03265
+29
+[42] A. Safron, O. C ¸ atal, and T. Verbelen, “Generalized simultaneous localization and mapping (g-SLAM)
+as unification framework for natural and artificial intelligences: towards reverse engineering the
+hippocampal/entorhinal system and principles of high-level cognition,” 10 2021. [Online]. Available:
+https://doi.org/10.31234/osf.io/tdw82
+[43] S. Nozari, A. Krayani, P. Marin-Plaza, L. Marcenaro, D. M. G ´omez, and C. Regazzoni, “Active inference
+integrated with imitation learning for autonomous driving,” IEEE Access , vol. 10, pp. 49 738–49 756,
+2022.
+[44] M. D. Kirchhoff, T. Parr, E. R. Palacios, K. J. Friston, and J. D. Kiverstein, “The markov blankets of life:
+autonomy, active inference and the free energy principle,” Journal of the Royal Society Interface, vol. 15,
+2018. [Online]. Available: https://api.semanticscholar.org/CorpusID:3284518
+[45] M. Beal, “Variational algorithms for approximate bayesian inference /,” PhD thesis, 01 2003.
+[46] R. Kaplan and K. Friston, “Planning and navigation as active inference,” 12 2017.
+[47] K. Friston, L. Da Costa, D. Hafner, C. Hesp, and T. Parr, “Sophisticated Inference,” Neural Computation,
+vol. 33, no. 3, pp. 713–763, 03 2021. [Online]. Available: https://doi.org/10.1162/neco a 01351
+[48] C. D. Mathys, E. I. Lomakina, J. Daunizeau, S. Iglesias, K. H. Brodersen, K. J. Friston, and K. E. Stephan,
+“Uncertainty in perception and the hierarchical gaussian filter,” Frontiers in Human Neuroscience, vol. 8,
+2014. [Online]. Available: https://www.frontiersin.org/articles/10.3389/fnhum.2014.00825
+[49] A. E. McGlothlin and K. Viele, “Bayesian Hierarchical Models,” JAMA, vol. 320, no. 22, pp. 2365–2366,
+12 2018. [Online]. Available: https://doi.org/10.1001/jama.2018.17977
+[50] M. Milford, G. Wyeth, and D. Prasser, “Ratslam: a hippocampal model for simultaneous localization and
+mapping,” vol. 1, pp. 403–408 V ol.1, 2004.
+[51] S. M. A. Eslami, D. J. Rezende, F. Besse, F. Viola, A. S. Morcos, M. Garnelo, A. Ruderman, A. A. Rusu,
+I. Danihelka, K. Gregor, D. P. Reichert, L. Buesing, T. Weber, O. Vinyals, D. Rosenbaum, N. Rabinowitz,
+H. King, C. Hillier, M. Botvinick, D. Wierstra, K. Kavukcuoglu, and D. Hassabis, “Neural scene
+representation and rendering,” Science, vol. 360, no. 6394, pp. 1204–1210, 2018. [Online]. Available:
+https://www.science.org/doi/abs/10.1126/science.aar6170
+[52] T. Van de Maele, T. Verbelen, O. C ¸ atal, C. De Boom, and B. Dhoedt, “Active vision for robot
+manipulators using the free energy principle,” Frontiers in Neurorobotics , vol. 15, 2021. [Online].
+Available: https://www.frontiersin.org/articles/10.3389/fnbot.2021.642780
+[53] C. Kurby and J. Zacks, “Segmentation in the perception and memory of events,” Trends in cognitive
+sciences, vol. 12, pp. 72–9, 03 2008.
+[54] T. Verbelen, D. de Tinguy, P. Mazzaglia, O. Catal, and A. Safron, “Chunking space and time with infor-
+mation geometry,” p. 6, 2022.
+[55] T. Hafting, M. Fyhn, S. Molden, M.-B. Moser, and E. Moser, “Microstructure of a spatial map in the
+entorhinal cortex,” Nature, vol. 436, pp. 801–6, 09 2005.
+[56] M. Milford, G. Wyeth, and D. Prasser, “Ratslam on the edge: Revealing a coherent representation from an
+overloaded rat brain,” pp. 4060–4065, 2006.
+[57] H. Wang, Y . Yu, and Q. Yuan, “Application of dijkstra algorithm in robot path-planning,” in2011 Second
+International Conference on Mechanic Automation and Control Engineering, 2011, pp. 1067–1069.
+[58] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,” 2017.
+[59] Y . Burda, H. Edwards, A. J. Storkey, and O. Klimov, “Exploration by random network distillation,”
+CoRR, vol. abs/1810.12894, 2018. [Online]. Available: http://arxiv.org/abs/1810.12894
+[60] D. Pathak, P. Agrawal, A. A. Efros, and T. Darrell, “Curiosity-driven exploration by self-supervised
+prediction,” CoRR, vol. abs/1705.05363, 2017. [Online]. Available: http://arxiv.org/abs/1705.05363
+30
+[61] M. Bellemare, S. Srinivasan, G. Ostrovski, T. Schaul, D. Saxton, and R. Munos, “Unifying
+count-based exploration and intrinsic motivation,” in Advances in Neural Information Processing
+Systems, D. Lee, M. Sugiyama, U. Luxburg, I. Guyon, and R. Garnett, Eds., vol. 29. Curran
+Associates, Inc., 2016. [Online]. Available: https://proceedings.neurips.cc/paper files/paper/2016/file/
+afda332245e2af431fb7b672a68b659d-Paper.pdf
+[62] A. Candra, M. A. Budiman, and K. Hartanto, “Dijkstra’s and a-star in finding the shortest path: a tuto-
+rial,” in 2020 International Conference on Data Science, Artificial Intelligence, and Business Analytics
+(DATABIA), 2020, pp. 28–32.
+[63] Y . Asano, C. Rupprecht, and A. Vedaldi, “Self-labelling via simultaneous clustering and representation
+learning,” in International Conference on Learning Representations , 2020. [Online]. Available:
+https://openreview.net/forum?id=Hyx-jyBFPr
+[64] T. Verbelen, D. de Tinguy, P. Mazzaglia, O. Catal, and A. Safron, “Chunking space and time with infor-
+mation geometry,” in NeurIPS 2022 Workshop on Information-Theoretic Principles in Cognitive Systems,
+2022.
+[65] D. d. Tinguy, P. Mazzaglia, T. Verbelen, and B. Dhoedt, “Home run: Finding your way home by imagining
+trajectories,” in Active Inference. Cham: Springer Nature Switzerland, 2023, pp. 210–221.
+[66] J. Pasukonis, T. Lillicrap, and D. Hafner, “Evaluating long-term memory in 3d mazes,” 2022.
+[67] M. Savva, A. Kadian, O. Maksymets, Y . Zhao, E. Wijmans, B. Jain, J. Straub, J. Liu, V . Koltun, J. Malik,
+D. Parikh, and D. Batra, “Habitat: A platform for embodied ai research,” inProceedings of the IEEE/CVF
+International Conference on Computer Vision (ICCV), October 2019.
+[68] E. Perez, F. Strub, H. de Vries, V . Dumoulin, and A. Courville, “Film: Visual reasoning with a general
+conditioning layer,” 2017.
+31

@@ -1,0 +1,472 @@
+Brain2ai workshop at ICLR 2021: how can ﬁndings about the brain improve AI systems
+NEUROSCIENCE -INSPIRED PERCEPTION -ACTION IN ROBOTICS
+APPLYING ACTIVE INFERENCE FOR STATE ESTIMATION , CONTROL AND SELF -PERCEPTION
+Pablo Lanillos
+Donders Institute for Brain, Cognition and Behaviour
+Department of Artiﬁcial Intelligence
+Radboud University
+Nijmegen, the Netherlands
+{p.lanillos}@donders.ru.nl
+Marcel van Gerven
+Donders Institute for Brain, Cognition and Behaviour
+Department of Artiﬁcial Intelligence
+Radboud University
+Nijmegen, the Netherlands
+ABSTRACT
+Unlike robots, humans learn, adapt and perceive their bodies by interacting with
+the world. Discovering how the brain represents the body and generates actions is
+of major importance for robotics and artiﬁcial intelligence. Here we discuss how
+neuroscience ﬁndings open up opportunities to improve current estimation and
+control algorithms in robotics. In particular, how active inference, a mathematical
+formulation of how the brain resists a natural tendency to disorder, provides a uni-
+ﬁed recipe to potentially solve some of the major challenges in robotics, such as
+adaptation, robustness, ﬂexibility, generalization and safe interaction. This paper
+summarizes some experiments and lessons learned from developing such a com-
+putational model on real embodied platforms, i.e., humanoid and industrial robots.
+Finally, we showcase the limitations and challenges that we are still facing to give
+robots human-like perception1.
+1 I NTRODUCTION
+She wakes up, looks at the mirror and reﬂects –is this me?– while opening the tap
+and leaving the water to pour out –did I do it?
+Answering these two simple questions is the tip of the iceberg of body perception and action in
+the brain (Tsakiris et al., 2007; Haselager, 2013; Haggard, 2017; Hinz et al., 2018). Underneath,
+there are more than 500 million years of neural development that allow us to safely interact in a
+world full of uncertainties. Unveiling how the brain integrates different sources of information to
+perceive the body, and generates adaptive actions is of major importance for robotics and artiﬁcial
+intelligence (Todorov & Jordan, 2002; Oliver et al., 2021).
+According to (Helmholtz, 1867) perception is an unconscious mechanism that infers the state of
+the world. Under this revolutionary view, the brain may learn an internal generative model of the
+world and use it to reconstruct the perceived reality from partial sensory information. A perfect
+example is visual illusions, such as the Dallenbach illusion, where prior information disambiguates
+the meaning of an altered noisy image (Dallenbach, 1951). In other words, the brain works as a
+predictive machine (Clark, 2013). This prediction power has been proposed for several segregated
+brain regions, such as the visual cortex (Rao & Ballard, 1999) or the cerebellum (Doya, 1999). One
+way to model a predictive machine is through Bayesian inference, where the agent’s beliefs about
+the state of the environment are based on its sensory evidence and prior beliefs. Thus, the internal
+1Accepted at ICLR 2021 Brain2AI workshop. Video presentation: https://youtu.be/
+oW40kUGxu2s
+1
+arXiv:2105.04261v1  [cs.RO]  10 May 2021
+Brain2ai workshop at ICLR 2021: how can ﬁndings about the brain improve AI systems
+model is updated through the senses (Knill & Pouget, 2004; Friston, 2005). Accordingly, we can
+answer the question ‘Where is my body?’ by estimating our body in space using learned models that
+have been acquired during our lifetime (Mori & Kuniyoshi, 2010) based on afferent multisensory
+input (e.g., visual, tactile and proprioceptive cues).
+Analogously, the generation of adaptive behavior from the predictive brain perspective arises from
+the minimization of surprise (Friston, 2010), that is, the difference between predicted and observed
+sensations. According to this predictive processing hypothesis—see Ciria et al. (2021) for a recent
+review in cognitive robotics—, the brain maintains an internal model that predicts the agent’s sen-
+sations based on the causes of those sensations in the environment. If we condition sensation not
+only on the environmental causes but also on the agent’s actions then we can integrate perception
+and action. Adaptive behavior can then be viewed as an active inference (AIF) process in which
+the agent selects those actions that support the maximization of model evidence, or equivalently, the
+minimization of surprise (Da Costa et al., 2020). Consequently, we can answer the question ‘How
+should I move my body?’ by computing those actions that make the world better ﬁt the learned
+model. These are the foundations of the free energy principle (FEP, Friston (2010)), which postu-
+lates that the brain optimizes the variational free energy (VFE), which is an upper bound on model
+evidence. This approach allows us to infer and simultaneously adapt body posture to uncertain
+situations (Kirchhoff et al., 2018); a goal that has only been partially solved in robotics.
+Recently, we have shown that combining active inference with advances in deep learning allows us
+to generate adaptive behavior in humanoid and industrial robots. The single aim of the robot is to
+infer its state (unobserved variable) by means of noisy sensory inputs (observed). For that purpose,
+it can reﬁne its state using the measurements or perform actions to ﬁt the observed world to its
+internal model. This is dually computed by optimizing the VFE. This work, depicted in Figure 1,
+summarizes some of the recent proof-of-concept experiments where we studied coupled perception
+(estimation) and action (control) using deep AIF models (Lanillos & Cheng, 2018b; Sancaktar et al.,
+2020; Oliver et al., 2021; Lanillos et al., 2020a; Meo & Lanillos, 2021). Furthermore, the application
+of such a model in real-world settings provides an exciting avenue for mechanistically explaining
+neuropsychological observations related to behavior in biological agents.
+Figure 1: Neuroscience-inspired body perception and action for robotics. Answering these four
+questions is crucial for embodied artiﬁcial intelligence and robotics. We cast estimation ( where is
+my body?) and control ( how should I move? ) as an inference process where the overall aim is to
+perform state estimation. While we already approached a basic form of body-ownership ( is this
+me?) directly from the model evidence, agency (did I do it?) is still an evasive question.
+The following sections are organized to answer the questions described in Figure 1 from the active
+inference perspective.
+2
+Brain2ai workshop at ICLR 2021: how can ﬁndings about the brain improve AI systems
+2 W HERE IS MY BODY ? GENERALIZED FILTERING
+Knowing where our body is in space is central for safety and awareness. The brain keeps track
+of a body posture or schema (Hoffmann et al., 2010; Lanillos et al., 2017) by fusing information
+from all available sensory inputs. We cast body state estimation as generalized ﬁltering (Friston
+et al., 2010a). Deﬁning the state of the system/body as z, the sensory inputs as x and the time-
+derivative of the state vector Dz in generalized coordinates2, we describe the generative model of
+the body/world with two functions:
+x = g(z) + r sensory input (visual, proprioceptive, etc)
+Dz = f(z) + w internal state dynamics
+Body estimation is solved by inferring the system state with the following update equation:
+˙z = Dz −kz∇zF(z,x) (1)
+Fis the VFE and under the Laplace and mean-ﬁeld approximations (Friston et al., 2007; Buckley
+et al., 2017; Oliver et al., 2021), has closed form and is deﬁned as3:
+F(z,x) ≃−ln p(z,x) = −ln (p(x|z)p(z)) (2)
+≃(x −g(x))T Σ−1
+x (x −g(x))
++ (Dz −f(z))T Σ−1
+z (Dz −f(z))
++ 1
+2 ln |Σx|+ 1
+2 ln |Σz| (3)
+Note that Equation (1) is correcting the state given the weighted prediction error encoded in F.
+In (Lanillos & Cheng, 2018b; Oliver et al., 2021), we described how to use this method to estimate
+the body pose of a humanoid robot. We showed how the algorithm provided robust multisensory
+fusion (visual, proprioceptive and tactile sources) when injecting strong readings noise, and adapt-
+ability to unexpected sensory changes, such as visuo-tactile perturbations or broken sensors.
+2.1 L EARNING THE GENERATIVE MODELS
+Usually, within the AIF literature, the generative model of the body is known a priori (Friston et al.,
+2010b). However, in practice, the brain learns these models during interaction. We introduced
+several methods to learn the sensory generative model g(z), i.e., the mapping between the state of
+the system and the observed measurements (Lanillos & Cheng, 2018a), and to seamlessly include
+them in the VFE optimization scheme. Although these methods are not (yet) biologically plausible,
+we are currently mainly interested in the functional aspects of the model. For low-dimensional
+inputs, i.e., when we can segment the location of the end-effector in the image or in the task space,
+Gaussian process regression (Rasmussen & Williams, 2005) or mixture density networks (Bishop,
+1994) are suitable. In the former, we can compute in closed form the partial derivatives of the
+generative functions with respect to the state (Lanillos & Cheng, 2018a). In the latter, we can
+exploit the backpropagation method to compute it (Lanillos et al., 2020b). Figure 2 describes how
+to learn the visual kinematic mapping that is needed to solve Eq. (1).
+Learning the internal state dynamical generative model f(z) is more complex (Lanillos & Cheng,
+2018a). However, if we know the characteristics of the system we can use a simpliﬁed state model
+and let the variational approximation to tackle the discrepancies (Friston et al., 2010b; Pio-Lopez
+et al., 2016). In the extreme case, if we have access to the propriceptive desired state, we can use
+a linear model (Oliver et al., 2021; Meo & Lanillos, 2021). The adaptive controller will absorb the
+non-linearities by tracking the desired joint positions and velocities Pezzato et al. (2020b); Meo &
+Lanillos (2021).
+2Dz = d
+dt (z[0], z[1], . . . , z[n])=[ z[1], z[2], . . . , z[n+1]]; where the superscript indicates the derivative order.
+3Other approximations of the variational density are also possible but out of the scope of this paper (Am-
+brogioni et al., 2021).
+3
+Brain2ai workshop at ICLR 2021: how can ﬁndings about the brain improve AI systems
+Figure 2: Sensory generative model learning. (A) Mapping between the latent state and the obser-
+vations. Mixture density network (MDN) or Gaussian process regression (GPR) used to learn the
+kinematic mapping with low-dimensional inputs. While in GPR there is a close form for computing
+the prediction and the partial derivative with respect to the state, in a neural network approach we
+exploit the forward pass and the backpropagation algorithm. ( X refers to the training data, k(·) to
+the squared exponential kernel andαis a numerically stable computation of the inverse covariance).
+(B) Segmented end-effector position in the visual space and its associated generative model gv(z).
+2.2 S CALING TO HIGH -DIMENSIONAL INPUTS : PIXEL -AIF
+By means of deep artiﬁcial neural networks, we can scale the state estimation to high-dimensional
+inputs. In (Sancaktar et al., 2020) we showed how to use a convolutional decoder to perform pixel
+state estimation. Figure 3 shows the Pixel-AIF algorithm working for estimation and control in the
+NAO robot using only raw images as input. Figure 3A shows the evolution of the predicted arm
+image until the state converges to the right state estimation. Figure 3B shows the average errors of
+the state estimation from pixels in three different conditions: level 1, small deviations of the joint
+angles from the prior belief; level 2, strong deviations from the prior belief; and level 3 a random
+pose.
+In (Meo & Lanillos, 2021), we extended the Pixel-AIF framework to multimodal state representation
+learning. This implies the inclusion of one decoder per sensory input. One of the main advantages
+of our brain-inspired approach is that the robot only has to learn the kinematic forward mapping and
+then is the inference process that performs the Bayesian inversion for estimation and produces the
+right torques for achieving the goal, even in the presence of unmodeled situations or external forces.
+3 H OW SHOULD I MOVE ? ACTION AS INFERENCE
+In predictive brain models, such as AIF, action generation is realized in a unique manner. The brain
+infers actions in the light of anticipated sensory consequences. Thus, the system should encode
+desired goals (or preferences) as (learned) priors. These desired goal states (imaginary goals) can
+trigger corresponding, expected sensations which, in turn, initiate and control bodily movements
+through the reﬂex arc pathway. This is in line with ideomotor theory, which poses that to generate a
+motor response we ﬁrst create a representation of the goal (James, 1890). We cast action as a control
+as inference problem where the action is updated through gradient-based optimization:
+˙a = −ka
+∑
+x
+dx
+da ·∇xF(x,z) (4)
+4
+Brain2ai workshop at ICLR 2021: how can ﬁndings about the brain improve AI systems
+Figure 3: Pixel-AIF algorithm. Image reproduced from (Sancaktar et al., 2020). (A) Pixel-based
+body estimation. (B) Image and joint angles estimation average errors. We evaluated the arm state
+estimation for three different levels of difﬁculty: small deviations (red), strong deviations (green)
+and random pose (blue); computed over 2500 trials (i.e., 5 ×500 random arm images). (C) Pixel-
+AIF working in the NAO robot using the head bottom camera in a reaching task. The desired goal
+is deﬁned as an image with the arm in a random position. (D) Image and joint angles estimation
+average errors in the reaching task evaluation using the Pixel-AIF.
+3.1 E MERGENCE OF THE TASK BY OPERATIONAL SPECIFICATION
+The advantage of the AIF approach is that the task can be speciﬁed as a desired preference. This
+implies that the prior will lead to the corresponding actions. The difﬁculty becomes ﬁnding the right
+attractor set. For instance, we can set the goal as the sensory output that we would like to obtain
+within the internal dynamics as follows:
+f(z,xd) = T(z)(xd −g(z)) = ∂g(z)
+∂z (xd −g(z)) (5)
+where T(z) is a function that maps the error in the sensory space to the latent space and the opera-
+tional speciﬁcation deﬁnes, for instance, the desired outcome image and joint anglesxd = {Id,qd}.
+Figure 3C shows the NAO robot generating actions using the pixel-AIF (Sancaktar et al., 2020) until
+reaching the desired goal. Here the operational speciﬁcation is only the ﬁnal image. Figure 3D
+describes the statistical evaluation of the image and joint angle errors when enabling AIF control.
+While deviations (small or large) from the prior belief have good performance, some of the random
+images (level 3) were not fully solved—See the joint errors large variance of Fig. 3D. This points out
+the intrinsic nature of this brain-inspired method. It is supposed to work for adaptive corrections of
+the body in the space but not for complex sequential goal-driven tasks. To solve planning the attrac-
+tor set should be encoded as a prior or learned (Tani, 2003). A promising new research direction is
+to use an explicit policy and compute the expected free energy (Millidge et al., 2021) approximating
+the density functions using artiﬁcial neural networks (van der Himst & Lanillos, 2020).
+3.2 A DAPTATION : INVOLUNTARY ACTIONS TO FIT A NEW WORLD
+This neuroscience-inspired approach to control the robot body brings adaptation in two ways: it
+counteracts external forces and changes in the body/environment without needing to relearn and it
+handles the trade-off between prior knowledge (acquired through experience) and pure reactive con-
+trol driven by the sensory input. This is a great advantage of the AIF model with respect to classical
+control methods used in factories. The generalization to slightly different contexts is essential. In
+Oliver et al. (2021), depicted in Fig. 4, we showed how when changing the visual end-effector loca-
+tion, the algorithm generated movements to adjust the end-effector to the robot internal model. This
+occurs because the algorithm computes the control actions by minimizing the variational free energy.
+Thus, it tries to reduce the difference between the internal model prediction and the end-effector vi-
+sual observation. Recent experiments have shown evidence of similar behaviour in humans (Lanillos
+5
+Brain2ai workshop at ICLR 2021: how can ﬁndings about the brain improve AI systems
+-0.36
+-0.34
+-0.32
+-0.30
+x
+0.060.080.100.120.14
+y
+0.00
+0.05
+0.10
+z
+visual sv
+calculated gv(μ)
+attractor ρ
+(a) Visual marker to
+the left.
+-0.36
+-0.34
+-0.32
+-0.30
+x
+0.060.080.100.120.14
+y
+0.00
+0.05
+0.10
+z
+visual sv
+calculated gv(μ)
+attractor ρ
+(b) Visual marker to
+the right.
+-0.40
+-0.35
+-0.30
+-0.25
+x
+0.000.050.100.150.20
+y
+-0.10
+-0.05
+0.00
+0.05
+0.10
+z
+visual sv
+calculated gv(μ)
+attractor ρ
+(c) Visual marker on
+ﬁnger.
+-0.35
+-0.30
+-0.25
+-0.20
+x
+0.000.050.100.150.20
+y
+0.00
+0.05
+0.10
+0.15
+0.20
+z
+visual sv
+calculated gv(μ)
+attractor ρ
+(d) Visual marker on
+forearm.
+ (e) Jupiter experiment.
+Figure 4: Adaptation: involuntary actions to ﬁt changes in the world. (Left) In this experiment, we
+modiﬁed online the visual location of the arm end-effector (yellow marker) forcing the robot to adapt
+to the induced model-world mismatch. Taken from (Oliver et al., 2021). The algorithm produces
+counter-acting behaviours to maximize model evidence. Thus, it moves this new end-effector to the
+desired location. On the top right of each image, the left eye camera is shown. Desired end-effector
+position is shown in blue, visual perception in red and estimated position in green. The resulting
+direction of motion obtained from the algorithm is shown as an arrow. (Right) Jupiter experiment,
+taken from (Meo & Lanillos, 2021). AIF approaches successfully adapt to the change in gravity
+when comparing with the built-in Panda controller (BPC). Multimodal AIF (MAIF) shows the best
+performance.
+et al., 2020a). This inherent mechanism is useful to deal with environmental and body changes, such
+as robot compliance or gravity changes. In (Meo & Lanillos, 2021) we described the Jupiter exper-
+iment on the Franka Emika Panda robot, which illustrates the advantages of an AIF model and the
+limitations of classical control methods used in factories. Figure 4(e) shows the performance com-
+parison between the Panda built-in controller and two AIF controllers. Our controller presented
+equivalent accuracy when increasing the gravity to g = 24.79m/s2. Furthermore, AIF approaches
+have shown improved performance when comparing to state-of-the-art model predictive control and
+interesting properties for fault-tolerant control (Pezzato et al., 2020a;b).
+4 I S THIS ME ? SELF -AWARENESS
+Going from estimation and control to being aware of our body is a big leap. A breakthrough exper-
+iment, coined as the rubber-hand illusion (RHI, Botvinick & Cohen (1998)), showed how ﬂexible
+humans are when perceiving their bodies. Participants felt a plastic arm as their arm in less than one
+minute by visuotactile stimulation. Several fMRI studies have looked into the neural correlates for
+these kinds of body-ownership illusions (Makin et al., 2008; Hinz et al., 2018). Three areas were
+consistently found activated during the RHI: posterior parietal cortex (including the intra-parietal
+cortex and temporo-parietal junction), premotor cortex and lateral cerebellum. The cerebellum is
+assumed to compute the temporal relationship between visual and tactile signals, thus playing a
+role in the integration of visual, tactile and proprioceptive body-related signals. The premotor and
+intra-parietal cortex are multisensory areas, also integrating visual, tactile and proprioceptive signals
+present during the rubber hand illusion. Hence, the right crossmodal neural activations during senso-
+rimotor integration may be the key for body-ownership. Within the predictive processing approach,
+we can answer a basic notion of ‘Is this me?’ by evaluating whether the sensations ﬁt the internal
+model (Kahl & Kopp, 2018; Lanillos et al., 2020b).
+Cognitive robotics has also tried to enlighten the mechanisms behind body awareness (Lanillos et al.,
+2017; Tani & White, 2020). What we can already replicate are perceptual effects observed during
+the RHI (Hinz et al., 2018; Rood et al., 2020) due to the recalibration of the body posture when
+merging sensory conﬂicting information. Precisely, the real hand is mislocalized towards the plastic
+hand due to the illusion. Furthermore, we also showed evidence of an active component derived
+6
+Brain2ai workshop at ICLR 2021: how can ﬁndings about the brain improve AI systems
+from the AIF hypothesis (Lanillos et al., 2020a). Figure 5A describes the perceptual and active
+effects from the predictive brain point of view when exposing a person to a virtual body.
+Figure 5: Towards human-like perception. (A) Human body perception and action when exposed
+to a virtual environment where the virtual body does not correspond to the actual body pose. (B)
+Modelling mirror self-recognition on a robot.
+Furthermore, in (Lanillos et al., 2020b), Fig. 5B, we showed how to use AIF to solve a simple form
+of artiﬁcial self-recognition (Hoffmann et al., 2021) by visual-kinesthetic matching using movement
+cues. In essence, the robot infers that it is itself by evaluating again the model evidence through the
+VFE. Fis therefore used as a bound on how much the observations ﬁt the internal model. In other
+words, how much the sensations are being produced by its body.
+Finally, ‘Did I do it?’ (Haggard, 2017) is still an evasive question. Although it is already possi-
+ble to empirically evaluate the experience of agency and some theoretical models have been pro-
+posed (Blakemore et al., 2000; Hommel, 2015), yet no computational model can properly replicate
+the process. Unveiling the mechanism of being aware of the effects that we generate in the world
+is critical for robotics as it provides safe interaction in complex environments and very relevant for
+imitation and social interaction (Wirkuttis & Tani, 2021).
+5 C ONCLUSION
+We discussed some relevant models and experiments in robotics based on neuroscientiﬁc theories
+of how humans perceive their bodies. In particular, we have presented a low-level estimation and
+adaptive control algorithm that takes inspiration from how the brain may process sensory infor-
+mation and generates actions through the minimization of surprise. Hence, we make a connection
+between predictive processing theory in cognitive (neuro)science and outstanding challenges in the
+ﬁeld of robotics. Body intelligence is one of the biggest challenges described by Moravec’s para-
+dox that is not yet solved (Moravec, 1988). The described proof-of-concept experiments show how
+understanding the brain can revolutionize robotics and embodied artiﬁcial intelligence in terms of
+adaptation, generalization, ﬂexibility and robustness. As such, this research marries ideas in neuro-
+science and artiﬁcial intelligence with the aim of developing a new generation of naturally intelligent
+systems (van Gerven, 2017).
+REFERENCES
+Luca Ambrogioni, Kate Lin, Emily Fertig, Sharad Vikram, Max Hinne, Dave Moore, and Marcel
+Gerven. Automatic structured variational inference. In International Conference on Artiﬁcial
+Intelligence and Statistics, pp. 676–684. PMLR, 2021.
+Chris Bishop. Mixture density networks. Technical Report NCRG/94/004, 1994.
+Sarah-Jayne Blakemore, Daniel Wolpert, and Chris Frith. Why can’t you tickle yourself? Neurore-
+port, 11(11):R11–R16, 2000.
+7
+Brain2ai workshop at ICLR 2021: how can ﬁndings about the brain improve AI systems
+Matthew Botvinick and Jonathan Cohen. Rubber hands ‘feel’ touch that eyes see. Nature, 391
+(6669):756, 1998.
+Christopher L Buckley, Chang Sub Kim, Simon McGregor, and Anil K Seth. The free energy
+principle for action and perception: A mathematical review.Journal of Mathematical Psychology,
+81:55–79, 2017.
+Alejandra Ciria, Guido Schillaci, Giovanni Pezzulo, Verena V Hafner, and Bruno Lara. Predictive
+processing in cognitive robotics: a review. Neural Computation, 33(5):1402–1432, 2021.
+Andy Clark. Whatever next? predictive brains, situated agents, and the future of cognitive science.
+Behavioral and Brain Sciences, 36(3):181–204, 2013.
+Lancelot Da Costa, Thomas Parr, Noor Sajid, Sebastijan Veselic, Victorita Neacsu, and Karl Friston.
+Active inference on discrete state-spaces: a synthesis. Journal of Mathematical Psychology, 99:
+102447, 2020.
+K. M. Dallenbach. A puzzle-picture with a new principle of concealment. The American Journal of
+Psychology, 64(3):431–433, 1951.
+Kenji Doya. What are the computations of the cerebellum, the basal ganglia and the cerebral cortex?
+Neural Networks, 12(7-8):961–974, 1999.
+Karl Friston. A theory of cortical responses. Philos Trans R Soc Lond B: Biological Sciences, 360
+(1456):815–836, 2005.
+Karl Friston, J´er´emie Mattout, Nelson Trujillo-Barreto, John Ashburner, and Will Penny. Variational
+free energy and the Laplace approximation. Neuroimage, 34(1):220–234, 2007.
+Karl Friston, Klaas Stephan, Baojuan Li, and Jean Daunizeau. Generalised ﬁltering. Mathematical
+Problems in Engineering, 2010, 2010a.
+Karl J. Friston. The free-energy principle: a uniﬁed brain theory? Nature Reviews. Neuroscience,
+11:127–138, 02 2010. doi: 10.1038/nrn2787.
+Karl J Friston, Jean Daunizeau, James Kilner, and Stefan J Kiebel. Action and behavior: a free-
+energy formulation. Biological Cybernetics, 102(3):227–260, 2010b.
+Patrick Haggard. Sense of agency in the human brain. Nature Reviews Neuroscience, 18(4):196,
+2017.
+Pim Haselager. Did i do that? brain–computer interfacing and the sense of agency. Minds and
+Machines, 23(3):405–418, 2013.
+Hermann von Helmholtz. Handbuch der Physiologischen Optik. L. V oss, 1867.
+Nina-Alisa Hinz, Pablo Lanillos, Hermann Mueller, and Gordon Cheng. Drifting perceptual patterns
+suggest prediction errors fusion rather than hypothesis selection: replicating the rubber-hand illu-
+sion on a robot. In 2018 Joint IEEE 8th International Conference on Development and Learning
+and Epigenetic Robotics (ICDL-EpiRob), pp. 125–132. IEEE, 2018.
+Matej Hoffmann, Hugo Gravato Marques, Alejandro Hernandez Arieta, Hidenobu Sumioka, Max
+Lungarella, and Rolf Pfeifer. Body schema in robotics: a review. Autonomous Mental Develop-
+ment., IEEE Tran. on, 2(4):304–324, 2010.
+Matej Hoffmann, Shengzhi Wang, V ojtech Outrata, Elisabet Alzueta, and Pablo Lanillos. Robot in
+the mirror: toward an embodied computational model of mirror self-recognition. KI-K¨unstliche
+Intelligenz, pp. 1–15, 2021.
+Bernhard Hommel. Action control and the sense of agency.The sense of agency, pp. 307–326, 2015.
+Willliam James. The Principles of Psychology. Dover, New York, 1890.
+Sebastian Kahl and Stefan Kopp. A predictive processing model of perception and action for self-
+other distinction. Frontiers in psychology, 9:2421, 2018.
+8
+Brain2ai workshop at ICLR 2021: how can ﬁndings about the brain improve AI systems
+Michael Kirchhoff, Thomas Parr, Ensor Palacios, Karl Friston, and Julian Kiverstein. The Markov
+blankets of life: autonomy, active inference and the free energy principle. Journal of the Royal
+Society Interface, 15(138):20170792, 2018.
+David C Knill and Alexandre Pouget. The Bayesian brain: the role of uncertainty in neural coding
+and computation. Trends in Neurosciences, 27(12):712–719, 2004.
+Pablo Lanillos and Gordon Cheng. Active inference with function learning for robot body percep-
+tion. International Workshop on Continual Unsupervised Sensorimotor Learning, ICDL-Epirob,
+2018a.
+Pablo Lanillos and Gordon Cheng. Adaptive robot body learning and estimation through predictive
+coding. Intelligent Robots and Systems (IROS), 2018 IEEE/RSJ Int. Conf. on, 2018b.
+Pablo Lanillos, Emmanuel Dean-Leon, and Gordon Cheng. Enactive self: a study of engineering
+perspectives to obtain the sensorimotor self through enaction. In Developmental Learning and
+Epigenetic Robotics, Joint IEEE Int. Conf. on, 2017.
+Pablo Lanillos, Sae Franklin, and David W Franklin. The predictive brain in action: Involuntary
+actions reduce body prediction errors. BioRxiv, 2020a.
+Pablo Lanillos, Jordi Pages, and Gordon Cheng. Robot self/other distinction: Active inference
+meets neural networks learning in a mirror. In Proceedings of the 20th European Conference on
+Artiﬁcial Intelligence ECAI12. Amsterdam: IOS Press, 2020b.
+Tamar R Makin, Nicholas P Holmes, and H Henrik Ehrsson. On the other hand: dummy hands and
+peripersonal space. Behavioural Brain Research, 191(1):1–10, 2008.
+Cristian Meo and Pablo Lanillos. Multimodal V AE active inference controller. arXiv preprint
+arXiv:2103.04412, 2021.
+Beren Millidge, Alexander Tschantz, and Christopher L Buckley. Whence the expected free energy?
+Neural Computation, 33(2):447–482, 2021.
+Hans Moravec. Mind Children: The Future of Robot and Human Intelligence . Harvard University
+Press, 1988.
+Hiroki Mori and Yasuo Kuniyoshi. A human fetus development simulation: Self-organization of
+behaviors through tactile sensation. In IEEE 9th Int. Conf. on Development and Learning (ICDL),
+pp. 82–87, 2010.
+Guillermo Oliver, Pablo Lanillos, and Gordon Cheng. An empirical study of active inference on a
+humanoid robot. IEEE Transactions on Cognitive and Developmental Systems, 2021.
+Corrado Pezzato, Mohamed Baioumy, Carlos Hern´andez Corbato, Nick Hawes, Martijn Wisse, and
+Riccardo Ferrari. Active inference for fault tolerant control of robot manipulators with sensory
+faults. In International Workshop on Active Inference, pp. 20–27. Springer, 2020a.
+Corrado Pezzato, Riccardo Ferrari, and Carlos Hern ´andez Corbato. A novel adaptive controller
+for robot manipulators based on active inference. IEEE Robotics and Automation Letters , 5(2):
+2973–2980, 2020b.
+L´eo Pio-Lopez, Ange Nizard, Karl Friston, and Giovanni Pezzulo. Active inference and robot
+control: a case study. J R Soc Interface, 13, 2016.
+Rajesh PN Rao and Dana H Ballard. Predictive coding in the visual cortex: a functional interpreta-
+tion of some extra-classical receptive-ﬁeld effects. Nature Neuroscience, 2(1):79–87, 1999.
+Carl Edward Rasmussen and Christopher K. I. Williams.Gaussian Processes for Machine Learning
+(Adaptive Computation and Machine Learning). The MIT Press, 2005. ISBN 026218253X.
+Thomas Rood, Marcel van Gerven, and Pablo Lanillos. A deep active inference model of the rubber-
+hand illusion. In International Workshop on Active Inference, pp. 84–91. Springer, 2020.
+9
+Brain2ai workshop at ICLR 2021: how can ﬁndings about the brain improve AI systems
+Cansu Sancaktar, Marcel van Gerven, and Pablo Lanillos. End-to-end pixel-based deep active infer-
+ence for body perception and action. arXiv preprint arXiv:2001.05847, 2020.
+Jun Tani. Learning to generate articulated behavior through the bottom-up and the top-down inter-
+action processes. Neural Networks, 16(1):11–23, 2003.
+Jun Tani and Jeffrey White. Cognitive neurorobotics and self in the shared world, a focused review
+of ongoing research. Adaptive Behavior, pp. 1059712320962158, 2020.
+Emanuel Todorov and Michael I Jordan. Optimal feedback control as a theory of motor coordination.
+Nature Neuroscience, 5(11):1226, 2002.
+Manos Tsakiris, Simone Sch ¨utz-Bosbach, and Shaun Gallagher. On agency and body-ownership:
+Phenomenological and neurocognitive reﬂections. Consciousness and Cognition, 16(3):645–660,
+2007.
+Otto van der Himst and Pablo Lanillos. Deep active inference for partially observable MDPs. In
+International Workshop on Active Inference, pp. 61–71. Springer, 2020.
+Marcel A J van Gerven. Computational foundations of natural intelligence. Frontiers in Computa-
+tional Neuroscience, 11:1–24, 2017.
+Nadine Wirkuttis and Jun Tani. Controlling the sense of agency in dyadic robot interaction: An
+active inference approach. arXiv preprint arXiv:2103.02137, 2021.
+10

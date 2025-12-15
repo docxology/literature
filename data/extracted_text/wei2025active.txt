@@ -1,0 +1,839 @@
+Active Inference through Incentive Design in Markov Decision Processes
+Xinyi Wei∗1 , Chongyang Shi∗1 , Shuo Han2 , Ahmed H. Hemida3 , Charles A. Kamhoua3 , Jie
+Fu1
+1University of Florida, Gainesville, FL
+2University of Illinois, Chicago. 3DEVCOM Army Research Laboratory
+{weixinyi, c.shi, fujie}@ufl.edu, hanshuo@uic.edu {ahmed.h.hemida.ctr,
+charles.a.kamhoua.civ}@army.mil
+Abstract
+We present a method for active inference with par-
+tial observations in stochastic systems through in-
+centive design, also known as the leader-follower
+game. Consider a leader agent who aims to infer a
+follower agent’s type given a finite set of possible
+types. Different types of followers differ in either
+the dynamical model, the reward function, or both.
+We assume the leader can partially observe a fol-
+lower’s behavior in the stochastic system modeled
+as a Markov decision process, in which the follower
+takes an optimal policy to maximize a total reward.
+To improve inference accuracy and efficiency, the
+leader can offer side payments (incentives) to the
+followers such that different types of them, under
+the incentive design, can exhibit diverging behav-
+iors that facilitate the leader’s inference task. We
+show the problem of active inference through in-
+centive design can be formulated as a special class
+of leader-follower games, where the leader’s ob-
+jective is to balance the information gain and cost
+of incentive design. The information gain is mea-
+sured by the entropy of the estimated follower’s
+type given partial observations. Furthermore, we
+demonstrate that this problem can be solved by re-
+ducing a single-level optimization through softmax
+temporal consistency between followers’ policies
+and value functions. This reduction allows us to
+develop an efficient gradient-based algorithm. We
+utilize observable operators in the hidden Markov
+model (HMM) to compute the necessary gradients
+and demonstrate the effectiveness of our approach
+through experiments in stochastic grid world envi-
+ronments.
+1 Introduction
+Incentive design [Bolton and Dewatripont, 2005], is also re-
+ferred to as the principal-agent or leader-follower game. Ho
+et al. [1981] address applications where a planner or leader
+aims to optimize system performance while anticipating and
+∗Equal contribution.
+accounting for the active interactions of multiple users or fol-
+lowers. It is applied in various domains such as economic
+market [Myerson, 1981; Williams, 2011; Easley and Ghosh,
+2015], smart city [Meiet al., 2017; Kazhamiakinet al., 2015],
+and smart grid [Braithwait et al. , 2006; Alquthami et al. ,
+2021].
+In the classical problem formulation, the leader and fol-
+lowers have respective payoff/reward functions and aim to
+optimize their own rewards. We focus on a specific class
+of incentive design where the leader is to infer the follow-
+ers’ type (intentions, rewards, or dynamic model) by partially
+observing the follower’s active interactions with the system.
+We refer to this as the problem of active inference through
+incentive design.
+In particular, consider a finite hypothesis set of possible
+followers, where each follower’s planning problem is mod-
+eled as a Markov decision process (MDP) with the objective
+of maximizing total discounted rewards. Followers’ MDPs
+may differ in their transition dynamics, discount factors, or
+reward functions. At each time step, the leader observes the
+activity of one follower, selected from the hypothesis set,
+through imperfect and noisy observations. The leader’s goal
+is to identify which follower is currently interacting with the
+system. To improve inference accuracy within a finite time
+horizon, the leader strategically designs an incentive policy to
+offer side payments (additional rewards) within the environ-
+ment, influencing the followers’ best responses. These incen-
+tives, however, incur a direct cost to the leader’s own payoff.
+With only partial, noisy observations of the follower’s state
+sequence, the leader calibrates the incentive policy to mini-
+mize uncertainty about the follower’s type, while balancing
+the trade-off between inference accuracy and the cost of pro-
+viding incentives.
+Related work. Incentive design has been studied in differ-
+ent contexts, particularly in federated learning for IoT en-
+vironments and mobile ad hoc networks (MANETs). Zhan
+et al. [Zhan et al. , 2020] used deep reinforcement learn-
+ing for optimal pricing strategies in federated learning sys-
+tems, while Li et al. [Li and Shen, 2011] applied game the-
+ory to study cooperation incentives in MANETs. In ad-
+dition, Ratliff and Fiez [2020] addresses a principal-agent
+problem with multiple agents of unknown types. The prin-
+cipal optimizes an objective function which depends on the
+data from strategic decision makers (agents). The followers’
+arXiv:2502.07065v1  [eess.SY]  10 Feb 2025
+decision-making processes are categorized into Nash equilib-
+rium strategies and myopic update rules. They develop an
+algorithm that the principal can employ to learn the agents’
+decision-making processes while simultaneously designing
+incentives to change their response to one that is more de-
+sirable. Adaptive incentive design in [Ma et al., 2024] intro-
+duces gradient-ascent algorithms to compute the leader’s op-
+timal incentive strategy, despite the lack of knowledge about
+the follower’s reward function. While adaptive incentive
+design focuses on dynamically adapting the leader’s policy
+based on the follower’s response, our work examines a dif-
+ferent problem: incentive design that supports inference tasks
+under partial observability. Specifically, we assume the leader
+has a prior distribution over potential follower types and aims
+to reduce uncertainty in the posterior distribution of these
+types based on limited observations. To achieve this, we pro-
+pose an information-theoretic objective for the leader, rather
+than defining the leader’s value in terms of cumulative dis-
+counted rewards. Since information-theoretic measures can-
+not be directly expressed as cumulative rewards, we develop
+novel solutions for this class of incentive design problems.
+Information-theoretic metrics are also widely used in var-
+ious active inference problems. Egorov et al. [2016] and
+Araya et al. [2010] formulate a partially observable Markov
+decision process (POMDP) with a reward function dependent
+on the agent’s information state or belief. For instance, in tar-
+get surveillance, a patrolling team is rewarded for reducing
+uncertainty in its belief about an intruder’s position or state.
+Similarly, in intent inference, Shen and How [2019] utilized
+the negative entropy of the belief over an opponent’s intent
+as a reward, maximizing the total reward to enhance active
+inference. Also, Shi et al. [2024] use Shannon conditional
+entropy as an information leakage measure to solve the active
+inference problem in which an agent can actively query sen-
+sors to infer an unknown variable in a hidden Markov model.
+To our knowledge, information-theoretic objectives have not
+been considered for the leader-follower games. Existing so-
+lutions to active inference are for motion planning of a single
+agent or a team of agents, and cannot be extended to solve the
+incentive design problems in the leader-follower game.
+Our problem formulation and methods are also applicable
+for intent inference, which is a key research topic of AI align-
+ment. Inferring humans’ intentions or capabilities can en-
+sure that AI systems tailor the decisions for the specific user
+group and avoid unintended or harmful behaviors [Leike et
+al., 2018; Soares and Fallenstein, 2014].
+Our contribution. Our research advances active inference
+through the following key contributions:
+• We introduce a novel incentive design framework for ac-
+tive inference, employing conditional entropy to quan-
+tify the leader’s uncertainty about the follower’s type
+from the leader’s partial observations.
+• We show the problem of incentive design can be
+formulated as a bi-level optimization problem, using
+an augmented-state hidden Markov model constructed
+from the set of policies of different potential follower
+types. When each follower follows an optimal entropy-
+regularized policy, it is possible to transform the bi-level
+problem into a single-level optimization, enabling the
+solution with gradient descent methods.
+• We consider that the leader has only partial and noisy ob-
+servations of the followers’ trajectories, and we develop
+efficient methods for computing the gradient terms.
+These methods leverage observable operators [Jaeger,
+2000] within the framework of HMM, enabling more
+accurate and computationally efficient gradient compu-
+tation.
+• Finally, we demonstrate the accuracy and effectiveness
+of our proposed methods through experimental valida-
+tion. In this research, specifically, we minimize uncer-
+tainty when all types of followers provide their best re-
+sponses to given side payments, using gradient descent
+methods.
+2 Preliminaries and Problem formulation
+Notation. The set of real numbers is denoted by R. Random
+variables will be denoted by capital letters and their realiza-
+tions by lowercase letters (X and x). A sequence of random
+variables and their realizations with length T are denoted as
+X0:T and x0:T . The notation xi refers to the i-th compo-
+nent of a vector x ∈ Rn or the i-th element of a sequence
+x0, x1, . . ., which will be clarified by the context. Given a fi-
+nite set S, let D(S) be the set of all probability distributions
+over S. The set ST denotes the set of sequences with length
+T composed of elements from S, and S∗ denotes the set of
+all finite sequences generated from S.
+This active inference problem involves a leader-follower
+framework where a leader can offer side payments to sup-
+plement the followers’ original rewards, and the followers al-
+ways take the best responses. The leader can partially ob-
+serve the followers’ behavior and aims to minimize uncer-
+tainty about their types, balancing against the cost of side
+payments.
+The follower’s model. A single-agent MDP is defined as:
+M = (S, A, P, µ, γ,¯R),
+where S is a set of states, A is a set of actions, P : S × A →
+D(S) is a probabilistic transition function such thatP(s′|s, a)
+is the probability of reaching state s′ given action a being
+taken at state s, µ ∈ D(S) is an initial state distribution. The
+original reward function for the agent without any side pay-
+ment is ¯R: S ×A → R where ¯R(s, a) is the reward received
+by the follower for taking action a in state s.
+Different types of followers. We consider the interaction
+between a leader and a finite setT of followers with different
+types. For each type i ∈ T, follower i’s planning problem
+is modeled by an MDP Mi = ( S, A, Pi, µi, γi, ¯Ri). Dif-
+ferent types have different initial state distributions, reward
+functions, discounting factors, or transition dynamics. With-
+out loss of generality, we assume the followers have the same
+state and action spaces.
+Incentives as side payments. The leader can allocate side
+payments to the environment. A side payment allocation is a
+function: x: S × A → R+, hereafter referred to as the side
+payment. Specifically, x(s, a) is the additional non-negative
+reward that the leader offers to follower i when follower i
+takes action a in state s, for each i ∈ T. Let x be a vector of
+dimension S × A representing side payments for each state-
+action pair, with its domain denoted as X.
+Due to the independent dynamics and independent reward
+functions with side payments, for each follower i ∈ T,
+given a side payment x, follower i’s modified reward func-
+tion Ri(x) is defined as follows: For all (s, a) ∈ S × A,
+Ri(s, a; x) = ¯Ri(s, a) + x(s, a). (1)
+For each i ∈ T, follower i’s planning problem with side pay-
+ment x is thus modeled as the following MDP:
+Mi(x) = (S, A, Pi, µi, γi, Ri(x)).
+Given the MDP Mi(x) and a Markov policy π : S →
+D(A), let Vi(µi, Ri(x), π) be the value function evaluated
+for policy π.
+Leader’s partial observation Given a follower’s MDP
+Mi(x) and a set O of observations, the leader’s observation
+function is defined by Ei : S → D(O). That is, the leader
+only partially observes the state of the follower. Note that
+it is easy to extend this observation function to allow partial
+observations of both states and actions, by augmenting the
+follower’s states with actions taken.
+An informal problem statement is given below.
+Problem 1. Consider that the leader’s objective is to estimate
+the type of a follower based on a finite observation sequence.
+The leader can incentivize diverging behaviors from different
+followers by providing side payments, which come at a cost
+to the leader. How should the leader design a side payment
+strategy to balance the estimation-utility trade-off? That is,
+how can the leader maximize the estimation accuracy while
+minimizing the total cost of side payments?
+Remark 1. This problem formulation is motivated by AI-
+alignment problems, where the AI agent is to tailor some de-
+cision recommendations to the user based on the inferred in-
+tention or capability of the user. For example, ride-sharing
+platforms continuously monitor driver behaviors to estimate
+driver preferences and capabilities. By designing strategic in-
+centives such as surge pricing and completion bonuses, these
+platforms can improve the accuracy and efficiency of the in-
+ference, and thus provide more personalized services, such
+as route recommendations and rider-driver matching. Other
+applications are related to AI-based security and intrusion
+detection. By strategically allocating sensors and decoys,
+a security system can manipulate users’ perceptual reward
+functions to elicit divergent behaviors between attackers and
+normal users.
+3 The incentive design problem formulation
+We first study how to measure the leader’s uncertainty about
+the current follower’s type after a finite sequence of observa-
+tions, when the followers’ policies are known and the leader
+observes a follower’s behavior through imperfect observa-
+tions.
+Definition 1. Given a collection of policies, referred to as a
+policy profile, π = [πi]i∈T of followers, and the leader’s ob-
+servation functions for followers {Ei, i∈ T }. The following
+HMM can be constructed:
+M(π) = ⟨S × T, P, O, E, µ0⟩
+• S × Tis the augmented state space. Each state (s, i)
+includes a state in the follower’s MDP and a type of the
+follower.
+• Pπ : S × T →∆(S × T) is defined by
+Pπ((s′, j)|(s, i))
+=
+P
+a∈A Pi(s′|s, a)πi(s, a) if i = j
+0 otherwise.
+In other words, at the state (s, i), follower i will take an
+action by following his policy πi(s), and the type does
+not change.
+• µ0 ∈ ∆(S × T) is the initial state distribution. For all
+(s, i) ∈ S × T,
+µ0(s, i) = µi(s)P(T = i).
+where T is a random variable representing the estimated
+type of the follower. P(T) is the prior distribution over
+possible types.
+• O is a finite set of observations.
+• E : S × T → D(O) is the observation function, defined
+by E(o|(s, i)) = Ei(o|s) is the probability of observing
+o when agent i at the state s.
+Let Ot denote a random variable representing the observa-
+tion at time t, and let ot be a specific realization of this ran-
+dom variable. We denote the posterior estimate of the type T
+given an observation o0:T as Pπ(T|O0:T = o0:T ).
+Next, we define the planning objective—Shannon condi-
+tional entropy. Information-theoretic metrics are widely used
+as planning objectives, with entropy measures being particu-
+larly common for quantifying information leakage. These en-
+tropy measures have been extensively studied in channel de-
+sign problems, which can be interpreted as one-step decision-
+making problems [Khouzani and Malacaria, 2017].
+Definition 2. Let Y := O0:T . The conditional Shannon en-
+tropy of the agent’s type given the observations is defined by,
+H(T | Y, M(π)) =
+X
+y∈Y
+Pπ(y)H(T|Y = y, M(π))
+= −
+X
+i∈T
+X
+y∈Y
+Pπ(i, y) logPπ(i|y),
+(2)
+where y is a sample observation sequence, and Y is a set of
+all finite observation sequences of length T.
+Given different policy profiles π and π′, the entropies
+H(T | O0:T , π) and H(T | O0:T , π′) can be different.
+For the leader’s goal of inferring the follower’s type, a pol-
+icy profile makes the leader’s task easier if it has a lower con-
+ditional entropy. Based on this relation, we formulate the fol-
+lowing incentive design problem where the objective of the
+leader is to allocate the side payments x to improve the accu-
+racy and efficiency of inferring the type of the follower.
+Problem 2 (Incentive design for intention inference) . As-
+suming the followers always provide the best responses, the
+leader’s incentive design for intention inference problem is
+the following bi-level optimization problem:
+minimize
+x∈X
+H(T|O0:T , M(π⋆(x))) + h(x)
+subject to π⋆
+i (x) ∈ argmax
+π∈Π
+Vi(µi, Ri(x), π), ∀i ∈ T.
+(3)
+where π⋆(x) = [ π⋆
+i (x)]i∈T is a policy profile consisting of
+the best responses of followers, and h: X →R+ is a side
+payment cost function, which is differentiable.
+3.1 Reduction to single-level optimization
+We show how to leverage entropy-regularized MDP
+[Nachum et al. , 2017] to reduce the bi-level optimization
+problem equation (3) to a single-level optimization problem.
+The following reviews the entropy-regularized MDP solution
+for a single agent, which is the same for all followers. We
+omit the index of a follower for clarity.
+Entropy-regularized optimal value/policy. The optimal
+value function V ⋆ of the entropy-regularized MDP with re-
+spect to the reward functionR satisfies the following entropy-
+regularized Bellman equation [Nachum et al., 2017]:
+V ⋆(s, R) = τ log
+X
+a∈A
+exp{(R(s, a)
++ γEs′∼P(·|s,a)V ⋆(s′, R))/τ}, ∀s ∈ S. (4)
+Note that, as τ approaches 0, equation (4) recovers the stan-
+dard optimal Bellman equation. Let Q⋆(R): S × A → R
+be the optimal state-action value function (also called Q-
+function) of the entropy-regularized MDP under reward R:
+Q⋆(s, a, R) = R(s, a) + Es′∼P(·|s,a)V ⋆
+2 (s′, R).
+For a fixed temperature parameterτ, the optimal policy of the
+entropy-regularized MDP is uniquely defined by
+π⋆(s, a) = exp(Q⋆(s, a, R)/τ)P
+a′∈A exp(Q⋆(s, a′)/τ). (5)
+Then, the optimal policy of the entropy-regularized MDP
+can be written succinctly as πQ⋆(R), where Q⋆(R) is viewed
+as a vector in R|S×A|.
+In the following, we use V ⋆(Ri), Q⋆(Ri), π⋆
+i , π⋆ (resp.
+V ⋆(Ri(x)), Q⋆(Ri(x)), π⋆
+i (x), π⋆(x)) for optimal entropy-
+regularized value function, Q-value function, policy, and pol-
+icy profile with respect to follower i’s reward Ri (resp. mod-
+ified reward Ri(x) with side payment x).
+Due to the relation between the optimal policy and the op-
+timal state-action value function of the entropy-regularized
+MDP given by equation (5), the lower-level problem in the
+bilevel optimization problem in equation (3) has a unique so-
+lution πQ⋆(Ri(x)). We can reduce the problem 2 to the fol-
+lowing single-level optimization problem.
+minimize
+x∈X
+H(T|O0:T , M(π⋆(x)) + h(x). (6)
+where π⋆(x) = [πQ⋆(Ri(x))]i∈T is the policy profile and each
+πQ⋆(Ri(x)) is the entropy-regularized optimal policy:
+πQ⋆(Ri(x)) = arg max
+πi
+V (µi, Ri(x), πi), ∀i ∈ T.
+3.2 Incentive design with gradient descent
+For convenience, define the softmax policy πθ as
+πθ(s, a) = exp(θs,a/τ)P
+a′∈A exp(θs,a′ /τ), θ ∈ R|S×A|. (7)
+Notation. Given this parametrization, we will replace the
+notation of policy π (or policy profile π) with policy pa-
+rameter θ (or policy parameter profile θ ≜ [θi]i∈T ). Thus,
+M(πθ) ≜ M(θ) and Pπθ ≜ Pθ. Similar to the nota-
+tion of θ, We denote Q⋆(R(x)) ≜ [Q⋆(Ri(x))]i∈T , and
+R(x) ≜ [Ri(x)]i∈T .
+Because the entropy-regularized optimal policyπ⋆
+i (x) is an
+implicit function of x, we consider using the gradient-descent
+method to find a stationary point for the objective function in
+equation (6).
+Let’s define J1(θ) = H(T|Y ; M(θ)) (recall Y = O0:T ),
+note that θ should be Q⋆(R(x)) in the equation (6). Let
+J(x) := J1(Q⋆(R(x))) + h(x).
+Following the chain rule, the derivative ofJ with respect to x
+is given by
+DJ(x) = DJ1(Q⋆(R(x)))·DQ⋆(R(x))·DR(x)+ Dh(x).
+(8)
+Because h is given, Dh(x) can be computed analytically.
+Similarly, DR(x) can be computed analytically given the
+function Ri(x), for each i ∈ T.
+In the following, we show how to compute
+DJ1(Q⋆(R(x))) and DQ⋆(R(x)) respectively.
+Computing DJ1(Q⋆(R(x))). Let θ = Q⋆(R(x)). Com-
+puting DJ1(θ) involves computing the gradient of the con-
+ditional entropy H(T|Y ; M(θ)) w.r.t. the parameter θ of
+policy profile, i.e. DJ1(θ) = ∇θH(T|Y ; θ)⊺.
+By using a trick that ∇θPθ(y) = Pθ(y)∇θ log Pθ(y) and
+the property of conditional probability, we have
+∇θH(T|Y ; θ)
+= −
+X
+y∈OT
+X
+i∈T
+h
+∇θPθ(i, y) log2 Pθ(i|y)
++ Pθ(i, y)∇θ log2 Pθ(i|y)
+i
+= −
+X
+y∈OT
+X
+i∈T
+h
+Pθ(y)∇θPθ(i|y) log2 Pθ(i|y)+
+Pθ(i|y)∇θPθ(y) log2 Pθ(i|y) + Pθ(y)∇θPθ(i|y)
+ln 2
+i
+.
+(9)
+Given a prior distribution P(T), we have
+Pθ(y) =
+X
+i∈T
+P(T = i)Pθ(y|T = i),
+where Pθ(y|T = i) = P
+s∈S Pθ(y|s, i)µ0(s, i) is the prob-
+ability of generating the observation sequence y given the
+follower i following a policy parameterized by θi—the i-th
+component of policy profile parameters θ.
+We can calculate the gradient ∇θPθ(T = i|y) as
+∇θPθ(T = i|y)
+=P(T = i)∇θ
+Pθ(y|T = i)
+Pθ(y)
+=P(T = i)
+h∇θPθ(y|T = i)
+Pθ(y) − Pθ(y|T = i)
+P2
+θ(y) ∇θPθ(y)
+i
+,
+(10)
+where ∇θPθ(y) = P
+i∈T P(T = i)∇θPθ(y|T = i).
+To complete the gradient computation, we only need to
+determine ∇θPθ(y|T = i) for each type of follower. We
+can utilize the observable operators [Jaeger, 2000] to com-
+pute this gradient for the partially observable system induced
+by follower i’s policy.
+Observable operators for single-agent HMM. Consider
+a single-agent MDP M = ⟨S, A, P, µ0, R⟩, a parameterized
+Markov policy πθ induces a hidden Markov model
+M(θ) = ⟨S, A, Pθ, µ0, O, E⟩
+where S = {1, . . . , N}, O = {1, . . . , M}, Pθ(s′|s) =P
+a∈A P(s′|s, a)πθ(a|s) and E : S → D(O) is an obser-
+vation function for the leader.
+In this single-agent HMM, let the random variable of state,
+observation, and control action, at time point t be denoted as
+Xt, Ot, At, respectively. Let Tθ ∈ RN×N be the transposed
+state transition matrix in the single-agent HMM Mθ with
+Tθ
+i,j = Pθ(Xt+1 = i|Xt = j).
+Let O ∈ RM×N be the observation probability matrix
+with Oo,j = E(o|j) for each o ∈ Oand j ∈ S.
+Definition 3. Given the single-agent HMM Mθ, for any ob-
+servation o, the observable operator Aθ
+o is a matrix of size
+N × N with its ij-th entry defined as
+Aθ
+o[i, j] = Tθ
+i,jOo,j ,
+which is the probability of transitioning from statej to state i
+and at the statej, an observation o is emitted. In matrix form,
+Aθ
+o = Tθdiag(Oo,1, . . . ,Oo,N ).
+Proposition 1. Given the single-agent HMM Mθ, the proba-
+bility of observing y is
+Pθ(y) = 1⊤
+n Aθ
+ot . . .Aθ
+o0 µ0. (11)
+where 1N is a vector of size N. An the derivative of Pθ(y)
+with respect to θ is
+∇θPθ(y) =
+tX
+i=0
+1⊤
+N Aθ
+ot . . .∇θAθ
+oi . . .Aθ
+o0 µ0. (12)
+Proof. The proof is based on the property of observable op-
+erators [Jaeger, 2000] and the derivative of a parameterized
+tensor product.
+Based on the above analysis for a general single-agent
+HMM M(θ) and observation function E, we can obtain
+∇θiPθ(y|T = i) and Pθ(y|T = i) by replacing the single-
+agent HMM with the follower i’s HMM Mi(θi) and the ob-
+servation with Ei, and then compute ∇θiPθi(y) and Pθi(y).
+It is observed that ∇θj Pθ(y|T = i) = 0 because the ob-
+servation process of follower i is not influenced by the fol-
+lower j’s policy, when i ̸= j. With these computation, we
+obtain ∇θPθ(T = i|y).
+It is noted that, though O is a finite set of observations,
+it is combinatorial and may be too large to enumerate. To
+mitigate this issue, we can employ sample approximations to
+estimate ∇θH(T|Y ; θ): Given K sequences of observations
+{y1, . . . , yK}, we can approximate H(T|Y ; θ) by
+H(T|Y ; θ) ≈ −1
+K
+KX
+k=1
+X
+i∈T
+Pθ(i|yk) logPθ(i|yk), (13)
+and approximate ∇θH(T|Y ; θ) by
+∇θH(T|Y ; θ)
+≈ −1
+K
+KX
+k=1
+X
+i∈{0,1}
+
+log Pθ(i|yk)∇θPθ(i|yk)
++ Pθ(i|yk) logPθ(i|yk)∇θ log Pθ(yk) + ∇θPθ(i|yk)
+log 2
+
+.
+(14)
+Computing DQ⋆(R(x)). The derivative DQ⋆(R(x)) is a
+block diagonal matrix. Each block along the main diagonal
+corresponds to DQ⋆(Ri(x)) for each follower i ∈ T.
+The following proposition (proven in Ma et al. [2024]) al-
+lows us to compute DQ⋆(Ri(x)) given each follower’s MDP
+Mi with reward Ri(x).
+Proposition 2. Consider an infinite-horizon MDP M =
+(S, A, P, s0, γ, R) with discounting. Let Q⋆(R): S×A → R
+be the optimal state-action value function of the entropy-
+regularized MDP under the reward function R. For any
+(s, a), (˜s, ˜a) ∈ S × A, it holds that
+∂Q⋆
+s,a
+∂R˜s,˜a
+= 1(˜s,˜a)(s, a)+γEs′∼P(·|s,a)
+X
+a′∈A
+πQ⋆(R)(s′, a′)
+∂Q⋆
+s′,a′
+∂R˜s,˜a
+,
+(15)
+where
+1(˜s,˜a)(s, a) =
+1 if (s, a) = (˜s, ˜a),
+0 otherwise. (16)
+For any given(s′, a′) ∈ S ×A, equation (15) is in the form
+of the standard Bellman equation for state-action value func-
+tion. This implies that the partial derivative can be computed
+using any method for solving the Bellman equation [Ma et
+al., 2024].
+Lastly, using the gradient computation methods described
+above, we can compute the total gradient DJ(x) and employ
+a gradient-descent algorithm to find a stationary point of the
+objective function.
+Remark 2. Though the method places no restriction on the
+side payment x—the leader can modify the follower’s re-
+ward at any state-action pair. In practice, the side pay-
+ment decision variables x may be constrained to be within
+a set X of feasible allocation. In addition, let λ be the
+Figure 1: Fire rescue task in grid world environment.
+number of decision variables in X, the time complexity of
+calculating DQ⋆(R(x)) · DR(x) in the single-agent case is
+O(λ|S|2|A|2 + |S|3|A|2). Thus, the leader can select a sub-
+set of state-action pairs for side payment allocation to reduce
+the number λ and subsequently the computations.
+4 Experiments
+Example 1 (Fire rescue task). We demonstrate the effective-
+ness of the proposed policy-based algorithm in a fire rescue
+task (Figure 1) 1. The scenario involves two types of rescue
+robots (followers) that start from the same initial position,
+(0, 0), and navigate toward specific goal locations (the tar-
+gets to be rescued) marked by flags. The robots can move in
+four compass directions: north, south, east, and west. How-
+ever, their movement is stochastic. When a robot moves in
+a chosen direction, there is a probability α that it will also
+shift in one of the two adjacent directions. For example, if
+a robot moves east, there is a probability α that it will also
+move north and another probabilityα that it will move south.
+If a robot encounters an obstacle or boundary, it remains in
+place.
+Type 1 robots are equipped with superior hardware com-
+pared to Type 2 robots, resulting in lower movement uncer-
+tainty (α = 0 .05 for Type 1 vs. α = 0 .1 for Type 2). Ad-
+ditionally, Type 1 robots have better fireproof armor. Thus,
+if a Type 1 robot enters a fire cell, only a small negative re-
+ward of −0.1 is incurred. In contrast, Type 2 robots, which
+are more vulnerable to fire, suffer a much larger negative re-
+ward of −20. Both robot types receive a positive reward of
+0.1 upon reaching goal (flag) states, which are designated as
+sink states. Since the goal states are sink states, robots con-
+tinue to accumulate discounted rewards after reaching them.
+The discount factor is set toγi = 0.9 for all i when computing
+the optimal policy for each robot type.
+For perception, the environment is equipped with four sen-
+sors {1, 2, 3, 4}, each with a distinct range. If a robot is
+within sensor i’s range, the observer receives observation i,
+for i ∈ {1, 2, 3, 4} with a 90% probability and a null obser-
+vation (”n”) with a 10% probability due to false negatives.
+1The code is available on https://drive.google.com/drive/folders/
+1a33YT3gDoJxXNxU36dHfi3ae40E BIc ?usp=sharing
+Figure 2: Behavior comparison task in grid world environment.
+If the robot is outside the sensor’s range, the observer only
+receives a null observation.
+In this environment, the leader can only allocate side pay-
+ments in the cell (5, 0). When setting the side payment, we
+can assign a positive value to only one action at the target
+state, i.e., x((5, 0), a) > 0 for a single action a ∈ A, while
+setting x((5, 0), a) = 0 for all other actions. Since the targets
+are sink states, the agent will always choose the action with
+the positive reward when computing the optimal policy. This
+approach will reduce the effective dimension of side pay-
+ment. The cost function is defined as h(x) = β∥x∥1 where
+β = 0 .05, represents the cost of side payments in this spe-
+cific cell. In optimization, we set the time horizon to T = 12
+and use K = 2000 sampled trajectories for approximation of
+gradients.
+Figure 3a illustrates that as the algorithm converges. The
+objective function J(x) converges to 0.299. The conditional
+entropy H(T|Y, M(π⋆(xt)) approaches 0.153. And the side
+payment reaches 0.291. The trend of objective function and
+entropy are similar because we set the weightβ = 0.05. Then
+the cost function h(x) has a smaller impact on the objective
+function. Since the conditional entropy is close to 0—the
+minimal value of entropy—the observations provide signif-
+icant information about the robot’s type.
+The conditional entropy is inversely proportional to the
+side payment, a behavior driven by the environmental con-
+figuration. When the initial side payment is 1, both types of
+robots move toward the flag at cell (5, 5) due to the presence
+of fires around cell (5, 0). Hence, they are indistinguishable
+and the entropy is high as 0.793. However, as the side pay-
+ment increases, the Type 1 robot, which has a low fire penalty,
+chooses to move to (5, 0), while the Type 2 robot, facing a
+much higher fire penalty, still moves to (5, 5). This diver-
+gence in movement makes it easier to distinguish between the
+two robot types, thereby reducing entropy. Clearly, increas-
+ing the side payment to be higher than0.291 will improve the
+inference accuracy, but at too much cost for the leader. Our
+solution achieves a balance between the inference accuracy
+and side payment cost.
+Example 2 (Behavior comparison task). We use the example
+shown in Figure 2 to further illustrate the application of our
+algorithm in active inference. This environment is similar to
+(a) The result of the fire rescue.
+ (b) The result of the behavior comparison.
+ (c) Inference during the optimization.
+Figure 3: The results of experiments.
+Example 1, but with additional obstacles.
+There are also two types of robots (followers) with sig-
+nificantly different behaviors. The dynamic noise is set to
+α = 0 .05 for Type 1 and α = 0 .25 for Type 2, meaning
+the Type 2 robot moves more randomly than the Type 1 robot.
+Both robots receive a positive reward of 0.1 upon reaching
+their target (flags). Additionally, they incur a continuous neg-
+ative reward of −0.01 in other cells, encouraging them to
+move toward their targets more quickly. The targets are sink
+states as well, which means that the robots can continuously
+collect rewards here.
+In this environment, the leader can only allocate side pay-
+ment in the cell (5, 5). All other settings remain the same as
+in Example 1.
+Figure 3b shows that the conditional entropy eventually
+converges to 0.390, while the initial conditional entropy is
+0.945. The side payment converges to 5. As the side pay-
+ment increases, the robots’ behavior changes from indistin-
+guishable to distinguishable given partial observations. It is
+observed that under an initial side payment x((5, 5), a) = 1
+for a certain action a ∈ A, the cell (5, 5) is not attractive to
+either robot, as both can obtain sufficient rewards from cell
+(5, 0). However, as the side payment increases, the cell(5, 5)
+becomes more appealing. In this scenario, the Type 1 robot
+can ensure reaching (5, 5) with a high probability, whereas
+the Type 2 robot cannot because it is more likely to run into
+obstacles with its higher stochasticity. As a result, increasing
+the reward at (5, 5) makes it easier for the leader to distin-
+guish between the two types of robots.
+The following graph (Figure 3c) shows the results of infer-
+ence during the optimization process. We define the estima-
+tor of posterior distribution ˆPθ(T = i|Y ) ≜ EY [Pθ(T =
+i|Y )] = P
+y Pθ(y)P(T = i|Y = y) given different side
+payments x, which are sampled during the optimization.
+Given yk, k= 1, . . . , Mof sampled observation sequences,
+the estimator can be approximated by
+ˆPθ(T = i|Y ) ≈ 1
+M
+MX
+k=1
+Pθ(T = i|Y = yk). (17)
+The estimator ˆPθ(T = i|Y ) represents the probability that
+the robot is of type i. If the posterior is close to 1, the leader
+can confidently infer that the true type is i. In this exper-
+iment, we fix the true robot type to be Type 2. When the
+side payment is 1, the posteriors ˆPθ(T = 1 |Y ) = 0 .447
+and ˆPθ(T = 2|Y ) = 0 .553 are close to 0.5, making it dif-
+ficult to determine which type is the true type. As the side
+payment increases and converges to the optimal value of 0.5,
+the posterior ˆPθ(T = 1 |Y ) decreases to about 0.15, while
+ˆPθ(T = 2 |Y ) increases to about 0.85. At this point, the
+leader can confidently infer that the true type is Type 2.
+These experimental results from the stochastic grid world
+examples validate the accuracy and effectiveness of our pro-
+posed methods. These two case studies demonstrated the use
+of incentive design to distinguish users with different capa-
+bilities/dynamics and/or different reward functions.
+5 Conclusion
+In this paper, we introduced a class of active inference prob-
+lems through incentive design and developed a bi-level opti-
+mization method to solve a locally optimal solution for the
+leader’s incentive policy. Our approach uses conditional en-
+tropy to measure uncertainty about followers’ types from the
+leader’s partial observations and consider an incentive design
+with an objective to balance information gain and incentive
+cost.
+Future work could explore several directions: 1) Integrat-
+ing active inference with adaptive incentive design for per-
+sonalized systems; 2) Extending the proposed method from
+model-based to model-free setting, where the leader only has
+access to collected data from different followers in the past
+interactions. This extension will be crucial for many practical
+applications.
+References
+Thamer Alquthami, Ahmad H Milyani, Muhammad Awais,
+and Muhammad B Rasheed. An incentive based dynamic
+pricing in smart grid: a customer’s perspective. Sustain-
+ability, 13(11):6066, 2021.
+Mauricio Araya, Olivier Buffet, Vincent Thomas, and
+Franc ¸cois Charpillet. A POMDP extension with belief-
+dependent rewards. In J. Lafferty, C. Williams, J. Shawe-
+Taylor, R. Zemel, and A. Culotta, editors, Advances in
+Neural Information Processing Systems , volume 23. Cur-
+ran Associates, Inc., 2010.
+Patrick Bolton and Mathias Dewatripont. Contract Theory.
+MIT Press Books, 1, 2005. Publisher: The MIT Press.
+Steven Braithwait, Daniel G Hansen, and Laurence D Kirsch.
+Incentives and rate designs for efficiency and demand re-
+sponse. Lawrence Berkeley National Laboratory. LBNL-
+60132, 2006.
+David Easley and Arpita Ghosh. Behavioral mechanism de-
+sign: Optimal crowdsourcing contracts and prospect the-
+ory. In Proceedings of the Sixteenth ACM Conference on
+Economics and Computation, pages 679–696, 2015.
+Maxim Egorov, Mykel J Kochenderfer, and Jaak J Uud-
+mae. Target surveillance in adversarial environments us-
+ing POMDPs. In Proceedings of the Thirtieth AAAI Con-
+ference on Artificial Intelligence, pages 2473–2479. AAAI
+Press, 2016.
+Yu-Chi Ho, P Luh, and Ramal Muralidharan. Information
+structure, stackelberg games, and incentive controllability.
+IEEE Transactions on Automatic Control, 26(2):454–460,
+1981.
+Herbert Jaeger. Observable Operator Models for Discrete
+Stochastic Time Series. Neural Computation, 12(6):1371–
+1398, 06 2000.
+Raman Kazhamiakin, Annapaola Marconi, Mirko Perillo,
+Marco Pistore, Giuseppe Valetto, Luca Piras, Francesco
+Avesani, and Nicola Perri. Using gamification to incen-
+tivize sustainable urban mobility. In 2015 IEEE first inter-
+national smart cities conference (ISC2), pages 1–6. IEEE,
+2015.
+MHR. Khouzani and Pasquale Malacaria. Leakage-minimal
+design: Universality, limitations, and applications. In
+2017 IEEE 30th Computer Security Foundations Sympo-
+sium (CSF), pages 305–317, 2017.
+Jan Leike, David Krueger, Tom Everitt, Miljan Martic, Vishal
+Maini, and Shane Legg. Scalable agent alignment via
+reward modeling: a research direction. arXiv preprint
+arXiv:1811.07871, 2018.
+Ze Li and Haiying Shen. Game-theoretic analysis of co-
+operation incentive strategies in mobile ad hoc networks.
+IEEE Transactions on mobile computing , 11(8):1287–
+1303, 2011.
+Haoxiang Ma, Shuo Han, Ahmed Hemida, Charles Kamhoua,
+and Jie Fu. Adaptive incentive design for Markov decision
+processes with unknown rewards. 2024. OpenReview.
+Haibo Mei, Stefan Poslad, and Shuang Du. A game-theory
+based incentive framework for an intelligent traffic system
+as part of a smart city initiative. Sensors, 17(12):2874,
+2017.
+Roger B Myerson. Optimal auction design. Mathematics of
+operations research, 6(1):58–73, 1981.
+Ofir Nachum, Mohammad Norouzi, Kelvin Xu, and Dale
+Schuurmans. Bridging the gap between value and policy
+based reinforcement learning. Advances in neural infor-
+mation processing systems, 30, 2017.
+Lillian J Ratliff and Tanner Fiez. Adaptive incentive design.
+IEEE Transactions on Automatic Control , 66(8):3871–
+3878, 2020.
+Macheng Shen and Jonathan P. How. Active perception in
+adversarial scenarios using maximum entropy deep rein-
+forcement learning. In 2019 International Conference on
+Robotics and Automation (ICRA) , page 3384–3390. IEEE
+Press, 2019.
+Chongyang Shi, Shuo Han, Michael Dorothy, and Jie Fu. Ac-
+tive perception with initial-state uncertainty: A policy gra-
+dient method. IEEE Control Systems Letters, 8:3147–3152,
+2024.
+Nate Soares and Benja Fallenstein. Aligning superintelli-
+gence with human interests: A technical research agenda.
+Machine Intelligence Research Institute (MIRI) technical
+report, 8, 2014.
+Noah Williams. Persistent private information. Economet-
+rica, 79(4):1233–1275, 2011.
+Yufeng Zhan, Peng Li, Zhihao Qu, Deze Zeng, and Song
+Guo. A learning-based incentive mechanism for feder-
+ated learning. IEEE Internet of Things Journal, 7(7):6360–
+6368, 2020.

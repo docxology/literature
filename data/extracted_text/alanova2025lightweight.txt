@@ -1,0 +1,898 @@
+September 2025
+LIGHTWEIGHT ERROR MITIGATION STRATE-
+GIESFORPOST-TRAINING N:M ACTIVATION
+SPARSITYINLLMS
+Shirin Alanova
+equal contribution
+Kristina Kazistova
+equal contribution
+Ekaterina Galaeva
+equal contribution
+Alina Kostromina
+equal contribution
+Vladimir Smirnov Redko Dmitry Alexey Dontsov Maxim Zhelnin
+Evgeny Burnaev Egor Shvetsov
+ABSTRACT
+The demand for efficient large language model (LLM) inference has intensified
+the focus on sparsification techniques. While semi-structured (N:M) pruning is
+well-established for weights, its application to activation pruning remains under-
+explored despite its potential for dynamic, input-adaptive compression and reduc-
+tions in I/O overhead. This work presents a comprehensive analysis of methods
+for post-training N:M activation pruning in LLMs. Across multiple LLMs, we
+demonstrate that pruning activations enables superior preservation of generative
+capabilities compared to weight pruning at equivalent sparsity levels. We eval-
+uate lightweight, plug-and-play error mitigation techniques and pruning criteria,
+establishing strong hardware-friendly baselines that require minimal calibration.
+Furthermore, we explore sparsity patterns beyond NVIDIA’s standard 2:4, show-
+ing that the 16:32 pattern achieves performance nearly on par with unstructured
+sparsity. However, considering the trade-off between flexibility and hardware im-
+plementation complexity, we focus on the 8:16 pattern as a superior candidate.
+Our findings provide both effective practical methods for activation pruning and
+a motivation for future hardware to support more flexible sparsity patterns. Our
+code is available here.
+1 INTRODUCTION
+The expanding capabilities of Large Language Models (LLMs) have driven enormous demand for
+efficient AI inference. A common rule of thumb states that inference serving speed for a dense model
+withNparameters scales as∝1/
+√
+N(Erdil, 2025). Accelerating inference typically involves either
+reducing numerical precision via quantization to mitigate memory bottlenecks and enable faster
+arithmetic (Shvetsov et al., 2024) or sparsification to reduce the number of parameters (Maximov
+et al., 2025). Sparsity improves LLM efficiency in two key ways: (1) by reducing computation, and
+(2) by reducing I/O traffic for transferring parameters between memory and compute units – a major
+bottleneck during inference.
+Weights vs. Activations.While sparse weights and activations offer identical theoretical FLOPs
+(floating point operations count), their practical implications differ. Weight sparsity enables static
+compression, efficiently reducing model storage and memory bandwidth. However, its static nature
+often causes irreversible model degradation. In contrast, activation sparsity is dynamic and input-
+adaptive, preserving model capacity, which we demonstrate in our work.
+Sparsity in LLMs.Naturally, pruning is most effective when the values to be pruned already
+have low magnitudes or are zero, which is often the case for some LLMs’ intermediate representa-
+tions (Liu et al., 2023), especially due to the ReLU activation function in MLP blocks (Mirzadeh
+et al., 2023). Even if a model was trained with a non-ReLU activation function, we can still perform
+1
+arXiv:2509.22166v1  [cs.LG]  26 Sep 2025
+September 2025
+reluficationSong et al. (2024b) to induce sparsity. This makes activation sparsification a natural
+choice for enhancing the model’s performance.
+Accelerating LLMs with sparse activations.Indeed, recent results demonstrated that activation
+sparsification supported by specialized software can increase the model’s vector by matrix multipli-
+cation during the LLM decoding stage up to2×times (Song et al., 2024b;a; Liu et al., 2024; Lee
+et al., 2024). The idea behind such approaches is relatively straightforward - if a vector has many
+zeroes, we can disregard corresponding columns in a weight matrixWon the fly. However, as batch
+size grows beyondone, it becomes challenging to gain benefits (Shrestha et al., 2025). Moreover,
+most previous methods mainly rely on sparsity induced only by activation functions (Mirzadeh et al.,
+2023) in MLP blocks.
+Semi-structured N:M sparsity for activations, where each N elements out of a sub-vector of M
+are zeroes, would provide computational gains beyond single vector×matrix computations. This
+approach is a trade-off between the performance retention of unstructured pruning (Zhu et al., 2016;
+Paul et al., 2022) and the hardware-friendly acceleration of structured pruning (Liu et al., 2017;
+Molchanov et al., 2019), motivating its use for efficient inference (Hubara et al., 2021). Several
+works demonstrate that 2:4 sparsity patterns for activations, combined with Squared-ReLU, can ac-
+celerate transformer training (Haziza et al., 2025; Wang et al., 2024). Our work is most closely
+aligned with Amber-Pruner (An et al., 2025b), which applies{2 : 4,4 : 8,8 : 16}semi-structured
+activation sparsity patterns to already trained models. The authors propose a specific pruning cri-
+terion - Amber Pruner and a layer-skipping strategy to avoid sensitive layers. We include Am-
+ber Pruner’s criterion in our comparative analysis. While semi-structuredweight-pruning is well-
+established for inference efficiency (Han et al., 2015; Frantar & Alistarh, 2023; Kurti´c et al., 2023),
+dynamic activation sparsity remains under-explored despite its theoretical potential (Baykal et al.,
+2022), and Amber-Pruner (An et al., 2025b) currently is the only paper that explorespost-training
+sparsification of activations with various sparsity patterns, which is the primary focus of our work.
+Focus and Motivation.Applying N:M sparsity patterns to activations, while conceptually
+straightforward, raises several key questions:(Q1) Selection Strategy:As with weight sparsi-
+fication, the criterion for selecting which activations to prune is crucial for maintaining perfor-
+mance (Zhelnin et al., 2024).(Q2) Error Mitigation:Fine-tuning is a standard method for re-
+covering performance lost to post-training sparsification, but can be prohibitively expensive or risk
+compromising model safety alignment (Kharinaev et al., 2025). Therefore, we focus on lightweight,
+plug-and-playandhardware-friendlyapproaches that require only minimal calibration data (e.g.,
+WikiText) or no data at all to enhance performance.(Q3) Beyond 2:4 Patterns:While2:4 is the
+onlyhardware-supported semi-structured pattern, we explore a broader range{2:4,4:8,8:16,16:32}
+to motivate future hardware design. While we cannot directly compare acceleration gains between
+various patterns, our work solely focuses on model performance.
+Our Contributions.This paper makes the following key contributions:
+•Activation vs. Weight Sparsity Superiority:We show that, at similar sparsity levels,
+activation pruning consistently outperforms weight pruning across four diverse LLMs:
+Llama2-7B, Llama3-8.1B, Qwen2.5-7B, and Gemma3-4B.
+•Lightweight Error Mitigation and Selection Criteria:We comprehensively evaluate
+fourplug-and-play error mitigation techniques,threeevaluated for the first time in the
+context of activation sparsity. We also evaluatethreepruning selection criteria. These
+methods include statistical criteria such as median shift and variance correction and provide
+strong, hardware-friendly baselines for activation sparsification.
+•Exploration of Novel Sparsity Patterns:We evaluate the performance of sparsity patterns
+2:4, 4:8, 8:16, 16:32 . We find that the more flexible 16:32 pattern achieves performance
+close to unstructured50%sparsity and is 3×better than 2:4. However, considering hard-
+ware implementation, we advocate for the 8:16 pattern, which offers a 2×improvement
+over 2:4 while remaining highly practical.
+2
+September 2025
+2 HARDWARE ANDCOMPARISON OF2:4AND8:16 SPARSITY
+One of the primary aims of our work is to motivate the design of hardware for more flexible sparsity
+patterns. Currently, only NVIDIA GPUs support structured sparsity, specifically the 2:4 pattern.
+This pattern achieves 1.5–1.7x inference acceleration and 1.5x energy reduction for 7B models,
+primarily from a 2x reduction in memory bandwidth (Fang et al., 2024; Lin et al., 2023). At the
+same time, any N:M pattern beyond 2:4, including 8:16, can provide the same 2x bandwidth reduc-
+tion but with greater flexibility. In the generalN:Mformat, 2:4 sparsity permits
+ 4
+2
+
+= 6non-zero
+patterns per block, requiringlog 2(6)/4≈0.75bits per element for metadata. In contrast, the 8:16
+pattern allows
+ 16
+8
+
+= 12,870distinct configurations, demandinglog 2(12,870)/16≈0.875bits per
+element. Stacking four 2:4 blocks to form a 16-element unit yields only6 4 = 1,296configura-
+tions—nearly an order of magnitude fewer than the 12,870 offered by a native 8:16 block. Although
+8:16 requires slightly more metadata storage, its vastly greater configurational flexibility makes it a
+compelling candidate. The main trade-off is implementation complexity. Decoding sparsity meta-
+data and gathering non-zero values requires sophisticated circuitry. As the block sizeMgrows,
+these gather operations could impact performance. However, operating on larger, aligned blocks
+could also improve cache utilization, potentially amortizing this overhead.
+Figure 1: Comparison ofunstructured spar-
+sityinactivations(ACT) andweights(WT)
+averaged across four datasets at varying sparsity
+ratios.Higher is Better.More detailed results
+are presented in Appendix Table 9.
+Figure 2: Comparison of sparsity patterns with
+unstructured sparsity. 50% and 70% correspond
+to unstructured sparsity.Lower is Better.More
+detailed results are presented in Appendix Ta-
+ble 6.
+3 METHODS
+3.1 PRELIMINARIES
+Consider a linear layer of a LLM with weightW, input activationsXand outputYthen:
+Y=XW ⊤ (1)
+Our aim is to find a semi-structured pruning maskMfor the activationsXbased on some pruning
+metricS, such that:
+Mij =
+1, S(X ij)≥t
+0, S(X ij)<t (2)
+wherei, jdenote the indices of the matrix elements,tis a threshold value chosen to ensure the
+desired level of sparsity.
+3
+September 2025
+Table 1: Briefly describe evaluated activationpruning metrics(top) andtransformations(bottom).
+Abbreviations inboldwith an asterisk (*) denote methods proposed here or first evaluated with
+sparse activations.
+Short Name Method Key Mechanism
+Pruning metricsACT Magnitude Pruning Selects based on activation magnitudeWT Weight-based Pruning Selects by corresponding weight magnitudeCLACT*Cosine Loss Activation A metric inspired by cosine similarity from Mi et al. (2025)Amber-Pruner (2025a) Weights Importance A metric which accounts for important weights after outlier removal and normalization
+TransformationsD-PTS*Dynamic Per-Token Shift Batch-wise dynamic centering of activations before sparsificationS-PTS (2024) Static Per-Token Shift Fixed centering of activations before sparsification using a per-token bias valuepre-collectedon WikiText-2L-PTS*Learnable Per-Token Shift Fixed centering of activations before sparsification using per-token bias valuelearned onWikiText-2V AR*Variance Correction Token-wise variance normalization after sparsificationV AR+L-PTS*Scaling + Learnable Shift Apply V AR scaling, then add per-token bias valuelearned on WikiText-2R-Sparse (2025) Rank-Aware Sparsity Combines sparse activations with weight low-rank SVD factorslearned on WikiText-2
+Once the maskMis computed, the output of the linear layer with pruned activations is given by:
+Yp = (X⊙M)W⊤ (3)
+To buildunstructured sparsity, we apply a global magnitude threshold to every element of the
+activations (or weights) and zero-out those below the threshold. Insemi-structured 2:4 sparsity, we
+split each row (or column) of the matrix into non-overlapping blocks of four consecutive elements;
+in every block, we keep the two most important entries by a chosen importance metric and set the
+rest to zero, thereby removing 50%of the elements (Hu et al., 2024). Likewise, we can construct
+semi-structured 8:16 sparsity, achieving the same 50%density but providing greater flexibility
+with minimal storage overhead (Maximov et al., 2025).
+3.2 PRUNINGCRITERION
+In this study, we primarily consider some pruning metrics. You can find brief descriptions of them
+in 1.
+ACT:This is the magnitude activation pruning metric (ACT), defined as the absolute value of the
+elementX ij :S ACT(Xij) =|Xij|.
+WT:This is the weight-based pruning metric (WT), defined as the absolute value of the correspond-
+ing weightW ij:S WT(Wij) =|Wij|.
+CLACT:This metric is inspired by (Mi et al., 2025), which measures the cosine similarity between
+layer outputs. Building on this concept, we propose a novel metric called Cosine Loss ACTivation
+(CLACT). This approach approximates the cosine distance between an activationXij and its feature
+vector, quantifying each element’s importance within its activation row. Unlike magnitude-based
+methods, CLACT identifies activations that are contextually significant rather than merely large in
+absolute value.
+SCLACT(Xij) = |Xij|qPh
+k=1 X2
+ik
+vuut
+lX
+p=1
+X2
+pj,(4)
+wherehis hidden dimension,lis sequence length,jis a token number andian element withing this
+token.
+Amber-Pruner:This metric from An et al. (2025b) consists of the following steps: (1) Outlier Re-
+moval. To reduce the influence of extreme values, weightsWoutside the0.5th−99.5thpercentiles
+are discarded:W={ω k |Q 0.005(W)≤ω k ≤Q 0.995(W)}. (2) Normalization. The remaining
+weights are standardized using their mean and variance: ˆWij = (Wij −E[W])(Var[W]) −1
+2 .
+(3) Channel-wise Scoring. For each channel ˆW:,j, theℓ 2 norm is computed, and final scores are
+assigned to activation elements,L(·)- denotes channel-wiseℓ 2 norm:S Amb.-Pr.(Xij) =|X ij| ·
+L
+
+ˆW:,j
+
+.
+4
+September 2025
+Here, we highlight a critical distinction between CLACT and Amber-Pruner. CLACT is a context
+aware criterion, particularly useful during the prefill stage since withl= 1, it converges to the
+L1- norm criterion, moreover, it does not consider weight magnitudes. In contrast, Amber-Pruner
+explicitly prioritizes weights based on their values and remains effective across both prefill and
+generation stages but does not consider context.
+3.3 ERROR MITIGATION ANDTRANSFORMATIONS
+Since semi-structured pruning of activations can significantly disrupt the outputs of linear layers,
+additional transformations can be applied to mitigate these negative effects and restore the pruned
+activations to their original distribution. You can find brief descriptions of them in 1.
+PCS: This approach is inspired by SmoothQuant (Xiao et al., 2023) and has been used for 2:4 weight
+sparsification (Maximov et al., 2025) as well. It uses a per-channel smoothing (PCS) factorsapplied
+to activationsXbefore pruning: ˆX= diag(s(X,W)) −1X. To compensate for this transformation,
+the weight matrix is correspondingly scaled in the opposite direction. As a result, the output of the
+linear layer is computed as:Y p = (ˆX⊙M)(diag(s(X,W))W ⊤). The scale factorsis estimated
+as Xiao et al. (2023):s=
+q
+max|X:,j|(max|W⊤
+:,j|)−1
+D-/S-/L-PTS: The next approach applies a dynamic per-token shift (D-PTS) to the input activations
+Xusing a bias termη, such that ˆX=X−η. The purpose of this shift is to center most elements
+of the activations near zero. As a compensatory transformation, the biasηis added to the weights,
+so the output of the linear layer is given by Chua et al. (2024):Y p = ((ˆX⊙M) +η)W ⊤, where
+η= X. A related variant is the static per-token shift (S-PTS), where the biasηis collected during a
+short warm-up phase and then fixed for all subsequent batches. This reduces computational overhead
+while providing similar centering effects. Finally, we introduce a learnable per-token shift (L-PTS).
+V AR: In contrast to the previous approach, this method applies a per-token scaling factorνto pruned
+activations such that the output matrix is given as:Y p =ν(X⊙M)W ⊤, The scale factorνis
+determined as
+ν=
+s
+Var[X]
+Var[X⊙M] (5)
+We refer to this method as variance correctionV AR.
+V AR+L-PTS: This method is a combination of the per-token scaling with factorV ARνis given by
+Eq. 5 and the shiftL-PTS.
+R-Sparse: This method from (Kamirul et al., 2025) combines activation sparsity with a low-rank
+approximation of the weight matrix. We provide more details in Appendix A.
+Throughout our experiments we use the WikiText-2 dataset for calibration and learning some pa-
+rameters. ForS-PTSwe calibrate a single per-channel bias vectorηand then keep it fixed for all
+subsequent batches. For the learnable variantL-PTS(and the combinedV AR+L-PTS) we trainη
+and fine-tune other weights. ForR-Sparsewe train in the same way the low-rank factors of the
+weight adaptation. In all other methods no parameters are learned or calibrated.
+3.4 EVALUATION& MODELS
+We begin with a broad funnel of experiments to evaluate all methods listed in Table 1. At this initial
+stage, we use theCore Datasets, Single-Choice and Multi-Choice benchmarks including BoolQ,
+WinoGrande, PIQA, and ARC-Easy. Once this exploratory phase is complete, we narrow our focus
+to the most promising approaches, evaluating them primarily on two models: Qwen2.5-7B-Instruct
+and Llama3-8B-Instruct. This more targeted evaluation phase not only refines the set of methods
+under consideration but also expands the evaluation to theExtended Datasets: HellaSwag, Open-
+BookQA, RTE, MMLU, Lambada standard, Lambada openai, and IFEval. For calibration tasks,
+when required, we use WikiText-2. This dataset selection follows established model compression
+practices Egiazarian et al. (2024); Frantar et al. (2022); van Baalen et al. (2024). All evaluations
+are performed using the LM Eval Harness Gao et al. (2023), and full dataset details are provided
+in Table 8.For the models we focus on:Qwen2.5-7B-Instruct, Llama3-8B-Instruct, Llama2-7B,
+5
+September 2025
+Gemma3-4B-Instruct. Importantly, for Qwen2.5-7B-Instruct, we did not sparsify the key, query, or
+value activations, as preliminary experiments showed severe model degradation when these layers
+were pruned.
+4 RESULTS
+4.1 SPARSEWEIGHTS VS. SPARSEACTIVATIONS
+In Figure 1 and Table 9, we demonstrate that unstructuredweight sparsification causes greater
+model degradationthan unstructured activation sparsification at the same sparsity levels:{20%,
+50%, 70%, 90%}. For this evaluation, we specifically use unstructured magnitude-based sparsifica-
+tion, as it is less damaging than semi-structured sparsification and thus provides a lower bound on
+performance degradation.
+4.2 OPTIMAL SEMI-STRUCTURED SPARSITY PATTERNS
+Our preliminary investigation demonstrates that while the 16:32 pattern achieves performance close
+to unstructured sparsity (a 5.4% drop versus 4.5% for 50% unstructured), it requires more metadata
+and greater resources for gather operations, as discussed in Section 2. Therefore, we focus on the
+8:16 pattern, despite its higher performance drop of 7.38%. For comparison, the 2:4 pattern results
+in a 14.35% drop. These results are shown in Figure 2 and Table 6 in Appendix, we used only
+magnitude pruning to obtain these results. By demonstrating the superior model quality of 8:16
+sparsity, our work incentivizes hardware designers to invest in—or at least consider—supporting the
+8:16 pattern.
+4.3 EVALUATION OFPRUNINGSELECTIONCRITERIA ONSINGLE/MULTI-CHOICEDATASETS
+We evaluate CLACT, Amber-Pruner, and magnitude pruning as a baseline. The main results for the
+2:4 and 8:16 sparsity patterns are presented in Table 2. On average, both CLACT and Amber-Pruner
+outperform magnitude pruning by at least 2%, however, we observe no clear winner between them.
+As noted in Section 3.2, these criteria are designed for different purposes: CLACT adjusts based on
+context, while Amber-Pruner adjusts based on weight magnitudes. Notably, for Llama3-8B under
+the 2:4 sparsity pattern, simple magnitude pruning outperforms both advanced criteria, underscoring
+model and architecture-specific sensitivities to pruning strategies.
+4.4 EVALUATION OFTRANSFORMATIONS ONSINGLE/MULTI-CHOICEDATASETS
+Our main results are presented in Table 2. Surprisingly, we find that simple methods such as dy-
+namic and static per-token shifts (D-PTS, S-PTS) outperform most other approaches. The second
+most effective methods are V AR and R-SPARSE. We also observe that increasing the number of
+dimensions in R-SPARSE (from 64 to 128) leads to worse performance, which may indicate over-
+fitting on the calibration data. Finally, we note that L-PTS, the approach with learnable per-token
+shifts, significantly underperforms compared to its static counterpart, S-PTS.
+4.5 EVALUATION TRANSFORMATIONS WITHINSTRUCTION-FOLLOWINGTASKS
+Table 3 presents instruction-following performance on the IFEval benchmark for Llama3-8B and
+Qwen2.5-7B, evaluated under two semi-structured sparsity patterns (2:4 and 8:16) and four activa-
+tion transformation methods: S-PTS, D-PTS, R-Sparse, and V AR. First of all, we observe a strong
+model degradation on generative tasks. Second of all, we see that V AR is the strongest performer
+overall, especially for Llama3-8B. S-PTS/D-PTS are competitive and lightweight, and R-Sparse lags
+significantly, particularly at 2:4. We speculate that while semi-structured patterns are good for prefill
+stage in LLMs they significantly degrade performance during decode stage. However, as discussed
+in Section 1 decode stage for single vector can be accelerated with more flexible approaches.
+6
+September 2025
+Table 2: Average relative performance (%) across four datasets. Values indicate performance drops
+(lower is better), negative values signify performance improvement. Methods marked with an aster-
+isk (*) are proposed in this paper. Full, non-aggregated results are available in Appendix 10.
+Models
+Method Llama2-7B Qwen2.5-7B Gemma3-4B LLama3-8B Average Drop (↓)
+Activations Unstructured 50%
+ACT2.31%3.87%4.80%4.30%3.82%
+2:4 Weight Sparsity
+WT16.52%12.96%34.86%33.63%24.49%
+2:4 Activations Selection Criteria
+ACT9.43%4.95%9.94%14.35%9.67%
+CLACT*8.32%−2.45%8.01%17.27%7.79%
+Amber-Pruner11.70%−1.23%5.91%15.01%7.85%
+2:4 Activations Transformations
+V AR*9.76%−1.48%2.96%13.11%6.09%
+D-PTS*10.67%-6.46%4.58%14.59%5.84%
+S-PTS10.37%−4.43%3.93%7.31%4.29%
+L-PTS*13.13%3.66%4.21%14.13%8.79%
+R-SPARSE (64)12.90%−2.55%5.17%15.28%7.70%
+R-SPARSE (128)12.23%−1.51%5.16%16.34%8.05%
+8:16 Weight Sparsity
+WT7.84%9.54%26.11%27.26%17.68%
+8:16 Activations Selection Criteria
+ACT5.37%4.38%4.76%7.38%5.47%
+CLACT*3.98%−4.02%0.60%8.60%2.29%
+Amber-Pruner5.32%−6.28%0.08%7.13%1.56%
+8:16 Activations Transformations
+V AR*4.85%1.93%-1.87%8.30%3.30%
+D-PTS*4.63%-8.28%5.16%6.79%2.07%
+S-PTS3.87%−7.24%−1.54%7.3%0.61%
+L-PTS*8.15%1.71%4.21%7.19%5.32%
+R-SPARSE (64)5.91%−6.91%−1.36%8.44%1.52%
+R-SPARSE (128)7.93%−5.44%−0.44%8.44%2.63%
+Table 3: Evaluation with Instruction-Following (IFEval) for Llama3-8B and Qwen2.5-7B. PS de-
+notes prompt-level strict acc, PL denotes prompt-level loose acc.
+Model Original Pattern S-PTS D-PTS R-Sparse V AR
+PS PL PS PL PS PL PS PL PS PL
+Llama3-8B 0.4455 0.4861 2:4 0.1682 0.1904 0.1941 0.2015 0.0869 0.09790.2237 0.2458
+8:16 0.2995 0.3327 0.2828 0.3198 0.2089 0.23110.3161 0.3586
+Qwen2.5-7B 0.7135 0.7394 2:4 0.4325 0.5176 0.4399 0.5120 0.2736 0.34570.4565 0.5342
+8:16 0.5194 0.58040.5434 0.59890.3697 0.4196 0.5249 0.5896
+7
+September 2025
+Table 4: Performance comparison of pruning methods under 50% and 70% unstructured sparsity for
+Llama3-8B model.
+Model ARC Easy BoolQ PIQA WinoGrande Avg. Drop (%)
+Original0.8207 0.8391 0.8003 0.7340 —
+Unstructured 50%
+ACT 0.7770 0.8198 0.7714 0.6858 4.45
+D-PTS 0.78577 0.8253 0.7807 0.68981 3.60
+V AR 0.78409 0.8192 0.77584 0.70483.47
+CLACT 0.7803 0.8253 0.7655 0.70007 3.89
+Amber-Pruner 0.768 0.82018 0.7627 0.7016 4.45
+Unstructured 70%
+ACT 0.55808 0.63119 0.6474 0.5477 25.32
+D-PTS 0.56481 0.62415 0.6507 0.53433 25.68
+V AR 0.61447 0.65107 0.67573 0.531922.66
+CLACT 0.5551 0.6039 0.62676 0.52407 27.67
+Amber-Pruner 0.48737 0.5938 0.5897 0.539 30.68
+4.6 SELECTIONCRITERIA ANDTRANSFORMATIONS FORUNSTRUCTUREDPRUNING
+Although unstructured pruning offers limited efficiency gains compared to structured variants, it
+serves as a valuable proxy task for evaluating the robustness and generalization of proposed methods.
+We evaluate D-PTS, V AR, and two selection criteria in this experiment: CLACT and Amber-Pruner
+using the Llama3-8B model. Results in Table 4 indicate that V AR is the most effective transforma-
+tion under unstructured sparsity. Moreover, CLACT outperforms Amber-Pruner by a wider margin
+here than in our semi-structured pruning experiments. These findings suggest two key insights:
+(1) No single method emerges as optimal for both unstructured and semi-structured sparsity. (2)
+The methods proposed in this work, V AR and CLACT, demonstrate strong generalization and are
+well-suited for unstructured activation pruning.
+4.7 COMBINATION OFTRANSFORMATIONS ANDPRUNING CRITERIA
+Next, we evaluated combinations of multiple approaches to explore potential performance gains.
+These combinations and their results are presented in Table 7. As shown, none of the evaluated com-
+binations outperforms any single method, highlighting the challenges of naively combining them.
+Table 5: Aggregated results on Llama3-8B with 8:16 activation sparsity with different layers pruned.
+ORIG. A VG.denotes original model performance.Layersindicates the subset of linear layers
+where the method was applied. Non aggregated results are presented in Appendix 12. Drop is
+computed without accounting for perplexity.
+ORIG. A VG. Method Layers PPL A VG. Drop↓
+LS+L-PTS all 9.6036 0.6047 10.90%
+LS+L-PTS key,out,gate,down 8.3483 0.6385 5.43%
+0.6726 LS+L-PTS key,value,gate,down 8.0821 0.65033.56%
+LS+L-PTS + V AR all 9.4983 0.6056 10.60%
+LS+L-PTS + V AR key,out,gate,down 8.2930 0.6422 4.64%
+LS+L-PTS + V AR key,value,gate,down 8.0259 0.65163.36%
+4.8 LAYERSENSITIVITY
+The next question we investigate in this work is layer sensitivity to activation sparsity. For this ex-
+periment, we use the Extended Datasets, the Llama3-8B model, and the 8:16 sparsity pattern. The
+8
+September 2025
+main results are presented in Table 5. Here, we focus on methods with learnable parameters, pri-
+marily L-PTS and LS (a learnable, diagonal scaling projection). While in most of our experiments,
+learnable methods underperformed on average compared to static or magnitude-based approaches,
+the best-performing configurations for Llama3-8B under 8:16 sparsity were, in fact, those employ-
+ing learnable parameters — as shown in Table 5. We find that activations from the up projection
+(in the FFN) and the out projection 1 are the most sensitive to sparsification, pruning these layers
+leads to the most significant performance drops, suggesting they should be preserved or treated with
+greater care in compression strategies. While we can not say this generalizes across all layers, we
+empirically demonstrate that some layers are more important than others.
+5 DISCUSSION
+The performance gap between multiple/single-choice benchmarks (e.g., BoolQ, PIQA) and IFEval
+likely stems from differences in the inference stages they emphasize. Core QA benchmarks pri-
+marily stress the prefill phase, whereas IFEval evaluates both prefill and autoregressive generation.
+Our evaluation remains valid: semi-structured patterns like 2:4 and 8:16 are especially effective at
+accelerating the prefill stage, which often dominates inference latency.
+6 LIMITATIONS
+Our work has three main limitations. First, evaluations rely on software emulation, precluding
+real-world measurements of speedup or energy savings on hardware supporting sparsity beyond
+2:4. Second, our layer sensitivity analysis is preliminary, while up-projection and out-projection
+layers appear most vulnerable, broader architectural studies are needed. Third, Qwen2.5-7B shows
+anomalous gains on multiple-choice benchmarks under certain sparsification methods, an artifact
+we attribute to benchmark limitations, as no such gains appear on IFEval. Critically, generative
+performance degrades significantly, underscoring the need for evaluation beyond multiple-choice
+QA.
+7 CONCLUSION
+This work establishes that post-training activation pruning is more accuracy preserving than weight
+pruning for Large Language Models. Across four diverse LLMs, we demonstrate that activation
+pruning consistently preserves a model’s capabilities better than weight pruning at equivalent spar-
+sity levels, highlighting its potential for dynamic, input-adaptive efficiency gains.
+Our key novel contributions are twofold. First, we conduct the first comprehensive evaluation of
+lightweight, plug-and-play error mitigation techniques for activation sparsity, including the intro-
+duction and evaluation of three new methods: Cosine Loss Activation (CLACT) as a context-aware
+pruning criterion, Dynamic/Learnable Per-Token Shift (D-PTS/L-PTS) and Variance Correction
+(V AR). We show that these simple methods, often outperforming more complex approaches, pro-
+viding strong, hardware-friendly baselines for the community. Second, we systematically explore
+semi-structured sparsity patterns beyond the hardware standard 2:4. We find that the 8:16 pattern of-
+fers more flexibility and, ultimately, lower model degradation. Although the 16:32 pattern performs
+even closer to unstructured sparsity, we advocate for 8:16 as the optimal target for future hardware
+design due to its balance of performance gain and implementation feasibility. In summary, this work
+not only provides practical, high-performing methods for post-training activation pruning but also
+creates grounded motivation for 8:16 structured sparsity support, which would unlock significant
+efficiency gains for LLM inference with minimal added complexity.
+Acknowledgment on LLM assisted writing:This paper used open access Qwen3-Max, in some
+parts of the paper, for proofreading and text rephrasing in accordance with formal style.
+1The output projection of the attention mechanism. It combines outputs from all attention heads and projects
+them back to the model’s hidden dimension.
+9
+September 2025
+REFERENCES
+Tai An, Ruwu Cai, Yanzhe Zhang, Yang Liu, Hao Chen, Pengcheng Xie, Sheng Chang, Yiwu Yao,
+and Gongyi Wang. Amber pruner: Leveraging n: M activation sparsity for efficient prefill in large
+language models.arXiv preprint arXiv:2508.02128, 2025a.
+Tai An, Ruwu Cai, Yanzhe Zhang, Yang Liu, Hao Chen, Pengcheng Xie, Sheng Chang, Yiwu Yao,
+and Gongyi Wang. Amber pruner: Leveraging n:m activation sparsity for efficient prefill in large
+language models, 2025b. URLhttps://arxiv.org/abs/2508.02128.
+Roy Bar-Haim, Ido Dagan, Bill Dolan, Lisa Ferro, Danilo Giampiccolo, Bernardo Magnini, and
+Idan Szpektor. The second pascal recognising textual entailment challenge. InProceedings of the
+Second PASCAL Challenges Workshop, 2006.
+Cenk Baykal, Nishanth Dikkala, Rina Panigrahy, Cyrus Rashtchian, and Xin Wang. A theoretical
+view on sparsely activated networks.Advances in Neural Information Processing Systems, 35:
+30071–30084, 2022.
+Yonatan Bisk, Rowan Zellers, Jianfeng Gao, and Yejin Choi. Piqa: Reasoning about physical com-
+monsense in natural language. InProceedings of AAAI, 2020.
+Vui Seng Chua, Yujie Pan, and Nilesh Jain. Post-training statistical calibration for higher activation
+sparsity.arXiv preprint arXiv:2412.07174, 2024.
+Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina
+Toutanova. Boolq: Exploring the surprising difficulty of natural yes/no questions. InProceedings
+of NAACL-HLT, pp. 2924–2936, 2019.
+Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and
+Oyvind Tafjord. Think you have solved question answering? try arc, the ai2 reasoning challenge.
+arXiv:1803.05457v1, 2018.
+Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser,
+Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John
+Schulman. Training verifiers to solve math word problems.arXiv preprint arXiv:2110.14168,
+2021.
+Ido Dagan, Oren Glickman, and Bernardo Magnini. The pascal recognising textual entailment
+challenge. InMachine Learning Challenges Workshop, pp. 177–190. Springer, 2005.
+Vage Egiazarian, Andrei Panferov, Denis Kuznedelev, Elias Frantar, Artem Babenko, and Dan Al-
+istarh. Extreme compression of large language models via additive quantization.arXiv preprint
+arXiv:2401.06118, 2024.
+Ege Erdil. Inference economics of language models.arXiv preprint arXiv:2506.04645, 2025.
+Gongfan Fang, Hongxu Yin, Saurav Muralidharan, Greg Heinrich, Jeff Pool, Jan Kautz, Pavlo
+Molchanov, and Xinchao Wang. Maskllm: Learnable semi-structured sparsity for large language
+models.Advances in Neural Information Processing Systems, 37:7736–7758, 2024.
+Elias Frantar and Dan Alistarh. Sparsegpt: Massive language models can be accurately pruned in
+one-shot. InInternational conference on machine learning, pp. 10323–10337. PMLR, 2023.
+Elias Frantar, Saleh Ashkboos, Torsten Hoefler, and Dan Alistarh. Gptq: Accurate post-training
+quantization for generative pre-trained transformers.arXiv preprint arXiv:2210.17323, 2022.
+Leo Gao, Jonathan Tow, Baber Abbasi, Stella Biderman, Sid Black, Anthony DiPofi, Charles Fos-
+ter, Laurence Golding, Jeffrey Hsu, Alain Le Noac’h, Haonan Li, Kyle McDonell, Niklas Muen-
+nighoff, Chris Ociepa, Jason Phang, Laria Reynolds, Hailey Schoelkopf, Aviya Skowron, Lin-
+tang Sutawika, Eric Tang, Anish Thite, Ben Wang, Kevin Wang, and Andy Zou. A framework
+for few-shot language model evaluation, 12 2023. URLhttps://zenodo.org/records/
+10256836.
+10
+September 2025
+Song Han, Jeff Pool, John Tran, and William J. Dally. Learning both weights and connections for
+efficient neural networks, 2015. URLhttps://arxiv.org/abs/1506.02626.
+Daniel Haziza, Timothy Chou, Dhruv Choudhary, Luca Wehrstedt, Francisco Massa, Jiecao Yu,
+Geonhwa Jeong, Supriya Rao, Patrick Labatut, and Jesse Cai. Accelerating transformer inference
+and training with 2: 4 activation sparsity.arXiv preprint arXiv:2503.16672, 2025.
+Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and
+Jacob Steinhardt. Measuring massive multitask language understanding.arXiv preprint
+arXiv:2009.03300, 2020.
+Yuezhou Hu, Kang Zhao, Weiyu Huang, Jianfei Chen, and Jun Zhu. Accelerating transformer pre-
+training with 2: 4 sparsity.arXiv preprint arXiv:2404.01847, 2024.
+Itay Hubara, Brian Chmiel, Moshe Island, Ron Banner, Joseph Naor, and Daniel Soudry. Accel-
+erated sparse neural training: A provable and efficient method to find n: m transposable masks.
+Advances in neural information processing systems, 34:21099–21111, 2021.
+Kamirul Kamirul, Odysseas Pappas, and Alin Achim. R-sparse r-cnn: Sar ship detection based
+on background-aware sparse learnable proposals, 2025. URLhttps://arxiv.org/abs/
+2504.18959.
+Artyom Kharinaev, Viktor Moskvoretskii, Egor Shvetsov, Kseniia Studenikina, Bykov Mikhail, and
+Evgeny Burnaev. Investigating the impact of quantization methods on the safety and reliability of
+large language models.arXiv preprint arXiv:2502.15799, 2025.
+Eldar Kurti´c, Elias Frantar, and Dan Alistarh. Ziplm: Inference-aware structured pruning of lan-
+guage models.Advances in Neural Information Processing Systems, 36:65597–65617, 2023.
+Je-Yong Lee, Donghyun Lee, Genghan Zhang, Mo Tiwari, and Azalia Mirhoseini. Cats:
+Contextually-aware thresholding for sparsity in large language models, 2024.URL https://arxiv.
+org/abs/2404.08763, 2024.
+Bin Lin, Ningxin Zheng, Lei Wang, Shijie Cao, Lingxiao Ma, Quanlu Zhang, Yi Zhu, Ting Cao,
+Jilong Xue, Yuqing Yang, et al. Efficient gpu kernels for n: M-sparse weights in deep learning.
+Proceedings of Machine Learning and Systems, 5:513–525, 2023.
+James Liu, Pragaash Ponnusamy, Tianle Cai, Han Guo, Yoon Kim, and Ben Athiwaratkun. Training-
+free activation sparsity in large language models.arXiv preprint arXiv:2408.14690, 2024.
+Zhuang Liu, Jianguo Li, Zhiqiang Shen, Gao Huang, Shoumeng Yan, and Changshui Zhang. Learn-
+ing efficient convolutional networks through network slimming. InProceedings of the IEEE
+international conference on computer vision, pp. 2736–2744, 2017.
+Zichang Liu, Jue Wang, Tri Dao, Tianyi Zhou, Binhang Yuan, Zhao Song, Anshumali Shrivastava,
+Ce Zhang, Yuandong Tian, Christopher Re, et al. Deja vu: Contextual sparsity for efficient llms
+at inference time. InInternational Conference on Machine Learning, pp. 22137–22176. PMLR,
+2023.
+Egor Maximov, Yulia Kuzkina, Azamat Kanametov, Alexander Prutko, Aleksei Goncharov, Maxim
+Zhelnin, and Egor Shvetsov. From 2: 4 to 8: 16 sparsity patterns in llms for outliers and weights
+with variance correction.arXiv preprint arXiv:2507.03052, 2025.
+Stephen Merity, Caiming Xiong, James Bradbury, and Richard Socher. Pointer sentinel mixture
+models, 2016.
+Zhendong Mi, Zhenglun Kong, Geng Yuan, and Shaoyi Huang. Ace: Exploring activation co-
+sine similarity and variance for accurate and calibration-efficient llm pruning.arXiv preprint
+arXiv:2505.21987, 2025.
+Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish Sabharwal. Can a suit of armor conduct
+electricity? a new dataset for open book question answering. InProceedings of EMNLP, pp.
+2381–2391, 2018.
+11
+September 2025
+Iman Mirzadeh, Keivan Alizadeh, Sachin Mehta, Carlo C Del Mundo, Oncel Tuzel, Golnoosh
+Samei, Mohammad Rastegari, and Mehrdad Farajtabar. Relu strikes back: Exploiting activation
+sparsity in large language models.arXiv preprint arXiv:2310.04564, 2023.
+Pavlo Molchanov, Arun Mallya, Stephen Tyree, Iuri Frosio, and Jan Kautz. Importance estimation
+for neural network pruning. InProceedings of the IEEE/CVF conference on computer vision and
+pattern recognition, pp. 11264–11272, 2019.
+Denis Paperno, Germ ´an Kruszewski, Angeliki Lazaridou, Quan Ngoc Pham, Raffaella Bernardi,
+Sandro Pezzelle, Marco Baroni, Gemma Boleda, and Raquel Fern ´andez. The lambada dataset:
+Word prediction requiring a broad discourse context.arXiv preprint arXiv:1606.06031, 2016.
+Mansheej Paul, Feng Chen, Brett W Larsen, Jonathan Frankle, Surya Ganguli, and Gintare Karolina
+Dziugaite. Unmasking the lottery ticket hypothesis: What’s encoded in a winning ticket’s mask?
+arXiv preprint arXiv:2210.03044, 2022.
+Keisuke Sakaguchi, Rowan Zellers, Ari Holtzman, and Yejin Choi. Winogrande: An adversarial
+winograd schema challenge at scale. InProceedings of AAAI, 2020.
+Susav Shrestha, Brad Settlemyer, Nikoli Dryden, and Narasimha Reddy. Polar sparsity:
+High throughput batched llm inferencing with scalable contextual sparsity.arXiv preprint
+arXiv:2505.14884, 2025.
+Egor Shvetsov, Dmitry Osin, Alexey Zaytsev, Ivan Koryakovskiy, Valentin Buchnev, Ilya Trofimov,
+and Evgeny Burnaev. Quantnas for super resolution: Searching for efficient quantization-friendly
+architectures against quantization noise.IEEE Access, 12:117008–117025, 2024. doi: 10.1109/
+ACCESS.2024.3446039.
+Yixin Song, Zeyu Mi, Haotong Xie, and Haibo Chen. Powerinfer: Fast large language model serving
+with a consumer-grade gpu. InProceedings of the ACM SIGOPS 30th Symposium on Operating
+Systems Principles, pp. 590–606, 2024a.
+Yixin Song, Haotong Xie, Zhengyan Zhang, Bo Wen, Li Ma, Zeyu Mi, and Haibo Chen. Turbo
+sparse: Achieving llm sota performance with minimal activated parameters.arXiv preprint
+arXiv:2406.05955, 2024b.
+Mart van Baalen, Andrey Kuzmin, Markus Nagel, Peter Couperus, Cedric Bastoul, Eric Mahurin,
+Tijmen Blankevoort, and Paul Whatmough. Gptvq: The blessing of dimensionality for llm quan-
+tization.arXiv preprint arXiv:2402.15319, 2024.
+Hongyu Wang, Shuming Ma, Ruiping Wang, and Furu Wei. Q-sparse: All large language models
+can be fully sparsely-activated.arXiv preprint arXiv:2407.10969, 2024.
+Guangxuan Xiao, Ji Lin, Mickael Seznec, Hao Wu, Julien Demouth, and Song Han. Smoothquant:
+Accurate and efficient post-training quantization for large language models. InInternational
+Conference on Machine Learning, pp. 38087–38099. PMLR, 2023.
+Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. Hellaswag: Can a ma-
+chine really finish your sentence? InProceedings of ACL, 2019.
+Maxim Zhelnin, Viktor Moskvoretskii, Egor Shvetsov, Egor Venediktov, Mariya Krylova, Aleksandr
+Zuev, and Evgeny Burnaev. Gift-sw: Gaussian noise injected fine-tuning of salient weights for
+llms.arXiv preprint arXiv:2408.15300, 2024.
+Jeffrey Zhou, Tianjian Lu, Swaroop Mishra, Siddhartha Brahma, Sujoy Basu, Yi Luan, Denny Zhou,
+and Le Hou. Instruction-following evaluation for large language models, 2023. URLhttps:
+//arxiv.org/abs/2311.07911.
+Chenzhuo Zhu, Song Han, Huizi Mao, and William J Dally. Trained ternary quantization.arXiv
+preprint arXiv:1612.01064, 2016.
+12
+September 2025
+APPENDIX
+A R-SPARSEDETAILS
+Finally, we includeR-Sparse(Kamirul et al., 2025), which combines activation sparsity with a
+low-rank approximation of the weight matrix. Instead of pruning solely by magnitude, R-Sparse
+decomposes the computation into two parts: (i) sparse channels with high-magnitude activations,
+and (ii) a low-rank component obtained via SVD ofWthat approximates the contribution of pruned
+activations.
+Formally, the linear layer
+Y=XW ⊤ (6)
+is approximated as
+Y≈Y s +Y r,(7)
+where
+Ys =σ t(s)(X)W⊤,Y r = (X−σ t(s)(X))(ArBr)⊤.(8)
+Hereσ t(s)(·)denotes sparsification of activations with thresholdt(s), andA rB⊤
+r is the rank-rap-
+proximation ofWobtained from its truncated SVD. The trade-off betweenYs andYr is determined
+by a sparsity budgetsand rankr, which can be optimized via evolutionary search.
+B DIFFERENT PATTERNS FOR SEMI-STRUCTURE SPARSIFICATION
+Table 6: Performance comparison of different sparsity patterns on Llama3-8B across various bench-
+marks. Values represent accuracy scores, with the last column showing the average performance
+drop relative to the original model.
+ARC Easy BoolQ PIQA WinoGrande Avg Drop (↓)
+Original0.8207 0.8391 0.8003 0.7340
+2:40.6837 0.7261 0.7163 0.6110 14.35%
+4:80.7272 0.7810 0.7529 0.6393 9.29%
+8:160.7525 0.7969 0.7568 0.6551 7.38%
+16:320.7698 0.8082 0.7688 0.6771 5.40%
+50% unstructured0.7820 0.8198 0.7714 0.6858 4.30%
+70% unstructured0.5580 0.6311 0.6474 0.5477 25.32%
+B.1 COMPARISON OF DIFFERENT PATTERNS
+Table 7:A comparison of combined approaches with 8:16 semi-structured sparsity.Average
+relative performance (%) across four datasets. Values indicate performance drops (lower is better),
+negative values signify performance improvement. Full, non-aggregated results are available in
+Appendix 10.
+Models
+Method Llama2-7B Qwen2.5-7B Gemma3-4B LLama3-8B Average Drop (↓)
+CLACT + PTS5.63%−5.06%0.50%8.55%2.40%
+CLACT + V AR5.07%−2.90%0.54%8.59%2.82%
+Amber-Pruner + PTS6.16%−3.47%0.17%7.42%2.57%
+Amber-Pruner + V AR4.74%−3.63%−0.16%8.39%2.34%
+L-PTS + V AR6.87%2.86%3.41%7.15%5.07%
+C DATASETS
+13
+September 2025
+Table 8: Datasets used to evaluate hypotheses.Prompt-level strict accuracyis the fraction of
+prompts for which all verifiable instructions in the prompt are followed exactly as stated.Instruction-
+level strict accuracyis the fraction of individual instructions that are followed exactly as stated, av-
+eraged across all instructions.
+Dataset Description Metric
+WikiText-2 (Merity
+et al., 2016)
+A collection of over 100 million tokens extracted from the set
+of verified Good and Featured articles on Wikipedia.
+Perplexity
+ARC-Easy (Clark
+et al., 2018)
+QA benchmark for genuine grade-school level, multiple-choice
+science questions. The dataset contains 2251 examples for
+training, 570 for development and 2376 for testing.
+Accuracy
+ARC Challenge
+(Clark et al., 2018)
+QA benchmark for more difficult grade-school level science
+questions, part of the AI2 Reasoning Challenge. Designed to
+require deeper reasoning than ARC-Easy.
+Accuracy
+BoolQ (Clark et al.,
+2019)
+QA benchmark for yes/no questions. The dataset contains 9427
+examples for training and 3270 for testing.
+Accuracy
+PIQA (Bisk et al.,
+2020)
+Physical commonsense QA benchmark for choosing the right
+answer between two options. Contains 16K train, 2K dev, and
+3K test examples.
+Accuracy
+WinoGrande (Sak-
+aguchi et al., 2020)
+QA benchmark for pronoun resolution with adversarial filter-
+ing. Contains 40K train, 1267 dev, and 1767 test examples.
+Accuracy
+HellaSwag (Zellers
+et al., 2019)
+Commonsense reasoning benchmark for sentence completion,
+designed to be easy for humans but hard for models. Contains
+70K train and 10K validation examples.
+Accuracy
+OpenBookQA (Mi-
+haylov et al., 2018)
+Open-book question answering dataset requiring retrieval of el-
+ementary science facts. Contains 5957 4-way multiple-choice
+questions.
+Accuracy
+RTE (Dagan et al.,
+2005; Bar-Haim
+et al., 2006)
+Recognizing Textual Entailment datasets from PASCAL chal-
+lenges. Task is to classify if a hypothesis is entailed by a
+premise.
+Accuracy
+MMLU
+(Hendrycks et al.,
+2020)
+Massive Multitask Language Understanding benchmark cover-
+ing 57 subjects across STEM, humanities, and social sciences.
+Measures multitask accuracy.
+Accuracy
+Lambada Standard
+(Paperno et al.,
+2016)
+Word prediction task requiring broad discourse context. Target
+word is unpredictable from local context alone.
+Accuracy
+Lambada OpenAI
+(Paperno et al.,
+2016)
+LAMBADA test set preprocessed by OpenAI for standardized
+evaluation. Task remains final word prediction with long-range
+dependencies.
+Accuracy
+GSM8K (Cobbe
+et al., 2021)
+Grade school math word problems requiring multi-step reason-
+ing. Contains 7.5K train and 1.3K test examples.
+Accuracy
+(Strict)
+Accuracy
+(Flexible)
+IFEval (Zhou et al.,
+2023)
+Benchmark with 541 prompts containing verifiable instructions
+to measure instruction-following fidelity.
+Accuracy
+(Prompt-level)
+Accuracy
+(Instruct-level)
+14
+September 2025
+D WEIGHTS VERSUSACTIVATIONS
+Table 9: The performance of models with applied unstructured activation pruning. We show that
+even with severe sparsity (70-90%) models were able to perform decently on our benchmarks.ACT
+stands for activations pruning,WT— for weight pruning.OUTdenotes values more than2 3,
+according accuracy scores most likely correspond to random.
+Pruning WikiText2↓ARC Easy BoolQ PIQA WinoGrande Drop(↓)%
+Llama2-7B
+Base6.94 0.74 0.80 0.76 0.66 -
+0.2ACT6.96 0.74 0.80 0.77 0.66-0.33%
+0.2WT7.49 0.72 0.80 0.76 0.660.68%
+0.5ACT7.53 0.70 0.78 0.75 0.662.32%
+0.5WT18.72 0.60 0.72 0.70 0.6111.10%
+0.7ACT20.11 0.56 0.64 0.65 0.5319.62%
+0.7WT OUT0.27 0.38 0.54 0.4743.44%
+0.9ACT OUT0.26 0.38 0.52 0.4943.39%
+0.9WT OUT0.27 0.38 0.53 0.4843.39%
+Qwen2.5-7B
+Base7.46 0.69 0.86 0.75 0.60 -
+0.2ACT7.48 0.69 0.86 0.74 0.612.37%
+0.2WT8.03 0.67 0.86 0.74 0.603.42%
+0.5ACT8.3 0.67 0.87 0.74 0.583.87%
+0.5WT43.6 0.56 0.80 0.68 0.573.42%
+0.7ACT18.7 0.6 0.81 0.70 0.583.87%
+0.7WT OUT0.28 0.38 0.54 0.4812.12%
+0.9ACT OUT0.25 0.38 0.54 0.5244.22%
+0.9WT OUT0.25 0.58 0.54 0.5136.35%
+Gemma3-4B
+Base17.29 0.72 0.84 0.72 0.62 -
+0.2ACT17.60 0.71 0.84 0.72 0.603.35%
+0.2WT18.93 0.68 0.84 0.72 0.594.74%
+0.5ACT22.39 0.71 0.83 0.72 0.574.80%
+0.5WT273 0.36 0.55 0.61 0.5230.89%
+0.7ACT88 0.55 0.63 0.66 0.5419.57%
+0.7WT OUT0.27 0.49 0.53 0.5138.81%
+0.9ACT OUT0.26 0.38 0.54 0.5042.64%
+0.9WT OUT0.25 0.45 0.52 0.5240.60%
+E MAIN EXTENDED RESULTS
+In this section we present non - aggregated results for all of the methods and datasets., results are
+presented in Table 11 and Table 10.
+15
+September 2025
+Table 10:Semi-Structured 2:4 Sparsification- performance Metrics, for calibration, when it is
+required, and perplexity we use WikiText2. Average Drop is computed without accounting for
+perplexity
+Pruning WikiText2↓ARC Easy BoolQ PIQA WinoGrande Average Drop %
+Llama2-7B6.94 0.74 0.80 0.76 0.66 -
+ACT10.23 0.66 0.71 0.71 0.60 9.43%
+WT42.400.570.650.690.56 16.52%
+D-PTS9.38 0.64 0.68 0.71 0.61 10.67%
+S-PTS9.36 0.66 0.68 0.71 0.60 10.37%
+V AR 8.310.67 0.69 0.72 0.59 9.76%
+CLACT8.23 0.65 0.72 0.71 0.63 8.32%
+Amber-Pruner9.24 0.64 0.680.690.60 11.70%
+LPTS8.89 0.650.600.720.5913.13%
+LPTS + V AR8.39 0.67 0.63 0.72 0.60 11.47%
+R-SPARSE (64)9.19 0.66 0.63 0.69 0.59 12.90%
+R-SPARSE (128)9.29 0.65 0.65 0.70 0.59 12.23%
+Llama3.1-8B7.21 0.82 0.84 0.80 0.73 -
+ACT16.61 0.68 0.73 0.72 0.61 14.35%
+WT20.14 0.41 0.57 0.60 0.54 33.63%
+PTS16.4 0.69 0.73 0.72 0.60 14.59%
+S-PTS (N-100)16.5 0.67 0.74 0.72 0.60 14.61%
+S-PTS (N-200)16.5 0.68 0.73 0.72 0.61 14.31%
+V AR14.17 0.70 0.73 0.73 0.62 13.11%
+CLACT19.49 0.65 0.71 0.69 0.59 17.27%
+W ANDA15.86 0.66 0.74 0.69 0.61 15.01%
+L-PTS12.77 0.71 0.71 0.73 0.59 14.13%
+L-PTS + V AR12.40 0.73 0.71 0.73 0.60 13.49%
+R-SPARSE (64)15.07 0.69 0.72 0.71 0.61 15.28%
+R-SPARSE (128)16.09 0.67 0.71 0.70 0.61 16.34%
+Qwen2.5-7B7.46 0.69 0.86 0.75 0.60 -
+ACT10.06 0.65 0.86 0.72 0.54 4.95%
+WT35.37 0.53 0.78 0.68 0.54 12.96%
+D-PTS10.07 0.79 0.86 0.76 0.66 -6.46%
+S-PTS10.74 0.78 0.84 0.74 0.65 -4.43%
+V AR13.95 0.74 0.83 0.74 0.61 -1.48%
+CLACT11.16 0.73 0.84 0.71 0.67 -2.45%
+Amber-Pruner10.64 0.74 0.84 0.70 0.64 -1.23%
+LPTS9.13 0.67 0.81 0.72 0.58 3.66%
+LPTS + V AR9.10 0.68 0.81 0.73 0.56 3.97%
+R-SPARSE (64)9.03 0.79 0.76 0.75 0.64 -2.55%
+R-SPARSE (128)9.12 0.77 0.77 0.75 0.63 -1.51%
+Gemma3-4B17.29 0.72 0.84 0.72 0.62 -
+ACT35.62 0.65 0.76 0.70 0.51 9.94%
+WT421.95 0.35 0.44 0.58 0.49 34.86%
+D-PTS35.94 0.70 0.76 0.70 0.60 4.58%
+S-PTS35.84 0.71 0.77 0.70 0.60 3.93%
+V AR33.25 0.60 0.76 0.63 0.54 5.04%
+CLACT39.22 0.66 0.74 0.67 0.59 8.01%
+Amber-Pruner35.56 0.67 0.76 0.68 0.61 5.91%
+LPTS19.55 0.65 0.73 0.70 0.55 9.19%
+LPTS + V AR19.13 0.65 0.74 0.71 0.53 9.82%
+R-SPARSE (64)17.04 0.69 0.76 0.69 0.60 5.17%
+R-SPARSE (128)16.17 0.68 0.75 0.70 0.61 5.16%
+16
+September 2025
+Table 11:Semi-Structured 8:16 Sparsification- performance Metrics, for calibration, when it
+is required, and perplexity we use WikiText2. Average Drop is computed without accounting for
+perplexity.
+Pruning WikiText2↓ARC Easy BoolQ PIQA WinoGrande Average Drop %
+Llama2-7B6.94 0.74 0.80 0.76 0.66 -
+ACT8.12 0.69 0.75 0.73 0.63 5.37%
+WT20.47 0.64 0.76 0.72 0.61 7.84%
+D-PTS6.92 0.70 0.73 0.75 0.64 4.63%
+S-PTS6.93 0.70 0.73 0.75 0.66 3.87%
+V AR6.67 0.69 0.72 0.75 0.65 4.85%
+CLACT6.54 0.71 0.74 0.75 0.64 3.98%
+CLACT + PTS7.00 0.69 0.72 0.73 0.64 5.63%
+CLACT + V AR6.72 0.69 0.73 0.75 0.64 5.07%
+R-SPARSE (64)7.75 0.69 0.71 0.73 0.64 5.91%
+R-SPARSE (128)7.82 0.68 0.69 0.74 0.61 7.93%
+Amber-Pruner8.10 0.66 0.75 0.73 0.66 5.32%
+Amber-Pruner + PTS6.90 0.68 0.72 0.72 0.65 6.16%
+Amber-Pruner + V AR6.66 0.70 0.72 0.74 0.65 4.74%
+LPTS7.50 0.69 0.66 0.74 0.63 8.15%
+LPTS + V AR7.52 0.69 0.67 0.74 0.64 6.87%
+Llama3.1-8B7.21 0.82 0.84 0.80 0.73 -
+ACT10.32 0.75 0.80 0.76 0.66 7.38%
+WT22.56 0.51 0.64 0.63 0.54 27.26%
+D-PTS10.34 0.76 0.80 0.76 0.66 6.79%
+S-PTS10.31 0.76 0.80 0.75 0.66 7.30%
+V AR10.67 0.74 0.79 0.75 0.66 8.30%
+CLACT10.67 0.73 0.79 0.74 0.66 8.60%
+CLACT + PTS10.68 0.74 0.79 0.74 0.65 8.55%
+CLACT + V AR10.15 0.74 0.79 0.75 0.64 8.59%
+R-SPARSE (64)11.42 0.75 0.77 0.75 0.66 8.44%
+R-SPARSE (128)10.43 0.75 0.78 0.74 0.66 8.49%
+Amber-Pruner10.16 0.73 0.80 0.75 0.68 7.13%
+Amber-Pruner + PTS10.17 0.75 0.80 0.75 0.66 7.42%
+Amber-Pruner + V AR9.94 0.74 0.80 0.75 0.64 8.39%
+LPTS10.04 0.76 0.79 0.77 0.65 7.19%
+LPTS + V AR10.26 0.77 0.78 0.76 0.66 7.15%
+Qwen2.5-7B7.46 0.69 0.86 0.75 0.60 -
+ACT8.61 0.66 0.87 0.73 0.53 4.38%
+WT40.79 0.59 0.82 0.67 0.52 9.54%
+D-PTS8.61 0.80 0.87 0.77 0.68 -8.28%
+S-PTS8.84 0.80 0.86 0.76 0.67 -7.24%
+V AR11.91 0.69 0.72 0.75 0.65 1.93%
+CLACT8.94 0.77 0.85 0.73 0.65 -4.02%
+CLACT + PTS8.94 0.77 0.86 0.83 0.67 -5.06%
+CLACT + V AR8.87 0.76 0.84 0.71 0.65 -2.90%
+R-SPARSE (64)8.12 0.82 0.79 0.77 0.69 -6.90%
+R-SPARSE (128)8.24 0.80 0.79 0.77 0.67 -5.40%
+Amber-Pruner8.80 0.77 0.86 0.74 0.69 -6.20%
+Amber-Pruner + PTS8.79 0.77 0.85 0.73 0.64 -3.40%
+Amber-Pruner + V AR8.73 0.75 0.85 0.74 0.65 -3.60%
+LPTS8.23 0.69 0.83 0.75 0.57 1.70%
+LPTS + V AR8.21 0.70 0.83 0.73 0.56 2.80%
+Gemma3-4B17.29 0.72 0.84 0.72 0.62 -
+ACT25.31 0.70 0.81 0.71 0.55 4.76%
+WT198.53 0.39 0.60 0.62 0.52 26.11%
+D-PTS25.17 0.70 0.81 0.71 0.54 5.16%
+S-PTS25.40 0.75 0.82 0.74 0.63 -1.54%
+V AR23.93 0.75 0.81 0.73 0.65 -1.87%
+CLACT25.85 0.75 0.81 0.71 0.61 0.60%
+CLACT + PTS26.03 0.73 0.81 0.70 0.63 0.50%
+CLACT + V AR24.78 0.74 0.81 0.70 0.63 0.54%
+R-SPARSE (64)15.39 0.76 0.80 0.74 0.64 -1.36%
+R-SPARSE (128)14.55 0.74 0.80 0.73 0.63 -0.44%
+Amber-Pruner25.11 0.74 0.82 0.70 0.63 0.08%
+Amber-Pruner + PTS25.28 0.75 0.81 0.70 0.63 0.17%
+Amber-Pruner + V AR23.97 0.74 0.81 0.71 0.64 -0.16%
+LPTS15.73 0.70 0.79 0.73 0.56 4.21%
+LPTS + V AR15.68 0.71 0.79 0.72 0.57 3.41%
+17
+September 2025
+Table 12: Llama3-8B with 8:16 activation sparsity. LS+L-PTS indicates Learnable Diagonal Scale +
+Learnable Shift, “Layers” indicates the subset of linear layers where the method was applied. Drop
+is computed without accounting for perplexity.
+Method Layers PPL BoolQ WinoGrande PIQA ARC Easy ARC Chal. HellaSwag OpenBookQA RTE MMLU Lambada stand. Lambada (OpenAI) Drop %↓ORIGINAL– – 0.8391 0.7340 0.8003 0.8207 0.5196 0.5905 0.3420 0.6859 0.6790 0.6569 0.7308 –LS+L-PTS all 9.6036 0.7841 0.6638 0.7715 0.7647 0.4514 0.5294 0.2720 0.6318 0.5521 0.5686 0.6625 10.90%LS+L-PTS k,o,gate,down 8.3483 0.8205 0.7111 0.7889 0.7887 0.4659 0.5591 0.3200 0.6462 0.6060 0.6123 0.7046 5.43%LS+L-PTS k,v,gate,down 8.0821 0.8352 0.7174 0.7867 0.7992 0.4898 0.5651 0.3260 0.6643 0.6322 0.6262 0.7108 3.56%LS+L-PTS + V AR all 9.4983 0.7872 0.6606 0.7606 0.7601 0.4334 0.5372 0.2880 0.6390 0.5532 0.5729 0.6689 10.60%LS+L-PTS + V AR k,o,gate,down 8.2930 0.8116 0.7135 0.7851 0.7908 0.4838 0.5634 0.3300 0.6498 0.6095 0.6189 0.7079 4.64%LS+L-PTS + V AR k,v,gate,down 8.0259 0.8306 0.7269 0.7851 0.7955 0.4863 0.5673 0.3260 0.6715 0.6327 0.6317 0.7143 3.36%
+18

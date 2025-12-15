@@ -1,0 +1,543 @@
+Disentangling Shape and Pose for
+Object-Centric Deep Active Inference Models
+Stefano Ferraro, Toon Van de Maele, Pietro Mazzaglia,
+Tim Verbelen, and Bart Dhoedt
+IDLab, Department of Information Technology
+Ghent University - imec
+Ghent, Belgium
+stefano.ferraro@ugent.be
+Abstract. Active inference is a ﬁrst principles approach for understand-
+ing the brain in particular, and sentient agents in general, with the single
+imperative of minimizing free energy. As such, it provides a computa-
+tional account for modelling artiﬁcial intelligent agents, by deﬁning the
+agent’s generative model and inferring the model parameters, actions and
+hidden state beliefs. However, the exact speciﬁcation of the generative
+model and the hidden state space structure is left to the experimenter,
+whose design choices inﬂuence the resulting behaviour of the agent. Re-
+cently, deep learning methods have been proposed to learn a hidden state
+space structure purely from data, alleviating the experimenter from this
+tedious design task, but resulting in an entangled, non-interpreteable
+state space. In this paper, we hypothesize that such a learnt, entangled
+state space does not necessarily yield the best model in terms of free
+energy, and that enforcing diﬀerent factors in the state space can yield
+a lower model complexity. In particular, we consider the problem of 3D
+object representation, and focus on diﬀerent instances of the ShapeNet
+dataset. We propose a model that factorizes object shape, pose and cat-
+egory, while still learning a representation for each factor using a deep
+neural network. We show that models, with best disentanglement proper-
+ties, perform best when adopted by an active agent in reaching preferred
+observations.
+Keywords: Active Inference · Object Perception · Deep Learning · Dis-
+entanglement.
+1 Introduction
+In our daily lives, we manipulate and interact with hundreds of objects without
+even thinking. In doing so, we make inferences about an object’s identity, location
+in space, 3D structure, look and feel. In short, we learn a generative model of
+how objects come about [24]. Robots however still lack this kind of intuition, and
+struggle to consistently manipulate a wide variety of objects [2]. Therefore, in
+this work, we focus on building object-centric generative models to equip robots
+arXiv:2209.09097v1  [cs.CV]  16 Sep 2022
+2 S. Ferraro et al.
+with the ability to reason about shape and pose of diﬀerent object categories,
+and generalize to novel instances of these categories.
+Active inference oﬀers a ﬁrst principles approach for learning and acting us-
+ing a generative model, by minimizing (expected) free energy. Recently, deep
+learning techniques were proposed to learn such generative models from high
+dimensional sensor data [33,7,27], which paves the way to more complex ap-
+plication areas such as robot perception [14]. In particular, Van de Maele et
+al. [16,18] introduced object-centric, deep active inference models that enable an
+agent to infer the pose and identity of a particular object instance. However, this
+model was restricted to identify unique object instances, i.e. “this sugar box ver-
+sus that particular tomato soup can”, instead of more general object categories,
+i.e. “mugs versus bottles”. This severely limits generalization, as it requires to
+learn a novel model for each particular object instance, i.e. for each particular
+mug.
+In this paper, we further extend upon this line of work, by learning object-
+centric models not by object instance, but by object category. This allows the
+agent to reduce the number of required object-centric models, as well as to
+generalize to novel instances of known object categories. Of course, this requires
+the agent to not only infer object pose and identity, but also the diﬀerent shapes
+that comprise this category. An important research question is then how to
+deﬁne and factorize the generative model, i.e. do we need to explicitly split
+the diﬀerent latent factors in our model (i.e. shape and pose), or can a latent
+structure be learnt purely from data, and to what extent is this learnt latent
+structure factorized?
+In the brain, there is also evidence for disentangled representations. For in-
+stance, processing visual inputs in primates consists of two pathways: the ventral
+or “what” pathway, which is involved with object identiﬁcation and recognition,
+and the dorsal or “where” pathway, which processes an object’s spatial loca-
+tion [22]. Similarly, Hawkins et al. hypothesize that cortical columns in the neo-
+cortex represent an object model, capturing their pose in a local reference frame,
+encoded by cortical grid cells [8]. This fuels the idea of treating object pose as a
+ﬁrst class citizen when learning an object-centric generative model.
+In this paper, we present a novel method for learning object-centric models
+for distinct object categories, that promotes a disentangled representation for
+shape and pose. We demonstrate how such models can be used for inferring
+actions that move an agent towards a preferred observation. We show that a
+better pose-shape disentanglement indeed seems to improve performance, yet
+further research in this direction is required. In the remainder of the paper we
+ﬁrst give an overview on related work, after which we present our method. We
+present some results on object categories of the ShapeNet database [3], and
+conclude the paper with a thorough discussion.
+Disentangling Shape and Pose 3
+2 Related work
+Object-centric models.Many techniques have been proposed for representing
+3D objects using deep neural networks, working with 2D renders [5], 3D voxel
+representations [32], point clouds [15] or implicit signed distance function repre-
+sentations [23,20,21,28]. However, none of these take “action” into account, i.e.
+there is no agent that can pick its next viewpoint.
+Disentangled representations.Disentangling the hidden factors of variation
+of a dataset is an long sought feature for representation learning [1]. This can be
+encouraged during training by restricting the capacity of the information bottle-
+neck [9], by penalizing the total correlation of the latent variables [11,4], or by
+matching moments of a factorized prior [13]. It has been shown that disentangled
+representations yield better performance on down-stream tasks, enabling quicker
+learning using fewer examples [29].
+Deep active inference.Parameterizing generative models using deep neural
+networks for active inference has been coined “deep active inference” [30]. This
+enables active inference applications on high-dimensional observations such as
+pixel inputs [33,7,27]. In this paper, we propose a novel model which encourages
+a disentangled latent space, and we compare with other deep active inference
+models such as [33] and [17]. For a more extensive review, see [19].
+3 Object-Centric Deep Active Inference Models
+In active inference, an agent acts and learns in order to minimize an upper bound
+on the negative log evidence of its observations, given its generative model of the
+world i.e. the free energy. In this section, we ﬁrst formally introduce the diﬀerent
+generative models considered for our agents for representing 3D objects. Next we
+discuss how we instantiate and train these generative models using deep neural
+networks, and how we encourage the model to disentangle shape and pose.
+Generative model. We consider the same setup as [18], in which an agent
+receives pixel observations o of a 3D object rendered from a certain camera
+viewpoint v, and as an action a can move the camera to a novel viewpoint. The
+action space is restricted to viewpoints that look at the object, such that the
+object is always in the center of the observation.
+Figure 1 depicts diﬀerent possible choices of generative model to equip the
+agent with. The ﬁrst (1a) considers a generic partially observable Markov deci-
+sion process (POMDP), in which a hidden state st encodes all information at
+timestep t to generate observation ot. Action at determines together with the
+current state st how the model transitions to a new state st+1. This a model can
+be implemented as a variational autoencoder (VAE) [25,12], as shown in [33,7]. A
+second option (1b) is to exploit the environment setup, and assume we can also
+observe the camera viewpoint vt. Now the agent needs to infer the object shape
+s which stays ﬁxed over time. This resembles the architecture of a generative
+query network (GQN), which is trained to predict novel viewpoints of a given a
+4 S. Ferraro et al.
+Fig. 1: Diﬀerent generative models for object-centric representations, blue nodes
+are observed. (a) A generic POMDP model with a hidden state st that is tran-
+sitioned through actions and which generates the observations. (b) The hidden
+state s encodes the appearance of the object, while actions transition the camera
+viewpoint v which is assumed to be observable. (c) Similar as (b), but without
+access to the camera viewpoint, which in this case has to be inferred as a separate
+pose latent variable pt.
+scene [6,17]. Finally, in (1c), we propose our model, in which we have the same
+structure as (1b), but without access to the ground truth viewpoint. In this case,
+the model needs to learn a hidden latent representation of the object pose in
+view pt. This also allows the model to learn a diﬀerent pose representation than
+a 3D pose in SO(3), which might be more suited. We call this model a VAEsp,
+as it is trained in similar vein as (1a), but with a disentangled shape and pose
+latent.
+VAEsp.Our model is parameterized by three deep neural networks: an encoder
+qφ, a transition model pχ, and a decoder pψ, as shown in Figure 2. Observations
+oi of object instance i are processed by the encoder qφ, that outputs a belief over
+a pose latent qφ(pi
+t|oi
+t) and a shape latent qφ(si
+t|oi
+t). From the pose distribution
+a sample pi
+t is drawn and fed to the transition model pχ, paired with an action
+at. The output is a belief pχ(pi
+t+1|pi
+t, at). From the transitioned belief a sample
+pi
+t+1 is again drawn which is paired with a shape latent sample si and input to
+the decoder pψ(oi
+t|pi
+t, si). The output of the decoding process is again an image
+ˆoi
+t+1. These models are jointly trained end-to-end by minimizing free energy,
+or equivalently, maximizing the evidence lower bound [18]. More details on the
+model architecture and training hyperparameters can be found in Appendix A.
+Enforcing disentanglement.In order to encourage the model to encode ob-
+ject shape features in the shape latent, while encoding object pose in the pose
+latent, we only oﬀer the pose latent pt as input to the transition model, whereas
+the decoder uses both the shape and pose. Similar to [10], in order to further
+Disentangling Shape and Pose 5
+Fig. 2: The proposed VAEsp architecture consists of three deep neural networks:
+an encoder qφ, a transition model pχ, and a decoder pψ. By swapping the shape
+latent samples, we enforce the model to disentangle shape and pose during train-
+ing.
+disentangle, we randomly swap the shape latent code for two object instances at
+train time while keeping the same latent pose, refer to Figure 2.
+4 Experiments
+We train our model on a subset of the ShapeNet dataset [3]. In particular, we use
+renders of 15 instances of the ‘mug’, ‘bottle’,‘bowl’ and ‘can’ categories, train a
+separate model for each category, and evaluate on unseen object instances. We
+compare our VAEsp approach against a VAE model [33] that has equal amount
+of latent dimensions, but without a shape and pose split, and a GQN-like model
+[17], which has access to the ground truth camera viewpoint.
+We evaluate the performance of the three considered generative models. First
+we look at the reconstruction and prediction quality of the models for unseen
+object instances. Next we investigate how good an agent can move the camera
+to match a preferred observation by minimizing expected free energy. Finally,
+we investigate the disentanglement of the resulting latent space.
+One-step Prediction.First, we evaluate all models on prediction quality over
+a test set of 500 observations of unseen objects in unseen poses. We provide
+each model with an initial observation which is encoded into a latent state. Next
+we sample a random action, predict the next latent state using the transition
+model, for which we reconstruct the observation and compare with a ground
+truth. We report both pixel-wise mean squared error (MSE) and structural sim-
+ilarity (SSIM) [31] in Table 1. In terms of MSE results are comparable for all
+6 S. Ferraro et al.
+Table 1: One-step prediction errors, averaged over the entire test set. MSE (lower
+the better) and SSIM (higher the better) are considered.
+bottle bowl can mug
+MSE ⇓GQN 0.473 ±0.0874 0.487 ±0.141 0.707 ±0.1029 0.656 ±0.0918
+VAE 0.471 ±0.0824 0.486 ±0.1487 0.693 ±0.1103 0.646 ±0.0886
+VAEsp 0.480 ±0.0879 0.485 ±0.1486 0.702 ±0.1108 0.626 ±0.0915
+SSIM ⇑GQN 0.748 ±0.0428 0.814 ±0.0233 0.868 ±0.0203 0.824 ±0.0279
+VAE 0.828 ±0.0238 0.907 ±0.0178 0.844 ±0.0361 0.874 ±0.0323
+VAEsp 0.854 ±0.0190 0.902 ±0.0291 0.880 ±0.0176 0.814 ±0.0348
+the proposed architectures. In terms of SSIM however, VAEsp shows better per-
+formance for ‘bottle’ and ‘can’ category. Performance for ‘bowl’ category are
+comparable to the best performing VAE model. For the ‘mug’ category, the neg-
+ative gap over the VAE model is consistent. Qualitative results for all models
+are shown in Appendix B.
+Reaching preferred viewpoints.Next, we consider an active agent that is
+tasked to reach a preferred observation that was provided in advance. To do so,
+the agent uses the generative model to encode both the preferred and initial
+observation and then uses Monte Carlo sampling to evaluate the expected free
+energy for 10000 potential actions, after which the action with the lowest ex-
+pected free energy is executed. The expected free energy formulation is computed
+as the negative log probability of the latent representation with respect to the
+distribution over the preferred state, acquired through encoding the preferred
+observation. This is similar to the setup adopted by Van de Maele et al. [18],
+with the important diﬀerence that now the preferred observation is an image of
+a diﬀerent object instance.
+To evaluate the performance, we compute the pixel-wise mean squared error
+(MSE) between a render of the target object in the preferred pose, and the
+render of the environment after executing the chosen action after the initial
+observation. The results are shown in Table 2. VAEsp performs on par with the
+other approaches for ‘bowl’ and ‘mug’, but signiﬁcantly outperforms the GQN
+on the the ‘bottle’ and ‘can’ categories, reﬂected by p-values of 0 .009 and 0.001
+Table 2: MSE for the reached pose through the minimization of expected free
+energy. For each category, 50 meshes are evaluated, where for each object a
+random pose is sampled from a diﬀerent object as preferred pose, and the agent
+should reach this pose.
+bottle bowl can mug
+GQN 0.0833 ±0.0580 0.0888 ±0.0594 0.0806 ±0.0547 0.1250 ±0.0681
+VAE 0.0698 ±0.0564 0.0795 ±0.0599 0.0608 ±0.0560 0.1247 ±0.0656
+VAEsp 0.0557 ±0.0404 0.0799 ±0.0737 0.0487 ±0.0381 0.1212 ±0.0572
+Disentangling Shape and Pose 7
+(a)
+ (b)
+Fig. 3: Two examples of the experiment on reaching preferred viewpoints for a
+‘bottle’ (a) and a ‘mug’ (b). First column shows the target view (top) and initial
+view given to the agent (bottom). Next, for the three models we show the actual
+reached view (top), versus the imagined expected view of the model (bottom).
+for these respective objects. The p-values for the comparison with the VAE are
+0.167 and 0 .220, which are not signiﬁcant. A qualitative evaluation is shown
+in Figure 3. Here we show the preferred target view, the initial view of the
+environment, as well as the ﬁnal views reached by each of the agents, as well as
+what each model was imagining. Despite the target view being from a diﬀerent
+object instance, the agent is able to ﬁnd a matching viewpoint.
+Disentangled latent space.Finally, we evaluate the disentanglement of shape
+and pose for the proposed architecture. Given that our VAEsp model outper-
+forms the other models on ‘bottle‘ and ‘can‘, but not on ‘bowl‘ and ‘mug‘, we
+hypothesize that our model is able to better disentangle shape and pose for the
+ﬁrst categories, but not for the latter. To evaluate this, we plot the distribution
+of each latent dimension when encoding 50 random shapes in a ﬁxed pose, versus
+50 random poses for a ﬁxed shape, as shown on Figure 4. We see that indeed the
+VAEsp model has a much more disentangled latent space for ‘bottle‘ compared
+to ‘mug‘, which supports our hypothesis. Hence, it will be interesting to further
+experiment to ﬁnd a correlation between latent space disentanglement and model
+performance. Moreover, we could work on even better enforcing disentanglement
+when training a VAEsp model, for example by adding additional regularization
+losses [11,4]. Also note that the GQN does not outperform the other models,
+although this one has access to the ground truth pose factor. This might be due
+to the fact that an SO(3) representation of pose is not optimal for the model to
+process, and it still encodes (entangled) pose information in the resulting latent
+space, as illustrated by violin plots for GQN models in Appendix C. Figure 5
+qualitatively illustrates the shape and pose disentanglement for our best per-
+forming model (bottle). We plot reconstructions of latent codes consisting of the
+shape latent of the ﬁrst column, combined with the pose latent of the ﬁrst row.
+8 S. Ferraro et al.
+(a) VAEsp bottle
+(b) VAEsp mug
+Fig. 4: Violin plots representing the distribution over the latent dimension when
+keeping either the pose or shape ﬁxed. For the bottle model (a) the pose latent
+dimensions (0-7) vary when only varying the pose, whereas the shape latent
+dimensions (8-23) don’t vary with the pose. For the mug model (b) we see the
+shape and pose latent are much more entangled.
+Fig. 5: Qualitative experimentation for the bottle category. Images are recon-
+structed from the diﬀerent pairings of the pose latent and shape latent of the
+ﬁrst row and column respectively.
+Disentangling Shape and Pose 9
+5 Conclusion
+In this paper, we proposed a novel deep active inference model for learning
+object-centric representations of object categories. In particular, we encourage
+the model to have a disentangled pose and shape latent code. We show that
+the better our model disentangles shape and pose, the better the results are on
+prediction, reconstruction as well as action selection towards a preferred observa-
+tion. As future work, we will further our study on the impact of disentanglement,
+and how to better enforce disentanglement in our model. We believe that this
+line of work is important for robotic manipulation tasks, i.e. where a robot learns
+to pick up a cup by the handle, and can then generalize to pick up any cup by
+reaching to the handle.
+References
+1. Bengio, Y., Courville, A., Vincent, P.: Representation learning: A review and new
+perspectives. IEEE transactions on pattern analysis and machine intelligence 35,
+1798–1828 (08 2013). https://doi.org/10.1109/TPAMI.2013.50
+2. Billard, A., Kragic, D.: Trends and challenges in robot manipulation. Science 364,
+eaat8414 (06 2019). https://doi.org/10.1126/science.aat8414
+3. Chang, A.X., Funkhouser, T., Guibas, L., Hanrahan, P., Huang, Q., Li, Z.,
+Savarese, S., Savva, M., Song, S., Su, H., Xiao, J., Yi, L., Yu, F.: ShapeNet:
+An Information-Rich 3D Model Repository. Tech. Rep. arXiv:1512.03012 [cs.GR],
+Stanford University — Princeton University — Toyota Technological Institute at
+Chicago (2015)
+4. Chen, R.T.Q., Li, X., Grosse, R., Duvenaud, D.: Isolating sources of disentan-
+glement in vaes. In: Proceedings of the 32nd International Conference on Neural
+Information Processing Systems. p. 2615–2625. NIPS’18, Curran Associates Inc.,
+Red Hook, NY, USA (2018)
+5. Dosovitskiy, A., Springenberg, J.T., Tatarchenko, M., Brox, T.: Learning to
+generate chairs, tables and cars with convolutional networks. IEEE Transac-
+tions on Pattern Analysis and Machine Intelligence 39(4), 692–705 (2017).
+https://doi.org/10.1109/TPAMI.2016.2567384
+6. Eslami, S.M.A., Jimenez Rezende, D., Besse, F., Viola, F., Morcos, A.S., Gar-
+nelo, M., Ruderman, A., Rusu, A.A., Danihelka, I., Gregor, K., Reichert, D.P.,
+Buesing, L., Weber, T., Vinyals, O., Rosenbaum, D., Rabinowitz, N., King,
+H., Hillier, C., Botvinick, M., Wierstra, D., Kavukcuoglu, K., Hassabis, D.:
+Neural scene representation and rendering. Science 360(6394), 1204–1210 (Jun
+2018). https://doi.org/10.1126/science.aar6170, https://www.science.org/doi/
+10.1126/science.aar6170
+7. Fountas, Z., Sajid, N., Mediano, P., Friston, K.: Deep active inference agents using
+monte-carlo methods. In: Larochelle, H., Ranzato, M., Hadsell, R., Balcan, M.F.,
+Lin, H. (eds.) Advances in Neural Information Processing Systems. vol. 33, pp.
+11662–11675. Curran Associates, Inc. (2020)
+8. Hawkins, J., Ahmad, S., Cui, Y.: A Theory of How Columns in the Neocor-
+tex Enable Learning the Structure of the World. Frontiers in Neural Circuits
+11, 81 (Oct 2017). https://doi.org/10.3389/fncir.2017.00081, http://journal.
+frontiersin.org/article/10.3389/fncir.2017.00081/full
+10 S. Ferraro et al.
+9. Higgins, I., Matthey, L., Pal, A., Burgess, C.P., Glorot, X., Botvinick, M.M., Mo-
+hamed, S., Lerchner, A.: beta-vae: Learning basic visual concepts with a con-
+strained variational framework. In: 5th International Conference on Learning Rep-
+resentations, ICLR 2017, Toulon, France, April 24-26, 2017, Conference Track Pro-
+ceedings (2017)
+10. Huang, X., Liu, M.Y., Belongie, S., Kautz, J.: Multimodal unsupervised image-
+to-image translation. In: Proceedings of the European Conference on Computer
+Vision (ECCV) (September 2018)
+11. Kim, H., Mnih, A.: Disentangling by factorising. In: Dy, J., Krause, A. (eds.) Pro-
+ceedings of the 35th International Conference on Machine Learning. Proceedings
+of Machine Learning Research, vol. 80, pp. 2649–2658. PMLR (10–15 Jul 2018)
+12. Kingma, D.P., Welling, M.: Auto-Encoding Variational Bayes. arXiv:1312.6114 [cs,
+stat] (May 2014), http://arxiv.org/abs/1312.6114, arXiv: 1312.6114
+13. Kumar, A., Sattigeri, P., Balakrishnan, A.: Variational inference of disentangled
+latent concepts from unlabeled observations. In: 6th International Conference on
+Learning Representations, ICLR 2018, Vancouver, BC, Canada, April 30 - May 3,
+2018, Conference Track Proceedings (2018)
+14. Lanillos, P., Meo, C., Pezzato, C., Meera, A.A., Baioumy, M., Ohata, W., Tschantz,
+A., Millidge, B., Wisse, M., Buckley, C.L., Tani, J.: Active inference in robotics
+and artiﬁcial agents: Survey and challenges (2021)
+15. Lin, C.H., Kong, C., Lucey, S.: Learning eﬃcient point cloud generation for dense
+3d object reconstruction. In: Proceedings of the Thirty-Second AAAI Conference
+on Artiﬁcial Intelligence and Thirtieth Innovative Applications of Artiﬁcial In-
+telligence Conference and Eighth AAAI Symposium on Educational Advances in
+Artiﬁcial Intelligence. AAAI’18/IAAI’18/EAAI’18, AAAI Press (2018)
+16. Van de Maele, T., Verbelen, T., Catal, O., Dhoedt, B.: Disentangling What
+and Where for 3D Object-Centric Representations Through Active Inference.
+arXiv:2108.11762 [cs] (Aug 2021), http://arxiv.org/abs/2108.11762, arXiv:
+2108.11762
+17. Van de Maele, T., Verbelen, T., C ¸ atal, O., De Boom, C., Dhoedt, B.: Active
+Vision for Robot Manipulators Using the Free Energy Principle. Frontiers in
+Neurorobotics 15, 642780 (Mar 2021). https://doi.org/10.3389/fnbot.2021.642780,
+https://www.frontiersin.org/articles/10.3389/fnbot.2021.642780/full
+18. Van de Maele, T., Verbelen, T., C ¸ atal, O., Dhoedt, B.: Embodied ob-
+ject representation learning and recognition. Frontiers in Neurorobotics 16
+(2022). https://doi.org/10.3389/fnbot.2022.840658, https://www.frontiersin.
+org/article/10.3389/fnbot.2022.840658
+19. Mazzaglia, P., Verbelen, T., C ¸ atal, O., Dhoedt, B.: The free energy princi-
+ple for perception and action: A deep learning perspective. Entropy 24(2)
+(2022). https://doi.org/10.3390/e24020301, https://www.mdpi.com/1099-4300/
+24/2/301
+20. Mescheder, L., Oechsle, M., Niemeyer, M., Nowozin, S., Geiger, A.: Occupancy
+Networks: Learning 3D Reconstruction in Function Space. arXiv:1812.03828 [cs]
+(Apr 2019), http://arxiv.org/abs/1812.03828, arXiv: 1812.03828
+21. Mildenhall, B., Srinivasan, P.P., Tancik, M., Barron, J.T., Ramamoorthi, R.,
+Ng, R.: NeRF: Representing Scenes as Neural Radiance Fields for View Synthe-
+sis. arXiv:2003.08934 [cs] (Aug 2020), http://arxiv.org/abs/2003.08934, arXiv:
+2003.08934
+22. Mishkin, M., Ungerleider, L.G., Macko, K.A.: Object vision and spa-
+tial vision: two cortical pathways. Trends in Neurosciences 6, 414–417
+Disentangling Shape and Pose 11
+(Jan 1983). https://doi.org/10.1016/0166-2236(83)90190-x, https://doi.org/10.
+1016/0166-2236(83)90190-x
+23. Park, J.J., Florence, P., Straub, J., Newcombe, R., Lovegrove, S.: DeepSDF:
+Learning Continuous Signed Distance Functions for Shape Representation.
+arXiv:1901.05103 [cs] (Jan 2019), http://arxiv.org/abs/1901.05103, arXiv:
+1901.05103
+24. Parr, T., Sajid, N., Da Costa, L., Mirza, M.B., Friston, K.J.: Genera-
+tive Models for Active Vision. Frontiers in Neurorobotics 15, 651432 (Apr
+2021). https://doi.org/10.3389/fnbot.2021.651432, https://www.frontiersin.
+org/articles/10.3389/fnbot.2021.651432/full
+25. Rezende, D.J., Mohamed, S., Wierstra, D.: Stochastic Backpropagation and Ap-
+proximate Inference in Deep Generative Models. arXiv:1401.4082 [cs, stat] (May
+2014), http://arxiv.org/abs/1401.4082, arXiv: 1401.4082
+26. Rezende, D.J., Viola, F.: Taming VAEs. arXiv:1810.00597 [cs, stat] (Oct 2018),
+http://arxiv.org/abs/1810.00597, arXiv: 1810.00597
+27. Sancaktar, C., van Gerven, M.A.J., Lanillos, P.: End-to-end pixel-based deep active
+inference for body perception and action. 2020 Joint IEEE 10th International Con-
+ference on Development and Learning and Epigenetic Robotics (ICDL-EpiRob)
+(Oct 2020). https://doi.org/10.1109/icdl-epirob48136.2020.9278105, http://dx.
+doi.org/10.1109/ICDL-EpiRob48136.2020.9278105
+28. Sitzmann, V., Martel, J.N.P., Bergman, A.W., Lindell, D.B., Wetzstein, G.:
+SIREN: Implicit Neural Representations with Periodic Activation Functions.
+arXiv:2006.09661 [cs, eess] (Jun 2020),http://arxiv.org/abs/2006.09661, arXiv:
+2006.09661
+29. van Steenkiste, S., Locatello, F., Schmidhuber, J., Bachem, O.: Are dis-
+entangled representations helpful for abstract visual reasoning? In: Wallach,
+H., Larochelle, H., Beygelzimer, A., d 'Alch´ e-Buc, F., Fox, E., Garnett, R.
+(eds.) Advances in Neural Information Processing Systems. vol. 32. Curran
+Associates, Inc. (2019), https://proceedings.neurips.cc/paper/2019/file/
+bc3c4a6331a8a9950945a1aa8c95ab8a-Paper.pdf
+30. Ueltzh¨ oﬀer, K.: Deep active inference. Biol. Cybern. 112(6), 547–573 (Dec
+2018). https://doi.org/10.1007/s00422-018-0785-7, https://doi.org/10.1007/
+s00422-018-0785-7
+31. Wang, Z., Bovik, A., Sheikh, H., Simoncelli, E.: Image quality assessment: from
+error visibility to structural similarity. IEEE Transactions on Image Processing
+13(4), 600–612 (2004). https://doi.org/10.1109/TIP.2003.819861
+32. Wu, J., Zhang, C., Xue, T., Freeman, B., Tenenbaum, J.: Learning a prob-
+abilistic latent space of object shapes via 3d generative-adversarial mod-
+eling. In: Lee, D., Sugiyama, M., Luxburg, U., Guyon, I., Garnett, R.
+(eds.) Advances in Neural Information Processing Systems. vol. 29. Curran
+Associates, Inc. (2016), https://proceedings.neurips.cc/paper/2016/file/
+44f683a84163b3523afe57c2e008bc8c-Paper.pdf
+33. C ¸ atal, O., Wauthier, S., De Boom, C., Verbelen, T., Dhoedt, B.: Learning Gen-
+erative State Space Models for Active Inference. Frontiers in Computational
+Neuroscience 14, 574372 (Nov 2020). https://doi.org/10.3389/fncom.2020.574372,
+https://www.frontiersin.org/articles/10.3389/fncom.2020.574372/full
+12 S. Ferraro et al.
+A Model and training details
+This paper compares three generative models for representing the shape and
+pose of an object. Each of the models has a latent distribution of 24 dimensions,
+parameterized as a Gaussian distribution and has a similar amount of total
+trainable parameters.
+VAE: The VAE baseline is a traditional variational autoencoder. The en-
+coder consists of 6 convolutional layers with a kernel size of 3, a stride of 2 and
+padding of 1. The features for each layer are doubled every time, starting with
+4 for the ﬁrst layer. After each convolution, a LeakyReLU activation function is
+applied to the data. Finally, two linear layers are used on the ﬂattened output
+from the convolutional pipeline, to directly predict the mean and log variance
+of the latent distribution. The decoder architecture is a mirrored version of the
+encoder. It consists of 6 convolutional layers with kernel size 3, padding 1 and
+stride 1. The layers have 32, 8, 16, 32 and 64 output features respectively. After
+each layer the LeakyReLU activation function is applied. The data is doubled in
+spatial resolution before each such layer through bi-linear upsampling, yielding
+a 120 by 120 image as ﬁnal output. A transition model is used to predict the
+expected latent after applying an action. This model is parameterized through a
+fully connected neural network, consisting of three linear layers, where the out-
+put features are 64, 128 and 128 respectively. The input is the concatenation of a
+latent sample, and a 7D representation of the action (coordinate and orientation
+quaternion). The output of this layer is then again through two linear layers
+transformed in the predicted mean and log variance of the latent distribution.
+This model has 474 .737 trainable parameters.
+GQN: The GQN baseline only consists of an encoder and a decoder. As the
+model is conditioned on the absolute pose of the next viewpoint, there is no need
+for a transition model. The encoder is parameterized exactly the same as the
+encoder of the VAE baseline. The decoder is now conditioned on both a latent
+sample and the 7D representation of the absolute viewpoint (coordinate and
+orientation quaternion). These are ﬁrst concatenated and transformed through
+a linear layer with 128 output features. This is then used as a latent code for
+the decoder, which is parameterized the same as the decoder used in the VAE
+baseline. In total, the GQN has 361 .281 trainable parameters.
+VAEsp: Similar to the VAE baseline, the VAEsp consists of an encoder,
+decoder and transition model. The encoder is also a convolutional neural net-
+work, parameterized the same as the encoder of the VAE, except that instead
+of two linear layers predicting the parameters of the latent distribution, this
+model contains 4 linear layers. Two linear layers with 16 output features are
+used to predict the mean and log variance of the shape latent distribution, and
+two linear layers with 8 output features are used to predict the mean and log
+variance of the pose latent distribution. In the decoder, a sample from the pose
+and shape latent distributions are concatenated and decoded through a convolu-
+tional neural network, parameterized exactly the same as the decoder from the
+VAE baseline. The transition model, only transitions the pose latent, as we make
+the assumption that the object shape does not change over time. The transition
+Disentangling Shape and Pose 13
+model is parameterized the same as the transition model of the VAE, with the
+exception that the input is the concatenation of the 8D pose latent vector and
+the 7D action, in contrast to the 24D latent in the VAE. The VAEsp model has
+464.449 trainable parameters.
+All models are trained using a constrained loss, where Lagrangian optimizers
+are used to weigh the separate terms [26]. During training, we tuned the recon-
+struction tolerance for each object empirically. Respectively to ’bottle’, ’bowl’,
+’can’ and ’mug’ categories, MSE tolerances are: 350, 250, 280 and 520. Regular-
+ization terms are considered for each latent element. For all models, the Adam
+optimizer was used to minimize the objective.
+B Additional qualitative results
+(a) bottle
+ (b) bowl
+(c) can
+ (d) mug
+Fig. 6: One-step prediction for diﬀerent object categories.
+C Latent disentanglement
+In Figures 7, 8, 9 and 10, we show the distribution over the latent values when
+encoding observation where a single input feature changes. The blue violin plots
+14 S. Ferraro et al.
+represent the distribution over the latent values for observations where the shape
+is kept ﬁxed, and renders from diﬀerent poses are fed through the encoder. The
+orange violin plots represent the distribution over the latent values for observa-
+tions where the pose is kept ﬁxed, and renders from diﬀerent shapes within the
+object class are encoded through the encoder models.
+In these ﬁgures, we can clearly see that the encoding learnt by the VAE is
+not disentangled for any of the objects as the latent dimensions vary for both
+the ﬁxed shape and pose cases. With the GQN, we would expect that the latent
+dimensions would remain static for the ﬁxed shape case, as the pose is an explicit
+external signal for the decoder, however we can see that for a ﬁxed shape, the
+variation over the latent value still varies a lot, in similar fashion as for the ﬁxed
+pose. We conclude that the encoding of the GQN is also not disentangled. For
+the VAEsp model, we can see that in Figures 7 and 8, the ﬁrst eight dimensions
+are used for the encoding of the pose, as the orange violins are much denser
+distributed for the ﬁxed pose case. However, in Figures 9 and 10, we see that the
+model still shows a lot of variety for the latent codes describing the non-varying
+feature of the input. This result also strokes with our other experiments where
+for these objects both reconstruction as well as the move to perform worse.
+In this paper, we investigated the disentanglement for the diﬀerent consid-
+ered object classes. We see that our approach does not yield a disentangled
+representation each time. Further investigation and research will focus on better
+enforcing this disentanglement.
+Disentangling Shape and Pose 15
+(a) VAE bottle
+(b) GQN bottle
+(c) VAEsp bottle
+Fig. 7: Distribution of the latent values for the diﬀerent models (VAE, GQN
+and VAEsp) for objects from the “bottle” class. In this experiment, 50 renders
+from a ﬁxed object shape with a varying pose (ﬁxed shape, marked in blue) are
+encoded. The orange violin plots represent the distribution over the latent values
+for 50 renders from the same object pose, with a varying object shape.
+16 S. Ferraro et al.
+(a) VAE can
+(b) GQN can
+(c) VAEsp can
+Fig. 8: Distribution of the latent values for the diﬀerent models (VAE, GQN and
+VAEsp) for objects from the “can” class. In this experiment, 50 renders from a
+ﬁxed object shape with a varying pose (ﬁxed shape, marked in blue) are encoded.
+The orange violin plots represent the distribution over the latent values for 50
+renders from the same object pose, with a varying object shape.
+Disentangling Shape and Pose 17
+(a) VAE mug
+(b) GQN mug
+(c) VAEsp mug
+Fig. 9: Distribution of the latent values for the diﬀerent models (VAE, GQN and
+VAEsp) for objects from the “mug” class. In this experiment, 50 renders from a
+ﬁxed object shape with a varying pose (ﬁxed shape, marked in blue) are encoded.
+The orange violin plots represent the distribution over the latent values for 50
+renders from the same object pose, with a varying object shape.
+18 S. Ferraro et al.
+(a) VAE bowl
+(b) GQN bowl
+(c) VAEsp bowl
+Fig. 10: Distribution of the latent values for the diﬀerent models (VAE, GQN
+and VAEsp) for objects from the “bowl” class. In this experiment, 50 renders
+from a ﬁxed object shape with a varying pose (ﬁxed shape, marked in blue) are
+encoded. The orange violin plots represent the distribution over the latent values
+for 50 renders from the same object pose, with a varying object shape.

@@ -1,0 +1,1385 @@
+Parallel MCMC Without Embarrassing Failures
+Daniel Augusto de Souza1, Diego Mesquita2,3, Samuel Kaski2,4, Luigi Acerbi5
+1University College London2Aalto University3Getulio Vargas Foundation
+4University of Manchester5University of Helsinki
+daniel.souza.21@ucl.ac.uk, diego.mesquita@fgv.br, samuel.kaski@aalto.fi, luigi.acerbi@helsinki.fi
+Abstract
+Embarrassingly parallelMarkov Chain Monte
+Carlo (MCMC) exploits parallel computing
+to scale Bayesian inference to large datasets
+by using a two-step approach. First, MCMC
+is run in parallel on (sub)posteriors deﬁned
+on data partitions. Then, a server combines
+local results. While eﬃcient, this framework
+is very sensitive to the quality of subposte-
+rior sampling. Common sampling problems
+such as missing modes or misrepresentation
+of low-density regions are ampliﬁed – instead
+of being corrected – in the combination phase,
+leading to catastrophic failures. In this work,
+we propose a novel combination strategy to
+mitigate this issue. Our strategy, Parallel Ac-
+tive Inference (PAI), leverages Gaussian Pro-
+cess (GP)surrogate modeling and active learn-
+ing. After ﬁtting GPs to subposteriors, PAI
+(i) shares information between GP surrogates
+to cover missing modes; and (ii) uses active
+sampling to individually reﬁne subposterior
+approximations. We validate PAI in challeng-
+ing benchmarks, including heavy-tailed and
+multi-modal posteriors and a real-world ap-
+plication to computational neuroscience. Em-
+pirical results show that PAI succeeds where
+previous methods catastrophically fail, with
+a small communication overhead.
+1 INTRODUCTION
+Markov Chain Monte Carlo (MCMC) methods have
+become a gold standard in Bayesian statistics (Gelman
+et al., 2013; Carpenter et al., 2017). However, scaling
+MCMC methods to large datasets is challenging due to
+their sequential nature and that they typically require
+many likelihood evaluations, implying repeated sweeps
+Proceedings of the 25th International Conference on Artiﬁ-
+cial Intelligence and Statistics (AISTATS) 2022, Valencia,
+Spain. PMLR: Volume 151. Copyright 2022 by the au-
+thor(s).
+through the data. Various approaches that leverage
+distributed computing have been proposed to mitigate
+these limitations (Angelino et al., 2016; Robert et al.,
+2018). In general, we can split these approaches be-
+tween those that incur constant communication costs
+and those requiring frequent interaction between server
+and computing nodes (Vehtari et al., 2020).
+Embarrassingly parallel MCMC (Neiswanger et al.,
+2014) is a popular class of methods which employs
+a divide-and-conquer strategy to sample from a tar-
+get posterior, requiring only a single communication
+step. For dataset Dand model parametersθ∈RD,
+suppose we are interested in the Bayesian posterior
+p(θ|D) ∝p(θ)p(D|θ), wherep(θ) isthepriorand p(D|θ)
+the likelihood. Embarrassingly parallel methods be-
+gin by splitting the dataDinto K smaller partitions
+D1,...,DK so that we can rewrite the posterior as
+p(θ|D) ∝
+K∏
+k=1
+p(θ)1/Kp(Dk|θ) ≡
+K∏
+k=1
+pk(θ). (1)
+Next, an MCMC sampler is used to draw samples
+Sk from each subposterior pk(θ), for k = 1 ...K, in
+parallel. Then, the computing nodes send the local
+results to a central server, for a ﬁnal aggregation step.
+These local results are either the samples themselves
+or approximationsq1,...,qK built using them.
+Works in embarrassingly parallel MCMC mostly focus
+on combination strategies. Scott et al. (2016) employ a
+weighted average of subposterior samples. Neiswanger
+et al. (2014) propose using multivariate-normal surro-
+gates as well as non-parametric and semi-parametric
+forms. Wang et al. (2015) combine subposterior sam-
+ples into a hyper-histogram with random partition trees.
+Nemeth and Sherlock (2018) leverage density values
+computed during MCMC to ﬁt Gaussian process (GP)
+surrogates to log-subposteriors. Mesquita et al. (2019)
+use subposterior samples to ﬁt normalizing ﬂows and
+apply importance sampling to draw from their product.
+Despite these advances, parallel MCMC suﬀers from an
+unaddressed limitation: its dependence on high-quality
+subposterior sampling. This requirement is especially
+arXiv:2202.11154v2  [stat.ML]  29 Mar 2022
+Parallel MCMC Without Embarrassing Failures
+diﬃcult to meet when subposteriors are multi-modal or
+heavy-tailed, in which cases MCMC chains often visit
+only a subset of modes and may underrepresent low-
+density regions. Furthermore, the surrogates(qk)K
+k=1
+built only on local MCMC samples might match poorly
+the true subposteriors if not carefully tuned.
+Outline and contributions. We ﬁrst discuss the
+failure modes of parallel MCMC (Section 2). Draw-
+ing insight from this discussion, Section 3 proposes
+a novel GP-based solution, Parallel Active Inference
+(PAI). After ﬁtting the subposterior surrogates, PAI
+shares a subset of samples between computing nodes
+to prevent mode collapse. PAI also uses active learning
+to reﬁne low-density regions and avoid catastrophic
+model mismatch. Section 4 validates our method on
+challenging benchmarks and a real-world neuroscience
+example. Finally, Section 5 reviews related work and
+Section 6 discusses strengths and limitations of PAI.
+2 EMBARRASSINGLY PARALLEL
+MCMC: HOW CAN IT FAIL?
+We recall the basic structure of a generic embarrassingly
+parallel MCMC algorithm in Algorithm 1. This schema
+has major failure modes that we list below, before
+discussing potential solutions. We also illustrate these
+pathologies in Fig 1. In this paper, for a functionf
+with scalar output and a set of pointsS= {s1,...,sN},
+we denote withf(S) ≡{f(s1),...,f(sN)}.
+Algorithm 1Generic embarrassingly parallel MCMC
+Input: Data partitionsD1,...,DK; priorp(θ); likelihood
+function p(D|θ).
+1: parfor 1 ...Kdo . Parallel steps
+2: Sk ← MCMC samples frompk(θ) ∝p(θ)1/Kp(Dk|θ)
+3: build subposterior model qk(θ) from Sk
+4: end parfor
+5: Combine: q(θ) ∝
+∏K
+k=1 qk(θ) . Centralized step
+2.1 Failure modes
+I: Mode collapse. It is suﬃcient thatone subpos-
+terior qk misses a mode for the combined posteriorq
+to lack that mode (see Fig 1A). While dealing with
+multiple modes is an open problem for MCMC, here
+the issue is exacerbated by the fact that a single failure
+propagates to the ﬁnal solution. A back-of-the-envelope
+calculation shows that even if the chance of missing a
+mode is small,ε> 0, the probability of mode collapse
+in the combined posterior is≈(1 −ε)K making it a
+likely occurrence for suﬃciently largeK.
+Insight 1: For multimodal posteriors, mode
+collapse is almost inevitable unless the comput-
+ing nodes can exchange information about the
+location of important posterior regions.
+II: Catastrophic model mismatch. Since theqk
+are approximations of the true subposteriorspk, small
+deviations between them are expected – this is not
+what we refer to here. Instead, an example ofcatas-
+trophic model mismatch is when a simple parametric
+model such as a multivariate normal is used to model a
+multimodal posterior with separate modes (see Section
+4). Even nonparametric methods can be victims of this
+failure. For example, GP surrogates are often used to
+model nonparametric deviations of the log posterior
+from a parametric ‘mean function’. While these mod-
+els can well represent multimodal posteriors, care is
+needed to avoid grossly mismatched solutions in which
+a qk ‘hallucinates’ posterior mass due to an improper
+placement of the GP mean function (Fig 1B).
+Insight 2:We cannot take subposterior models
+at face value. Reliable algorithms should check
+and reﬁne theqk’s to avoid catastrophic failures.
+III: Underrepresented tails. This eﬀect is more
+subtle than the failure modes listed above, but it con-
+tributes to accumulating errors in the estimate of the
+combined posterior. The main issue here is that, by
+construction, MCMC samples and subposterior models
+based on these samples focus on providing information
+about the high-posterior-mass region of the subpos-
+terior. However, diﬀerent subposteriors may overlap
+only in their tail regions (Fig 1C), implying that the
+tails and the nearby ‘deep’ regions of each subposterior
+might actually be the most important in determining
+the exact shape of the combined posterior.
+Insight 3:Subposterior models built only from
+MCMC samples (and their log density) can
+miss important information about the tails and
+nearby regions of the subposterior which would
+also contribute to the combined posterior.
+2.2 Past solutions
+Since there is no guarantee thatqapproximates well the
+posterior p, Nemeth and Sherlock (2018) reﬁneq with
+an additional parallel step, called Distributed Impor-
+tance Sampler (DIS). DIS usesq as a proposal distribu-
+tion and draws samplesS∼ q, that are then sent back
+for evaluation of the log densitylog pk(S) at each paral-
+lel node. The true log densitylog p(S) = ∑
+klog pk(S)
+is then used as a target forimportance sampling/re-
+sampling (Robert and Casella, 2013). Technically, this
+step makes the algorithm not ‘embarrassingly paral-
+lel’ anymore, but the prospect of ﬁxing catastrophic
+failures outweighs the additional communication cost.
+However, DIS does not fully solve the issues raised in
+Section 2.1. Notably, importance sampling will not
+Daniel Augusto de Souza, Diego Mesquita, Samuel Kaski, Luigi Acerbi
+Figure 1: Failure modes of embarrassingly parallel MCMC. A–C. Each column illustrates a distinct
+failure type described in Section 2.1. For each column, the top rows show two subposteriorspk(θ) (black dashed
+line: ground truth; blue circles: MCMC samples), and the bottom row shows the full posteriorp(θ|D) with the
+approximate posterior combined using the method speciﬁed in the legend (orange line). These failure modes are
+general and not unique to the displayed algorithms (see Appendix A for details and further explanations).
+help recover the missing regions of the posterior ifq
+does not cover them in the ﬁrst place. DIS can help
+in some model mismatch cases, in that ‘hallucinated’
+regions of the posterior will receive near-zero weights
+after the true density is retrieved.
+2.3 Proposed solution
+Drawing from the insights in Section 2.1, we propose
+two key ideas to address the blind spots of embarrass-
+ingly parallel MCMC. Here we provide an overview of
+our solution, which is described in detail in Section
+3. The starting point is modeling subposteriors via
+Gaussian process surrogates (Fig 2A).
+Sample sharing. We introduce an additional step
+in which each node shares a selected subset of MCMC
+samples with the others (Fig 2B). This step provides
+suﬃcient information for local nodes to address mode
+collapse and underrepresented tails. While this com-
+munication step makes our method not strictly ‘em-
+barrassingly’ parallel, we argue it is necessary to avoid
+posterior density collapse. Moreover, existing methods
+already consider an extra communication step (Nemeth
+and Sherlock, 2018), as mentioned in Section 2.2.
+Active learning. We useactive learning as a gen-
+eral principle whenever applicable. The general idea is
+to select points that are informative about the shape of
+the subposterior, minimizing the additional communi-
+cation required. Active learning is used here in multiple
+steps: when selecting samples from MCMC to build
+the surrogate model (as opposed to thinning or ran-
+dom subsampling); as a way to choose which samples
+from other nodes to add to the current surrogate model
+of each subposteriorqk (only informative samples are
+added); to actively samplenew points to reduce un-
+certainty in the local surrogateqk (Fig 2C). Active
+learning contributes to addressing both catastrophic
+model mismatch and underrepresented tails.
+Combined, these ideas solve the failure modes discussed
+previously (Fig 2D).
+Parallel MCMC Without Embarrassing Failures
+Figure 2: Parallel active inference (PAI). A.Each log subposteriorlog pk(θ) (black dashed line) is modeled
+via Gaussian process surrogates (orange dashed line: mean GP; shaded area: 95% conﬁdence interval) trained
+on MCMC samplesSk (blue circles) and their log-densitylog pk(Sk). Here, MCMC sampling on the second
+subposterior has missed a mode.B. Selected subsets of MCMC samples are shared across nodes, evaluated locally
+and added to the GP surrogates. Here, sample sharing helps ﬁnding the missing mode in the second subposterior,
+but the GP surrogate is now highly uncertain outside the samples.C. Subposteriors are reﬁned by actively
+selecting new samples (stars) that resolve uncertainty in the surrogates.D. Subposteriors are combined into the
+full approximate log posterior (orange line); here a perfect match to the true log posterior (black dashed line).
+3 PARALLEL ACTIVE INFERENCE
+In this section, we present our framework, which we call
+Parallel Active Inference (PAI), designed to address the
+issues discussed in Section 2. The steps of our method
+are schematically explained in Fig 2 and the detailed
+algorithm is provided in Appendix C.
+3.1 Subposterior modeling via GP regression
+As per standard embarrassingly parallel algorithms, we
+assume each node computes a set of samplesSk and
+their log density,log pk(Sk), by running MCMC on
+the subposteriorpk. We model each log-subposterior
+Lk(θ) ≡ log qk(θ) using GP regression (Fig 2A; see
+Rasmussen and Williams (2006); Nemeth and Sherlock
+(2018); Görtler et al. (2019) and Appendix B for more
+information). We say that a GP surrogate model is
+trained onSk as a shorthand for(Sk,log pk(Sk)).
+When building the GP model of the subposterior, it is
+not advisable to use all samplesSk because: (1) exact
+inference in GPs scales cubically in the number of train-
+ing points (although see Wang et al. (2019)); (2) we
+want to limit communication costs when sharing sam-
+ples between nodes; (3) there is likely high redundancy
+in Sk about the shape of the subposterior. Nemeth and
+Sherlock (2018) simply choose a subset of samples by
+‘thinning’ a longer MCMC chain at regular intervals.
+Instead, we employactive subsampling as follows.
+First, we pick an initial subset ofn0 samples S(0)
+k ⊂Sk,
+that we use to train an initial GP (details in Appendix
+C.1). Then, we iteratively select pointsθ⋆ from Sk by
+maximizing themaximum interquantile range(MAX-
+IQR) acquisition function (Järvenpää et al., 2021):
+θ⋆= arg max
+θ
+{
+em(θ;S(t)
+k )sinh
+(
+u·s(θ; S(t)
+k )
+)}
+, (2)
+where m(θ; S(t)
+k ) and s(θ; S(t)
+k ) are, respectively, the
+posterior latent mean and posterior latent standard
+deviation of the GP at the end of iterationt ≥ 0;
+and sinh(z) = (exp(z) −exp(−z))/2 for z ∈R is the
+hyperbolic sine. Eq. 2 promotes selection of points
+with high posterior density for which the GP surrogate
+is also highly uncertain, with the trade-oﬀ controlled by
+u> 0, where larger values ofufavor further exploration.
+In each iterationt+ 1, we greedily select a batch of
+nbatch points at a time fromSk \S(t)
+k using a batch
+version of MAXIQR (Järvenpää et al., 2021). We add
+the selected points to the current training set,S(t+1)
+k ,
+and retrain the GP after each iteration (see Appendix
+C.1). After T iterations, our procedure yields a subset
+of pointsS′
+k ≡S(T)
+k ⊆Sk that are highly informative
+about the shape of the subposterior.
+3.2 Sample sharing
+In this step, each nodekshares the selected samplesS′
+k
+with all other nodes (Fig 2B). Thus, nodekgains access
+Daniel Augusto de Souza, Diego Mesquita, Samuel Kaski, Luigi Acerbi
+to the samplesS′
+\k ≡⋃
+j̸=kS′
+j. Importantly,S′
+\k might
+contain samples from relevant subposterior regions that
+node k has has not explored. As discussed in Section
+3.1, for eﬃciency we avoid addingall points S′
+\k to the
+current GP surrogate for subposteriork. Instead, we
+add a sampleθ⋆ ∈S′
+\k to the GP training set only if
+the prediction of the current GP surrogate deviates
+from the true subposteriorlog pk(θ⋆) in a signiﬁcant
+way (see Appendix C.2 for details). After this step,
+we obtain an expanded set of pointsS′′
+k that includes
+information from all the nodes, minimizing the risk of
+mode collapse (see Section 2.1).
+3.3 Active subposterior reﬁnement
+So far, the GP models have been trained using selected
+subsets of samples from the original MCMC runs. In
+this step, we reﬁne the GP model of each subposterior
+by sampling new points (Fig 2C). Speciﬁcally, each
+node k actively selects new points by optimizing the
+MAXIQR acquisition function (Eq. 2) overX⊆ RD
+(see Appendix C.3). New points are selected greedily
+in batches of sizenbatch, retraining the GP after each
+iteration. This procedure yields a reﬁned set of points
+S′′′
+k which includes new points that better pinpoint
+the shape of the subposterior, reducing the risk of
+catastrophic model mismatch and underrepresented
+tails. The ﬁnal log-subposterior surrogate modelLk is
+the GP trained onS′′′
+k .
+3.4 Combining the subposteriors
+Finally, we approximate the full posteriorlog p(θ|D) =∑K
+k=1 log pk(θ) by combining all subposteriors together
+(Fig 2D). Since each log-subposterior is approximated
+by a GP, the approximate full log-posterior is a sum of
+GPs and itself a GP,L(θ) = ∑K
+k=1 Lk(θ). Note that
+L(θ), being a GP, is still a distribution over functions.
+We want then to obtain a point estimate for the (unnor-
+malized) posterior density corresponding toexp L(θ).
+One choice is to take the posterior mean, which leads to
+the expectation of a log-normal density (Nemeth and
+Sherlock, 2018). We prefer a robust estimate and use
+the posterior median instead (Järvenpää et al., 2021).
+Thus, our estimate is
+q(θ) ∝exp
+{K∑
+k=1
+mk(θ; S′′′
+k )
+}
+. (3)
+In low dimension (D= 1,2), Eq. 3 can be evaluated on
+a grid. In higher dimension, one could sample fromq(θ)
+using MCMC methods such as NUTS (Hoﬀman and
+Gelman, 2014), as done by Nemeth and Sherlock (2018).
+However, q(θ) is potentially multimodal which does
+not lend itself to easy MCMC sampling. Alternatively,
+Acerbi (2018) runs variational inference onq(θ) using
+as variational distribution a mixture of Gaussians with
+a large number of components. Finally, for moderateD,
+importance sampling/resampling with an appropriate
+(adaptive) proposal would also be feasible.
+As a ﬁnal optional step, after combining the subposte-
+riors into the full approximate posteriorq(θ), we can
+reﬁne the solution usingdistributed importance sam-
+pling (DIS) as proposed by Nemeth and Sherlock (2018)
+and discussed in Section 2.2.
+3.5 Complexity analysis
+Similarly to conventional embarrassingly parallel
+MCMC, we can split the cost of running PAI into
+two main components. The ﬁrst consists of local costs,
+which involve computations happening at individual
+computing nodes (i.e., model ﬁtting and active reﬁne-
+ment). The second are global (or aggregation) costs,
+which comprise communication and sampling from the
+combined approximate posterior.
+3.5.1 Model ﬁtting
+After sampling their subposterior, each computing node
+k has to ﬁt the surrogate model on the subset of their
+samples, S′
+k. These subsets are designed such that their
+size isO(D) (see Appendix C). Thus, the cost of ﬁtting
+the surrogate GP models in each of theK computing
+nodes isO(D3). The same applies forS′′
+k and S′′′
+k .
+3.5.2 Communication costs
+Traditional embarrassingly parallel MCMC methods
+only require two global communication steps: (1) the
+central server splits theN observations amongK com-
+puting nodes; (2) each node sendsS subposterior sam-
+ples of dimensionDback to the server, assuming nodes
+draw the same number of samples. Together, these
+steps amount toO(N + KSD) communication cost.
+PAI imposes another communication step, in which
+nodes share their subposterior samples and incurring
+O(KSD) cost. Furthermore, supposing PAI acquiresA
+active samples to reﬁne each subposterior, the cost of
+sending local results to servers is increased byO(KAD).
+PAI also incur a small additional cost for sending back
+the value of the GP hyperparametersO(KD). In sum,
+since usuallyA≪ S, the asymptotic communication
+cost of PAI is equivalent to traditional methods.
+3.5.3 Active reﬁnement costs
+Active learning involves GP training and optimization
+of the acquisition function, but only a small number of
+likelihood evaluations. Thus, under the embarrassingly
+parallel MCMC assumption that likelihood evaluations
+are costly (e.g., due to large datasets), active learning
+is relatively inexpensive (Acerbi, 2018). More impor-
+tantly, as shown in our ablation study in Appendix
+D.1, this step is crucial to avoid the pathologies of
+embarrassingly parallel MCMC.
+Parallel MCMC Without Embarrassing Failures
+3.5.4 Sampling complexity
+Sampling from the aggregate approximate posterior
+q(θ) only requires evaluating the GP predictive mean
+for each subposterior and does not require access to
+the data or all samples. The sampling cost is linear
+in the number of subposteriorsK and the size of each
+GP O(D). Even ifK is chosen to scale as the size of
+the actual data, each GP only requires a small training
+set, making them comparably inexpensive.
+4 EXPERIMENTS
+We evaluate PAI on a series of target posteriors with
+diﬀerent challenging features. Subsection 4.1 shows re-
+sults for a posterior with four distinct modes, which is
+prone to mode collapse (Fig 1A). Subsection 4.2 targets
+a posterior with heavy tails, which can lead to under-
+represented tails (Fig 1C). Subsection 4.3 uses a rare
+event model to gauge how well our method performs
+when the true subposteriors are drastically diﬀerent.
+Finally, Subsection 4.4 concludes with a real-world ap-
+plication to a model and data from computational neu-
+roscience (Acerbi et al., 2018). We provide implementa-
+tiondetailsinAppendixB.3andsourcecodeisavailable
+at https://github.com/spectraldani/pai.
+Algorithms. We compare basic PAI and PAI with
+theoptionaldistributedimportancesamplingstep(PAI-
+DIS) against six popular and state-of-the-art (SOTA)
+embarrassingly parallel MCMC methods: the paramet-
+ric, non-parametric and semi-parametric methods by
+Neiswanger et al. (2014); PART (Wang et al., 2015);
+and two other GP-surrogate methods (Nemeth and
+Sherlock, 2018), one using a simple combination of
+GPs (GP) and the other using the distributed impor-
+tance sampler (GP-DIS; see Section 2.2).
+Procedure. For each problem, we randomly split
+the data in equal-sized partitions and divide the tar-
+get posterior intoK subposteriors (Eq. 1). We run
+MCMC separately on each subposterior using Stan
+with multiple chains (Carpenter et al., 2017). The
+same MCMC output is then processed by the diﬀer-
+ent algorithms described above, yielding a combined
+approximate posterior for each method. To assess the
+quality of each posterior approximation, we compute
+the mean marginal total variation distance (MMTV),
+the 2-Wasserstein (W2) distance, and the Gaussian-
+ized symmetrized Kullback-Leibler (GsKL) divergence
+between the approximate and the true posterior, with
+each metric focusing on diﬀerent features. For each
+problem, we computed ground-truth posteriors using
+numerical integration (for D ≤ 2) or via extensive
+MCMC sampling in Stan (Carpenter et al., 2017). For
+all GP-based methods (PAI, PAI-DIS, GP, GP-DIS),
+we sampled from the potentially multimodal combined
+GP (Eq. 3) using importance sampling/resampling
+with an appropriate proposal. We report results as
+mean ±standard deviation across ten runs in which
+the entire procedure was repeated with diﬀerent ran-
+dom seeds. For all metrics, lower is better, and the
+best (statistically signiﬁcant) results for each metric are
+reported in bold. See Appendix D.2 for more details.
+4.1 Multi-modal posterior
+Setting. In this synthetic example, the data consist
+of N = 103 samples y1,...,yN drawn from the follow-
+ing hierarchical model:
+θ∼p(θ) = N(0,σ2
+pI2)
+y1,...,yN ∼p(yn|θ) =
+2∑
+i=1
+1
+2N
+(
+Pi(θi),σ2
+l
+)
+where θ ∈R2, σp = σl = 1 /4 and Pi’s are second-
+degree polynomial functions. By construction, the
+target posteriorp(θ|y1,...,yN) ∝p(θ) ∏N
+n=1 p(yn|θ) is
+multimodal with four modes. We run parallel inference
+on K = 10 equal-sized partitions of the data. We
+provide more details regardingP1,P2 in Appendix D.3.
+Results. Fig 3 shows the output of each parallel
+MCMC method for a typical run, displayed as samples
+from the approximate combined posterior overlaid on
+top of the ground-truth posterior. Due to MCMC oc-
+casionally missing modes in subposterior sampling, the
+combined posteriors from all methods except PAI lack
+at least one mode of the posterior (mode collapse, as
+seen in Fig 1A). Other methods also often inappropri-
+ately distribute mass in low-density regions (as seen in
+Fig 1B). In contrast, PAI accurately recovers all the
+high-density regions of the posterior achieving a near-
+perfect match. Table 1 shows that PAI consistently
+outperforms the other methods in terms of metrics.
+Table 1:Multi-modal posterior.
+Model MMTV W2 GsKL
+Parametric 0.89±0.12 1.08±0.33 8.9±11×102
+Semi-param. 0.81±0.09 1.08±0.12 5.6±1.3 ×101
+Non-param. 0.81±0.09 1.12±0.09 5.0±1.8 ×101
+PART 0.55±0.09 1.06±0.33 7.3±14×102
+GP 0.93±0.16 1.01±0.36 1.2±1.3 ×104
+GP-DIS 0.87±0.18 1.04±0.34 4.8±14×1016
+PAI 0.037±0.011 0.028±0.011 1.6±1.7×10−4
+PAI-DIS 0.034±0.019 0.026±0.008 3.9±2.4×10−5
+Large datasets. To illustrate the computational
+beneﬁts of using PAI for larger datasets, we repeated
+the same experiment in this section but with105 data
+points in each of theK = 10 partitions. Remarkably,
+even for this moderate-sized dataset, we notice a6×
+speed-up – decreasing the total running time from 6
+hours to 57 minutes, (50 for subposterior sampling + 7
+from PAI; see Appendix D.4). Overall, PAI’s running
+Daniel Augusto de Souza, Diego Mesquita, Samuel Kaski, Luigi Acerbi
+Figure 3: Multi-modal posterior. Each panel shows samples from the combined approximate posterior (red)
+against the ground truth (blue). With exception of PAI, all methods completely miss at least one high-density
+region. Moreover, PAI is the only method that does not assign mass to regions without modes.
+Figure 4: Warped Student’s t.Top: Log marginal
+posterior for θ1. Bottom: Log posterior density.
+Thanks to active sampling, PAI better captures de-
+tails in the depths of the tails.
+time is in the same order of magnitude as the previous
+SOTA (e.g. Wang et al., 2015; Nemeth and Sherlock,
+2018). However, only PAI returns correct results while
+other methods fail.
+4.2 Warped Student’s t
+Setting. We now turn to a synthetic example with
+heavy tails. Consider the following hierarchical model:
+θ∼p(θ) = N(0,σ2
+pI2)
+y1,...,yN ∼p(yn|θ) = StudentT
+(
+ν,θ1 + θ2
+2,σ2
+l
+)
+where θ ∈R2, ν = 5 is the degrees of freedom of
+the Student’st-distribution, σp = 1 , and σl =
+√
+2.
+This model is a heavy-tailed variant of the Warped
+Gaussian model studied in earlier work, e.g., Nemeth
+and Sherlock (2018); Mesquita et al. (2019). As before,
+we generateN = 103 samples and split the data into
+K = 10 partitions for parallel inference.
+Results. Fig 4 shows the full posterior and the
+marginal posterior forθ1 obtained using the two best-
+performing methods without DIS reﬁnement, PAI and
+GP (see Table 2). While PAI(-DIS) is very similiar to
+GP(-DIS) in terms of metrics, Fig 4 shows that, unlike
+GP(-DIS), PAI accurately captures the far tails of the
+posterior which could be useful for downstream tasks,
+avoiding failure mode III (Fig 1C).
+Table 2:Warped Student’s t.
+Model MMTV W2 GsKL
+Parametric 0.51±0.01 0.71±0.07 1.9±0.1 ×100
+Semi-param. 0.50±0.03 0.57±0.05 1.1±0.2 ×101
+Non-param. 0.51±0.02 0.59±0.03 1.2±0.2 ×101
+PART 0.66±0.07 0.78±0.09 1.2±0.7 ×102
+GP 0.015±0.003 0.003±0.002 4.5±10.5 ×10−4
+GP-DIS 0.018±0.004 0.002±0.001 6.6±5.8 ×10−5
+PAI 0.015±0.003 0.002±0.001 1.2±0.8×10−5
+PAI-DIS 0.018±0.003 0.002±0.001 3.8±3.4 ×10−5
+4.3 Rare categorical events
+Setting. To evaluate how our method copes with
+heterogeneous subposteriors, we run parallel inference
+for a synthetic example with Categorical likelihood
+Parallel MCMC Without Embarrassing Failures
+and N = 103 discrete observations split among three
+classes. To enforce heterogeneity, we make the ﬁrst
+two classes rare (true probabilityθ1 = θ2 = 1/N) and
+the remaining class much more likely (true probability
+θ3 = (N −2)/N). Since we split the data intoK = 10
+equal-sized parts, some of them will not contain even
+a single rare event. We perform inference overθ∈∆ 2
+(probability 2-simplex) with a symmetric Dirichlet prior
+with concentration parameterα = 1/3.
+Results. Fig 5 shows the samples from the combined
+approximate posterior for each method. In this exam-
+ple, PAI-DIS matches the shape of the target posterior
+extremely well, followed closely by GP-DIS (see also
+Table 3). Notably, even standard PAI (without the
+DIS correction) produces a very good approximation of
+the posterior – a further display of the ability of PAI of
+capturing ﬁne details of each subposterior, particularly
+important here in the combination step due to the het-
+erogeneous subposteriors. By contrast, the other meth-
+ods end up placing excessive mass in very-low-density
+regions (PART, Parametric, GP) or over-concentrating
+(Non-parametric, Semi-parametric).
+Table 3:Rare categorical events.
+Model MMTV W2 GsKL
+Parametric 0.26±0.14 0.15±0.19 1.1±1.4 ×100
+Semi-param. 0.49±0.21 0.27±0.23 3.5±3.4 ×100
+Non-param. 0.43±0.17 0.19±0.25 2.8±3.9 ×100
+PART 0.31±0.14 0.08±0.13 8.6±10×10−1
+GP 0.16±0.09 0.04±0.07 3.5±4.8 ×10−1
+GP-DIS 0.011±0.002 6.3±0.9 ×10−4 1.1±1.5 ×10−4
+PAI 0.028±0.027 0.001±0.002 8.0±16×10−3
+PAI-DIS 0.009±0.002 5.4±0.8×10−4 4.3±2.1×10−5
+4.4 Multisensory causal inference
+Setting. Causal inference(CI) in multisensory per-
+ception denotes the process whereby the brain decides
+whether distinct sensory cues come from the same
+source, a commonly studied problem in computational
+and cognitive neuroscience (Körding et al., 2007). Here
+we compute the posterior for a 6-parameter CI model
+given the data of subject S1 from (Acerbi et al., 2018)
+(see Appendix D.3 for model details). The ﬁtted model
+is a proxy for a large class of similar models that would
+strongly beneﬁt from parallelization due to likelihoods
+that do not admit analytical solutions, thus requiring
+costly numerical integration. For this experiment, we
+run parallel inference overK = 5 partitions of the
+N = 1069 observations in the dataset.
+Results. Table 4 shows the outcome metrics of paral-
+lel inference. Similarly to the rare-events example, we
+ﬁnd that PAI-DIS obtains an excellent approximation
+of the true posterior, with GP-DIS performing about
+equally well (slightly worse on the GsKL metric). De-
+spite lacking the DIS reﬁnement step, standard PAI
+performs competitively, achieving a reasonably good
+approximation of the true posterior (see Appendix D.3).
+All the other methods perform considerably worse; in
+particular the GP method without the DIS step is
+among the worst-performing methods on this example.
+Table 4:Multisensory causal inference.
+Model MMTV W2 GsKL
+Parametric 0.40±0.05 4.8±0.6 1.2±0.4 ×101
+Semi-param. 0.68±0.07 9.7±9.6 5.6±3.2 ×101
+Non-param. 0.26±0.02 0.52±0.14 5.3±0.3 ×100
+PART 0.24±0.04 1.5±0.5 8.0±5.4 ×100
+GP 0.49±0.25 17±23 6.3±8.9 ×101
+GP-DIS 0.07±0.03 0.16±0.07 8.7±14 ×10−1
+PAI 0.16±0.04 0.56±0.21 2.0±1.7 ×100
+PAI-DIS 0.05±0.04 0.14±0.13 2.9±3.6 ×10−1
+5 RELATED WORKS
+While the main staple of embarrassingly parallel
+MCMC is being a divide-and-conquer algorithm, there
+are other methods that scale up MCMC using more
+intensive communication protocols. For instance, Ahn
+et al. (2014) propose a distributed version of stochatic
+gradient Langevin dynamics (SGLD, Welling and Teh,
+2011) that constantly passes around the chain state to
+computing nodes, making updates only based on local
+data. However, distributed SGLD tends to diverge
+from the posterior when the communications are lim-
+ited, an issue highlighted by recent work (El Mekkaoui
+et al., 2021; Vono et al., 2022). Outside the realm of
+MCMC, there are also works proposing expectation
+propagation as a framework for inference on partitioned
+data (Vehtari et al., 2020; Bui et al., 2018).
+Our method, PAI, builds on top of related work on
+GP-based surrogate modeling and active learning for
+log-likelihoods and log-densities. Prior work used GP
+models and active sampling to learn the intractable
+marginal likelihood (Osborne et al., 2012; Gunter
+et al., 2014) or the posterior (Kandasamy et al., 2015a;
+Wang and Li, 2018; Järvenpää et al., 2021). Recently,
+the framework of Variational Bayesian Monte Carlo
+(VBMC) was introduced to simultaneously compute
+both the posterior and the marginal likelihood (Acerbi,
+2018, 2019, 2020). PAI extends the above works by
+dealing with partitioned data in the embarrassingly par-
+allel setting, similarly to Nemeth and Sherlock (2018),
+but with the key addition of active learning and other
+algorithmic improvements.
+6 DISCUSSION
+In this paper, we ﬁrst exposed several potential ma-
+jor failure modes of existing embarrassingly parallel
+MCMC methods. We then proposed a solution with
+Daniel Augusto de Souza, Diego Mesquita, Samuel Kaski, Luigi Acerbi
+Figure 5: Rare categorical events.Each ternary plot shows samples from the combined approximate posterior
+(red) on top of the true posterior (blue). Note that the panels are zoomed in on the relevant corner of the
+probability simplex. Of all methods, PAI is the one that best captures the shape of the posterior.
+our new method,parallel active inference(PAI), which
+incorporates two key strategies: sample sharing and
+active learning. On a series of challenging benchmarks,
+we demonstrated that ‘vanilla’ PAI is competitive with
+current state-of-the-art parallel MCMC methods and
+deals successfully with scenarios (e.g., multi-modal pos-
+teriors) in which all other methods catastrophically
+fail. When paired with an optional reﬁnement step
+(PAI-DIS), the proposed method consistently performs
+on par with or better than state-of-the-art. Our results
+show the promise of the proposed strategies to deal
+with the challenges arising in parallel MCMC. Still, the
+solution is no silver bullet and several aspects remain
+open for future research.
+6.1 Limitations and future work
+Themajorlimitationofourmethod, acommonproblem
+to surrogate-based approaches, is scalability to higher
+dimensions. Most GP-based approaches for Bayesian
+posterior inference are limited to up to∼10 dimensions,
+see e.g. Acerbi, 2018, 2020; Järvenpää et al., 2021.
+Future work could investigate methods to scale GP
+surrogate modeling to higher dimensions, for example
+taking inspiration from high-dimensional approaches in
+Bayesian optimization (e.g., Kandasamy et al., 2015b).
+More generally, the validity of any surrogate modeling
+approach hinges on the ability of the surrogate model to
+faithfully represent the subposteriors. Active learning
+helps, but model mismatch in our method is still a
+potential issue that hints at future work combining
+PAI with more ﬂexible surrogates such as GPs with
+more ﬂexible kernels (Wilson and Adams, 2013) or
+deep neural networks (Mesquita et al., 2019). For the
+latter, obtaining the uncertainty estimates necessary
+for active learning would involve Bayesian deep learning
+techniques (e.g., Maddox et al., 2019).
+As discussed before, our approach is not ‘embarrass-
+ingly’ parallel in that it requires a mandatory global
+communication step in the sample sharing part (see
+Section 3.2). The presence of additional communica-
+tion steps seem inevitable to avoid catastrophic failures
+in parallel MCMC, and has been used before in the
+literature (e.g., the DIS step of Nemeth and Sherlock,
+2018). Our method aﬀords an optional ﬁnal reﬁnement
+step (PAI-DIS) which also requires a further global
+communication step. At the moment, there is no au-
+tomated diagnostic to determine whether the optional
+DIS step is needed. Our results show that PAI already
+performs well without DIS in many cases. Still, future
+work could include an analysis of the GP surrogate
+uncertainty to recommend the DIS step when useful.
+Acknowledgments
+This work was supported by the Academy of Finland
+(Flagship programme: Finnish Center for Artiﬁcial
+Intelligence FCAI and grants 328400, 325572) and
+UKRI (Turing AI World-Leading Researcher Fellow-
+ship, EP/W002973/1). We also acknowledge the com-
+putational resources provided by the Aalto Science-IT
+Project from Computer Science IT.
+References
+L. Acerbi. Variational Bayesian Monte Carlo. InAdvances
+in Neural Information Processing Systems (NeurIPS),
+2018.
+L. Acerbi. Variational Bayesian Monte Carlo with noisy like-
+lihoods. In Advances in Neural Information Processing
+Systems (NeurIPS), 2020.
+Parallel MCMC Without Embarrassing Failures
+L. Acerbi, K. Dokka, D. E. Angelaki, and W. J. Ma.
+Bayesian comparison of explicit and implicit causal infer-
+ence strategies in multisensory heading perception.PLoS
+Computational Biology, 14(7):e1006110, 2018.
+Luigi Acerbi. An exploration of acquisition and mean func-
+tions in Variational Bayesian Monte Carlo. Proceed-
+ings of The 1st Symposium on Advances in Approximate
+Bayesian Inference (PMLR), 96:1–10, 2019.
+S. Ahn, B. Shahbaba, and M. Welling. Distributed stochas-
+tic gradient MCMC. In International Conference on
+Machine Learning (ICML), 2014.
+E. Angelino, M. J. Johnson, and R. P. Adams. Patterns of
+scalable Bayesian inference.Foundations and Trends in
+Machine Learning, 9(2-3):119–247, 2016.
+M. Balandat, B. Karrer, D. Jiang, S. Daulton, B. Letham,
+A. Wilson, and E. Bakshy. BoTorch: A Framework for Ef-
+ﬁcient Monte-Carlo Bayesian Optimization. InAdvances
+in Neural Information Processing Systems (NeurIPS),
+2020.
+T. Bui, C. Nguyen, S. Swaroop, and R. Turner. Partitioned
+variational inference: A uniﬁed framework encompass-
+ing federated and continual learning.ArXiv:1811.11206,
+2018.
+B. Carpenter, A. Gelman, M. Hoﬀman, D. Lee, B. Goodrich,
+M. Betancourt, M. Brubaker, J. Guo, P. Li, and A. Rid-
+dell. Stan: A probabilistic programming language.Jour-
+nal of Statistical Software, 76(1), 2017.
+K. El Mekkaoui, D. Mesquita, P. Blomstedt, and S. Kaski.
+Federated stochastic gradient Langevin dynamics. In
+Uncertainty in Artiﬁcial Intelligence (UAI), 2021.
+J. Gardner, G. Pleiss, D. Bindel, K. Weinberger, and A. Wil-
+son. Gpytorch: Blackbox matrix-matrix Gaussian process
+inference with GPU acceleration. InAdvances in Neural
+Information Processing Systems (NeurIPS), 2018.
+A. Gelman, J. B. Carlin, H. S. Stern, D. B. Dunson, A. Ve-
+htari, and D. B. Rubin.Bayesian Data Analysis. CRC
+press, 2013.
+J. Görtler, R. Kehlbeck, and O. Deussen. A visual explo-
+ration of Gaussian processes.Distill, 4(4):e17, 2019.
+Tom Gunter, Michael A Osborne, Roman Garnett, Philipp
+Hennig, and Stephen J Roberts. Sampling for inference
+in probabilistic models with fast Bayesian quadrature.
+Advances in Neural Information Processing Systems, 27:
+2789–2797, 2014.
+M. D. Hoﬀman and A. Gelman. The No-U-Turn sampler:
+adaptively setting path lengths in Hamiltonian Monte
+Carlo. Journal of Machine Learning Research, 15(1):
+1593–1623, 2014.
+M. Järvenpää, M. U. Gutmann, A. Vehtari, and P. Martti-
+nen. Parallel Gaussian process surrogate Bayesian infer-
+ence with noisy likelihood evaluations.Bayesian Analysis,
+16(1):147–178, 2021.
+K. Kandasamy, J. Schneider, and B. Póczos. Bayesian active
+learning for posterior estimation. InProceedings of the
+24th International Conference on Artiﬁcial Intelligence,
+pages 3605–3611, 2015a.
+Kirthevasan Kandasamy, Jeﬀ Schneider, and Barnabás Póc-
+zos. High dimensional Bayesian optimisation and bandits
+via additive models. InInternational Conference on Ma-
+chine Learning (ICML), pages 295–304. PMLR, 2015b.
+Konrad P Körding, Ulrik Beierholm, Wei Ji Ma, Steven
+Quartz, Joshua B Tenenbaum, and Ladan Shams. Causal
+inference in multisensory perception. PLoS one, 2(9):
+e943, 2007.
+Wesley J Maddox, Pavel Izmailov, Timur Garipov,
+Dmitry P Vetrov, and Andrew Gordon Wilson. A sim-
+ple baseline for Bayesian uncertainty in deep learning.
+In Advances in Neural Information Processing Systems
+(NeurIPS), volume 32, pages 13153–13164, 2019.
+Wesley J Maddox, Sanyam Kapoor, and Andrew Gordon
+Wilson. When are iterative Gaussian processes reliably
+accurate? 2021.
+D. Mesquita, P. Blomstedt, and S. Kaski. Embarrassingly
+parallel MCMC using deep invertible transformations. In
+Uncertainty in Artiﬁcial Intelligence (UAI), 2019.
+W. Neiswanger, C. Wang, and E. P. Xing. Asymptotically
+exact, embarrassingly parallel MCMC. InUncertainty
+in Artiﬁcial Intelligence (UAI), 2014.
+C. Nemeth and C. Sherlock. Merging MCMC subposteri-
+ors through Gaussian-process approximations.Bayesian
+Analysis, 13(2):507–530, 2018.
+Michael Osborne, David K Duvenaud, Roman Garnett,
+Carl E Rasmussen, Stephen J Roberts, and Zoubin
+Ghahramani. Active learning of model evidence using
+Bayesian quadrature. Advances in Neural Information
+Processing Systems, 25:46–54, 2012.
+H. Park and C. Jun. A simple and fast algorithm for k-
+medoids clustering.Expert Systems with Applications, 36
+(2):3336–3341, March 2009. ISSN 0957-4174.
+Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer,
+James Bradbury, Gregory Chanan, Trevor Killeen, Zem-
+ing Lin, Natalia Gimelshein, Luca Antiga, et al. Pytorch:
+An imperative style, high-performance deep learning li-
+brary. Advances in Neural Information Processing Sys-
+tems, 32, 2019.
+C. Rasmussen and C. K. I. Williams.Gaussian Processes
+for Machine Learning. The MIT Press, 2006.
+C. Robert and G. Casella.Monte Carlo Statistical Methods.
+Springer Science & Business Media, 2013.
+C. P. Robert, V. Elvira, N. Tawn, and C. Wu. Accelerating
+MCMC algorithms. Wiley Interdisciplinary Reviews:
+Computational Statistics, 10(5):e1435, 2018.
+S. L. Scott, A. W. Blocker, F. V. Bonassi, H. A. Chip-
+man, E. I. George, and R. E. McCulloch. Bayes and big
+data: The consensus Monte Carlo algorithm.Interna-
+tional Journal of Management Science and Engineering
+Management, 11:78–88, 2016.
+M. Titsias. Variational learning of inducing variables in
+sparse Gaussian processes. InArtiﬁcial intelligence and
+statistics, pages 567–574. PMLR, 2009.
+A. Vehtari, A. Gelman, T. Sivula, P. Jylänki, D. Tran,
+S. Sahai, P. Blomstedt, J. P. Cunningham, D. Schimi-
+novich, and C. P. Robert. Expectation propagation as
+a way of life: A framework for Bayesian inference on
+partitioned data. Journal of Machine Learning Research,
+21(17):1–53, 2020.
+M. Vono, V. Plassier, A. Durmus, A. Dieuleveut, and
+E. Moulines. QLSD: Quantised Langevin Stochastic
+Dynamics for Bayesian federated learning. InArtiﬁcial
+Intelligence and Statistics (AISTATS), 2022.
+Daniel Augusto de Souza, Diego Mesquita, Samuel Kaski, Luigi Acerbi
+Hongqiao Wang and Jinglai Li. Adaptive Gaussian pro-
+cess approximation for Bayesian inference with expensive
+likelihood functions. Neural Computation, pages 1–23,
+2018.
+K. A. Wang, G. Pleiss, J. R. Gardner, S. Tyree, K. Q. Wein-
+berger, and A. G. Wilson. Exact Gaussian processes on
+a million data points. InAdvances in Neural Information
+Processing Systems (NeurIPS), 2019.
+X. Wang, F. Guo, K. A. Heller, and D. B. Dunson. Paral-
+lelizing MCMC with random partition trees. InAdvances
+in Neural Information Processing Systems (NeurIPS),
+2015.
+M. Welling and Y. Teh. Bayesian learning via stochastic
+gradient Langevin dynamics. InInternational Conference
+on Machine Learning (ICML), 2011.
+A. Wilson and R. Adams. Gaussian process kernels for
+pattern discovery and extrapolation. InInternational
+Conference on Machine Learning (ICML), pages 1067–
+1075. PMLR, 2013.
+Supplementary Material:
+Parallel MCMC Without Embarrassing Failures
+In this Supplement, we include extended explanations, implementation details, and additional results omitted
+from the main text.
+Code for our algorithm and to generate the results in the paper is available at: https://github.com/
+spectraldani/pai.
+A Failure modes of embarrassingly parallel MCMC explained
+In Section 2.1 of the main text we presented three major failure modes of embarrassingly parallel MCMC (Markov
+Chain Monte Carlo) methods. These failure modes are illustrated in Fig 1 in the main text. In this section, we
+further explain these failure types going through Fig 1 in detail.
+A.1 Mode collapse (Fig 1A)
+Fig 1A illustratesmode collapse. In this example, the true subposteriorsp1 and p2 both have two modes (see
+Fig 1A, top two panels). However, while inp1 the two modes are relatively close to each other, inp2 they are
+farther apart. Thus, when we run an MCMC chain onp2, it gets stuck into a single high-density region and is
+unable to jump to the other mode (‘unexplored mode’, shaded area). This poor exploration ofp2 is fatal to any
+standard combination strategy used in parallel MCMC, erasing entire regions of the posterior (Fig 1A, bottom
+panel). While in this example we use PART (Wang et al., 2015), Section 4.1 shows this common pathology in
+several other methods as well. Our proposed solution to this failure type is sample sharing (see Section C.2).
+A.2 Model mismatch (Fig 1B)
+Fig 1B draws attention tomodel mismatchin subposterior surrogates. In this example, MCMC runs smoothly
+on both subposteriors. However, when we ﬁt regression-based surrogates – here, Gaussian processes (GPs) –
+to the MCMC samples, the behavior of these models away from subposterior samples can be unpredictable.
+In our example, the surrogateq2 hallucinates a mode that does not exist in the true subposteriorp2 (‘model
+hallucination’, shaded area in Fig 1B). Our proposed solution to correct this potential issue is to explore uncertain
+areas of the surrogate using active subposterior sampling (see Section C.3).
+In this example, we used a simple GP surrogate approach for illustration purposes. The more sophisticated
+GP-based Distributed Importance Sampler (GP-DIS; Nemeth and Sherlock (2018)) might seem to provide an
+alternative solution to model hallucination, in that the hallucinated regions with low true density would be
+down-weighted by importance sampling. However, the DIS step only works if there are ‘good’ samples that cover
+regions with high true density that can be up-weighted. If no such samples are present, importance sampling
+will not work. As an example of this failure, Fig 3 in the main text shows that GP-DIS (Nemeth and Sherlock,
+2018) does not recover from the model hallucination (if anything, the importance sampling step concentrates the
+hallucinated posterior even more).
+A.3 Underrepresented tails (Fig 1C)
+Fig 1C shows how neglecting low-density regions (underrepresented tails) can aﬀect the performance of parallel
+MCMC. In the example, the true subposteriorp2 has long tails that are not thoroughly represented by MCMC
+samples. This under-representation is due both to actual diﬃculty of the MCMC sampler in exploring the tails,
+and to mere Monte Carlo noise as there is little (although non-zero) mass in the tails, so the number of samples
+is low. Consequently, the surrogateq2 is likely to underestimate the density in this unexplored region, in which
+the other subposteriorp1 has considerable mass. In this case, even thoughq1 is a perfect ﬁt top1, the product
+q1(θ)q2(θ) mistakenly attributes near-zero density to the combined posterior in said region (Fig 1C, bottom panel).
+In our method, we address this issue via multiple solutions, in that both sample sharing and active sampling
+would help uncover underrepresentation of the tails in relevant regions.
+Daniel Augusto de Souza, Diego Mesquita, Samuel Kaski, Luigi Acerbi
+For further illustration of the eﬀectiveness of our proposed solutions to these failure modes, see Section D.1.
+B Gaussian processes
+Gaussian processes (GPs) are a ﬂexible class of statistical models for specifying prior distributions over unknown
+functions f : X⊆ RD → R (Rasmussen and Williams, 2006). In this section, we describe the GP model used in
+the paper and details of the training procedure.
+B.1 Gaussian process model
+In the paper, we use GPs as surrogate models for log-posteriors (and log-subposteriors), for which we use the
+following model. We recall that GPs are deﬁned by a positive deﬁnite covariance, or kernel functionκ: X×X→ R;
+a mean functionm: X→ R; and a likelihood or observation model.
+Kernel function. For simplicity, we use the common and equivalently-named squared exponential, Gaussian,
+or exponentiated quadratic kernel,
+κ(x,x′; σ2
+f,ℓ1,...,ℓD) = σ2
+f exp
+[
+−1
+2 (x−x′) Σ −1
+ℓ (x−x′)⊤
+]
+with Σ ℓ= diag
+[
+ℓ2
+1,...,ℓ2
+D
+]
+, (S1)
+where σf is the output length scale and(ℓ1,...,ℓD) is the vector of input length scales. Our algorithm does not
+hinge on choosing this speciﬁc kernel and more appropriate kernels might be used depending on the application
+(e.g., the spectral mixture kernel might provide more ﬂexibility; see Wilson and Adams, 2013).
+Mean function. When using GPs as surrogate models for log-posterior distributions, it is common to assume a
+negative quadraticmean function such that the surrogate posterior (i.e., the exponentiated surrogate log-posterior)
+is integrable (Nemeth and Sherlock, 2018; Acerbi, 2018, 2019, 2020). A negative quadratic can be interpreted as
+a prior assumption that the target posterior is a multivariate normal; but note that the GP can model deviations
+from this assumption and represent multimodal distributions as well (see for example Fig 3 in the main text). In
+this paper, we use
+m(x; m0,µ1,...,µD,ω1,...,ωD) ≡m0 −1
+2
+D∑
+i=1
+(xi −µi)2
+ω2
+i
+, (S2)
+where m0 denotes the maximum,(µ1,...,µD) is the location vector, and(ω1,...,ωD) is a vector of length scales.
+Observationmodel. Finally, GPs are also characterized by a likelihood or observation noise model. Throughout
+the paper we assume exact observations of the target log-posterior (or log-subposterior) so we use a Gaussian
+likelihood with a small varianceσ2 = 10−3 for numerical stability.
+B.2 Gaussian process inference and training
+Inference. Conditioned on training inputsX = {x1,...,xN}, observed function valuesy = f(X) and GP
+hyperparameters ψ, the posterior GP mean and covariance are available in closed form (Rasmussen and Williams,
+2006),
+fX,y(x) ≡E[f(x)|X,y,ψ] =κ(x,X)
+[
+κ(X,X) + σ2ID
+]−1
+(y −m(X)) + m(x)
+CX,y(x,x′) ≡Cov[f(x),f(x′)|X,y,ψ] = κ(x,x′) −κ(x,X)
+[
+κ(X,X) + +σ2ID
+]−1
+κ(X,x′),
+(S3)
+where ψ is a hyperparameter vector for the GP mean, covariance, and likelihood (see Section B.1 above); andID
+is the identity matrix inD dimensions.
+Training. Training a GP means ﬁnding the hyperparameter vector(s) that best represent a given dataset of input
+points and function observations(X,y). In this paper, we train all GP models by maximizing the log marginal
+likelihood of the GP plus a log-prior term that acts as regularizer, a procedure known asmaximum-a-posteriori
+estimation. Thus, the training objective to maximize is
+log p(ψ|X,y) = −1
+2 (y −m(X; ψ))⊤[
+κ(X,X; ψ) + σ2ID
+]−1
+(y −m(X; ψ))
++ 1
+2 log det
+(
+κ(X,X; ψ) + σ2ID
+)
++ logp(ψ) + const,
+(S4)
+where p(ψ) is the prior over GP hyperparameters, described below.
+Parallel MCMC Without Embarrassing Failures
+Hyperparameter Description Prior distribution
+log σ2
+f Output scale —
+log ℓ(i) Input length scale LogN
+(
+log
+∑
+D
+6 L(i),log
+√
+103
+)
+m0 Mean function maximum SmoothBox (ymin,ymax,1.0)
+x(i)
+m Mean function location SmoothBox
+(
+B(i)
+min,B(i)
+max,0.01
+)
+log ω(i) Mean function scale LogN
+(
+log
+∑
+D
+6 L(i),log
+√
+103
+)
+Table S1: Priors over GP hyperparameters. See text for more details
+Priors. We report the priorp(ψ) over GP hyperparameters in Table S1, assuming independent priors over each
+hyperparameter and dimension1 ≤i≤D. We set the priors based on broad characteristics of the training set,
+an approach known as empirical Bayes which can be seen as an approximation to a hierarchical Bayesian model.
+In the table,B is the ‘bounding box’ deﬁned as theD-dimensional box including all the samples observed by the
+GP so far plus a 10% margin;L = Bmax −Bmin is the vector of lengths of the bounding box; andymax and ymin
+are, respectively, the largest and smallest observed function values of the GP training set.LogN(µ,σ) denotes
+the log-normal distribution andSmoothBox (a,b,σ ) is deﬁned as a uniform distribution on the interval[a,b] with
+a Gaussian tail with standard deviationσ outside the interval. If a distribution is not speciﬁed, we assumed a ﬂat
+prior.
+B.3 Implementation details
+All GP models in the paper are implemented using GPyTorch1 (Gardner et al., 2018), a modern package for
+GP modeling based on the PyTorch machine learning framework (Paszke et al., 2019). For maximal accuracy,
+we performed GP computations enforcing exact inference via Cholesky decomposition, as opposed to the
+asymptotically faster conjugate gradient implementation which however might not reliably converge to the exact
+solution (Maddox et al., 2021). For parts related to active sampling, we used the BoTorch2 package for active
+learning with GPs (Balandat et al., 2020), implementing the acquisition functions used in the paper as needed.
+We used the same GP model and training procedure described in this section for all GP-based methods in the
+paper, which include our proposed approach and others (e.g., Nemeth and Sherlock, 2018).
+C Algorithm details
+Algorithm S1Parallel Active Inference (PAI)
+Input: Data partitionsD1,...,DK; priorp(θ); likelihood functionp(D|θ).
+1: parfor 1 ...Kdo . Parallel steps
+2: Sk ← MCMC samples frompk(θ) ∝p(θ)1/Kp(Dk|θ)
+3: S′
+k ← ActiveSubsample(Sk) . See Sections 3.1 and C.1
+4: send S′
+k to all other nodes, receiveS′
+\k =
+⋃
+j̸=k S′
+j . Communication step
+5: S′′
+k ←S ′
+k ∪SelectSharedSamples(S′
+k,S′
+\k) . See Sections 3.2 and C.2
+6: S′′′
+k ←S ′′
+k ∪ActiveRefinement(S′′
+k ) . See Sections 3.3 and C.3
+7: train GP model Lk of the log subposterior on(S′′′
+k ,log pk(S′′′
+k ))
+8: end parfor
+9: combine subposteriors: log q(θ) =
+∑K
+k=1 Lk(θ) . Centralized step, see Section 3.4
+10: Optional: reﬁne log q(θ) with Distributed Importance Sampling (DIS) . See Section 2.2
+In this section, we describe additional implementation details for the steps of the Parallel Active Inference (PAI)
+algorithm introduced in the main text. Algorithm S1 illustrates the various steps. Each function called by the
+algorithm may involve several sub-steps (e.g., ﬁtting interim surrogate GP models) which are detailed in the
+following sections.
+1https://gpytorch.ai/
+2https://botorch.org/
+Daniel Augusto de Souza, Diego Mesquita, Samuel Kaski, Luigi Acerbi
+C.1 Subposterior modeling via GP regression
+Here we expand on Section 3.1 in the main text. We recall that at this step each nodek∈{1,...,K}has run
+MCMC on the local subposteriorpk, obtaining a set of samplesSk and their log-subposterior valueslog pk(S).
+The goal now is to ‘thin’ the samples to a subset which is still very informative of the shape of the subposterior,
+so that it can be used as a training set for the GP surrogate. The rationale is that using all the samples for GP
+training is expensive in terms of both computational and communication costs, and it can lead to numerical
+instabilities. In previous work, Nemeth and Sherlock (2018) have usedrandom thinning which is not guaranteed
+to keep relevant parts of the posterior.3
+The main details that we cover here are: (1) how we pick the initial subset of samplesS(0)
+k ⊆Sk used to train the
+initial GP surrogate; (2) how we subsequently performactive subsampling to expand the initial subset to include
+relevant points fromSk.
+Initial subset: To bootstrap the GP surrogate model, we use a distance clustering method to select the
+initial subset of samples that we use to ﬁt a ﬁrst GP model. As this initial subset will be further reﬁned, the
+main characteristic for selecting the samples is for them to be spread out. For our experiments, we choose
+a simple k-medoids method (Park and Jun, 2009) withnmed = 20 ·(D + 2) medoids implemented in the
+scikit-learn-extras library4. The outputnmed medoids representS(0)
+k .
+Activesubsampling: Afterhavingselectedtheinitialsubset S(0)
+k , weperformT iterationsofactivesubsampling.
+In each iterationt+ 1, we greedily select a batch ofnbatch points from the setSk\S(t)
+k obtained by maximizing a
+batch version of the maximum interquantile range (MAXIQR) acquisition function, as described by Järvenpää
+et al. (2021); see also main text. The MAXIQR acquisition function has a parameteruwhich controls the tradeoﬀ
+between exploitation of regions of high posterior density and exploration of regions with high posterior uncertainty
+in the GP surrogate. To strongly promote exploration, after a preliminary analysis on a few toy problems, we set
+u= 20 throughout the experiments presented in the paper. In the paper, we setnbatch = D and the number
+of iterationsT = 25, based on a rule of thumb for the total budget of samples required by similar algorithms
+to achieve good performance at a given dimension (e.g., Acerbi 2018; Järvenpää et al. 2021). The GP model is
+retrained after the acquisition of each batch. The procedure locally returns a subset of samplesS′
+k = S(T)
+k .
+C.2 Sample sharing
+In this section, we expand on Section 3.2 of the main text. We recall that at this step nodek receives samples
+S′
+\k = ⋃
+j̸=kS′
+j from the other subposteriors. To avoid incorporating too many data points into the local surrogate
+model (for the reasons explained previously), we consider adding a data point to the current surrogate only if: (a)
+the local model cannot properly predict this additional point; and (b) predicting the exact value would make a
+diﬀerence. If the number of points that are eligible under these criteria is greater thannshare, the set is further
+thinned usingk-medoids.
+Concretely, letθ⋆ ∈S′
+\k be the data point under consideration. We evaluate the true subposterior log density
+at the point,y⋆= log pk(θ⋆), and the surrogate GP posterior latent mean and variance at the point, which are,
+respectively,µ⋆= f(θ⋆) and σ2
+⋆ = C(θ⋆,θ⋆). We then consider two criteria:
+a. First, we compute the density of the true value under the surrogate prediction and check if it is above a
+certain threshold: N
+(
+log y⋆; µ⋆,σ2
+⋆
+)
+>R, whereR= 0.01 in this paper. This criterion is roughly equivalent
+to including a point only if|µ⋆−y⋆|≳ R′σ⋆, for an appropriate choice ofR′(ignoring a sublinear term in
+σ⋆), implying that a point is considered for addition if the GP prediction diﬀers from the actual value more
+than a certain number of standard deviations.
+b. Second, if a point meets the ﬁrst criterion, we check if the value of the point is actually relevant for the
+surrogate model. Let ymax be the maximum subposterior log-density observed at the current node (i.e.,
+approximately, the log-density at the mode). We exclude a point at this stage if both the GP prediction and
+the true valuey⋆ are below the thresholdymax −20D, meaning that the point has very low density and the
+GP correctly predicts that it is very low density (although might not predict the exact value).
+3Note that instead of thinning we could use sparse GP approximations (e.g., Titsias, 2009). However, the interaction
+between sparse GP approximations and active learning is not well-understood. Moreover, we prefer not to introduce an
+additional layer of approximation that could reduce the accuracy of our subposterior surrogate models.
+4https://github.com/scikit-learn-contrib/scikit-learn-extra
+Parallel MCMC Without Embarrassing Failures
+Each of the above criteria is checked for all points inS′
+\k in parallel (the second criterion only for all the points
+that pass the ﬁrst one). Note that the second criterion is optional, but in our experiments we found that it
+increases numerical stability of the GP model, removing points with very low (log) density that are diﬃcult for
+the GP to handle (for example, Acerbi (2018); Järvenpää et al. (2021) adopt a similar strategy of discarding very
+low-density points). More robust GP kernels (see Section B.1) might not need this additional step.
+If the number of points that pass both criteria for inclusion is larger thannshare, thenk-medoids is run on the set
+of points under consideration withnshare medoids, wherenshare = 25D. The procedure run at nodek locally
+returns a subset of samplesS′′
+k.
+C.3 Active subposterior reﬁnement
+Here we expand on Section 3.3 of the main text. We recall that up to this point, the local GP model of the
+log-subposterior at nodek was trained only using selected subset of samples from the original MCMC runs (local
+and from other nodes), denoted byS′′
+k.
+In this step, each nodek locally acquires new points by iteratively optimizing the MAXIQR acquisition function
+(Eq. 2 in the main text) over a domainX⊆ RD. For the ﬁrst iteration, the spaceXis deﬁned as the bounding
+box of⋃
+kS′
+k plus a 10% margin. In other words,Xis initially the hypercube that contains all samples from all
+subposteriors obtained in the sample sharing step (Section C.2) extended by a 10% margin. The limits ofX
+at the ﬁrst iteration are computed during the previous stage, without any additional communication cost. In
+each subsequent iteration,Xis iteratively extended to include the newly sampled points plus a 10% margin, thus
+expanding the bounding box if a recently acquired point falls near the boundary.
+New points are selected greedily in batches of sizenbatch = D, using the same batch formulation of the MAXIQR
+acquisition function used in Section C.1. The local GP surrogate is retrained at the end of each iteration, to
+ensure that the next batch of points targets the regions of the log-subposterior which are most important to
+further reﬁne the surrogate. For the purpose of this work, we repeat the process forTactive = 25 iterations,
+selected based on similar active learning algorithms (Acerbi et al., 2018; Järvenpää et al., 2021). Future work
+should investigate an appropriate termination rule to dynamically vary the number of iterations.
+The outcome of this step is a ﬁnal local set of samplesS′′′
+k and the log-subposterior GP surrogate modelLk
+trained on these samples. Both of these are sent back to the central node for the ﬁnal combination step.
+D Experiment details and additional results
+In this section, we report additional results and experimental details omitted from the main text for reasons of
+space.
+D.1 Ablation study
+As an ablation study, Fig S1 breaks down the eﬀect of each step of PAI in the multi-modal posterior experiment
+from Section 4.1 of the main text. The ﬁrst panel shows the full approximate posterior if we were combining
+it right after active subsampling (Section C.1), using neither sample sharing nor active reﬁnement. Note that
+this result suﬀers from Failure mode I (mode collapse; see Section A.1), as active subsampling only on the local
+MCMC samples is not suﬃcient to recover the missing modes. The second panel incorporates sample sharing,
+which covers the missing regions but now suﬀers from Failure mode II (model mismatch; see Section A.2) with an
+hallucinated mode in a region where the true posterior has low density. Finally, the third panel shows full-ﬂedged
+PAI, which further applies active sampling to explore the hallucinated mode and corrects the density around it.
+The ﬁnal result of PAI perfectly matches the ground truth (as displayed in the fourth panel).
+D.2 Performance evaluation
+In this section, we describe in detail the metrics used to assess the performance of the methods in the main text,
+how we compute these metrics, and the related statistical analyses for reporting our results.
+Metrics. In the main text, we measured the quality of the posterior approximations via the mean marginal
+total variation distance (MMTV), 2-Wasserstein (W2) distance, and Gaussianized symmetrized Kullback-Leibler
+divergence (GsKL) between true and appoximate posteriors. For all metrics, lower is better. We describe the
+three metrics and their features below:
+Daniel Augusto de Souza, Diego Mesquita, Samuel Kaski, Luigi Acerbi
+Figure S1: Ablation study for PAI on the multi-modal posterior.From left to right: The ﬁrst panel
+shows the approximate combined posterior density for our methodwithout sample sharing and active learning;
+the second panel uses an additional step to share samples (but no active reﬁnement); the third shows results for
+full-ﬂedged PAI. The rightmost plot is the ground truth posterior. Note that both sample sharing and active
+reﬁnement are important steps for PAI: sample sharing helps account for missing posterior regions while active
+sampling corrects model hallucinations (see text for details).
+• The MMTV quantiﬁes the (lack of) overlap between true and approximate posterior marginals, deﬁned as
+MMTV(p,q) = 1
+2D
+D∑
+d=1
+∫∞
+−∞
+⏐⏐pM
+d (xd) −qM
+d (xd)
+⏐⏐dxd (S5)
+where pM
+d and qM
+d denote the marginal densities ofp and q along thed-th dimension. Eq. S5 has a direct
+interpretation in that, for example, a MMTV metric of 0.5 implies that the posterior marginals overlap by
+50% (on average across dimensions). As a rule of thumb, we consider a threshold for a reasonable posterior
+approximation to be MMTV < 0.2, that is more than80% overlap.
+• Wasserstein distances measure the cost of moving amounts of probability mass from one distribution to
+the other so that they perfectly match – a commonly-used distance metric across distributions. The W2
+metric, also known asearth mover’sdistance, is a special case of Wasserstein distance that uses the Euclidean
+distance as its cost function. The W2 distance between two density functionsp and q, with respective
+supports Xand Yis given by
+W2(p,q) =
+[
+inf
+T∈T
+∫
+x∈X
+∫
+y∈Y
+∥x−y∥2T(x,y) dxdy
+]1
+2
+, (S6)
+where T denotes the set of all joint density functions overX×Y with marginals exactlypand q. In practice,
+we use empirical approximations ofp and q to compute the W2, which simpliﬁes Eq. S6 to a linear program.
+• The GsKL metric is sensitive to diﬀerences in means and covariances, being deﬁned as
+GsKL(p,q) = 1
+2 [DKL (N[p]||N[q]) + DKL(N[q]||N[p])] , (S7)
+where DKL (p||q) is the Kullback-Leibler divergence between distributionsp and q and N[p] is a multivariate
+normal distribution with mean equal to the mean ofp and covariance matrix equal to the covariance ofp
+(and same forq). Eq. S7 can be expressed in closed form in terms of the means and covariance matrices of
+p and q. For reference, two Gaussians with unit variance and whose means diﬀer by
+√
+2 (resp., 1
+2 ) have a
+GsKL of 1 (resp.,1
+8 ). As a rule of thumb, we consider a desirable target to be (much) less than 1.
+Computing the metrics. For each method, we computed the metrics based on samples from the combined
+approximate posteriors. For methods whose approximate posterior is a surrogate GP model (i.e., GP, GP-DIS,
+PAI, PAI-DIS in the paper), we drew samples from the surrogate model using importance sampling/resampling
+(Robert and Casella, 2013). As proposal distribution for importance sampling we used a mixture of a uniform
+distribution over a large hyper-rectangle and a distribution centered on the region of high posterior density (the
+latter to increase the precision of our estimates). We veriﬁed that our results did not depend on the speciﬁc
+choice of proposal distribution.
+Parallel MCMC Without Embarrassing Failures
+Statistical analyses. For each problem and each method, we reran the entire parallel inference procedure ten
+times with ten diﬀerent random seeds. The same ten seeds were used for all methods – implying among other
+things that, for each problem, all methods were tested on the same ten random partitions of the data and using the
+same MCMC samples on those partitions. The outcome of each run is a triplet of metrics (MMTV, W2, GsKL)
+with respect to ground truth. We computed mean and standard deviation of the metrics across the ten runs,
+which are reported in tables in the main text. For each problem and metric, we highlighted in bold all methods
+whose mean performance does not diﬀer in a statistically signiﬁcant way from the best-performing method.
+Since the metrics are not normally distributed, we tested statistical signiﬁcance via bootstrap (nbootstrap = 106
+bootstrapped datasets) with a threshold for statistical signiﬁcance ofα = 0.05.
+D.3 Model details and further plots
+We report here additional details for some of the models used in the experiments in the main paper, and plots for
+the experiment from computational neuroscience.
+Multi-modal posterior. In Section 4.1 of the main text we constructed a synthetic multi-modal posterior
+with four modes. We recall that the generative model is
+θ∼p(θ) = N(0,σ2
+pI2)
+y1,...,yN ∼p(yn|θ) =
+2∑
+i=1
+1
+2N
+(
+yn; Pi(θi),σ2
+l
+)
+where θ∈R2, σp = σl = 1/4 and Pi’s are second-degree polynomial functions. To induce a posterior with
+four modes, we choseP1(θ1) and P2(θ2) to be polynomials with exactly two roots, such that, when the ob-
+servations are drawn from the full generative model in Eq. D.3, each root will induce a local maximum of
+the posterior in the vicinity of the root (after considering the shrinkage eﬀect of the prior). The polynomi-
+als are deﬁned as P1(x) = P2(x) = (0 .6 −x)(−0.6 −x), so the posterior modes will be in the vicinity of
+θ⋆∈{(0.6,0.6),(−0.6,0.6),(0.6,−0.6),(−0.6,−0.6)}.
+Multisensory causal inference. In Section 4.4 of the main text, we modeled a benchmark visuo-vestibular
+causal inference experiment (Acerbi et al., 2018; Acerbi, 2020) which is representative of many similar models and
+tasks in the ﬁelds of computational and cognitive neuroscience. In the modeled experiment, human subjects, sitting
+in a moving chair, were asked in each trial whether the direction of movementsvest matched the directionsvis of a
+looming visual ﬁeld. We assume subjects only have access to noisy sensory measurementszvest ∼N
+(
+svest,σ2
+vest
+)
+,
+zvis ∼N
+(
+svis,σ2
+vis(c)
+)
+, whereσvest is the vestibular noise andσvis(c) is the visual noise, withc∈{clow,cmed,chigh}
+distinct levels of visual coherence adopted in the experiment. We model subjects’ responses with a heuristic
+‘Fixed’ rule that judges the source to be the same if|zvis −zvest|<κ, plus a probabilityλ of giving a random
+response (Acerbi et al., 2018). Model parameters areθ= (σvest,σvis(clow),σvis(cmed),σvis(chigh),κ,λ ), nonlinearly
+mapped toR6. In the paper, we ﬁt real data from subject S1 of (Acerbi et al., 2018). Example approximate
+posteriors for the PAI-DIS and GP-DIS methods, the best-performing algorithms in this example, are shown in
+Fig S2.
+D.4 Scalability of PAI to large datasets
+In the main paper, as per common practice in the ﬁeld, we used moderate dataset sizes (∼10k data points) to
+easily calculate ground truth. This choice bears no loss of generality because increasing dataset size only makes
+subposteriors sharper, which does not increase the diﬃculty of parallel inference (although more data would not
+necessarily resolve multimodality, e.g. due to symmetries of the model). On the other hand, small datasets make
+the reporting of run-times not meaningful, as they are dominated by overheads.
+To assess the performance of PAI on large datasets, we ran PAI on the model of Section 4.1, but now with1
+million data points(K = 10 partitions). Average metrics for PAI were excellent and similar to what we had
+before: MTV = 0.009, W2 = 0.005, GKL = 2e-05, while all other methods still failed. Moreover, run-times for
+this experiment illustrate the advantages of using PAI in practice.
+We ran experiments using computers equipped with two 8-core Xeon E5 processors and 16GB or RAM each.
+Here, the total time for parallel inference was 57 minutes — 50 for subposterior MCMC sampling + 7 for all PAI
+steps. By contrast, directly running MCMC on the whole dataset took roughly 6 hours.
+Daniel Augusto de Souza, Diego Mesquita, Samuel Kaski, Luigi Acerbi
+Figure S2: PAI-DIS and GP-DIS on the multisensory causal inference task.Each panel shows two-
+dimensional posterior marginals as samples from the combined approximate posterior (red) against the ground
+truth (blue). While PAI-DIS (top ﬁgure) and GP-DIS (bottom ﬁgure) perform similarly in terms of metrics,
+PAI-DIS captures some features of the posterior shape more accurately, such as the ‘boomerang’ shape of theθ3
+marginals (middle row).

@@ -1,0 +1,2900 @@
+arXiv:2505.24784v1  [cs.AI]  30 May 2025
+AXIOM: Learning to Play Games in Minutes with
+Expanding Object-Centric Models
+Conor Heins1∗ Toon Van de Maele1∗ Alexander Tschantz1,2∗
+Hampus Linander1 Dimitrije Markovic3 Tommaso Salvatori1 Corrado Pezzato1
+Ozan Catal1 Ran Wei1 Magnus Koudahl1 Marco Perin1 Karl Friston1,4
+Tim Verbelen1 Christopher L Buckley1,2
+1 VERSES AI
+2 University of Sussex, Department of Informatics
+3 Technische Universität Dresden, Faculty of Psychology
+4 University College London, Queen Square Institute of Neurology
+{conor.heins,toon.vandemaele,alec.tschantz}@verses.ai
+Abstract
+Current deep reinforcement learning (DRL) approaches achieve state-of-the-art
+performance in various domains, but struggle with data efficiency compared to
+human learning, which leverages core priors about objects and their interactions.
+Active inference offers a principled framework for integrating sensory information
+with prior knowledge to learn a world model and quantify the uncertainty of its own
+beliefs and predictions. However, active inference models are usually crafted for a
+single task with bespoke knowledge, so they lack the domain flexibility typical of
+DRL approaches. To bridge this gap, we propose a novel architecture that integrates
+a minimal yet expressive set of core priors about object-centric dynamics and inter-
+actions to accelerate learning in low-data regimes. The resulting approach, which
+we call AXIOM, combines the usual data efficiency and interpretability of Bayesian
+approaches with the across-task generalization usually associated with DRL. AX-
+IOM represents scenes as compositions of objects, whose dynamics are modeled
+as piecewise linear trajectories that capture sparse object-object interactions. The
+structure of the generative model is expanded online by growing and learning mix-
+ture models from single events and periodically refined through Bayesian model
+reduction to induce generalization. AXIOM masters various games within only
+10,000 interaction steps, with both a small number of parameters compared to DRL,
+and without the computational expense of gradient-based optimization.
+1 Introduction
+Reinforcement learning (RL) has achieved remarkable success as a flexible framework for mastering
+complex tasks. However, current methods have several drawbacks: they require large amounts of
+training data, depend on large replay buffers, and focus on maximizing cumulative reward without
+structured exploration [1]. This contrasts with human learning, which relies on core priors to quickly
+generalize to novel tasks [ 2–4]. Core priors represent fundamental organizational principles - or
+hyperpriors - that shape perception and learning, providing the scaffolding upon which more complex
+knowledge structures are built. For example, such priors allow humans to intuitively understand that
+objects follow smooth trajectories unless external forces intervene, and shape our causal reasoning,
+helping us to grasp action-consequence relationships [5–8]. Describing visual scenes as factorized
+into objects has shown promise in sample efficiency, generalization, and robustness on various tasks
+[9–14]. These challenges are naturally addressed by Bayesian agent architectures, such as active
+inference [15], that provide a principled framework for incorporating prior knowledge into models,
+Preprint. Under review.
+sMM
+🏆
+🎮
+tMM
+Identity
+Model iMM rMM
+Object-Object
+Interactions
+Figure 1: Inference and prediction flow using AXIOM: The sMM extracts object-centric repre-
+sentations from pixel inputs. For each object latent and its closest interacting counterpart, a discrete
+identity token is inferred using the iMM and passed to the rMM, along with the distance and the
+action, to predict the next reward and the tMM switch. The object latents are then updated using the
+tMM and the predicted switch to generate the next state for all objects. (a) Projection of the object
+latents into image space. (b) Projection of the kth latent whose dynamics are being predicted and (c)
+of its interaction partner. (d) Projection of the rMM in image space; each of the visualized clusters
+corresponds to a particular linear dynamical system from the tMM. (e) Projection of the predicted
+latents. The past latents at time t are shown in gray.
+supporting continual adaptation without catastrophic forgetting. It has been argued that this approach
+aligns closely with human cognitive processes [16, 17], where beliefs are updated incrementally as
+new evidence emerges. Yet, despite these theoretical advantages, applications of active inference
+have typically been confined to small-scale tasks with carefully designed priors, failing to achieve the
+versatility that makes deep RL so powerful across diverse domains.
+To bridge this gap, we propose a novel active inference architecture that integrates a minimal yet
+expressive set of core priors about objects and their interactions [9–12, 18]. Specifically, we present
+AXIOM (Active eXpanding Inference with Object-centric Models), which employs a object-centric
+state space model with three key components: (1) a Gaussian mixture model that parses visual input
+into object-centric representations and automatically expands to accommodate new objects; (2) a
+transition mixture model that discovers motion prototypes (e.g., falling, sliding, bouncing) [19] and
+(3) a sparse relational mixture model over multi-object latent features, learning causally relevant
+interactions as jointly driven by object states, actions, rewards, and dynamical modes. AXIOM’s
+learning algorithm offers three kinds of efficiency: first, it learns sequentially one frame at a time
+with variational Bayesian updating [ 20]. This eliminates the need for replay buffers or gradient
+computations, and enables online adaptation to changes in the data distribution. Second, its mixture
+architecture facilitates fast structure learning by both adding new mixture components when existing
+ones cannot explain new data, and merging redundant ones to reduce model complexity [ 21–24].
+Finally, by maintaining posteriors over parameters, AXIOM can augment policy selection with
+information-seeking objectives and thus uncertainty-aware exploration [15].
+To empirically validate our model, we introduce the Gameworld 10k benchmark, a new set of
+environments designed to evaluate how efficiently an agent can play different pixel-based games
+in 10k interactions. Many existing RL benchmarks, such as the Arcade Learning Environment
+(ALE) [25] or MuJoCo [26] domains, emphasize long-horizon credit assignment, complex physics,
+or visual complexity. These factors often obscure core challenges in fast learning and generalization,
+especially under structured dynamics. To this end, each of the games in Gameworld 10k follows a
+similar, object-focused pattern: multiple objects populating a visual scene, a player object that can
+be controlled to score points, and objects following continuous trajectories with sparse interaction
+mechanics. We formulate a set of 10 games with deliberately simplified visual elements (single color
+sprites of different shapes and sizes) to focus the current work on the representational mechanisms
+used for modeling dynamics and control, rather than learning an overly-expressive model for object
+segmentation. The Gameworld environments also enable precise control of game features and
+2
+Aviate
+ Bounce
+ Cross
+ Drive
+ Explode
+ Fruits
+ Gold
+ Hunt
+ Impact
+ Jump
+Figure 2: Gameworld10k: Visual impression of the 10 games in the Gameworld 10k suite. Se-
+quences of ten frames are overlayed with increasing opacity to showcase the game dynamics.
+dynamics, which allows testing how systems adapt to sparse interventions to the causal or visual
+structure of the game, e.g., the shape and color of game objects. On this benchmark, our agent
+outperforms popular reinforcement learning models in the low-data regime (10,000 interaction
+steps) without relying on any kind of gradient-based optimization. To conclude, although we have
+not deployed AXIOM at the scale of complicated control tasks typical of the RL literature, our
+results represent a meaningful step toward building agents capable of building compact, interpretable
+world models and exploiting them for rapid decision-making across different domains. Our main
+contributions are the following:
+• We introduce AXIOM, a novel object-centric active inference agent that is learned online, inter-
+pretable, sample efficient, adaptable and computationally cheap.1
+• To demonstrate the efficacy of AXIOM, we introduce a new, modifiable benchmark suite targeting
+sample-efficient learning in environments with objects and sparse interactions.
+• We show that our gradient-free method can outperform state-of-the-art deep learning methods both
+in terms of sample efficiency and absolute performance, with our online learning scheme showing
+robustness to environmental perturbations.
+2 Methods
+AXIOM is formulated in the context of a partially observable Markov decision process (POMDP).
+At each time step t, the hidden state ht evolves according to ht ∼ P
+ 
+ht | ht–1, at−1
+
+, where at is
+the action taken at time t. The agent does not observe ht directly but instead receives an observation
+yt ∼ P
+ 
+yt | ht
+
+, and a reward rt ∼ P
+ 
+rt | ht, at
+
+. AXIOM learns an object-centric state space
+model by maximizing the Bayesian model evidence—equivalently, minimizing (expected) free
+energy—through active interaction with the environment [15]. The model factorizes perception and
+dynamics into separate generative blocks: (i) In perception, a slot Mixture Model (sMM) explains
+pixels with competition between object-centric latent variables Ot = {O(1)
+t , . . . ,O(K)
+t }, associating
+each pixel to one of K slots using the assignment variable zt,smm; (ii) dynamics are modeled per-
+object using their object-centric latent descriptions as inputs to a recurrent switching state space
+model (similar to an rSLDS [ 19]). We define the full latent sequence as Z0:T = {Ot, zt,smm}T
+t=0.
+Each slot latent O(k)
+t consists of both continuous x(k)
+t and discrete latent variables. The continuous
+latents represent properties of an object, such as its position, color and shape. The discrete latents
+themselves are split into two subtypes: z(k)
+t and s(k)
+t . We use z(k)
+t to denote latent descriptors that
+capture categorical attributes of the slot (e.g., object type), and s(k)
+t to denote a pair of switch states
+determining the slot’s instantaneous trajectory.2 Model parameters ˜Θ are split into module-specific
+subsets (e.g., ΘsMM, ΘtMM). The joint distribution over input sequences y0:T , latent state sequences
+Z0:T and parameters ˜Θ can be expressed as a hidden Markov model:
+p(y0:T , Z0:T , ˜Θ) = p(y0, Z0)p( ˜Θ)
+TY
+t=1
+p(xt–1, | zt, ΘiMM)| {z }
+Identity mixture model
+p(xt–1, zt, st, at–1, rt | ΘrMM)| {z }
+Recurrent mixture model
+KY
+k=1
+p(yt|x(k)
+t , zt,smm, ΘsMM)| {z }
+Slot mixture model
+p(x(k)
+t | x(k)
+t−1, s(k)
+t , ΘtMM)| {z }
+Transition mixture model
+, (1)
+1The code for training AXIOM is available at https://github.com/VersesTech/axiom
+2We use the superscript index k as in q(k) to select only the subset of q ≡ q(1:K) relevant to the kth slot.
+3
+where p( ˜Θ) = p(ΘsMM)p(ΘiMM)p(ΘrMM)p(ΘtMM). The sMM p(yt|xt, zt,smm, ΘsMM) is a likeli-
+hood model that explains pixel data using mixtures of slot-specific latent states (see schematic in
+Figure 1). The identity mixture model (iMM) p(xt–1|zt, ΘiMM) is a likelihood model that assigns
+each object-centric latent to one of a set of discrete object types. The transition mixture model (tMM)
+p(x(k)
+t |x(k)
+t–1, s(k)
+t , ΘtMM) describes each object’s latent dynamics as a piecewise linear function of
+its own state. Finally, the recurrent mixture model (rMM) p(xt–1, zt, st, at–1, rt | ΘrMM) models the
+dependencies between multi-object latent states (like the switch states of the transition mixture), other
+global game states like reward r, action a, and the continuous and discrete features of each object.
+This module is what allows AXIOM to model sparse interactions between objects (e.g., collisions),
+while still treating each slot’s dynamics as conditionally-independent given the switch states s(k)
+t .
+Slot Mixture Model (sMM). AXIOM processes sequences of RGB images one frame at a time. Each
+image is composed of H × W pixels and is reshaped into N =HW tokens {yn
+t }N
+n=1. Each token
+yn
+t is a vector containing the nth pixel’s color in RGB and its image coordinates (normalized to
+−1, +1
+
+). AXIOM models these tokens at a given time as explained by a mixture of the continuous
+slot latents; we term this likelihood construction the Slot Mixture Model (sMM, see far left side of
+Figure 1). The K components of this mixture model are Gaussian distributions whose parameters
+are directly given by the continuous features of each slot latent x(1:K)
+t . Associated to this Gaussian
+mixture is a binary assignment variable zn
+t,k,smm ∈ {0, 1} indicating whether pixel n at time t is
+driven by slot k, with the constraint that P
+k zn
+t,k,smm = 1. The sMM’s likelihood model for a single
+pixel and timepoint yn
+t can be expressed as follows (dropping the t subscript for notational clarity):
+p(yn | x(k), σ(k)
+c , zn
+k,smm) =
+KY
+k=1
+N(Ax(k), diag(
+
+Bx(k), σ(k)
+c
+⊤
+))zn
+k,smm . (2)
+The mean of each Gaussian component is given a fixed linear projection A of each object latent,
+which selects only its position and color features: Ax(k) =
+
+p(k), c(k)
+. The covariance of each
+component is a diagonal matrix whose diagonal is a projection of the 2-D shape of the object latent
+Bx(k) = e(k) (its spatial extent in the X and Y directions), stacked on top of a fixed variance
+for each color dimension σ(k)
+c , which are given independent Gamma priors. The latent variables
+p(k), c(k), e(k) are subsets of slot k’s full continuous features x(k)
+t , and the projection matrices A,
+B are fixed, unlearned parameters. Each token’s slot indicator zn
+smm is drawn from a Categorical
+distribution zn
+smm | πsmm ∼ Cat(πsmm) with mixing weights πsmm. We place a truncated stick-
+breaking (finite GEM) prior on these weights, which is equivalent to a K-dimensional Dirichlet
+with concentration vector (1, . . . ,1, α0,smm), where the first K − 1 pseudcounts are 1 and the final
+pseudocount α0,smm reflects the propensity to add new slots. All subsequent mixture models in
+AXIOM are equipped with the same sort of truncated stick-breaking priors on the mixing weights
+[27].
+Identity Mixture Model (iMM). AXIOM uses an identity mixture model (iMM) to infer a discrete
+identity code z(k)
+type for each object based on its continuous features. These identity codes are used to
+condition the inference of the recurrent mixture model used for dynamics prediction. Conditioning
+the dynamics on identity-codes in this way, rather than learning a separate dynamics model for each
+slot, allows AXIOM to use the same dynamics model across slots. This also enables the model to
+learn the same dynamics in a type-specific, rather than instance-specific, manner [28], and to remap
+identities when e.g., the environment is perturbed and colors change. Concretely, the iMM models
+the 5-D colors and shapes {c(k), e(k)}K
+k=1 across slots as a mixture of up to V Gaussian components
+(object types). The slot-level assignment variable z(k)
+t,type indicates which identity is assigned to the
+kthslot. The generative model for the iMM is (omitting the t − 1 subscript from latent variables):
+p(
+
+c(k), e(k)⊤
+|z(k)
+type, µ1:V,type, Σ1:V,type) =
+VY
+j=1
+N(µj,type, Σj,type)z(k)
+j,type (3)
+p(µj,type, Σ−1
+j,type) = NIW(mj,type, κj,type, Uj,type, nj,type) (4)
+The same type of Categorical likelihood for the type assignments z(k)
+type | πtype ∼ Cat(πtype) and
+truncated stick-breaking prior Dir
+ 
+1, . . . ,1, α0,type
+
+over the mixture weights is used to allow an
+4
+arbitrary (up to a maximum of V ) number of types to be used to explain the continuous slot features.
+We equip the prior over the component likelihood parameters with conjugate Normal Inverse Wishart
+(NIW) priors.
+Transition Mixture Model (tMM). The dynamics of each slot are modelled as a mixture of linear
+functions of the slot’s own previous state. To stress the homology between this model and the
+other modules of AXIOM, we refer to this module as the transition mixture model or tMM, but this
+formulation is more commonly also known as a switching linear dynamical system or SLDS [29].
+The tMM’s switch variable s(k)
+t,tmm selects a set of linear parameters Dl, bl to describe the kth slot’s
+trajectory from t to t + 1. Each linear system captures a distinct rigid motion pattern for a particular
+object (e.g., “ball in free flight”, “paddle moving left”).
+p(x(k)
+t | x(k)
+t–1, s(k)
+t,tmm, D1:L, b1:L) =
+LY
+l=1
+N(Dlx(k)
+t + bl, 2I)s(k)
+t,l,tmm (5)
+where we fix the covariance of all L components to be 2I, and all mixture likelihoods D1:L, b1:L to
+have uniform priors. The mixing weightsπtmm for s(k)
+t,tmm as before are given a truncated stick-breaking
+prior Dir
+ 
+1, . . . ,1, α0,tmm) enabling the number of linear modes L to be dynamically adjusted to the
+data by growing the model with propensity α0,tmm. Importantly, the L transition components of the
+tMM are not slot-dependent, but are shared and thus learned across all K slot latents. The tMM can
+thus explain and predict the motion of different objects using a shared, expanding set of dynamical
+motifs. As we will see in the next section, interactions between objects are modelled by conditioning
+s(k)
+t,tmm on the states of other objects.
+Recurrent Mixture Model (rMM). AXIOM employs a recurrent mixture model (rMM) to infer the
+switch states of the transition model directly from current slot-level features. This dependence of
+switch states on continuous features is the same construct used in the recurrent switching linear
+dynamical system or rSLDS [19]. However, like the rSLDS, which uses a discriminative mapping to
+infer the switch state from the continuous state, rMM recovers this dependence generatively using
+a mixture model over mixed continuous–discrete slot states [30]. Concretely, the rMM models the
+distribution of continuous and discrete variables as a mixture model driven by another per-slot latent
+assignment variable s(k)
+rmm. The rMM’s defines a mixture likelihood over continuous and discrete
+slot-specific information: (f(k)
+t–1 , d(k)
+t–1). The continuous slot features f(k)
+t–1 are a function of of both the
+kth slot’s own continuous state statex(k)
+t–1 as well as the states of other slotsx(1:K)
+t–1 , such as the distance
+to the closest object. The discrete features include categorical slot features like the identity of the
+closest object, the switch state associated with the transition mixture model, and the action and reward
+at the current timestep: d(k)
+t–1 = (z(k)
+t–1, s(k)
+t–1,tmm, at–1, rt). The rMM assignment variable associated to
+a given slot is a binary vector s(k)
+t,rmm whose mth entry s(k)
+t,m,rmm ∈ {0, 1} indicates whether component
+m explains the current tuple of mixed continuous-discrete data. Each component likelihood selected
+by s(k)
+t,rmm factorizes into a product of continuous (Gaussian) and discrete (Categorical) likelihoods.
+f(k)
+t–1 =
+
+Cx(k)
+t–1, g(x(1:K)
+t–1 )
+
+, d (k)
+t–1 =
+
+z(k)
+t–1, s(k)
+t,tmm, at–1, rt
+
+(6)
+p(f(k)
+t–1, d(k)
+t–1 | s(k)
+t,rmm) =
+MY
+m=1
+
+N
+ 
+f(k)
+t–1; µm,rmm, Σm,rmm
+Y
+i
+Cat
+ 
+dt–1, i; αm,i
+
+
+
+st,m,rmm
+(7)
+where the matrix C is a projection matrix that selects a subset of slot k’s continuous features are
+used, and g(x(1:K)
+t–1 ) summarizes functions that compute slot-to-slot interaction features, such as the
+X and Y -displacement to the nearest object, the identity code associated with the nearest object
+(and other features detailed in Appendix A). As with all the other modules of AXIOM, we equip
+the mixing weights for s(k)
+t,rmm with a truncated stick-breaking prior whose final Mth pseudocount
+parameter tunes the propensity to add new rMM components. We explored an ablation of the rMM
+(fixed_distance) where the X and Y -displacement vector is not returned by g(x(1:K)
+t−1 ); rather, the
+distance that triggers detection of the nearest interacting object is a fixed hyperparameter of the g
+function. This hyperparameter can to be tuned to attain higher reward on most environments than the
+5
+standard model where the rMM learns the distance online. However, it comes at the cost of having to
+tune this hyperparamter in an environment-specific fashion (see Figure 3 and Table 1 for the effect of
+the fixed_distance ablation on performance).
+Variational inference. AXIOM uses variational inference to perform state inference and parameter
+learning. Briefly, this requires updating an approximate posterior distribution q(Z0:T , ˜Θ) over latent
+variables and parameters to minimize the variational free energy F, an upper bound on negative
+log evidence F ≥ −log p(y0:T ). In doing so, the variational posterior approximates the true
+posterior p(Z0:T , ˜Θ | y0:T ) from exact but intractable Bayesian inference . We enforce independence
+assumptions in the variational posterior over several factors: across states and parameters, across the
+K slot latents, and over time T. This is known as the mean-field approximation:
+q(Z0:T , ˜Θ) = q( ˜Θ)
+TY
+t=0
+
+
+NY
+n=1
+q(zn
+t,sMM)
+
+
+
+
+KY
+k=1
+q(O(k)
+t )
+
+ (8)
+q(O(k)
+t ) = q(x(k)
+t )q(z(k)
+t )q(s(k)
+t ), q ( ˜Θ) = q(ΘsMM)q(ΘiMM)q(ΘtMM)q(ΘrMM) (9)
+Note that the mixture variable of the sMM zt,smm is factored out of the other object-centric latents in
+both the generative model and the posterior because unlike the other discrete latents z(k)
+t , it is not
+independent across K slots.
+We update the posterior over latent states q(Z0:T ) (i.e., the variational E-step) using a simple form of
+forward-only filtering and update parameters using coordinate ascent variational inference, using the
+sufficient statistics of the latents updated during filtering and the data to update the parameters using
+simple natural parameter updates. These variational E-M updates are run once per timestep, thus
+implementing a fast, streaming form of coordinate-ascent variational inference [31, 32]. The simple,
+gradient-free form of these updates inherits from the exponential-family form of all the mixture
+models used in AXIOM.
+2.1 Growing and pruning the model
+Fast structure learning. In the spirit of fast structure learning [23], AXIOM dynamically expands
+all four mixture modules (sMM, iMM, tMM, rMM) using an online growing heuristic: process each
+new datapoint sequentially, decide whether it is best explained by an existing component or whether
+a new component should be created, and then update the selected component’s parameters. We fix a
+maximum number of components Cmax for each mixture model and let Ct−1 ≤ Cmax be the number
+currently in use. For each component c we store its variational parameters Θc, where for a particular
+model this might be a set of Normal Inverse Wishart parameters, e.g. Θc,iMM = {mc, κc, Uc, nc}.
+Upon observing a new input yt, we compute for each component c = 1, . . . ,Ct−1 the variational
+posterior–predictive log–density ℓt,c = Eq(Θc)
+
+log p(yt | Θc)
+
+. The truncated stick–breaking
+prior π ∼ Dir(1, . . . ,1, α) then defines a “new–component” threshold τt = log p0(yt) + log α
+where p0 is the prior predictive density under an empty component.We select the component with
+highest score, c∗ = arg max c≤Ct−1 ℓt,c and hard-assign yt to c∗ if ℓt,c∗ ≥ τt; otherwise—provided
+Ct−1 < Cmax—we instantiate a new component and assignyt to it. Finally, given the hard assignment
+zt, we update the chosen component’s parameters via a variational M-step (coordinate ascent).The
+last weight in the Dirichlet absorbs any remaining mass, so PCmax
+c=1 πc = 1.) This algorithm is a
+deterministic, maximum a posteriori version of the CRP assignment rule (see Equation (8) of [27]).
+The expansion threshold τt plays the role of the Dirichlet Process concentration α. When α is
+small the model prefers explaining data with existing slots; larger α makes growth more likely. The
+procedure is identical for the sMM, iMM, tMM and rMM—only the form of p(· |Θc) and the
+model-specific caps on components Cmax and expansion thresholds τt differ.
+Bayesian Model Reduction (BMR). Every ∆TBMR =500 frames we sample up to npair =2000 used
+rMM components, score their mutual expected log-likelihoods with respect to data generated from
+the model through ancestral sampling, and greedily test merge candidates. A merge is accepted if
+it decreases the expected free energy of the multinomial distributions over reward and next tMM
+switch, conditioned on the sampled data for the remaining variables; otherwise it is rolled back. BMR
+enables AXIOM to generalize dynamics from single events, for example learning that negative reward
+is obtained when a ball hits the bottom of the screen, by merging multiple single event clusters (see
+Section 3, Figure 4a).
+6
+Table 1: Cumulative reward over 10k steps for Gameworld 10k environments. Cumulative
+reward is reported as mean ± std over 10 model seeds. Italic means AXIOM is better than BBF and
+Dreamer, bold is overall best.
+Game AXIOM BBF DreamerV3 AXIOM (fixed dist.) AXIOM (no BMR) AXIOM (no IG)
+Aviate −90 ± 19 −90 ± 05 −114 ± 20 −76 ± 13 −87 ± 12 −71 ± 16
+Bounce 27 ± 13 −1 ± 15 14 ± 16 34 ± 12 8 ± 03 ↓ 8 ± 19
+Cross −68 ± 36 −48 ± 07 −27 ± 08 −18 ± 21 ↑ − 34 ± 25 −7 ± 03
+Drive −49 ± 04 −37 ± 06 −45 ± 06 −22 ± 04 ↑ − 67 ± 03 ↓ − 32 ± 02 ↑
+Explode 180 ± 30 101 ± 13 35 ± 59 234 ± 16 ↑ 165 ± 14 190 ± 16
+Fruits 182 ± 21 86 ± 15 60 ± 07 209 ± 19 141 ± 19 ↓ 200 ± 20
+Gold 190 ± 18 −26 ± 12 −21 ± 10 189 ± 16 45 ± 15 ↓ 207 ± 17
+Hunt 206 ± 20 4 ± 12 6 ± 09 231 ± 28 48 ± 13 ↓ 216 ± 11
+Impact 189 ± 45 122 ± 20 168 ± 83 192 ± 09 197 ± 21 181 ± 72
+Jump −55 ± 09 −96 ± 17 −55 ± 17 −38 ± 25 −45 ± 05 ↑ − 43 ± 26
+2.2 Planning
+AXIOM uses active inference for planning [33]; it rolls out future trajectories conditioned on different
+policies (sequences of actions) and then does inference about policies using the expected free energy,
+where the chosen policy π∗ is that which minimizes the expected free energy:
+π∗ = arg min
+π
+HX
+τ=0
+−
+ 
+Eq(Oτ |π)[log p(rτ |Oτ , π)| {z }
+Utility
+−DKL(q(αrmm|Oτ , π) ∥ q(αrmm))| {z }
+Information gain (IG)
+]
+
+(10)
+The expected per-timestep utility Eq(Oτ |π)[log p(rτ |Oτ , π)] is evaluated using the learned model and
+slot latents at the time of planning, and accumulated over timesteps into the planning horizon. The
+expected information gain (second term on RHS of Equation (10)) is computed using the posterior
+Dirichlet counts of the rMM and scores how much information about rMM switch states would be
+gained by taking the policy under consideration. More details on planning are given in Appendix A.11.
+3 Results
+To evaluate AXIOM, we compare its performance on Gameworld against two state-of-the-art baselines
+on sample-efficient, pixel-based deep reinforcement learning: BBF and DreamerV3.
+Benchmark. The Gameworld environments are designed to be solvable by human learners within
+minutes, ensuring that learning does not hinge on brittle exploration or complex credit assignment.
+The suite includes 10 diverse games generated with the aid of a large language model, drawing
+0 10000
+-0.020
+0.000
+Average Reward (1K)
+Aviate
+0 10000
+-0.020
+0.000
+Bounce
+0 10000
+-0.020
+0.000
+Cross
+0 10000
+-0.006
+0.000
+Drive
+0 10000
+0.000
+0.030
+Explode
+0 10000
+Step
+0.000
+0.020Average Reward (1K)
+Fruits
+0 10000
+Step
+0.000
+0.025
+Gold
+0 10000
+Step
+0.000
+0.025
+Hunt
+0 10000
+Step
+0.000
+0.050
+Impact
+0 10000
+Step
+-0.015
+0.000
+Jump
+AXIOM AXIOM (fixed distance) Dreamer V3 BBF
+Figure 3: Online learning performance. Moving average (1k steps) reward per step during training
+for AXIOM, BBF and DreamerV3 on Gameworld 10k environments. Mean and standard deviation
+over 10 parameter seeds per model and environment.
+7
+inspiration from ALE and classic video games, while maintaining a lightweight and structured design.
+The Gameworld environments are available at https://github.com/VersesTech/gameworld. Figure 2
+illustrates the variety and visual simplicity of the included games. To evaluate robustness, Gameworld
+10k supports controlled interventions such as changes in object color or shape, testing an agent’s
+ability to generalize across superficial domain shifts.
+Baselines. BBF [34] builds on SR-SPR [35] and represents one of the most sample-efficient model-
+free approaches. We adapt its preprocessing for the Gameworld 10k suite by replacing frame-
+skip with max-pooling over two consecutive frames; all other published hyperparameters remain
+unchanged. Second, DreamerV3 [ 36] is a world-model-based agent with strong performance on
+games and control tasks with only pixel inputs; we use the published settings but set the train
+ratio to 1024 at batch size 16 (effective training ratio of 64:1). We chose these baselines because
+they represent state of the art in sample-efficient learning from raw pixels. Note that for BBF and
+DreamerV3, we rescale the frames to 84×84 and 96×96 pixels respectively (following the published
+implementations), whereas AXIOM operates on full 210×160 frames of Gameworld.
+Reward. Figure 3 shows the 1000-step moving average of per-step reward from steps 0 to 10000 on
+the Gameworld 10k suite (mean ± 1 standard deviation over 10 seeds). Table 1 shows the cumulative
+reward attained at the end of the 10k interaction steps for AXIOM, BBF and DreamerV3. AXIOM
+attains higher, or on par, average cumulative reward than BBF and DreamerV3 in every Gameworld
+environment. Notably, AXIOM not only achieves higher peak scores on several games, but also
+converges much faster, often reaching most of its final reward within the first 5k steps, whereas BBF
+and DreamerV3 need nearly the full 10k. For those games where BBF and Dreamer seemed to show
+no-better-than-random performance at 10k, we confirmed that their performance does eventually
+improve, ruling out that the games themselves are intrinsically too difficult for these architectures
+(see Appendix E.1). Taken together, this demonstrates that AXIOM’s object-centric world model,
+in tandem with its fast, online structure learning and inference algorithms, can reduce the number
+of interactions required to achieve high performance in pixel-based control. Fixing the interaction
+distance yields higher cumulative reward as the agent doesn’t need to spend actions learning it, but
+doing so requires tuning the interaction distance for each game. This illustrates how having extra
+knowledge about the domain at hand can be incorporated into a Bayesian model like AXIOM to
+further improve sample efficiency. Including the information gain term from Equation (10) allows
+the agent to obtain reward faster in some games (e.g., Bounce), but actually results in a slower
+increase of the average reward for others (e.g., Gold), as encourages visitation of information-rich
+but negatively-rewarding states. BMR is crucial for games that need spatial generalization (like
+Gold and Hunt), but actually hurts performance on Cross, as merging clusters early on discounts the
+information gain term and discourages exploration. See Appendix E.2 for a more detailed discussion.
+Computational costs. Table 2 compares model sizes and per-step training timing (model update and
+planning) measured on a single A100 GPU. While AXIOM incurs planning overhead due to the use
+of many model-based rollouts, its model update is substantially more efficient than BBF, yielding
+favorable trade-offs in wall-clock time per sample. The expanding object-centric model of AXIOM
+converges to a sufficient complexity given the environment, in contrast to the fixed (and much larger)
+model sizes of BBF and DreamerV3.
+Interpretability. Unlike conventional deep RL methods, AXIOM has a structured, object-centric
+model whose latent variables and parameters can be directly interpreted in human-readable terms (e.g.,
+shape, color, position). AXIOM’s transition mixture model also decomposes complex trajectories into
+simpler linear sub-sequences. Figure 4a shows imagined trajectories and reward-conditioned clusters
+Table 2: Training time per environment step onGameworld 10k. Parameter count for AXIOM
+varies as the model finds a sufficient complexity for each environment. Planning time for AXIOM
+shows the range for 64 to 512 planning rollouts.
+Model Parameters (M) Model update (ms/step) Planning (ms/step)
+BBF 6.47 135 ± 36 N/A
+DreamerV3 420 221 ± 37 823 ± 93
+AXIOM 0.3 - 1.6 18 ± 3 252 - 534
+8
+Image Data
+ Imagined Trajectory
+ Reward Clusters
+(a)
+0 5000 10000
+Step
+0
+2500# Components
+BMR
+No BMR (b)
+0 5000 10000
+Step
+0.00
+2.00Median (1k)
+E[info gain]
+E[utility] (c)
+0 5000 10000
+Step
+-0.04
+0.00
+Average Reward (1K)
+None
+Shape
+Color
+Color (remap) (d)
+Figure 4: Tracking AXIOM’s Behavior.(a) Example frame from Impact at time t (left); imagined
+trajectory in latent space conditioned on the observation at time t and 32 timesteps into the future,
+conditioned on an action sequence with high predicted reward (middle); and rMM clusters shown in 2-
+D space and colored by expected reward (green positive reward, red negative reward aka punishment)
+(right). (b) Expanding rMM components are pruned over training using Bayesian Model Reduction
+(BMR) in Explode. (c) Information gain decreases while expected utility increases during training,
+showing an exploration-exploitation trade-off in Explode. (d) Performance following perturbation at
+5k steps shows robustness to changes in game mechanics in Explode.
+of the rMM for the Impact game. The imagined trajectories in latent space (middle panel of Figure 4a)
+are directly readable in terms of the colors and positions of the corresponding object. Because
+the recurrent mixture model (rMM) conditions switch states on various game- and object-relevant
+features, we can condition these switch variables on different game features and visualize them to
+show the rMM’s learned associations (e.g., between reward and space). The right-most panel of
+Figure 4a show the rMM clusters associated with reward (green) and punishment (red) plotted in
+space. The distribution of these clusters explains AXIOM’s beliefs about where in space it expects
+to encounter rewards, e.g., expecting a punishment when the player misses the ball (red cluster at
+bottom of the right panel of Figure 4a).
+Figure 4b shows the sharp decline in active rMM components during training. By actively merging
+clusters to minimize the expected free energy associated with the reduced model, Bayesian model
+reduction (BMR) improves computational efficiency while maintaining or improving performance
+(see Table 1). The resulting merged components enable interpolation beyond the training data,
+enhancing generalization. This automatic simplification reveals the minimal set of dynamics necessary
+for optimal performance, making AXIOM’s decision process transparent and robust. Figure 4c
+demonstrates that, as training progresses, per-step information gain decreases while expected utility
+rises, reflecting a shift from exploration to exploitation as the world model becomes reliable.
+Perturbation Robustness. Finally, we test AXIOM under systematic perturbations of game mechanics.
+Here, we perform a perturbation to the color or shape of each object at step 5000. Figure 4d shows that
+AXIOM is resilient to shape perturbations, as it still correctly infers the object type with the iMM. In
+response to a color perturbation, AXIOM adds new identity types and needs to re-learn their dynamics,
+resulting in a slight drop in performance and subsequent recovery. Due to the interpretable structure
+of AXIOM’s world model, we can prime it with knowledge about possible color perturbations, and
+then only use the shape information in the iMM inference step, before remapping the perturbed slots
+based on shape and rescue performance. For more details, see Appendix E.3.
+4 Conclusion
+In this work, we introduced AXIOM, a novel and fully Bayesian object-centric agent that learns how
+to play simple games from raw pixels with improved sample efficiency compared to both model-
+based and model-free deep RL baselines. Importantly, it does so without relying on neural networks,
+gradient-based optimization, or replay buffers. By employing mixture models that automatically
+expand to accommodate environmental complexity, our method demonstrates strong performance
+within a strict 10, 000-step interaction budget on the Gameworld 10k benchmark. Furthermore,
+AXIOM builds interpretable world models with an order of magnitude fewer parameters than standard
+models while maintaining competitive performance. To this end, our results suggest that Bayesian
+methods with structured priors about objects and their interactions have the potential to bridge the
+gap between the expressiveness of deep RL techniques and the data-efficiency of Bayesian methods
+with explicit models, suggesting a valuable direction for research.
+9
+Limitations and future work. Our work is limited by the fact that the core priors are themselves
+engineered rather than discovered autonomously. Future work will focus on developing methods to
+automatically infer such core priors from data, which should allow our approach to be applied to
+more complex domains like Atari or Minecraft [36], where the underlying generative processes are
+less transparent but still governed by similar causal principles. We believe this direction represents
+a crucial step toward building adaptive agents that can rapidly construct structural models of novel
+environments without explicit engineering of domain-specific knowledge.
+Acknowledgements . We would like to thank Jeff Beck, Alex Kiefer, Lancelot Da Costa, and
+members of the VERSES Machine Learning Foundations and Embodied Intelligence Labs for useful
+discussions related to the AXIOM architecture.
+References
+[1] Y . Li, “Deep reinforcement learning: An overview,”arXiv preprint arXiv:1701.07274, 2017.
+[2] E. S. Spelke and K. D. Kinzler, “Core knowledge,” Developmental science, vol. 10, no. 1,
+pp. 89–96, 2007.
+[3] B. M. Lake, T. D. Ullman, J. B. Tenenbaum, and S. J. Gershman, “Building machines that learn
+and think like people,” Behavioral and Brain Sciences, vol. 40, p. e253, 2017.
+[4] B. M. Lake, R. Salakhutdinov, and J. B. Tenenbaum, “Human-level concept learning through
+probabilistic program induction,” Science, vol. 350, no. 6266, pp. 1332–1338, 2015.
+[5] E. Téglás, E. Vul, V . Girotto, M. Gonzalez, J. B. Tenenbaum, and L. L. Bonatti, “Pure reasoning
+in 12-month-old infants as probabilistic inference,” science, vol. 332, no. 6033, pp. 1054–1059,
+2011.
+[6] E. S. Spelke, R. Kestenbaum, D. J. Simons, and D. Wein, “Spatiotemporal continuity, smooth-
+ness of motion and object identity in infancy,” British journal of developmental psychology,
+vol. 13, no. 2, pp. 113–142, 1995.
+[7] E. S. Spelke, “Principles of object perception,” Cognitive science, vol. 14, no. 1, pp. 29–56,
+1990.
+[8] A. M. Leslie and S. Keeble, “Do six-month-old infants perceive causality?,” Cognition, vol. 25,
+no. 3, pp. 265–288, 1987.
+[9] T. Wiedemer, J. Brady, A. Panfilov, A. Juhos, M. Bethge, and W. Brendel, “Provable composi-
+tional generalization for object-centric learning,” arXiv preprint arXiv:2310.05327, 2023.
+[10] F. Kapl, A. M. K. Mamaghan, M. Horn, C. Marr, S. Bauer, and A. Dittadi, “Object-centric
+representations generalize better compositionally with less compute,” in ICLR 2025 Workshop
+on World Models: Understanding, Modelling and Scaling, 2025.
+[11] W. Agnew and P. Domingos, “Unsupervised object-level deep reinforcement learning,” in
+NeurIPS workshop on deep RL, 2018.
+[12] T. Kipf, E. Fetaya, K.-C. Wang, M. Welling, and R. Zemel, “Neural relational inference for
+interacting systems,” in International conference on machine learning, pp. 2688–2697, Pmlr,
+2018.
+[13] A. Lei, B. Schölkopf, and I. Posner, “Spartan: A sparse transformer learning local causation,”
+arXiv preprint arXiv:2411.06890, 2024.
+[14] W. Zhang, A. Jelley, T. McInroe, and A. Storkey, “Objects matter: object-centric world
+models improve reinforcement learning in visually complex environments,” arXiv preprint
+arXiv:2501.16443, 2025.
+[15] T. Parr, G. Pezzulo, and K. J. Friston, Active inference: the free energy principle in mind, brain,
+and behavior. MIT Press, 2022.
+10
+[16] K. Friston, “The free-energy principle: a unified brain theory?,” Nature reviews neuroscience,
+vol. 11, no. 2, pp. 127–138, 2010.
+[17] D. C. Knill and A. Pouget, “The bayesian brain: the role of uncertainty in neural coding and
+computation,” TRENDS in Neurosciences, vol. 27, no. 12, pp. 712–719, 2004.
+[18] F. Locatello, D. Weissenborn, and O. Unsupervised, “Object-centric learning with slot attention,”
+in Advances in Neural Information Processing Systems, vol. 33, pp. 1821–1834, 2020.
+[19] S. W. Linderman, A. C. Miller, R. P. Adams, D. M. Blei, L. Paninski, and M. J. Johnson,
+“Recurrent switching linear dynamical systems,” arXiv preprint arXiv:1610.08466, 2016.
+[20] C. Heins, H. Wu, D. Markovic, A. Tschantz, J. Beck, and C. Buckley, “Gradient-free variational
+learning with conditional mixture networks,” arXiv preprint arXiv:2408.16429, 2024.
+[21] K. J. Friston, V . Litvak, A. Oswal, A. Razi, K. E. Stephan, B. C. Van Wijk, G. Ziegler,
+and P. Zeidman, “Bayesian model reduction and empirical bayes for group (dcm) studies,”
+Neuroimage, vol. 128, pp. 413–431, 2016.
+[22] K. Friston, T. Parr, and P. Zeidman, “Bayesian model reduction,” arXiv preprint
+arXiv:1805.07092, 2018.
+[23] K. Friston, C. Heins, T. Verbelen, L. Da Costa, T. Salvatori, D. Markovic, A. Tschantz,
+M. Koudahl, C. Buckley, and T. Parr, “From pixels to planning: scale-free active inference,”
+arXiv preprint arXiv:2407.20292, 2024.
+[24] K. J. Friston, L. Da Costa, A. Tschantz, A. Kiefer, T. Salvatori, V . Neacsu, M. Koudahl, C. Heins,
+N. Sajid, D. Markovic, et al., “Supervised structure learning,” Biological Psychology, vol. 193,
+p. 108891, 2024.
+[25] M. G. Bellemare, Y . Naddaf, J. Veness, and M. Bowling, “The arcade learning environment:
+An evaluation platform for general agents,” Journal of Artificial Intelligence Research, vol. 47,
+pp. 253–279, jun 2013.
+[26] E. Todorov, T. Erez, and Y . Tassa, “Mujoco: A physics engine for model-based control,” in
+2012 IEEE/RSJ International Conference on Intelligent Robots and Systems, pp. 5026–5033,
+IEEE, 2012.
+[27] H. Ishwaran and L. F. James, “Gibbs sampling methods for stick-breaking priors,”Journal of
+the American statistical Association, vol. 96, no. 453, pp. 161–173, 2001.
+[28] J. Beck and M. J. Ramstead, “Dynamic markov blanket detection for macroscopic physics
+discovery,”arXiv preprint arXiv:2502.21217, 2025.
+[29] Z. Ghahramani and G. E. Hinton, “Switching state-space models,” University of Toronto
+Technical Report CRG-TR-96-3, Department of Computer Science, 1996.
+[30] C. Bishop and J. Lasserre, “Generative or discriminative? getting the best of both worlds,”
+Bayesian statistics, vol. 8, no. 3, pp. 3–24, 2007.
+[31] M. J. Wainwright, M. I. Jordan, et al., “Graphical models, exponential families, and variational
+inference,” Foundations and Trends® in Machine Learning, vol. 1, no. 1–2, pp. 1–305, 2008.
+[32] M. D. Hoffman, D. M. Blei, C. Wang, and J. Paisley, “Stochastic variational inference,” the
+Journal of machine Learning research, vol. 14, no. 1, pp. 1303–1347, 2013.
+[33] K. Friston, T. FitzGerald, F. Rigoli, P. Schwartenbeck, and G. Pezzulo, “Active inference: a
+process theory,”Neural computation, vol. 29, no. 1, pp. 1–49, 2017.
+[34] M. Schwarzer, J. S. O. Ceron, A. Courville, M. G. Bellemare, R. Agarwal, and P. S. Castro, “Big-
+ger, better, faster: Human-level atari with human-level efficiency,” inInternational Conference
+on Machine Learning, pp. 30365–30380, PMLR, 2023.
+11
+[35] P. D’Oro, M. Schwarzer, E. Nikishin, P.-L. Bacon, M. G. Bellemare, and A. Courville, “Sample-
+efficient reinforcement learning by breaking the replay ratio barrier,” inDeep Reinforcement
+Learning Workshop NeurIPS 2022, 2022.
+[36] D. Hafner, J. Pasukonis, J. Ba, and T. Lillicrap, “Mastering diverse control tasks through world
+models,” Nature, pp. 1–7, 2025.
+[37] T. P. Minka, “Expectation propagation for approximate bayesian inference,” arXiv preprint
+arXiv:1301.2294, 2013.
+[38] M. Okada and T. Taniguchi, “Variational inference mpc for bayesian model-based reinforcement
+learning,” in Conference on Robot Learning, 2019.
+[39] V . Mnih, K. Kavukcuoglu, D. Silver, A. Graves, I. Antonoglou, D. Wierstra, and M. Riedmiller,
+“Playing atari with deep reinforcement learning,” arXiv preprint arXiv:1312.5602, 2013.
+[40] W. Ye, S. Liu, T. Kurutach, P. Abbeel, and Y . Gao, “Mastering atari games with limited data,”
+Advances in neural information processing systems, vol. 34, pp. 25476–25488, 2021.
+[41] S. Wang, S. Liu, W. Ye, J. You, and Y . Gao, “Efficientzero v2: Mastering discrete and continuous
+control with limited data,” arXiv preprint arXiv:2403.00564, 2024.
+[42] D. Hafner, T. Lillicrap, J. Ba, and M. Norouzi, “Dream to control: Learning behaviors by latent
+imagination,” arXiv preprint arXiv:1912.01603, 2019.
+[43] D. Hafner, T. Lillicrap, M. Norouzi, and J. Ba, “Mastering atari with discrete world models,”
+arXiv preprint arXiv:2010.02193, 2020.
+[44] K. Greff, R. L. Kaufman, R. Kabra, N. Watters, C. Burgess, D. Zoran, L. Matthey, M. Botvinick,
+and A. Lerchner, “Multi-object representation learning with iterative variational inference,” in
+International conference on machine learning, pp. 2424–2433, PMLR, 2019.
+[45] F. Locatello, D. Weissenborn, T. Unterthiner, A. Mahendran, G. Heigold, J. Uszkoreit, A. Doso-
+vitskiy, and T. Kipf, “Object-centric learning with slot attention,”Advances in neural information
+processing systems, vol. 33, pp. 11525–11538, 2020.
+[46] R. Singh and C. L. Buckley, “Attention as implicit structural inference,”Advances in Neural
+Information Processing Systems, vol. 36, pp. 24929–24946, 2023.
+[47] D. Kirilenko, V . V orobyov, A. K. Kovalev, and A. I. Panov, “Object-centric learning with slot
+mixture module,” arXiv preprint arXiv:2311.04640, 2023.
+[48] J. Jiang, F. Deng, G. Singh, M. Lee, and S. Ahn, “Slot state space models,” arXiv preprint
+arXiv:2406.12272, 2024.
+[49] S. Ferraro, P. Mazzaglia, T. Verbelen, and B. Dhoedt, “Focus: Object-centric world models for
+robotic manipulation,” Frontiers in Neurorobotics, vol. 19, p. 1585386, 2025.
+[50] J. Collu, R. Majellaro, A. Plaat, and T. M. Moerland, “Slot structured world models,” arXiv
+preprint arXiv:2402.03326, 2024.
+[51] C. Rasmussen, “The infinite gaussian mixture model,” Advances in neural information process-
+ing systems, vol. 12, 1999.
+[52] T. Champion, M. Grze´s, and H. Bowman, “Structure learning with temporal gaussian mixture
+for model-based reinforcement learning,” arXiv preprint arXiv:2411.11511, 2024.
+[53] Z. Ghahramani and G. E. Hinton, “Variational learning for switching state-space models,”
+Neural computation, vol. 12, no. 4, pp. 831–864, 2000.
+[54] V . Geadah, J. W. Pillow,et al., “Parsing neural dynamics with infinite recurrent switching linear
+dynamical systems,” in The Twelfth International Conference on Learning Representations,
+2024.
+[55] S. Linderman, M. J. Johnson, and R. P. Adams, “Dependent multinomial models made easy:
+Stick-breaking with the pólya-gamma augmentation,” Advances in neural information process-
+ing systems, vol. 28, 2015.
+12
+A Full Model Details
+AXIOM’s world model is a hidden Markov model with an object-centric latent state space. The
+model itself has two main components: 1) an object-centric, slot-attention-like [18] likelihood model;
+and 2) a recurrent switching state space model [19]. The recurrent switching state space model is
+applied to each object or slot identified by the likelihood model, and models the dynamics of each
+object with piecewise-linear trajectories. Unlike most other latent state-space models, including
+other object-centric ones, AXIOM is further distinguished by its adaptable complexity – it grows and
+prunes its model online through iterative expansion routines (see Algorithm 1) and reduction (see
+Algorithm 2) to match the structure of the world it’s interacting with. This includes automatically
+inferring the number of objects in the scene as well as the number of dynamical modes needed to
+describe the motion of all objects. This is inspired by the recent fast structure learning approach [23]
+developed to automatically learn a hierarchical generative model of a dataset from scratch.
+Preface on notation Capital bold symbols denote collections of matrix- or vector-valued random
+variables and lowercase bold symbols denote multivariate variables.
+A.1 Generative model
+The model factorizes perception and dynamics into separate generative blocks: (i) In perception,
+a slot Mixture Model (sMM) models pixels yt as competitively explained by continuous latent
+variables factorized across slots or objects: xt = {x(1)
+t , . . . ,x(K)
+t }. Each pixel is assigned to one
+of (up to) K slots using the assignment variable zt,smm; (ii) dynamics are modeled per-object using
+their object-centric latent descriptions as inputs to a recurrent switching state space model (similar
+to an rSLDS [19]). We define the full latent sequence as Z0:T = {Ot, zt,smm}T
+t=0. Each slot latent
+O(k)
+t consists of both continuous x(k)
+t and discrete latent variables. The continuous latents represent
+continuous properties of an object, such as its position, color and shape. The discrete latents are
+themselves split into two subtypes: z(k)
+t and s(k)
+t . We use z(k)
+t to denote four latent descriptors that
+capture categorical attributes of the slot (e.g., object type), and s(k)
+t to denote a pair of switch states
+determining the slot’s instantaneous trajectory.3 Model parameters ˜Θ are split into module-specific
+subsets (e.g., ΘsMM, ΘtMM). The joint distribution over input sequences y0:T , latent state sequences
+Z0:T and parameters ˜Θ can be expressed as a hidden Markov model:
+p(y0:T , Z0:T , ˜Θ) = p(y0, Z0)p( ˜Θ)
+TY
+t=1
+p(xt–1, | zt, ΘiMM)| {z }
+Identity mixture model
+p(xt–1, zt, st, at–1, rt | ΘrMM)| {z }
+Recurrent mixture model
+KY
+k=1
+p(yt|x(k)
+t , zt,smm, ΘsMM)| {z }
+Slot mixture model
+p(x(k)
+t | x(k)
+t−1, s(k)
+t , ΘtMM)| {z }
+Transition mixture model
+, (11)
+We intentionally exclude the slot mixture assignment variablezt,smm from the other object-centric
+discrete latents {z(k)
+t }K
+k=1 because the sMM assignment variable is importantly not factorized over
+slots, since it is a categorical distribution over K-dimensional one-hot vectors, zt,smm ∈ {0, 1}K.
+Latent object states. At a given time–step t ∈ 0, . . . , Teach object k ∈ 1, . . . , Kis described by
+sets of both continuous and discrete variables (we reserve k for ‘slot index’ everywhere):
+Ot = {x(k)
+t , z(k)
+t , s(k)
+t }K
+k=1,
+The continuous state x(k)
+t summarize latent features or descriptors associated with the kth object,
+including its 2-D position p(k)
+t = {p(k)
+t,x , p(k)
+t,y }, a corresponding 2-D velocity v(k)
+t = {v(k)
+t,x , v(k)
+t,y },
+its color c(k)
+t = {c(k)
+t,r , c(k)
+t,g , c(k)
+t,b } its 2-D shape encoded as its extent along the X and Y directions
+3We use the superscript index k as in q(k) to select only the subset of q ≡ q(1:K) relevant to the kth slot.
+13
+e(k)
+t = {e(k)
+t,x , e(k)
+t,y }, and an ‘unused counter’ u(k)
+t , which tracks how long the kth object has gone
+undetected:
+x(k)
+t =
+
+p(k)
+t , c(k)
+t , v(k)
+t , u(k)
+t , e(k)
+t
+⊤
+∈ R10.
+In addition to the continuous latents, each object is also characterized by two sets of discrete variables:
+z(k)
+t and s(k)
+t . The first set z(k)
+t captures categorical information about the object that is relevant to
+predicting its instantaneous dynamics. This includes a latent object ‘type’ z(k)
+t,type (used to identify
+dynamics across object instances based on their shared continuous properties, e.g., objects that have
+the same shape and color are expected to behave similarly); the object type index of the nearest
+other object that slot k is interacting with (or if it isn’t interacting with anything) z(k)
+t,interacting, its
+presence/absence in the current frame z(k)
+t,presence, and whether the object is moving or not z(k)
+t,moving.
+We define each of these discrete variables in ‘one-hot’ vector format, so as vectors whose entries
+z(k)
+t,m,name are either 0 or 1, with the constraint that P
+m z(k)
+t,m,name = 1. We can thus write the full
+discrete z(k)
+t latent as follows:
+z(k)
+t =
+
+z(k)
+t,type, z(k)
+t,interacting, z(k)
+t,presence, z(k)
+t,moving
+
+∈ {0, 1}Ctype+Cinteracting+Cpresence+Cmoving
+with
+
+
+
+Ctype = V ≤ Vmax
+Cinteracting = V + 1
+Cpresence = 2
+Cmoving = 2
+where V is the number of object types inferred by the identity mixture model or iMM, subject to a
+maximum value of Vmax (see Appendix A.6). Note that Cinteracting has maximum index V + 1 because
+it includes an extra index for the state of ‘not interacting with any other object.’
+The second set of discrete variables s(k)
+t form a pair of concurrent switch states that jointly select one
+of an expanding set of linear dynamical systems to predict the object’s future motion:
+s(k)
+t =
+
+s(k)
+t,tmm, s(k)
+t,rmm
+
+∈ {0, 1}Stmm+Srmm
+with
+(
+Stmm ≤ L
+Srmm ≤ M
+The first variable s(k)
+t,tmm is the switching variable of the transition mixture model or tMM, whereas
+the second switch variable s(k)
+t,rmm is the assignment variable of another mixture model – the recurrent
+mixture model or rMM – which furnishes a likelihood over stmm as well as other continuous and
+discrete features of each object.
+In the sections that follow we will detail each of the components in the full AXIOM world model
+and give their descriptions in terms of generative models. These descriptions will show how the
+latent variables Z0:T = {Ot, zt,smm}T
+t=0 and component-specific parameters (e.g, ΘrMM relate to
+observations and other latent variables.
+A.2 Slot Mixture Model (sMM)
+AXIOM processes sequences of RGB images one frame at a time. Each image is composed ofH ×W
+pixels and is reshaped into N =HW tokens {yn
+t }N
+n=1. Each token yn
+t is a vector containing the nth
+pixel’s color in RGB and its image coordinates (normalized to
+
+−1, +1
+
+). AXIOM models these
+tokens at a given time as explained by a mixture of the continuous slot latents; we term this likelihood
+construction the Slot Mixture Model (sMM, see far left side of Figure 1). The K components of this
+14
+mixture model are Gaussian distributions whose parameters are directly given by the continuous
+features of each slot latentx(1:K)
+t . Associated to this Gaussian mixture is a binary assignment variable
+zn
+t,k,smm ∈ {0, 1} indicating whether pixel n at time t is driven by slot k, with the constraint thatP
+k zn
+t,k,smm = 1. The sMM’s likelihood model for a single pixel and timepoint yn
+t can be expressed
+as follows (dropping the t subscript for notational clarity):
+p(yn | x(1:K), σ(1:K)
+c , zn
+smm) =
+KY
+k=1
+N(Ax(k), diag(
+
+Bx(k), σ(k)
+c
+⊤
+))zn
+k,smm (12)
+A =
+I5 05×5
+
+, B =
+02×8 I2
+
+(13)
+p(zn
+smm | πsmm) = Cat(πsmm), p(πsmm) = Dir
+ 
+1, . . . ,1| {z }
+K−1 times
+, α0,smm) (14)
+p(σ(k)
+c ) =
+Y
+j∈R, G, B
+Γ(γ0,j, 1) (15)
+The mean of each Gaussian component is given a fixed linear projectionA of each object latent, which
+selects only its position and color features: Ax(k) =
+
+p(k), c(k)
+. The covariance of each component
+is a diagonal matrix whose diagonal is a projection of the 2-D shape of the object latentBx(k) = e(k)
+(its spatial extent in the X and Y directions), stacked on top of a fixed variance for each color
+dimension σ(k)
+c , which are given independent Gamma priors. The latent variables p(k), c(k), e(k)
+are subsets of slot k’s full continuous features x(k)
+t , and the projection matrices A, B remain fixed
+and unlearnable. Each token’s slot indicator zn
+smm is drawn from a Categorical distribution with
+mixing weights πsmm. We place a truncated stick-breaking (finite GEM) prior on these weights,
+which is equivalent to a K-dimensional Dirichlet with concentration vector (1, . . . ,1, α0,smm), where
+the first K − 1 pseudocounts are 1 and the final pseudocount α0,smm reflects the propensity to add
+new slots. All subsequent mixture models in AXIOM are equipped with the same sort of truncated
+stick-breaking priors on the mixing weights [27]. We can collect parameters of the sMM together
+into ΘsMM = {πsmm, σ(1:K)
+c , A, B}. The priors over these parameters can be written as a product of
+the truncated stick-breaking prior and the Gamma priors for each color variance, and the priors over
+A and B can be thought of as Dirac delta functions, rendering them unlearnable.
+A.3 Moving and presence latent variables
+Within the discrete variables that describe each slotz(k)
+t , s(k)
+t , there are two one-hot-encoded Bernoulli
+variables: z(k)
+t,moving ∈ {0, 1}2 and z(k)
+t,present ∈ {0, 1}2. These represent whether the object associated
+to the kth slot is moving and present on the screen, respectively. These variables have a particular
+relationship to the generative model, particularly the dynamics model, which allows inference over
+them to act as a ‘pre-processing step’ or filter for slot latents, before passing their continuous features
+further down the inference chain for use by the identity model, recurrent mixture model, and transition
+model. The way this gating is functionally defined is detailed in the subsection Gated dynamics
+learning below.
+The latent state sequences z(k)
+0:T,presence and z(k)
+0:T,moving variables are modelled as evolving according to
+discrete, object-factorized markov chains which concurrently emit observations via a proxy presence
+variable o(k)
+t (see below for details on how this is computed). This conditional hidden Markov model
+can be written as follows for the two variables:
+p(z(k)
+0:T,presence) =
+TY
+t=0
+p(o(k)
+t | z(k)
+t,presence)p(z(k)
+t,presence) | z(k)
+t–1,presence, θpresence)
+p(z(k)
+0:T,moving) =
+TY
+t=1
+p(z(k)
+t,moving | z(k)
+t–1,moving, o(k)
+t , v(k)
+t–1, θmoving) (16)
+15
+Presence latent zt,presence The presence chain uses a time-homogeneous 2 × 2 transition matrix
+parametrised by
+θpresence = {ϕNP→P, ϕP→NP}, 0 ≤ ϕNP→P, ϕP→NP ≤ 1.
+where the subscripts for the ‘not present‘ and ‘present‘ states of z(k)
+t,presence are abbreviated as NP and
+P, respectively. Writing ϕi→not present =1 − ϕi→present, the transition matrix is
+Tpresence =
+ 
+ϕNP→NP ϕNP→P
+ϕ1→NP ϕP→P
+!
+=
+ 
+1 − ϕNP→P ϕNP→P
+ϕP→NP 1 − ϕP→NP
+!
+.
+For all experiments we fix ϕ0→1 = 0, ϕ1→0 = 0.01, encoding the prior that an absent slot cannot
+spontaneously re-appear while a present one “dies out” with probability 0.01 each frame.
+Proxy observation. We define the assignment-count indicatoro(k)
+t as a variable that indicates whether
+any pixels 1, 2, . . . , Nwere assigned to slot k at time t. This can be expressed as an element-wise
+product of all pixel-specific entries of the row of sMM assignment variable corresponding to slot k’s
+assignments: z(1:N)
+t,k,smm:
+o(k)
+t =
+NY
+n=1
+zn
+t,k,smm
+Finally, the relationship between the count-assignments-indicator o(k)
+t and the presence variable
+zt,presence is a Bernoulli likelihood with the following form:
+p(ot|zt,presence) = ozt,P,presence
+t (1 − ot)zt,A,presence (17)
+which means that presence and the assignment count o(k)
+t are expected to be ‘on’ simultaneously.
+The subscripts P and A refer to the indices of z(k)
+t,presence that correspond to the ‘present’ and ‘absent’
+indicators, respectively.
+Moving latent zt,moving We define the speed of slot k as follows (leaving out the k superscript to
+avoid overloaded superscripts):
+ψt =
+q
+v2
+t,x + v2
+t,y (18)
+The transition likelihood for the moving latent z(k)
+t,moving depends on the presence indicator o(k)
+t and
+the slot speed ψt–1; this forces inference of the moving indicator z(k)
+t,moving to be driven by the inferred
+speed and presence of the k-th slot. The form of this dependence is encoded in the 2 × 2 transition
+matrix Tmoving with parameters θmoving as follows:
+θmoving = {λ, β}, 0 ≤ λ ≤ 1, 0 ≤ β ≤ 1, λ+ β ≤ 1. (19)
+The parameters λ and β determine the two conditional probabilities ϕi→M(o(k)
+t , ψt–1) and
+ϕi→NM(o(k)
+t , ψt–1). We use the subscripts NM, M to indicate the ‘not-moving’ and ‘moving‘ states of
+z(k)
+t,moving, respectively. The dependence of the conditional probabilities on the λ, βhyperparameters
+can be written as follows:
+ϕi→M(o(k)
+t , ψt–1) =
+
+
+
+λ i+ β ψt–1, o (k)
+t = 1,
+i, o (k)
+t = 0,
+ϕi→NM(o(k)
+t , ψt–1) = 1 − ϕi→1(o(k)
+t , ψt–1).
+The full transition matrix Tmoving can be written:
+Tmoving
+ 
+o(k)
+t , ψt–1; θmoving
+
+=
+ 
+ϕNM→NM ϕNM→M
+ϕM→NM ϕM→M
+!
+. (20)
+16
+This sort of parameterization results in the following interpretation: if the slot is inferred to be absent
+(i.e., no pixels are assigned to it and o(k)
+t = 0), z(k)
+t,moving stays in its previous state. However, if the
+slot is inferred to be present (o(k)
+t = 1), then the previous “moving” probability is shrunk by λ and
+nudged upward by βψt–1.
+In all experiments we set λ = 0.99, β= 0.01, but they remain exposed hyperparameters.
+Gated dynamics learning The presence and moving latents zt,presence, zt,moving exist in order to filter
+which slots get fit by the rMM. In order to achieve this selective routing of only active, moving slots,
+we introduce an auxiliary gate variable that is connected to the moving- and presence-latents via a
+multiplication factor that parameterizes a Bernoulli likelihood over the two values (‘ON‘ and ‘OFF‘)
+of the gate variable G(k)
+t :
+p(G(k)
+t | z(k)
+t,movingz(k)
+t,present) = Bernoulli
+ 
+pgate
+
+(21)
+where pgate = z(k)
+t,M,movingz(k)
+t,P,present
+This binary gate variable then modulates the input precision of the various likelihoods associated
+with the identity model (iMM), transition mixture model (tMM), and recurrent mixture model (rMM)
+to effectively ‘mask’ the learning of these models on untracked or absent slots. The end effect is that
+slots which are inferred to be moving and present keep full precision, while any other combination
+deflates the slot-specific input covariance to 0, removing the influence of their sufficient statistics
+from parameter learning.
+A.4 Interaction variable
+We also associate each object with a discrete latent variablez(k)
+t,interacting which indicates the type of
+the closest object interacting with the focal object (i.e., that indexed by k). In practice, we infer
+this interaction variable by finding the object whose position variable is closest to the focal slot, i.e.
+arg minj∈nearest ∥pj −pl∥, within some constrained set of ‘nearest’ objects whose position latents are
+within a predefined interaction radius of the focal object (determined by a fixed parameter rmin). This
+interaction radius can be tuned on a game specific basis – see the main text results in Section 3 for
+how fixing this parameter affects the results. We then perform inference on the identity model using
+the continuous features of that nearest-interacting slot:
+
+c(j)
+t , e(j)
+t
+⊤
+. The inferred identity of the
+resulting jth slot is then converted into a one-hot vector representing the type of the ‘interacting’ latent
+z(k)
+t,interacting, which can then be fed as input into the recurrent mixture model or rMM as described in
+the following section.
+A.5 Unused counter
+To keep track of how long a slot has remained inactive we introduce a non-negative-integer latent
+that is treated as a continuous variable in R: u(k)
+t or the ‘unused counter’. This allows the model
+to predict the respawning of objects after they go off-screen. We couple the unused counter again
+to the proxy assignment-count variable o(k)
+t using an exponentially–decaying Bernoulli likelihood
+(identical in spirit to the EP–style presence likelihood):
+P
+ 
+o(k)
+t = 1 | u(k)
+t
+
+= 1 − exp
+
+−ξ e−γu u(k)
+t
+	
+,
+P
+ 
+o(k)
+t = 0 | u(k)
+t
+
+= exp
+
+−ξ e−γu u(k)
+t
+	
+, ξ ∈ (0, 1], γu > 0. (22)
+When u(k)
+t = 0 the slot is present with probability 1 −e−ξ ≃ ξ (for typical ξ ≳ 0.8). Each increment
+by νu multiplies that probability by exp
+ 
+−ξ γu νu
+
+, i.e. it decays roughly one e-fold per unused step
+when γu ≃ ν−1
+u .
+17
+A.6 Identity mixture model
+AXIOM uses an identity mixture model (iMM) to infer a discrete identity code z(k)
+type for each object
+based on its continuous features. These identity codes are used to condition the inference of the
+recurrent mixture model used for dynamics prediction. Conditioning the dynamics on identity-codes
+in this way, rather than learning a separate dynamics model for each slot, allows AXIOM to use the
+same dynamics model across slots. This also enables the model to learn the same dynamics in a type-
+specific, rather than instance-specific, manner, and to remap identities when e.g., the environment is
+perturbed and colors change. Concretely, the iMM models the 5-D colors and shapes {c(k), e(k)}K
+k=1
+across slots as a mixture of up to V Gaussian components (object types). The slot-level assignment
+variable z(k)
+t,type indicates which identity is assigned to the kthslot. The generative model for the iMM
+is (omitting the t − 1 subscript from object latents):
+p(
+
+c(k), e(k)⊤
+|z(k)
+type, µ1:V,type, Σ1:V,type) =
+VY
+j=1
+N(µj,type,
+
+G(k)
+t
+−1
+Σj,type)z(k)
+j,type (23)
+p(µj,type, Σ−1
+j,type) = NIW(m0,j,type, κ0,j,type, U0,j,type, n0,j,type) (24)
+p(z(k)
+type | πtype) = Cat(πtype), p(πtype) = Dir
+ 
+1, . . . ,1| {z }
+V −1 times
+, α0,type) (25)
+The
+
+G(k)
+t
+−1
+X notation represents element-wise broadcasting of the reciprocal of G(k)
+t across all
+elements of the matrix or vector X. When applied as a mask to a covariance matrix, for instance, the
+effect is that slots that are inferred to be moving and present do not have their covariance affected
+G(k)
+t
+−1
+= 1, whereas those slots that are inferred to be either not present or not moving will
+‘inflate’ the covariance of the mixture model, due to
+
+G(k)
+t
+−1
+→ ∞. The same type of Categorical
+likelihood for the type assignments and truncated stick-breaking prior over the mixture weights
+is used to allow an arbitrary (up to a maximum of V ) number of types to be used to explain the
+continuous slot features. We equip the prior over the component likelihood parameters with conjugate
+Normal Inverse Wishart (NIW) priors.
+A.7 Transition Mixture Model
+The dynamics of each slot are modelled as a mixture of linear functions of the slot’s own previous
+state. To stress the homology between this model and the other modules of AXIOM, we refer to this
+module as the transition mixture model or tMM, but this formulation is more commonly also known
+as a switching linear dynamical system or SLDS [29]. The tMM’s switch variable s(k)
+t,tmm selects a set
+of linear parameters Dl, bl to describe the kth slot’s trajectory from t to t + 1. Each linear system
+captures a distinct rigid motion pattern for a particular object:
+p(x(k)
+t | x(k)
+t–1, s(k)
+t,tmm, D1:L, b1:L) =
+LY
+l=1
+N(Dlx(k)
+t + bl,
+
+G(k)
+t
+−1
+2I)s(k)
+t,l,tmm (26)
+p(s(k)
+t,tmm | πtmm) = Cat(πtmm), p(πtmm) = Dir
+ 
+1, . . . ,1| {z }
+L−1 times
+, α0,tmm) (27)
+(28)
+where we fix the covariance of all L components to be 2I, and all mixture likelihoods D1:L, b1:L
+to have uniform priors. Note that we gate the covariance once again using the reciprocal of G(k)
+t to
+filter the tMM to only model objects that are moving and present. The truncated stick-breaking prior
+Dir
+ 
+1, . . . ,1, α0,tmm) over the component mixing weights enables the number of linear modes L to
+be dynamically adjusted to the data by growing the model with propensity α0,tmm. Importantly, the L
+transition components of the tMM are not slot-dependent, but are shared and thus learned using the
+18
+data from all K slot latents. The tMM can thus explain and predict the motion of different objects
+using a shared, expanding set of (up to L distinct) linear dynamical systems.
+A.8 Recurrent Mixture Model
+The recurrent mixture model (rMM) is used to infer the switch states of the transition model directly
+from current slot-level features. This dependence of switch states on continuous features is the
+same construct used in the recurrent switching linear dynamical system or rSLDS [ 19]. However,
+in contrast to the rSLDS, which uses a discriminative mapping to infer the switch state from the
+continuous state (usually a softmax or stick-breaking parameterization thereof), the rMM recovers this
+dependence generatively using a mixture model over mixed continuous–discrete slot states [30]. In
+this way, ‘selecting’ the switch state used for conditioning the tMM actually emerges from inference
+over discrete latent variables, which have a particular conditional relationship (in this context, a joint
+mixture likelihood relationship) to other latent and observed variables. Concretely, the rMM models
+the distribution of continuous and discrete variables as a mixture model driven by another per-slot
+latent assignment variable s(k)
+rmm. The rMM defines a mixture likelihood over a tuple of continuous
+and discrete slot-specific information. We use the notation f(k)
+t–1 to collect the continuous features
+that the rMM parameterizes a density over: they include a subset of the kth slot’s own continuous
+state x(k)
+t–1, as well as a nonlinear transformation g applied to other slots‘ features, that computes the
+2-D distance vector pointing from the inferred position of the focal object (i.e., slot k) to the nearest
+interacting slot j. We detail how these features are computed below:
+Continuous features for the rMM The continuous latent dimensions ofx(k)
+t–1 used for the rMM include
+the following: p(k)
+t–1, v(k)
+t–1, u(k)
+t–1. We represent extracting this subset as a sparse linear projection
+applied to the full continuous latents Cx(k)
+t–1. In addition, the rMM models the distribution of the
+2-D vectors pointing from the focal object’s position (the slot k in consideration) to the position
+of the nearest interacting object, i.e. ∆p(k)
+t–1 ≡ p(j)
+t–1 − p(k)
+t–1. The nearest interacting object with
+index j is the one whose inferred position is the closest to the focal object’s, while only considering
+neighbors within some interaction zone with radius rmin. This is the same interaction distance used
+to compute nearest-neighbors when populating the z(k)
+interacting latent, see Appendix A.4 for details.
+If no object is within the interaction radius, then we set ∆p(k)
+t–1 to a random sample from a 2-D
+uniform distribution with mean
+
+1.2, 1.2
+
+and lower/upper bounds of
+
+1.198, 1.198
+
+,
+
+1.202, 1.202
+
+.
+We summarize this computation with a generic nonlinear function applied to the latent states of all
+slots g(x(1:K)
+t–1 ), to intimate possible generalizations where different sorts of (possibly learnable)
+neighborhood relationships could be inserted here.
+Discrete features for the rMM The discrete features include the following: z(k)
+t−1,type, z(k)
+t−1,interacting,
+the assignment-count indicator variable o(k)
+t–1, the switch state of the transition mixture model s(k)
+t,tmm,
+the action at timestep t−1 and reward at the current timesteprt. We refer to this discrete collection as
+d(k)
+t–1. The inclusion of s(k)
+t,tmm in the discrete inputs to the rMM is a critical ingredient of this recurrent
+dynamics formulation – it allows inference on this the switching state of the tMM to be driven by
+high-dimensional configurations of continuous and discrete variables relevant for predicting motion.
+rMM description The rMM assignment variable associated to a given slot is a binary vector s(k)
+t,rmm
+whose mth entry s(k)
+t,m,rmm ∈ {0, 1} indicates whether component m explains the current tuple of
+mixed continuous-discrete data. Each component likelihood selected by s(k)
+t,rmm factorizes into a
+product of continuous (Gaussian) and discrete (Categorical) likelihoods.
+f(k)
+t–1 =
+
+Cx(k)
+t–1, g(x(1:K)
+t–1 )
+
+, d (k)
+t–1 =
+
+z(k)
+t−1,type, z(k)
+t−1,interacting, o(k)
+t–1, s(k)
+t,tmm, at–1, rt
+
+(29)
+19
+p(f(k)
+t–1, d(k)
+t–1 | s(k)
+t,rmm) =
+MY
+m=1
+
+N
+ 
+f(k)
+t–1; µm,rmm,
+
+G(k)
+t
+−1
+Σm,rmm
+Y
+i
+Cat
+ 
+dt–1, i; G(k)
+t am,i
+
+
+
+st,m,rmm
+(30)
+p(µm,rmm, Σ−1
+m,rmm) = NIW(m0,m,rmm, κ0,m,rmm, U0,m,rmm, n0,m,rmm), p(am,i) = Dir(a0,m,i) (31)
+p(s(k)
+t,rmm | πrmm) = Cat(πrmm), p(πrmm) = Dir
+ 
+1, . . . ,1| {z }
+M−1 times
+, α0,rmm) (32)
+The parameters of the multivariate normal components are equipped with NIW priors and those of the
+discrete Categorical likelihoods with Dirichlet priors. As with all the other modules of AXIOM, we
+equip the mixing weights fors(k)
+t,rmm with a truncated stick-breaking prior whose finalMth pseudocount
+parameter tunes the propensity to add new rMM components. Note also the use of the gate variable
+G(k)
+t to filter slots for dynamics learning by inflating the covariance associated with any slot inputs
+not inferred moving and present.
+Fixed distance variant. We explored a variant of the rMM (fixed_distance) where the displace-
+ment vector ∆p(k)
+t–1 is not returned by g(x(1:K)
+t−1 ) and therefore not included as one of the continuous
+input features for the rMM. In this case, the entry of z(k)
+t–1,interacting that corresponds to the nearest
+interacting object is still determined by rmin, however. In this case, the choice of rmin matters more
+for performance because the rMM cannot learn to nuance its dynamic predictions based on precise
+distances. In general, this means that rmin requires more game-specific tuning. See Section 3 for the
+results of tuning rmin compared to learning it directly by providing ∆p(k)
+t–1 as input to the rMM.
+A.9 Variational inference and learning
+To perform inference and learning within our proposed model, we employ a variational Bayesian
+approach. The core idea is to approximate the true posterior distribution over latent variables and
+parameters with a more tractable factorized distribution, q(Z0:T , ˜Θ). This is achieved by optimizing
+the variational free-energy functional, F(q), which establishes an upper-bound on the negative
+log-marginal likelihood of the observed data y0:T :
+F(q) = Eq
+h
+log q(Z0:T , ˜Θ) − log p(y0:T , Z0:T , ˜Θ)
+i
+, such that F(q) ≥ −log p(y0:T ). (33)
+Minimizing this functional F(q) with respect to q is equivalent to maximizing the Evidence Lower
+Bound (ELBO), thereby driving the approximate posterior q(Z0:T , ˜Θ) to more closely resemble the
+true posterior p(Z0:T , ˜Θ | y0:T ).
+We assume a mean-field factorization for the approximate posterior, which decomposes over the
+global parameters ˜Θ and the sequence of latent variables Z0:T :
+q(Z0:T , ˜Θ) = q( ˜Θ)
+TY
+t=0
+q(Zt), (34)
+where q(Zt) further factorizes across individual latent variables for frame t:
+q(Zt) =
+
+
+NY
+n=1
+q
+ 
+zn
+t,smm
+
+
+
+KY
+k=1
+
+q
+ 
+x(k)
+t
+
+q
+ 
+z(k)
+t
+
+q
+ 
+s(k)
+t
+
+. (35)
+The variational distribution over the global parameters ˜Θ is also assumed to factorize according to
+the distinct components of our model:
+q( ˜Θ) = q(ΘsMM) q(ΘiMM) q(ΘtMM) q(ΘrMM). (36)
+Note that the pixel-to-slot assignment variables zn
+t,smm are specific to each pixel n but are not
+factorized across slots for a given pixel, as they represent a single categorical choice fromK slots.
+Other latent variables, such as the continuous state x(1:K)
+t and discrete attributes z(1:K)
+t , s(1:K)
+t , are
+factorized per slot k.
+20
+The inference and learning procedure for each new frame t involves an iterative alternation between
+an E-step, where local latent variable posteriors are updated, and an M-step, where global parameter
+posteriors are refined.
+E-step In the Expectation-step (E-step), we hold the variational posteriors of the global parameters
+q(Θ) fixed. We then update the variational posteriors for each local latent variable factor within
+q(Zt), such as q(zn
+t,smm), q(x(k)
+t ), q(z(k)
+t ), and q(s(k)
+t ). These updates are derived by optimizing the
+ELBO with respect to each factor in turn and often result in closed-form coordinate-ascent updates
+due to conjugacy between the likelihood terms and the chosen forms of the variational distributions.
+M-step In the Maximization-step (M-step), we update the variational posteriors for the global
+parameters q(Θµ) associated with each model component µ ∈ {sMM, iMM, tMM, rMM}. Each
+q(Θµ) is assumed to belong to the exponential family, characterized by natural parameters ηµ:
+q(Θµ) = h(Θµ) exp
+
+η⊤
+µ T(Θµ) − A(ηµ)
+	
+, (37)
+where T(Θµ) represents the sufficient statistics for Θµ, and A(ηµ) is the log-partition function (or
+log-normalizer). The M-step update proceeds in two stages for each component:
+1. First, we compute the expected sufficient statistics bTµ using the current posteriors over the
+latent variables q(Zt) obtained from the t-th E-step:
+bTµ = Eq(Zt)
+
+T
+ 
+Θµ, Zt
+
+. (38)
+These expected statistics are then combined with prior natural parameters ηµ,0 to form the
+target natural parameters for the update: bηµ = bTµ + ηµ,0.
+2. Second, we update the current natural parameters η(t−1)
+µ using a natural-gradient step,
+which acts as a stochastic update blending the previous parameters with the new target
+parameters, controlled by a learning rate schedule ρt:
+η(t)
+µ ← (1 − ρt) η(t−1)
+µ + ρt bηµ, where 0 < ρt ≤ 1. (39)
+Slot Mixture Model (sMM)
+The Slot Mixture Model (sMM) provides a likelihood for the observed pixel data yt by modeling
+each pixel as originating from one of K object slots. The variational approximation involves
+posteriors over pixel-to-slot assignments zn
+t,smm, slot mixing weights πsmm, slot-specific color
+variances σ(k)
+c,j , and the continuous latent states of slots x(k)
+t . Specifically, for each pixel n at
+time t, the posterior probability that it belongs to slot k is q(zn
+t,k,smm = 1) = rn
+t,k, ensuring thatPK
+k=1 rn
+t,k = 1. The posterior over the slot-mixing probabilities πsmm is a Dirichlet distribution:
+q(πsmm) = Dir(πsmm | α1,smm, . . . , αK,smm), parameterized by concentrations αk,smm > 0. For
+each slot k and color channel j ∈ {r, g, b}, the posterior over the color variance σ(k)
+c,j is a Gamma
+distribution: q(σ(k)
+c,j ) = Gamma(σ(k)
+c,j | γk,j, bk,j), with shape γk,j and rate bk,j. Finally, each slot’s
+continuous latent state x(k)
+t ∈ R10 (encompassing position, color, velocity, shape, and the unused
+counter) is modeled by a Gaussian distribution: q(x(k)
+t ) = N(x(k)
+t | µ(k)
+t , Σ(k)
+t ). The precision
+matrix is denoted Λ = Σ−1, and the precision-weighted mean is h(k)
+t = Λ(k)
+t µ(k)
+t .
+E-step Updates for sMM During the E-step for the sMM at frame t, the variational distributions
+for local latent variables zn
+t,smm (represented by the responsibilities rn
+t,k) and x(k)
+t (represented by
+µ(k)
+t , Σ(k)
+t ) are updated, while the global sMM parameters q(ΘsMM) are held fixed.
+1. The pixel responsibilities rn
+t,k, representing q(zn
+t,k,sMM = 1), are updated using the standard
+mixture model update:
+rn
+t,k = exp
+ 
+Eq[log πk,smm] + Eq[log N(yn
+t ; Ax(k)
+t , Σ(k))]
+
+PK
+j=1 exp
+ 
+Eq[log πj,smm] + Eq[log N(yn
+t ; Ax(j)
+t , Σ(j))]
+. (40)
+21
+The per-slot observation covariance Σ(k) is constructed as Σ(k) =
+diag
+ 
+B Eq[x(k)
+t ], Eq[σ(k)
+c ]
+
+, consistent with the generative model where Bx(k) pro-
+vides variance related to shape and σ(k)
+c provides color channel variances (see Equation (12)
+for the sMM likelihood equations).
+2. The parameters of the Gaussian posterior q(x(k)
+t ) are updated by incorporating evidence
+from the pixels assigned to slot k. This involves updating its natural parameters (precision
+Λ(k)
+t and precision-adjusted mean h(k)
+t ):
+Λ(k)
+t = Λ(k)
+t|t–1 +
+NX
+n=1
+rn
+t,k A⊤ 
+Σ(k)−1
+A,
+h(k)
+t = h(k)
+t|t–1 +
+NX
+n=1
+rn
+t,k A⊤ 
+Σ(k)−1
+yn
+t .
+(41)
+The terms Λ(k)
+t|t–1 and h(k)
+t|t–1 are the natural parameters of the predictive distribution for x(k)
+t .
+The standard parameters are then Σ(k)
+t =
+
+Λ(k)
+t
+−1
+and µ(k)
+t = Σ(k)
+t h(k)
+t .
+M-step Updates for sMM In the M-step, the global parameters of the sMM, which are the Dirichlet
+parameters αk,smm for mixing weights and the Gamma parameters (γk,j, bk,j) for color variances,
+are updated. This begins by accumulating the expected sufficient statistics from the E-step:
+Nt,k =
+NX
+n=1
+rn
+t,k,
+Sy
+1,t,k =
+NX
+n=1
+rn
+t,k yn
+t ,
+Sy
+2,t,k =
+NX
+n=1
+rn
+t,k yn
+t (yn
+t )⊤.
+(42)
+The Dirichlet concentration parameters are updated as (now using the t index to represent the current
+vs. last settings of the posterior parameters):
+αt,k,smm = (1 − ρt) αt–1,k,smm + ρt (α0,k,smm + Nt,k),
+γt,k,j = (1 − ρt) γt–1,k,j + ρt
+
+γ0,j + Nt,k
+2
+
+,
+bt,k,j = (1 − ρt) bt–1,k,j + ρt
+
+1 + 1
+2
+NX
+n=1
+rn
+t,k(yn
+t,color j − (AEq[x(k)
+t ])color j)2
+
+.
+(43)
+Here, α0,k,smm represents the prior concentration for the Dirichlet distribution (e.g., 1 for the first
+K −1 components and α0,smm for the K-th, if using a truncated stick-breaking prior). For the Gamma
+parameters, γ0,j is the prior shape and 1 is the prior rate (or related prior parameters). The projection
+matrices A and B are considered fixed and are not learned.
+Presence, Motion, and Unused Counter Dynamics
+The model includes latent variables for each slot k that track its presence z(k)
+t,presence, motion z(k)
+t,moving,
+and an unused counter u(k)
+t .
+Inference over the presence latent The presence state is informed by an ‘assignment-count-indicator’
+o(k)
+t . This indicator is set to 1 if the slot is actively explaining pixels (e.g., if the sum of its
+responsibilities P
+n rn
+t,k exceeds a small threshold ϵactive), and 0 otherwise.
+22
+Recall the Bernoulli likelihood over o(k)
+t that links it to the z(k)
+t,presence latent as follows (cf. Equa-
+tion (17)):
+p(ot|zt,presence) = ozt,P,presence
+t (1 − ot)zt,A,presence (44)
+There is an implied superscript k on both o(k)
+t and the presence variable z(k)
+t,P,presence, which are
+left out to avoid visual clutter. This linkage is incorporated into q(z(k)
+t,presence) using an Expectation
+Propagation (EP) style update via a pseudo-likelihood [37]:
+˜ℓ
+ 
+z(k)
+t,presence
+
+=
+h
+(o(k)
+t )z(k)
+t,P,presence
+ 
+1 − o(k)
+t
+z(k)
+t,A,presence
+iζ
+, (45)
+where ζ is a damping factor. This update increases posterior evidence for presence if o(k)
+t = 1, and
+for absence if o(k)
+t = 0. The first-order effect of this pseudo-likelihood when updating the posterior
+over z(k)
+t,presence is
+q(z(k)
+t,P,presence) ≈ (1 − ζ)q(z(k)
+t–1,P,presence) + ζ o(k)
+t . (46)
+Recall that the A, Psubscripts refer to the indices of z(k)
+t–1,presence that signify the ‘is-absent‘ and
+‘is-present’ states, respectively.
+Inference over the moving latent Similar EP updates apply for inferring q(z(k)
+t,M,moving) based on its
+specific likelihoods involving velocity ando(k)
+t . The gate G(k)
+t = q(z(k)
+t,P,present = 1)·q(z(k)
+t,M,moving = 1)
+is then formed from these inferred probabilities.
+Inference over the unused counter The ‘unused counter’ u(k)
+t tracks how long slot k has been
+inactive. Appendix A.5 of the full model details describes a generative likelihood P(o(k)
+t = 1 |
+u(k)
+t ) = 1 − exp(−ξe−γuu(k)
+t ), for which damped EP updates for q(u(k)
+t ) can be derived and would
+remain in closed form. However, a specific case, by choosing hyperparameters such that a hard
+constraint o(k)
+t = 1 ⇐⇒ u(k)
+t = 0 is effectively enforced (e.g., by taking γu → ∞and ξ = 1
+in the generative likelihood), leads to a simplified, deterministic update for the posterior mean
+µ(k)
+t,u = Eq[u(k)
+t ]:
+µ(k)
+t,u =
+ 
+1 − o(k)
+t
+ 
+µ(k)
+t−1,u + νu
+
+, ν u = 0.05. (47)
+In this simplified regime, the counter is reset to 0 if o(k)
+t = 1; otherwise, it increments by a fixed
+amount νu.
+Identity Mixture Model (iMM)
+The Identity Mixture Model (iMM) assigns one of V possible discrete identities to each active
+slot, based on its continuous features. This allows for shared characteristics and dynamics across
+instances of the same object type. The variational approximation targets posteriors over these slot-
+to-identity assignments z(k)
+t,type (which is a component of z(k)
+t ), identity mixing weights πtype, and
+the parameters (µj,type, Σj,type) for each identity’s feature distribution. The features y(k)
+t,imm utilized
+by the iMM for slot k are its color c(k)
+t and shape e(k)
+t , thus y(k)
+t,imm = [c(k)
+t , e(k)
+t ]⊤. For each slot k
+at time t where the activity gate G(k)
+t ≈ 1, the posterior probability that it belongs to identity v is
+q(z(k)
+t,v,imm = 1) = γ(k)
+t,v , satisfying PV
+v=1 γ(k)
+t,v = 1. For slots where G(k)
+t ≈ 0, these responsibilities
+are effectively null or uniform, contributing negligibly to parameter updates. The posterior over
+identity-mixing probabilities π1:V,iMM is a Dirichlet distribution: q(π1:V,type) = Dir( π1:V,type |
+α1,type, . . . , αV,type), with αv,type > 0. Each identity v is characterized by a mean µv,type and
+covariance Σv,type. The variational posterior over these parameters is a Normal–Inverse-Wishart
+(NIW) distribution: q(µv,type, Σv,type) = NIW(µv,type, Σv,type | mv,type, κv,type, Uv,type, nv,type).
+23
+E-step Updates for iMM In the E-step for the iMM, the local assignment probabilities γ(k)
+t,v for each
+slot k are updated. This update is primarily driven by slots where G(k)
+t ≈ 1:
+γ(k)
+t,v ∝ exp
+ 
+Eq[log πv,type]
+
+× exp
+ 
+Eq[log N(y(k)
+t,iMM; µv,type, Σv,type)]
+
+. (48)
+These responsibilities are normalized such that PV
+v=1 γ(k)
+t,v = 1 for each active slot.
+M-step Updates for iMM During the M-step, the global parameters of the iMM are updated. Suffi-
+cient statistics are accumulated, weighted by the gate G(k)
+t to ensure that only actively moving slots
+contribute significantly to the updates:
+Nt,v =
+KX
+k=1
+G(k)
+t γ(k)
+t,v ,
+S1,t,v =
+KX
+k=1
+G(k)
+t γ(k)
+t,v Eq[y(k)
+t,imm],
+S2,t,v =
+KX
+k=1
+G(k)
+t γ(k)
+t,v Eq[y(k)
+t,iMM(y(k)
+t,iMM)⊤].
+(49)
+The Dirichlet parameters αt,v,type are updated using Nt,v and prior parameters α0,v,type (which, due
+to the stick-breaking priors are all 1’s except for the final count α0,V,type):
+αt,v,type = (1 − ρt) αt−1,v,type + ρt
+ 
+α0,v,type + Nt,v
+
+. (50)
+The NIW parameters (mt,v,type, κt,v,type, Ut,v,type, nt,v,type) are updated by blending their natural
+parameter representations. The target natural parameters bηNIW
+t,v are derived from the current sufficient
+statistics {Nt,v, S1,t,v, S2,t,v} and the NIW prior parameters:
+(NatParamsNIW
+t,v ) ← (1 − ρt) (NatParamsNIW
+t−1,v) + ρt bηNIW
+t,v . (51)
+Recurrent Mixture Model (rMM)
+The Recurrent Mixture Model (rMM) provides a generative model for a collection of slot-specific
+features, and importantly, it furnishes the distribution over the switch state s(k)
+t,tmm that governs the
+Transition Mixture Model (tMM). The rMM itself is a mixture model with M components, and
+its own slot-specific assignment variable is s(k)
+t,rmm. The variational factors include the posterior
+probability of assignment to rMM component m, q(s(k)
+t,m,rmm = 1) = ρ(k)
+t,m (which sums to one over
+m), a Dirichlet posterior q(πrmm) = Dir(πrmm | α1,rmm, . . . , αM,rmm) for its mixing weights, NIW
+posteriors q(µm, Σm) for continuous features f(k)
+t–1 modeled by each component m, and Dirichlet
+posteriors q(ai,m) for the parameters of categorical distributions over various discrete features
+d(k)
+i also modeled by component m. These discrete features d(k)
+i encompass inputs like z(k)
+t–1,type,
+z(k)
+t–1,interacting, as well as the tMM switch state s(k)
+t,tmm which the rMM models generatively.
+E-step Updates for rMM In the rMM E-step, for each slot k considered active (i.e., G(k)
+t ≈ 1), the
+responsibilities ρ(k)
+t,m for its M components are updated. These updates depend on the likelihood of
+the slot’s input features under each rMM component. The input features include continuous aspects
+f(k)
+t–1 (a subset of x(k)
+t–1 such as position and velocity, and interaction features like ∆p(k)
+t–1) and a set of
+discrete features d(k)
+t–1,inputs (e.g., type from the previous step z(k)
+t–1,type).
+ρ(k)
+t,m ∝ exp
+ 
+Eq[log πm,rmm]
+
+× exp
+ 
+Eq[log N(f(k)
+t–1 ; µm,rmm, Σm,rmm)]
+
+×
+Y
+i∈input discrete features
+exp
+ 
+Eq[log Cat(d(k)
+t–1,i; ai,m)]
+
+. (52)
+24
+These responsibilities are normalized to sum to one for each active slot k. During rollouts used in
+planning, the predicted posterior distribution for the tMM switch state s(k)
+t,tmm is then determined as a
+mixture of the output distributions from the rMM components, weighted by ρ(k)
+t,m:
+q
+ 
+s(k)
+t,l,tmm = 1
+
+=
+MX
+m=1
+ρ(k)
+t,m Eq
+
+atmm_switch,m,l
+
+,
+where atmm_switch,m,l is the probability of tMM switch state l under the learned parameters of rMM
+component m.
+M-step Updates for rMM In the rMM M-step, its global parameters are updated, with contributions
+from slots weighted by the gate G(k)
+t . The expected sufficient statistics are accumulated. For the
+mixing weights:
+Nt,m =
+KX
+k=1
+G(k)
+t ρ(k)
+t,m. (53)
+For the continuous feature distributions (NIW parameters):
+Sf
+1,t,m =
+KX
+k=1
+G(k)
+t ρ(k)
+t,m Eq[f(k)
+t–1 ],
+Sf
+2,t,m =
+KX
+k=1
+G(k)
+t ρ(k)
+t,m Eq[f(k)
+t–1 (f(k)
+t–1 )⊤].
+(54)
+For each discrete feature di modeled by the rMM (this includes input features d(k)
+t−1,i and the output
+tMM switch state s(k)
+t,tmm), and its category ℓ:
+Nt,m,i,ℓ =
+KX
+k=1
+G(k)
+t ρ(k)
+t,m
+(
+I[d(k)
+t−1,i = ℓ] if di is an input from t − 1
+q(s(k)
+t,tmm = ℓ) if di is s(k)
+t,tmm
+. (55)
+The parameters are then updated using these statistics. Dirichlet parameters for
+rMM mixing weights αt,m,rmm (from Nt,m), NIW parameters for continuous features
+(mt,m,rmm, κt,m,rmm, Ut,m,rmm, nt,m,rmm) (from Nt,m, Sf
+1,t,m, Sf
+2,t,m), and Dirichlet parameters
+at,i,m,ℓ for all discrete features (from Nt,m,i,ℓ) are updated via natural gradient blending:
+αt,m,rmm = (1 − ρt) αt–1,m,rmm + ρt
+ 
+α0,m,rmm + Nt,m
+
+,
+(NatParamsNIW
+t,m ) ← (1 − ρt) (NatParamsNIW
+t−1,m) + ρt bηNIW
+t,m ,
+at,i,m,ℓ = (1 − ρt) at−1,i,m,ℓ + ρt
+ 
+a0,i,m,ℓ + Nt,m,i,ℓ
+
+.
+(56)
+Transition Mixture Model (tMM)
+The Transition Mixture Model (tMM) describes the dynamics of slot states x(k)
+t using a mixture of L
+linear transitions. We approximate posteriors over transition assignments and mixing weights with
+variational factors. Transition responsibilities for slot k using transition l are q(s(k)
+t,l,tmm = 1) = ξ(k)
+t,l ,
+satisfying PL
+l=1 ξ(k)
+t,l = 1. The mixing-weight distribution over the L transitions πtmm is q(πtmm) =
+Dir(πtmm | α1,tmm, . . . , αL,tmm).
+E-step Updates In the tMM E-step, for each slot k, the responsibilities ξ(k)
+t,l for each transition l are
+updated based on how well that transition explains the observed change from x(k)
+t−1 to x(k)
+t :
+ξ(k)
+t,l = exp
+ 
+E[log πl]
+
+N
+ 
+x(k)
+t ; Dl x(k)
+t−1 + bl, G(k)
+t–1 2I
+
+PL
+u=1 exp
+ 
+E[log πu]
+
+N
+ 
+x(k)
+t ; Du x(k)
+t−1 + bu, G(k)
+t–1 2I
+
+for l = 1, . . . , L. The term G(k)
+t–1 indicates if the slot was active at t − 1, and 2I is the process noise
+covariance, assumed fixed or shared.
+25
+Algorithm 1 Mixture Model Expansion Algorithm
+Input Output Hyperparameters / Settings
+Y ∈ RN×d: Matrix whose ith row
+(i = 1, . . . , N) is a d-dimensional
+token (e.g., pixel).
+θ∗
+1:Kt+1 : Updated posterior NIW
+parameters ( Kt+1 components
+where Kt+1 ≥ Kt)
+τ: expansion threshold
+θ∗
+1:Kt =
+(m1:Kt, κ1:Kt, U1:Kt, nKt):
+Initial posterior NIW parameters
+(Kt components).
+E: maximum expansion steps
+1: Initialise K ← Kt and NIW parameters θk =
+ 
+mk, κk, Uk, nk
+
+for k = 1 : K
+2: for g = 1 to E do ▷ outer “expand-or-stop” loop
+// E-step
+3: for i = 1 to N do
+4: ℓik ← Eq(θk)
+
+log p(yi | θk)
+
+, k= 1:K
+5: rik ← exp(ℓik)
+.PK
+j=1 exp(ℓij)
+6: ℓmax
+i ← maxk≤K ℓik, i = 1:N
+7: if min
+i
+ℓmax
+i > τthen
+8: break ▷ all tokens well explained
+9: i∗ ← arg mini ℓmax
+i ▷ worst-explained token
+10: K ← K + 1 ▷ instantiate new component
+11: Hard-assign ri∗,k ← 0 (k < K), ri∗,K ← 1
+12: Initialise component K: κK ← 1, νK ← d + 2, µK ← yi∗, ΨK ← Ψ0
+// M-step (natural–gradient update)
+13: for k = 1 to K do
+14: bηk ←
+NX
+i=1
+rik T(yi)
+| {z }
+bTk
++ ηk,0 ▷ compute target natural parameters
+15: η(t)
+k ← (1 − ρt) η(t−1)
+k + ρt bηk ▷ natural-gradient update with rate ρt
+16: Unpack η(t)
+k → (mk, κk, Uk, nk) ▷ recover NIW hyperparams
+17: return θ∗
+1:Kt+1
+18:
+M-step Updates The tMM does not use an explicit M-step. Instead, parameters are fixed to their
+initial values identified during the expansion algorithm. In other words, once we identify a new
+dynamics mode in the expansion algorithm, these parameters are added as a new component for the
+tMM and remain fixed.
+A.10 Bayesian model reduction
+Growing new clusters ensures plasticity, but left unchecked it leads to over-parameterisation and
+over-fitting. To enable generalization, every ∆TBMR = 500 frames we therefore run Bayesian model
+reduction on the rMM, merging pairs of components whenever doing so increases the expected
+evidence lower bound (ELBO) of the multinomial distributions over the next reward and SLDS
+switch. The ELBO is computed with respect to generated data from the model through ancestral
+sampling. Given two candidate components k1, k2 with posterior-sufficient statistics (ηk1 , ηk2 ), their
+merged statistics are ηk1∪k2 = ηk1 + ηk2 − ηprior
+k2
+, ensuring that prior mass is not double-counted.
+Candidate pairs are proposed by a fast heuristic that (i) samples up to npair = 2000 used clusters,
+(ii) computes their mutual expected log-likelihood under the other’s parameters, and (iii) retains the
+highest-scoring pairs. Each proposal is accepted iff the merged ELBO (line 7) is not smaller than the
+current ELBO (line 2). The procedure is spelled out in Algorithm 2.
+26
+Algorithm 2 Bayesian model reduction for the recurrent mixture model
+Input Output Hyper-parameters
+M: Posterior rMM Reduced model M′ npair, nsamples
+pruning interval ∆TBMR
+1: D = {(ci, di)}
+nsamples
+i=0 ∼ M ▷ Draw nsamples pairs of continuous and discrete data samples from M
+2: L(0) ← ELBO(M, D) ▷ Compute current ELBO
+3: P = {(k1, k2)i}
+npairs
+i=0 ▷ Draw up to npair candidate pairs by heuristic overlap
+4: for s = 1 to |P| do
+5: (k1, k2) ← Ps
+6: Mtry ←MERGE (M, k1, k2)
+7: Ltry ← ELBO(Mtry, D)
+8: if Ltry ≥ L(s−1) then
+9: M ← Mtry and L(s) ← Ltry ▷ Set current model to the candidate
+10: else
+11: L(s) ← L(s−1)
+12: return M
+A.11 Planning with active inference
+In active inference, policies π = a0:H are selected that minimize expected Free Energy [33]:
+p(π) = σ(−G(π)), with
+G(π) =
+HX
+τ=0
+−
+ 
+Eq(Oτ |π)[log p(rτ |Oτ , π)| {z }
+Utility
+−DKL(q(αrmm|Oτ , π) ∥ q(αrmm))| {z }
+Information gain (IG)
+]
+
+, (57)
+with H the planning horizon and σ the softmax function. However, as the number of possible policies
+grows exponentially with a larger planning horizon, enumerating all policies at every timestep
+becomes infeasible. Therefore, we draw inspiration from model predictive control (MPC) solutions
+such as Cross Entropy Method (CEM) and model predictive path integral (MPPI), which can be cast
+as approximating an action posterior by moment matching [38].
+In particular, we sample P policies of horizon H, and evaluate their expected Free Energy G. Instead
+of sampling actions for each future timestep τ uniformly, we maintain a horizon-wise categorical
+proposal p(aτ ). After every planning step, we keep the top-k samples with minimum G, and
+importance weight to get a new probability for each action p(aτ ) at future timestep τ:
+p(aτ ) =
+X
+k
+exp(−G(a(k)
+τ ))
+P
+j exp(−G(a(j)
+τ ))
+(58)
+Instead of doing multiple cross-entropy iterations per planning step, we maintain a moving average
+of p(aτ ). At every instant, the first action of the current best policy is actually executed by the agent.
+Our planning loop is hence composed of the following three stages (see Alg. 3).
+Sampling policies. For each iteration we draw
+P − R| {z }
+CEM
++ R|{z}
+random
+policies
+where the first set is sampled i.i.d. from the proposal p(aτ ) and the remaining R are “exploratory”
+sequences generated by a (smoothed) random walk. In addition, the previous best plan is always
+injected in slot 0 and the A constant action sequences occupy slots 1:A to guarantee coverage.
+Evaluating a policy. Each policy is rolled forward S times through the world-model to obtain
+per-step predictions of reward ˆrτ and information gain cIGτ , averaged over samples. We calculate an
+27
+Algorithm 3 Planning algorithm
+Require: current posterior state q, proposal p(aτ ), best plan ˜a
+// Sample P candidate policies
+1: Acem ←Cat(p(aτ ))⊗(P−R)
+2: Arand ←RANDOM (R)
+3: A← [˜a, const0:A−1, Acem, Arand]
+// Evaluate
+4: for all a(p) ∈ Ado
+5: (ˆr0:H−1, cIG0:H−1) ← Rollout(q, a(p))
+6: G(p) ← P
+τ γτ
+discount(ˆrτ + λIG cIGτ )
+// Refit proposal
+7: K← top-K indices of −G(p)
+8: for τ = 0 to H − 1 do
+9: ˆp(aτ )←softmax
+ 
+temperature−1 hist{a(p)
+τ }p∈K
+
+10: p(aτ ) ← αsmooth ˆp(aτ ) + (1− αsmooth) p(aτ )
+11: return first action of best plan, updated p(aτ ), best plan ˜a
+expected Free Energy G, where in addition, we weigh the information gain term with a scalar λIG to
+trade off exploration and exploitation, as well as apply temporal discounting:
+G = 1
+S
+S−1X
+s=0
+H−1X
+τ=0
+γτ
+discount
+ 
+ˆrs
+τ + λIG cIG
+s
+τ
+
+, γ discount ∈ [0, 1), λIG = info_gain weight.
+Proposal update. Let K be the indices of the top-K = ⌊topk_ratio · P⌋ policies by (negative)
+expected Free Energy. For every horizon stepτ we form the empirical action histogram of{ak,τ }k∈K,
+convert it to probabilities with a tempered softmax ( temperature) and perform an exponential-
+moving-average update
+p(aτ )new = αsmooth p(aτ ) + (1− αsmooth) p(aτ )old, α smooth = alpha.
+B Hyperparameters
+We list the hyperparameters used for main AXIOM results shown in Figure 3 in Table 3. For the
+fixed_distance ablations, we fixed rmin = 1.25 for the games Explode, Bounce, Impact, Hunt,
+Gold, Fruits, and fixed rmin = 1.25 for the games Jump, Drive, Cross, and Aviate.
+C Computational resources, costs and scaling
+AXIOM and baseline models were trained and evaluated on A100 40G GPUs. All models use a
+single A100 GPU per environment. AXIOM and BBF train a single environment to 10k steps in
+about 30min, whereas DreamerV3 trains in 2.5h. The corresponding per-step breakdown of average
+inference and planning times can be seen in Table 2.
+C.1 Planning and inference time
+For AXIOM, each time step during training can be broken down into planning and model inference.
+To quantify the planning time scaling we perform ablations over the number of planning policies (P).
+Since model inference correlates with the number of mixture model components, we evaluate the
+scaling using the environments Explode (few objects) and Cross (many objects). Figure 5 shows that
+the planning time scales linearly with the number of policies rolled out (left panel), and how model
+inference time scales with the number of mixture model components (right panel).
+D Gameworld 10k Environments
+In this section we provide an informal description of the proposed arcade-style environments, inspired
+by the Arcade learning environment [25]. To this end, our environments have an observation space
+28
+Table 3: Hyperparameters of the AXIOM agent trained to play all 10 games of Gameworld as reported
+in the main text (see Figure 3).
+Inference Hyperparameters
+Parameter Value
+τSMM (expansion threshold of the sMM) 5.7
+τiMM (expansion threshold of the sMM) −1 × 102
+τrMM (expansion threshold of the rMM) −1 × 101
+τtMM (expansion threshold of the tMM) −1 × 10−5
+E (maximum number of expansion steps) 10
+∆TBMR (timesteps to BMR) 500
+ζ (exponent of the damped zpresence likelihood) 0.01
+rmin 0.075
+Planning Hyperparameters
+Parameter Value
+H (planning depth) 32
+P (number of rollouts) 512
+S (number of samples per rollout) 3
+λIG (information gain weight) 0.1
+γdiscount (discount factor) 0.99
+top-k ratio 0.1
+random sample ratio 0.5
+temperature 10.0
+αsmooth 1.0
+Generative Model Parameters
+Structure
+K (max sMM components) 32
+V (max iMM components) 32
+L (max tMM components) 500
+M (max rMM components) 5000
+λ (from θmoving) 0.99
+β (from θmoving) 0.01
+γu ∞
+ξ 1.0
+νu 0.05
+Dirichlet/Gamma priors
+γ0,R,G,B 0.1
+α0,smm 1
+α0,imm 1 × 10−4
+α0,tmm 0.1
+α0,rmm 0.1
+Normal-Inverse–Wishart (1:V )
+m0,1:V,type 0
+κ0,1:V,type 1 × 10−4
+U0,1:V,type 1
+4 I5
+n0,1:V,type 11
+Normal-Inverse–Wishart (1:M)
+m0,1:M,rmm 0
+κ0,1:M,rmm 1 × 10−4
+U0,1:M,rmm 625 I7
+n0,1:M,rmm 15
+Component–wise Dirichlet priors (1:M)
+a0,1:M,type 1 × 10−4
+a0,1:M,interacting 1 × 10−4
+a0,1:M,o 1 × 10−4
+a0,1:M,tmm 1 × 10−4
+a0,1:M,action 1 × 10−4
+a0,1:M,reward 1.0
+29
+of shape 210 × 160 × 3, that corresponds to a RGB pixel arrays game screen. Agents interact via
+a set of 2 to 5 discrete actions for movement or game-specific interactions. As is standard practice,
+positive rewards (+1) are awarded for achieving objectives, while negative rewards (-1) are given for
+failures. Here is a brief description of the games:
+Aviate. This environment puts the player in control of a bird, challenging them to navigate through a
+series of vertical pipes. The bird falls under gravity and can be made to jump by performing a "flap"
+action. The player’s objective is to guide the bird through the narrow horizontal gaps between the
+pipes without colliding with any part of the pipe structure or the top/bottom edges of the screen. Any
+collision with a pipe, or going out of screen at the top or bottom results in a negative reward and ends
+the game.
+Bounce. This environment simulates a simplified version of the classic game Pong, where the player
+controls a paddle to hit a ball against an AI-controlled opponent. The player has three discrete actions:
+move their paddle up, move it down, or keep it stationary, influencing the ball’s vertical trajectory
+upon contact. The objective is to score points by hitting the ball past the opponent’s paddle (reward
++1), while preventing the opponent from doing the same (reward -1). The game is episodic, resetting
+once a point is scored by either side.
+Cross. Inspired by the classic Atari game Freeway, this environment tasks the player, represented
+as a yellow square, with crossing a multi-lane road without being hit by cars. The player has three
+discrete actions: move up, move down, or stay in place, controlling vertical movement across eight
+distinct lanes. Cars of varying colors and speeds continuously traverse these lanes horizontally,
+wrapping around the screen. The objective is to reach the top of the screen for a positive reward;
+however, colliding with any car resets the player to the bottom of the screen and incurs a negative
+reward.
+Driver. This environment simulates a lane-based driving game where the player controls a car from
+a top-down perspective, navigating a multi-lane road. The player can choose from three discrete
+actions: stay in the current position, move left, or move right, allowing for lane changes. The goal is
+to drive as far as possible, avoiding collisions with opponent cars that appear and move down the
+lanes at varying speeds. Colliding with another car results in a negative reward and ends the game.
+Explode. In this game inspired by the arcade classic Kaboom!, the player controls a horizontal
+bucket at the bottom of the screen, tasked with catching bombs dropped by a moving bomber. The
+player can choose from three discrete actions: remain stationary, move left, or move right, allowing
+for precise horizontal positioning to intercept falling projectiles. A bomber continuously traverses
+the top of the screen, periodically releasing bombs that accelerate as they fall towards the bottom.
+Successfully catching a bomb in the bucket yields a positive reward, whereas allowing a bomb to fall
+off-screen results in a negative reward.
+200 400
+P (planning policies)
+0.4
+0.8Planning time (s)
+K
+0
+2
+4
+6
+8
+10
+0 1 2 3 5 6 8 9 10
+K (sMM components)
+0.012
+0.018Inference time (s)
+Cross
+Explode
+Figure 5: Computational costs. Scaling of planning time as a function of the number of policies
+(left), and model inference time as a function of the number of sMM components (right). All times
+measured on a single A100 GPU.
+30
+Fruits. This game casts the player as a character who must collect falling fruits while dodging
+dangerous rocks. The player can perform one of three discrete actions: move left, move right, or stay
+in place, controlling horizontal movement at the bottom of the screen. Fruits of various colors fall
+from the top, granting a positive reward upon being caught in the player’s invisible basket. Conversely,
+falling rocks, represented as dark grey rectangles, will end the game and incur a negative reward if
+collected.
+Gold. In this game, the player controls a character, represented by a yellow square, from a top-down
+perspective, moving across a grassy field to collect gold coins and avoid dogs. The player can choose
+from five discrete actions: stay put, move up, move right, move down, or move left, enabling agile
+navigation across the screen. Gold coins are static collectibles that grant positive rewards upon
+contact, while dogs move dynamically across the screen, serving as obstacles that end the game and
+incur a negative reward if collided with.
+Hunt. This game features a character navigating a multi-lane environment, akin to a grid, from a
+top-down perspective. The player has four discrete actions available: move left, move right, move
+up, or move down, allowing full two-dimensional movement within the game area. The screen
+continuously presents a flow of items and obstacles moving horizontally across these lanes. The
+player’s goal is to collect beneficial items to earn positive rewards while deftly maneuvering to avoid
+contact with detrimental obstacles, which incur negative rewards, encouraging strategic pathfinding.
+Impact. This environment simulates the classic arcade game Breakout, where the player controls a
+horizontal paddle at the bottom of the screen to bounce a ball and destroy a wall of bricks. The player
+has three discrete actions: move the paddle left, move it right, or keep it stationary. The objective is
+to eliminate all the bricks by hitting them with the ball, earning a positive reward for each destroyed
+brick. If the ball goes past the paddle, the player incurs a negative reward and the game resets. The
+game ends when all bricks are destroyed.
+Jump. In this side-scrolling endless runner game, the player controls a character who continuously
+runs forward, encountering various obstacles. The player has two discrete actions: perform no action
+or initiate a jump allowing the character to avoid different types of obstacles. Colliding with an
+obstacle results in a negative reward and immediately resets the game.
+E Additional results and ablations
+E.1 Baseline performance on 100K
+Extending the wall-clock budget to 100 K interaction steps sharpens the contrast between model-
+based and model-free agents. On Hunt, DreamerV3 fails to make measurable progress over the entire
+horizon, remaining near its random-play baseline, whereas BBF continues to improve and ultimately
+attains a mean episodic return on par with the score our object-centric agent already reaches after only
+10 K steps. In Gold both baselines do learn within 100 K steps, but their asymptotic performance still
+plateaus below the level our agent achieves in the much shorter 10 K-step regime (see Figure 6).
+010K 100K
+Step
+0.000
+0.025Average Reward (1K)
+Gold
+010K 100K
+Step
+0.000
+0.040
+Hunt
+BBF Dreamer V3 AXIOM
+Figure 6: 100K performance on Gold & Hunt.
+31
+0 10000
+-0.010
+0.000
+Average Reward (1K)
+Aviate
+0 10000
+-0.010
+0.000
+Bounce
+0 10000
+-0.020
+0.000
+Cross
+0 10000
+-0.006
+0.000
+Drive
+0 10000
+0.000
+0.020
+Explode
+0 10000
+Step
+0.000
+0.020Average Reward (1K)
+Fruits
+0 10000
+Step
+0.000
+0.025
+Gold
+0 10000
+Step
+0.000
+0.025
+Hunt
+0 10000
+Step
+0.000
+0.040
+Impact
+0 10000
+Step
+-0.010
+0.000
+Jump
+AXIOM AXIOM (no IG) AXIOM (no BMR)
+Figure 7: Performance of AXIOM ablations. Average reward over the final 1,000 frames across 10
+Gameworld 10K environments for three AXIOM variants: the full AXIOM model, a version without
+Bayesian Model Reduction (AXIOM (no BMR)), and a version excluding information gain during
+planning (AXIOM (no IG)).
+E.2 Ablations
+No information gain. When disabling the information gain, we obtain the purple curves in Figure 7.
+In general, at first glance there appears to be little impact of the information gain on most games.
+However, this is to be expected, as in Figure 4c we showed that e.g. for Explode, the information gain
+is only driving performance for the first few hundred steps, after which expected utility takes over. In
+terms of cumulative rewards, information gain is actually hurting performance on most games where
+interactions between player and object result in a negative reward. This is because these interaction
+events will be predicted as information-rich in the beginning, encouraging the agent to experience
+these multiple times. This is especially apparent in the Cross game, where the no-IG-ablated agent
+immediately decides not to attempt crossing the road at all after the first few collisions. Figure 8
+visualizes the created rMM clusters, which illustrates how no information gain kills exploration in
+Cross. We hence believe that information gain will play a more important role in hard exploration
+tasks, which is an interesting direction for future research.
+No Bayesian Model Reduction. The orange curves in Figure 7 show the impact of disabling the
+Bayesian Model Reduction (BMR). BMR clearly has a crucial impact on both Gold and Hunt, which
+are the games where the player can move freely around the 2D area. In this case, BMR is able to
+generalize the dynamics and object interactions spatially by merging clusters together. The exception
+to this is once again Cross, where disabling BMR actually yields the best performing agent. This is
+again explained by the interplay with information gain. As BMR will merge similar clusters together,
+moving up without colliding will be assigned to a single, often visited cluster. This will render this
+cluster less informative from an information gain perspective, and the agent will be more attracted to
+collide with the different cars first. However, when disabling BMR, reaching each spatial location
+will get its own cluster, and the agent will be attracted to visit less frequently observed locations,
+like the top of the screen. This can also be seen qualitatively if we plot the resulting rMM clusters
+in Figure 8c. This begs the question on when to best schedule BMR during the course of learning.
+Clearly, BMR is crucial to generalize observed events to novel situations, but when done too early in
+learning, it can be detrimental for learning. Further investigating this interplay remains a topic for
+future work.
+Planning rollouts and samples. As we sample rollouts at each timestep during the planning phase,
+there is a clear tradeoff between the number of policies and rollout samples to collect in terms
+of computation time spent (see Figure 5) and the quality of the found plan. We performed a grid
+search, varying the number of rollouts [64, 128, 256, 512] and number of samples per rollout [1, 3, 5],
+evaluating 3 seeds each. The results, shown in Figure 9 shows there are no significant performance
+differences, but more rollouts and drawing more than one sample seem to perform slightly better on
+32
+(a) AXIOM
+ (b) AXIOM (no IG)
+ (c) AXIOM (no BMR)
+Figure 8: Visualizations of the rMM clusters on Cross for information gain and BMR ablations.
+Each Gaussian cluster depicts a particular dynamics for a particular object type, colored by the object
+color, and the edge color of a nearby “interacting” object. (a) AXIOM has various small clusters
+for the player object (yellow) interacting with the colored cars in the various lanes, and elongated
+clusters that model the player dynamics of moving up or down. (b) Without information gain, the
+player collides with the bottom most cars, and then stops exploring because of the negative expected
+utility. (c) Without BMR, all player positions get small clusters assigned, which in this case helps the
+player to cross, as visiting these locations is now rendered information gaining.
+average. Therefore for our main evaluations we used 512 policies and 3 samples per policy, but the
+results in Figure 5 Figure 9 suggest that when compute time is limited, scaling the number of policies
+down to 128 or 64 is a viable way to increase efficiency without sacrificing performance.
+E.3 Perturbations
+Perturbations. One advantage of the Gameworld 10k benchmark is its ability to apply homoge-
+neous perturbations across environments, allowing us to quantify how robust different models are to
+changes in visual features. In our current experiments, we introduce two types of perturbations: a
+color perturbation, which alters the colors of all sprites and the background (see Figure 10b), and a
+shape perturbation, which transforms primitives from squares into circles and triangles (see Figure
+10c).
+To assess model robustness, we apply each perturbation halfway through training (at 5,000 steps) and
+plot the average reward for Axiom, Dreamer, and BBF across each game in Figure 11. Under the
+shape perturbation, Axiom demonstrates resilience across games. We attribute this to the identity
+model (iMM), which successfully maps the new shapes onto existing identities despite their altered
+appearance. Under the color perturbation, however, Axiom’s performance often drops - suggesting
+the identity model initially treats the perturbed sprites as new objects - but then rapidly recovers as it
+reassigns those new identities to the previously learned dynamics.
+Our results also show that BBF and Dreamer are robust to shape changes. For the color perturbation,
+Dreamer - like Axiom - sometimes experiences a temporary performance decline (for example,
+in Explode) but then recovers. BBF, by contrast, appears unaffected by either perturbation. We
+hypothesize that this resilience stems from applying the perturbation early in training - before BBF
+has converged - so that altering visual features has minimal impact on its learning dynamics.
+Remapped slot identity perturbations In this perturbation, shown by the purple line in Figure 11,
+we performed a special type of perturbation to showcase the ‘white-box’, interpretable nature of
+AXIOM’s world model. For this experiment, we performed a standard ‘color perturbation’ as
+described above, but after doing so, we encode knowledge about the unreliability of object color
+into AXIOM’s world model. Specifically, because the latent object features learned by AXIOM
+are directly interpretable as the colors of the objects in the frame, we can remove the influence of
+the latent dimensions corresponding to color from the inference step that extracts object identity
+(namely, the inference step of the iMM), and instead only use shape information to perform object
+33
+0 10000
+-0.015
+0.000
+Average Reward (1K)
+Aviate
+0 10000
+-0.010
+0.000
+Bounce
+0 10000
+-0.015
+0.000
+Cross
+0 10000
+-0.008
+0.000
+Drive
+0 10000
+0.000
+0.025
+Explode
+0 10000
+Step
+0.000
+0.020Average Reward (1K)
+Fruits
+0 10000
+Step
+0.000
+0.020
+Gold
+0 10000
+Step
+0.000
+0.020
+Hunt
+0 10000
+Step
+0.000
+0.040
+Impact
+0 10000
+Step
+-0.008
+0.000
+Jump
+AXIOM (64 x 1) AXIOM (128 x 1) AXIOM (256 x 1) AXIOM (512 x 1)
+(a)
+0 10000
+-0.015
+0.000
+Average Reward (1K)
+Aviate
+0 10000
+-0.015
+0.000
+Bounce
+0 10000
+-0.020
+0.000
+Cross
+0 10000
+-0.006
+0.000
+Drive
+0 10000
+0.000
+0.025
+Explode
+0 10000
+Step
+0.000
+0.025Average Reward (1K)
+Fruits
+0 10000
+Step
+0.000
+0.020
+Gold
+0 10000
+Step
+0.000
+0.025
+Hunt
+0 10000
+Step
+0.000
+0.040
+Impact
+0 10000
+Step
+-0.008
+0.000
+Jump
+AXIOM (64 x 3) AXIOM (128 x 3) AXIOM (256 x 3) AXIOM (512 x 3)
+(b)
+0 10000
+-0.015
+0.000
+Average Reward (1K)
+Aviate
+0 10000
+-0.010
+0.000
+0.010
+Bounce
+0 10000
+-0.015
+0.000
+Cross
+0 10000
+-0.008
+0.000
+Drive
+0 10000
+0.000
+0.030
+Explode
+0 10000
+Step
+0.000
+0.020Average Reward (1K)
+Fruits
+0 10000
+Step
+0.000
+0.025
+Gold
+0 10000
+Step
+0.000
+0.025
+Hunt
+0 10000
+Step
+0.000
+0.040
+Impact
+0 10000
+Step
+-0.008
+0.000
+Jump
+AXIOM (64 x 5) AXIOM (128 x 5) AXIOM (256 x 5) AXIOM (512 x 5)
+(c)
+Figure 9: Ablation on the amount of sampled policies. The label indicates the number of policies
+× number of samples for that policy (a) 1 Sample (b) 3 Samples (c) 5 Samples
+34
+(a) No perturbation.
+(b) Color perturbation (sprites and background recolored).
+(c) Shape perturbation (primitives replaced with circles and triangles).
+Figure 10: Perturbations. Sample frames from each of the ten environments under (a) no perturbation,
+(b) a color perturbation, and (c) a shape perturbation.
+type inference. In practice, what this means is that slots that changed colors don’t rapidly get assigned
+new identities, meaning the same identity-conditioned dynamics (clusters of the rMM) can be used
+to predict and explain the behavior of the same objects, despite their color having changed. This
+explains the absence of an effect of perturbation for some games when using this ‘color remapping’
+trick at the time of perturbation, especially the ones where object identity can easily be inferred from
+shape, such as Explode. Figure 12 shows the iMM identity slots, with and without the ‘remapping
+trick’. Impact on performance for all games is shown in 11d). For games where certain objects have
+the same shape (e.g., rewards and obstacles in Hunt, or fruits and rocks in Fruits), this remapping trick
+has no effect because shape information alone is not enough to infer object type and thus condition the
+dynamics on object types. In such cases, one might use more features to infer the object identity, such
+as position or dynamics, but extending our model to incorporate these to further improve robustness
+is left as future work.
+35
+Figure 11: Impact of perturbations on average reward. Smoothed 1k-step average rewards for
+Axiom, BBF, and Dreamer across ten games under (a) no perturbation, (b) color perturbation, (c)
+shape perturbation, and (d) Axiom’s color perturbation with and without remapping.
+36
+(a) no perturbation
+ (b) color perturbation
+ (c) color perturbation with remap
+Figure 12: iMM identity slots on Explode. (a) On Explode, the iMM constructs a slot for the player,
+bomber and bomb respectively. (b) When color is perturbed, novel slots are created for the blue
+(player) and the pink bomb, and the yellow enemy is mapped onto the old player slot. (c) However,
+with color remapping, the blue player, yellow bomber and pink bomb are correctly remapped to the
+old player and bomber slots based on their shape.
+F Related works
+Object-Centric World Models. The first breakthroughs in deep reinforcement learning, that leveraged
+deep Q networks to play Atari games [39], were not model-based, and required training on millions
+of images to reach human-level performance. To this end, recent works have leveraged model-based
+reinforcement learning, which learns world models and hence generalizes using fewer environment
+interactions [40, 41]. A notable example is the Dreamer set of models, which relies on a mix of
+recurrent continuous and discrete state spaces to model the dynamics of the environment [36, 42, 43].
+This class of world models simulates aspects of human cognition, such as intuitive understanding of
+physics and object tracking [5, 7]. To this end, it is possible to add prior knowledge to this class of
+architectures, in a way that specific structures of the world are learned faster and better. For example,
+modeling interactions at the object level has shown promising performance in improving sample
+efficiency, generalization, and robustness across many tasks [9–12].
+In recent years, the field of object segmentation has gained momentum thanks to the introduction of
+models like IODINE [44] and Slot Attention [45], which leverages the strengths and efficiency of
+self-attention to enforce competition between slot latents in explaining pixels in image data. The form
+of self-attention used in slot attention is closely-related to the E- and M-steps used to fit Gaussian
+mixture models [46, 47], which inspired our, where AXIOM segments object from images using
+inference and learning of the Slot Mixture Model. Examples of improvements over this seminal work
+include Latent Slot Diffusion, which improves upon the original work using diffusion models and
+SlotSSM [48] which uses object-factorization not only as an inductive bias for image segmentation
+but also for video prediction. Recent works that have also proposed object-centric, model-based
+approaches are FOCUS, that confirms how such approaches help towards generalization in the
+low data regime for robot manipulation [49], and OC-STORM and SSWM, that use object-centric
+information to predict environment dynamics and rewards [14, 50]. To conclude, SPARTAN proposes
+the use of a large transformer architecture that identifies sparse local causal models that accurately
+predict future object states [13]. Unlike OC-STORM, which uses pre-extracted object features using
+a pre-trained vision foundational model and segmentation masks, AXIOM learns to identify segment
+objects online without object-level supervision (albeit so far we have only tested AXIOM on simple
+objects like monochromatic polygons). AXIOM also grows and prunes its object-centric state-space
+online, but like OC-STORM plans using trajectories generated from its world model.
+Bayesian Inference. Inference, learning, and planning in our model are derived from the active
+inference framework, that allows us to integrate Bayesian principles with reinforcement learning,
+balancing reward maximization with information gain by minimizing expected free energy [15, 16].
+To learn the structure of the environment, we drawn inspiration from fast structure learning methods
+[24], that first add mixture components to the model [51] and then prunes them using Bayesian model
+reduction [21, 22, 24]. Our approach to temporal mixture modeling shares conceptual similarities
+with recent work on structure-learning Gaussian mixture models that adaptively determine the number
+of components for perception and transition modeling in reinforcement learning contexts [52]. An
+important distinction between AXIOM’s model and the original fast structure learning approach [23],
+is that AXIOM uses more structured priors (in the form of the object-centric factorization of the
+sMM and the piecewise linear tMM), and uses continuous mixture model likelihoods, rather than
+purely discrete ones. The transition mixture model we use is a type of truncated infinite switching
+linear dynamical system (SLDS)[29, 53, 54]. In particular, we rely on a recent formulation called
+the recurrent SLDS [19], that introduces dependence of the switch state on the continuous state, to
+address two key limitations of the standard SLDS: state-independent transitions and context-blind
+dynamics. Our innovation is in how we handle the recurrent connection of the rSLDS: we do this
+37
+using a generative, as opposed to discriminative, model for the switching states. This allows for
+more flexible conditioning of the switch state on various information sources (both continuous and
+discrete), as well as a switch dependence that is quadratic in the continuous features; this overcomes
+the intrinsic linear separability assumptions made by using a classic softmax likelihood over the
+switch state, as used in the original rSLDS formulation [19, 55].
+38

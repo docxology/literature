@@ -1,0 +1,687 @@
+arXiv:2406.07040v1  [cs.FL]  11 Jun 2024
+Journal of Machine Learning Research 1–14, 2024 Learning and Automata (LearnAut) – ICALP 2024 worksho p
+Learning EFSM Models with Registers in Guards
+Germ´ an Vega german.vega@imag.fr
+Roland Groz Roland.Groz@univ-grenoble-alpes.fr
+Catherine Oriat Catherine.Oriat@univ-grenoble-alpes.fr
+LIG, Universit´ e Grenoble Alpes, F-38058 Grenoble, France
+Michael Foster m.foster@sheffield.ac.uk
+Neil Walkinshaw n.walkinshaw@sheffield.ac.uk
+Department of Computer Science, The University of Sheﬃeld, UK
+Adenilso Sim˜ ao Adenilso@icmc.usp.br
+Universidade de S˜ ao Paulo, ICMC, S˜ ao Carlos/S˜ ao Paulo, Brasil
+Abstract
+This paper presents an active inference method for Extended Finit e State Machines, where
+inputs and outputs are parametrized, and transitions can be cond itioned by guards in-
+volving input parameters and internal variables called registers. Th e method applies to
+(software) systems that cannot be reset, so it learns an EFSM mo del of the system on a
+single trace.
+Keywords: Active inference, Query learning, Extended Automata, Genetic Pr ogramming
+1. Introduction
+Automata learning by active inference has attracted intere st in software engineering and
+validation since the turn of the century
+Peled et al. (1999) Hagerer et al. (2002). Although
+classical automata (in particular Mealy models) have been u sed in software testing for a
+long time Chow (1978), software engineering has evolved to richer models of auto mata, with
+parameters on actions, internal variables, and guards, as c an be found in such formalisms
+as SDL, Statecharts or UML. Inferring such complex models, w hose expressive power is
+usually Turing-complete, is challenging.
+A signiﬁcant step was the introduction of register automata Isberner et al. (2014). How-
+ever, the practical application of those inference methods is limited by two main problems.
+Firstly, the expressive power of the inferred models is usua lly restricted (e.g. only boolean
+values or inﬁnite domains with only equality). Secondly, mo st inference methods learn the
+System Under Learning (SUL) by submitting sequences of inpu ts from the initial state , thus
+requiring the SUL to be reset for each query, which can be cost ly, impractical or impossible.
+Recently, Foster et al. (2023) proposed an algorithm to infer EFSMs in the above cir-
+cumstances. It uses an approach based on the hW algorithm by Groz et al. (2020) to infer
+the structure of the control state machine and to work around the absence of a reliable re-
+set, and uses Genetic Programming Poli et al. (2008) to infer registers, guards and output
+functions from the corresponding data observations. This a pproach is, however, restrictive
+because guards on transitions can only involve input parame ters and cannot be based on
+internal registers. Our challenge, therefore, is to provid e a more general solution that not
+only infers the presence of registers and corresponding out put functions but also enables
+© 2024 G. Vega, R. Groz, C. Oriat, M. Foster, N. Walkinshaw & A. S im˜ ao.
+Vega Groz Oriat Foster Walkinshaw Sim˜ao
+us to include state transitions that depend upon register va lues. Our paper proposes an
+algorithm that can infer EFSM models that include registers in guards.
+Addressing this problem raises a number of challenges. i) it is necessary to identify the
+underlying control state machine, by distinguishing what s hould (preferably) be encoded
+in states and what should be encoded in registers; ii) for any transition in the EFSM, it is
+necessary to identify any guards on inputs and the inferred r egisters, and to identify any
+functions that may aﬀect the state of the registers or the valu es of the observable outputs;
+and iii) since no reliable reset is assumed, analyzing the in ﬂuence of registers should be done
+from comparable conﬁgurations of the SUL, so it requires ﬁnd ing a way of coming back to
+a previously recognized conﬁguration.
+These challenges are tightly interdependent; any guards an d output functions are highly
+dependent on the transition structure of the machine. Any in ference process must generalise
+from the executions observed so far (the inferred model must be capable of recognising or
+accepting sequences that have not yet been observed). At the same time, it must avoid
+overgeneralization (i.e. accepting impossible or invalid sequences of inputs).
+2. Running example and background models
+We consider a straightforward running example that exhibit s most features of the model
+yet is small enough to be fully illustrated in this paper. Our example is a vending machine,
+shown in Figure
+1, where the choice of drink and the money paid into the machine are
+parameters. These are recorded by registers (internal vari ables), that inﬂuence later com-
+putations. Throughout the paper, we refer to the parameteri zed events (such as select(tea))
+as concrete inputs or outputs and to the event types (such as select) as abstract ones.
+s0 s1
+select(i1)/P ay(t = 0)
+[r1 := i1, r2 := 0]
+coin(i2)/Display(t = r2 + i2)
+[r2 := r2 + i2]
+vend()[r2 < 100]/ω
+vend()[r2 ≥100]/Serve(b = r1)
+(a)
+⟨select(tea)/P ay(0), coin(50)/Display(50), vend()/ω, coin(50)/Display(100),
+coin(50)/Display(150), vend()/Serve(tea)⟩
+(b)
+Figure 1: Our vending machine EFSM and an example trace.
+Figure 2 is taken from Foster et al. (2023). In that work, guards can only be inﬂuenced
+by input parameters, not registers, so coins are rejected if they are less than the price of the
+drink. There are two distinct states after drink selection ( s1 and s2), one where insuﬃcient
+money has been input, and one where the drink can be served. By allowing registers in
+guards, Figure 1(a) represents a more realistic vending machine where we can pay with
+smaller coins until we reach a suﬃcient amount. A single stat e after selection is enough to
+allow diﬀerent transitions depending on the amount stored in a register r2.
+2
+Learning EFSM
+s0 s1 s2
+select(i0)/ǫ
+[r1 := 0 , r2 := i0]
+coin(i0)[i0 < 100]/Reject(i0)
+coin(i0)[i0 ≥100]/
+Display(r1 + i0)[r1 := r1 + i0]
+coin(i0)/Display(r1 + i0)
+[r1 := r1 + i0]
+vend()/Serve(r2)
+Figure 2: No register allowed in guard (from Foster et al. (2023)
+The output ω of the s1
+vend−−−→s1 transition is a special output indicating that the tran-
+sition neither produces visible output nor changes the syst em state. In a vending machine,
+this could model that the button cannot be pressed mechanica lly or is visibly ineﬀective.
+Having named input and output parameters can also provide ev idence that they share
+a common register value, as is the case for the t output parameter in Figure 1(a), which
+represents the total amount of money put into the system by co ins for a selected drink. t
+is shared by output types P ay and Display and mapped to a single register r2.
+3. Assumptions for tractability
+In this work, an EFSM is a tuple ( Q, R, I, O, T) where Q is a ﬁnite set of states, Ris a
+cartesian product of domains, representing the type of regi sters. Iis the set of concrete
+inputs, structured as a ﬁnite set of abstract inputs I each having associated parameters
+and their domains PI . Similarly Ofor concrete outputs based on O for abstract outputs.
+T is a ﬁnite set of transition, i.e. tuples ( s, x, y, G, F, U, s ′) where s, s′ ∈Q, x ∈I, y ∈O,
+G : PI (x) ×R→ B is the transition guard, F : PI (x) ×R→ PO(y) is the output function
+that gives the value of the output parameters, U : PI (x) ×R→R is the update function
+that gives the value of the registers after the transition.
+Associated with an EFSM, its control machine is the non-deterministic ﬁnite state ma-
+chine (NFSM) that results from abstracting from parameters (and therefore guards and
+registers). It deﬁnes the ﬁnite control structure of a given EFSM and is deﬁned by a
+quadruple ( Q, I, O, ∆), where ∆ is the transition function ∆ : Q ×I ×O →Q, which
+lifted to sequences of inputs outputs as ∆ ∗ : Q ×(I ×O)∗ →Q. The control machine for
+Figure
+1(a) is shown in Figure 3.
+s0 s1
+select/P ay
+coin/Display
+vend/ω
+vend/Serve
+Figure 3: Control NFSM of the vending machine.
+We assume that the SUL is semantically equivalent to an EFSM, which has the following
+properties:
+3
+Vega Groz Oriat Foster Walkinshaw Sim˜ao
+• It is deterministic (at the concrete level), and its control NFSM is both strongly
+connected (since we do not assume a reset, we can only learn a strongly co nnected
+component) and observable (i.e. if an input triggers diﬀerent transitions from the
+same state, they have diﬀerent abstract outputs).
+• Registers can only take values from input and output paramet ers, and are therefore
+observable: no hidden values inﬂuence the computation unno ticed. We further restrict
+them to storing only each parameter’s last value (it could be extended to a bounded
+history). Note, however, that the guards and output functio ns can be arbitrarily
+complex, so this does not restrict the expressive power.
+Our method also relies on some inputs and hints provided on th e system, which we
+assume can be given, although they might be approximate. The main goal is to reduce the
+practical complexity of the inference. These will be shown o n our example in Section 4. In
+particular, we assume we are given a characterization set W ⊂2I+
+; and a homing sequence
+h ∈I∗, which also assigns a ﬁxed value to all input parameters.
+As the domains of input parameters can be inﬁnite or very larg e (e.g. integers or ﬂoats),
+we will just use sample values in the learning process. We ass ume we are given (or pick)
+3 levels of samples of concrete inputs I1 ⊂I2 ⊂Is, with I1 giving one concrete instance
+per abstract input, to infer the control machine, I2 providing a few more concrete inputs
+to elicit guarded transitions, and Is being a larger set of samples to have enough data for
+the generalisation process to infer the output functions an d guards. No speciﬁc knowledge
+of the SUL is required to design those samples. We could pick e ither base values (e.g. for
+integers, 0 in I1, plus 1 or -1 in I2, and any further values in Is) or just random values.
+The initial subsets will be extended when counterexamples p rovide new sample values that
+trigger so far unseen transitions.
+We also assume we have 2 subsets of the registers Rw ⊆Rg ⊆R such that Rg are
+the only registers that can be used in guards, and Rw are the registers used in guards
+that may be traversed when applying sequences from W from any state. These can be
+overapproximated with Rw = Rg = R in the worst case. However, if Rw contains output
+registers, then the set of reachable values when applying in puts only from I1 must be ﬁnite.
+When we exercise a system, we learn instances of transitions with concrete values for
+input and output parameters. For each transition of a contro l machine, we may have several
+sample values. We collect these in a structure Λ : Q×I ×O →2R×I×O×R , which associates
+abstract transitions from ∆ with the observed concrete inpu ts and outputs and register
+conﬁgurations.
+A sampled FSM , which our backbone algorithm in Section 4 will learn, is a quintuple
+(Q, I, O, ∆ , Λ). Our generalization process will then infer an EFSM from s uch a sampled
+machine. The sampled machine for Figure 1 is shown in Figure 3.
+Finally, we assume we are in the MAT framework from Angluin (1988), where an or-
+acle can provide counterexamples: this can easily be approx imated by a random walk on
+the inferred machine (NFSM or EFSM) where (abstract, resp. c oncrete) outputs can be
+compared with the observed responses from the SUL.
+4
+Learning EFSM
+s0 s1
+select/P ay
+{((⊥, ⊥), tea, 0, (tea, 0))}
+coin/Display
+{((tea, 0), 50, 50, (tea, 50))
+((tea, 50), 50, 100, (tea, 100))
+((tea, 100), 50, 150, (tea, 150))}
+vend/ω
+{(tea, 50), (), ⊥, (tea, 50)}
+vend/Serve ; {((tea, 150), (), tea, (tea, 150))}
+Figure 4: Sampled FSM with trace from Figure 1(b)
+4. Execution of method on running example
+At its core, our ehW -inference algorithm (see Annex) adapts the Mealy hW -inference al-
+gorithm by
+Groz et al. (2020), the so-called backbone, to learn the control structure of the
+EFSM on abstract inputs and outputs. The fact that registers can inﬂuence guards has two
+implications. First, from a given state, the same concrete i nput can produce two diﬀerent
+abstract outputs. Second, and more importantly, character isations (abstract responses to
+W ) may be inﬂuenced by the register conﬁguration (at least reg isters from Rw).
+Therefore during the learning process, we can only conserva tively infer that we are in the
+same state if we observe the same characterisation from the same register conﬁguration . So
+in this new algorithm, the state space of the inferred NFSM is : Q ⊂2W →O+
+×Rw. Another
+diﬀerence is that to be able to incrementally characterise a s tate (or learn a transition from
+it) we need to reach it with the same register conﬁguration. F or this reason, we require a
+stronger notion of homing that always resets the registers, and there is additional complexity
+for transferring to the next state or transition to learn (as reﬂected in Algorithm 3).
+In our example from Figure 1(a), there are four observable input/output parameters ( i1
+for choice of drink, i2 for the value of the coin, t for the total amount already inserted, and b
+for the drink served). So there are at most 4 registers needed (let us name them i1, i2, b, t),
+and the algorithm will track the last value of each.
+We pick W = {select(coﬀee)}. The abstract output sequence Pay will characterise
+s0 whereas the sequence Ω (inapplicable input) characterises s1. The only guard in our
+example is on input vend, so our W will never traverse it. But to show the robustness
+of the approach, let us assume we do not have this precise info rmation, and think the
+choice of drink could play a role (which might be the case if dr inks had diﬀerent prices).
+So we pick Rw = {i1}. As for other guards, let us assume we have no clue, so we pick
+Rg = R = {i1, i2, b, t}.
+We pick as register homing sequence h = coin(100).vend.select(coﬀee). Notice that for
+this simple example there are other shorter homing sequence , but we need one that resets
+the registers from Rg (the chosen h will reset values of i1 to coﬀee, i2 to 100 and t to 0).
+Notice also that this is actually a resetting sequence to s1, but this may not be the case for
+more complex examples.
+Finally, we pick I1 = {coin(100), select(coﬀee), vend}. We always pick I1 such that it
+includes all concrete inputs from h and W , so as to be able to follow transitions when
+5
+Vega Groz Oriat Foster Walkinshaw Sim˜ao
+walking the graph of the NFSM to transfer to the next transiti on to learn. And I2 = Is =
+I1 ∪{coin(50), coin(200), select(tea)}.
+?
+s0
+Ω
+→1
+Ω
+→2
+Pay(0)
+→3
+  
+h=coin(100). vend. select(coﬀee)
+?
+s1
+Ω
+→4
+  
+W =select(coﬀee)
+?
+s1
+Display(100)
+→5
+Serve(coﬀee)
+→6
+Pay(0)
+→7
+  
+h=coin(100). vend. select(coﬀee)
+?
+s1
+Ω
+→8
+  
+W =select(coﬀee)
+?
+s1
+Display(100)
+→9
+Serve(coﬀee)
+→10
+Pay(0)
+→11
+  
+h=coin(100). vend. select(coﬀee)
+q1
+s1
+Figure 5: Homing tails characterisations (internal SUL sta tes shown only for reference)
+Figure 5 shows how we ﬁrst learn the homing tails. In steps 1-4 (steps a re denoted
+→n in Figure 5), we learn that H(Ω .Ω .Pay) = q1 = (Ω , coﬀee), i.e. that after seeing the
+abstract output sequence Ω .Ω .P ay the state we reach is characterised by the abstract output
+sequence Ω when W is executed in Rw conﬁguration i1 = coﬀee. Similarly, in steps 5-8 we
+learn that H(Display.Serve.Pay) = (Ω , coﬀee) = q1. After a new homing (steps 9-11), we
+observe a previously recorded output sequence, so we know th e current state ( q1) and we
+can start learning its transitions.
+q1
+s1
+Display(100)
+→12
+  
+X=coin(100)
+?
+s1
+Ω
+→13
+  
+W
+q1
+s1
+Ω
+→14
+  
+X=select(coﬀee)
+q1
+s1
+Serve(coﬀee)
+→15
+  
+X=vend
+?
+s0
+Pay(0)
+→16
+  
+W
+?
+s0
+Display(100)
+→17
+Serve(coﬀee)
+→18
+Pay(0)
+→19
+  
+h
+q1
+s1
+ω
+→20
+Display(100)
+→21
+Serve(coffee )
+→22
+  
+transfer=vend. coin(100). vend
+q2
+s0
+Ω
+→23
+  
+X=coin(100)
+q2
+s0
+Pay(0)
+→24
+  
+X=select(coﬀee)
+?
+s1
+Ω
+→25
+  
+W
+q1
+s1
+q1
+s1
+Display(100)
+→26
+Serve(coffee )
+→27
+  
+transfer=coin(100). vend
+q2
+s0
+Ω
+→28
+  
+X=vend
+q2
+s0
+Figure 6: NFSM learning (internal SUL states shown only for r eference)
+For each learnt state, we try to infer a transition using each of the concrete inputs in
+I1. We start from the current state q1 with input coin(100), see steps 12-13 in Figure 6,
+and we discover a self loop. In step 14 we discover that input select is not allowed in the
+state, so we stay in the same state and can immediately learn t he next input. Finally, in
+step 15 we discover that input vend leads to a newly discovered state q2 = ( Pay, coﬀee).
+Thus ∆( q1, vend, Serve) = q2, and Λ( q1, vend, Serve) = ([100 , coﬀee, 100, coﬀee], vend,
+Serve(coﬀee), [100, coﬀee, 100, coﬀee]). Note that after applying W from q2 we do not know
+the current state in the trace (shown as “?”), so we need to hom e again.
+6
+Learning EFSM
+At this point we try to come back to state q2 to fully learn its transitions. First we
+home to a known state (steps 17-19 in Figure 6). This leads to q1, from which we have
+learnt all inputs from I1, so we follow a path in the partially inferred NFSM automaton to
+transfer (steps 20-22 in Figure 6) to q2. Compared to Mealy learning, there is an additional
+complexity because we need to reach not just a node of the grap h, but also a speciﬁc
+register conﬁguration. In step 20 in Figure 6, we optimistically try the shortest path (follow
+transition vend), but that fails because we observe a new abstract output ω for the same
+input. Thus we learnt that vend from q1 triggers a guarded transition with at least two
+possible abstract outputs. Since the new output is ω we know it did not change the state, so
+we are still in q1 and need to transfer to q2. To reach that goal, we need to reach the register
+conﬁguration [100 , coﬀee, 100, coﬀee] that we know enabled vend. The transfer sequence of
+steps 21 and 22 does this. After reaching q2, we are able to learn the transitions for input
+coin(100) (step 23) and select(coﬀee) (step 24). Finally we need to do a new transfer to
+learn transition vend (step 28), and we have an NFSM that is complete with respect to I1.
+q2
+s0
+Pay(0)
+→29
+  
+transfer=select(coﬀee)
+q1
+s1
+Display(50)
+→30
+  
+s=coin(50)
+q1
+s1
+Display(250)
+→31
+  
+s=coin(200)
+q1
+s1
+Display(350)
+→32
+Serve(coffee )
+→33
+Pay(0)
+→34
+Display(100)
+→35
+Serve(coffee )
+→36
+  
+transfer=coin(100). vend. select(coﬀee). coin(100). vend
+q2
+s0
+q2
+s0
+Pay(0)
+→37
+  
+s=select(tea)
+q1
+s1
+Display(100)
+→38
+Serve(tea)
+→39
+  
+CE =coin(100). vend
+Figure 7: EFSM sampling (internal SUL states shown only for r eference)
+Once we have found the control structure (NFSM), we walk the g raph to try incremen-
+tally each input from Is = I1 ∪{coin(50), coin(200), select(tea)}in each transition, so as to
+collect enough samples for the generalise procedure to infer guards and output functions
+to build the EFSM. Notice that if we have previouosly learnt t hat an input is not allowed
+in a given state (Ω transitions), there is no need to sample fu rther parameters for this
+transition.
+Figure 7 shows the sampling phase for our example, for state (Ω , coﬀee) we sample
+coin(50) in step 30 and coin(200) in step 31. For state ( Pay, coﬀee) we sample select(tea) in
+step 37. Notice that the most complex part is to compute the tr ansfer sequence to reach the
+Rg register conﬁguration that enables a given transition. How ever, in the worst case, as the
+state was reached from some homing that resets all Rg registers, there always exists a path
+from some homing that leads to this previously visited state and register conﬁguration.
+In more complex examples, after sampling it is possible to id entify states that are equiv-
+alent in the NFSM structure and compatible with the collecte d samples. These states can be
+merged in the EFSM, as we can infer, given the evidence, that t hey correspond to diﬀerent
+register conﬁgurations of the same SUL state (this is done by the reduceFSM procedure).
+7
+Vega Groz Oriat Foster Walkinshaw Sim˜ao
+Once the control structure (NFSM) is ascertained, we can use genetic programming to
+generalise from the collected samples to get the EFSM as was d one in Foster et al. (2023).
+This is in fact simpler than in Foster et al. (2023) because, as discussed in Section 3, we
+know the values of the internal registers (and how they are up dated) at each point in the
+trace. Thus, we only need to infer output functions and guard s.
+Notice in our example that even after sampling and generalis ation, we have no evidence
+that the parameter of Serve can be anything other than coﬀee. We rely on the oracle
+to provide further counterexamples (see steps 38-39) that c an be used to reﬁne the func-
+tions. After step 39, the generalise procedure produces exactly the EFSM of Figure 1(a)
+(modulo renaming).
+5. A more complex example whereW traverses guards
+To illustrate the need for other key elements of our method, w e highlight them on a slightly
+more complex example that entails problematic features. In Figure
+8, the provided W =
+s0
+s1
+s2
+s3
+a(ia/A(ia + rb)
+b(ib)/B
+a(ia)[ra ≥rb]/B
+a(ia)[ra < r b]/
+A(ia ∗rb)
+b(ib)/B a(ia)/Bb(ib)/B
+a(ia)/A(ia×rb) b(ib)[ib < r
+a]/B
+b(ib)[ib ≥ra]/B
+Figure 8: W = {b(0).a(0)}from state s3 can yield A.B or B.A
+{b(0).a(0)}can have two outcomes when applied from state s3: A.B (if ra ≤0) or B.A
+(otherwise); and B.A is also the output for W from state s1. Actually, {b(0).a(0)}is not
+even fully characterizing, but just as hW -inference, the algorithm is relatively robust and
+can infer the correct structure from approximately correct h and W . There are 3 registers
+linked to input and output parameters, which we name ra, rb, rA. Rg = {ra, rb}. We
+overapproximate Rw = {ra, rb}even though in fact ra is the only register really traversed
+when we know the SUL. When we apply the algorithm with I1 = {a(0), b(0)}and I2 =
+I1 ∪{a(1), b(1)}there will be diﬀerent states in the NFSM corresponding to sta te s3, namely
+(A.B, [0, 0]), (A.B, [0, 1]), (B.A, [1, 0]), (B.A, [1, 1]). But we shall also have several NFSM
+states corresponding to a single other state, for instance ( B.B, [0, 0]), (B.B, [1, 0]) for
+state s0. The backbone algorithm comes up with an 11-state NFSM, but t he reduceFSM
+procedure would merge redundant (equivalent) copies so we c an get a sampled machine with
+only 4 states at step 310. This number of steps was caused by ou r overapproximation on Rw
+that led to exploring 11 states and 28 transitions. The whole inference process reached 372
+steps for that machine when we added sample values {a(−5), b(−5)}to Is (before reducing)
+to get the exact data functions.
+8
+Learning EFSM
+6. Conclusion
+In this paper, we investigated how to infer EFSM models that i nclude registers in guards.
+By allowing registers to be used in guards, the inference met hod presented here should be
+applicable to many systems. There are still a number of issue s we want to investigate to
+consolidate it. First, we assumed here that we could be given correct h and W for the SUL.
+But just as in hW -inference, we can look for inconsistencies that could reve al the need to
+expand h or W , which could even be empty (not provided) at the start. Exten ding h as
+in hW -inference is straightforward, but there are more options f or W . Another challenge
+is to ﬁnd optimal transfer sequences. In our current prelimi nary implementation, we fall
+back on homing in all cases before transferring, and using a c ached access table to states
+and conﬁgurations, but shorter transfers would reduce the l ength of the inference trace.
+Finally, we would like to assess the method and its scalabili ty. It is classical to work with
+randomly generated machines, but for EFSMs, there are many p arameters to deﬁne what a
+random EFSM should be. Although there are benchmarks for ﬁni te automata
+1, it is not easy
+to ﬁnd strongly connected models with parameterized I/O beh aviour. And automatically
+assessing that the inferred model is correct can also be chal lenging, since in the general
+case, equivalence of two EFSMs is undecidable.
+References
+Dana Angluin. Queries and concept learning. Machine learning , 2(4), 1988.
+T.S. Chow. Test software design modelled by ﬁnite state machines. IEEE Transactions on Software
+Engineering, SE-4(3):178–187, 1978.
+Michael Foster, Roland Groz, Catherine Oriat, Adenilso da Silva Sim˜ a o, Germ´ an Vega, and Neil
+Walkinshaw. Active inference of efsms without reset. In Yi Li and S oﬁ` ene Tahar, editors,
+Formal Methods and Software Engineering - 24th Internation al Conference on Formal Engi-
+neering Methods, ICFEM 2023, Brisbane, QLD, Australia, Nov ember 21-24, 2023, Proceed-
+ings, volume 14308 of Lecture Notes in Computer Science , pages 29–46. Springer, 2023. doi:
+10.1007/978-981-99-7584-6 \
+3. URL https://doi.org/10.1007/978-981-99-7584-6_3 .
+Roland Groz, Nicolas Bremond, Adenilso Simao, and Catherine Oriat. h w-inference: A heuristic
+approach to retrieve models through black box testing. Journal of Systems and Software , 159,
+2020.
+Andreas Hagerer, Hardi Hungar, Oliver Niese, and Bernhard Steﬀ en. Model gener-
+ation by moderated regular extrapolation. In FASE, pages 80–95, 2002. URL
+citeseer.ist.psu.edu/hagerer02model.html.
+Malte Isberner, Falk Howar, and Bernhard Steﬀen. Learning regis ter automata: from languages to
+program structures. Machine Learning , 96(1), 2014.
+Doron Peled, Moshe Y. Vardi, and Mihalis Yannakakis. Black box check ing. In Proceedings of
+FORTE’99, Beijing, China, 1999.
+Riccardo Poli, William B. Langdon, and Nicholas Freitag McPhee. A Field Guide
+to Genetic Programming . lulu.com, 2008. ISBN 978-1-4092-0073-4. URL
+http://www.gp-field-guide.org.uk/.
+1http://automata.cs.ru.nl/Overview#Mealybenchmarks
+9
+Vega Groz Oriat Foster Walkinshaw Sim˜ao
+Algorithm 1 Homing into a known state
+1 Function Home(T, r, h ) ⊲ Apply h until we can know the state reached
+2 repeat
+3 (T, a, r ) ←Apply(T, r, h ) ⊲ Apply homing seq h, observe response a, update registers
+4 let η = π(a) ∈O∗ ⊲ State reached by homing is associated to η. π is abstraction
+5 if H(η) is undeﬁned for some w ∈W then ⊲ Learn characterization of the tail state
+6 (T, y, r ) ←Apply(T, r, w )
+7 H(η) ←H(η) ∪{w ↦→π(y)}
+8 else ⊲ We know the state reached after h/a
+9 let q = ( H(η), ρw (r, ǫ)) be the state reached at end of h ⊲ ρ w(r, σ) ﬁrst applies
+register updates from i/o sequence σ to r, then projects on Rw
+10 Q ←Q ∪{q}; A(π(a))(q, r) ←ǫ ⊲ A records known access to conﬁguration (q, r)
+from homing tail
+11 until q ̸= ⊥
+12 return (T, q, r )
+10
+Learning EFSM
+Algorithm 2 Backbone procedure with guards on registers
+1 Function Backbone(T, I 1, Is, h, W, Q, ∆ , Λ )
+2 Initializing: H ←∅, J ←I1, q ←⊥, r ←⊥
+3 repeat
+4 if q = ⊥then ⊲ We do not know where we are
+5 (T, q, r ) ←Home(T, r, h )
+6 (q′, r′, X, Y, r 1) ← Transfer(q, r, ∆ , Λ , I1, J \I1) ⊲ Target next transition to
+learn/sample
+7 if such a path cannot be found then
+8 goto line 30 ⊲ Graph not connected, try connecting with Is
+9 if Y = Ω of ω then ⊲ π (X) is not enabled in q′, r′
+10 Λ( q′, π(X), ω) ←{r′, X, Y, r 1}, ∆( q′, π(X), Y ) ←q′
+11 q ←q′, r ←r′ ⊲ We continue learning from the same state
+12 else ⊲ (q′, r′) −X/Y →(q′′, r1) →w/ξ →(q′′′, r2)
+13 Let q′′ = ∆( q′, π(X), π(Y )) ⊲ q ′′ (and so ∆ ) might be a “state under construction”
+14 if q′′ is fully deﬁned then ⊲ We are sampling new values of a known transition
+with same abstract output
+15 Λ( q′, π(X), π(Y )) ←Λ( q′, π(X), π(Y ))∪{(r′, X, Y, r 1)}, ⊲ Note we should not
+have a diﬀerent Y ′ with same r′ unless (W-)inconsistency
+16 q ←∆( q′, π(X), π(Y )), r ←r1
+17 else ⊲ Learn tail of transition from q′ on input X
+18 for some w ̸∈dom(π1(q′′)),
+19 (T, ξ, r 2) ←Apply(T, r 1, w)
+20 Λ( q′, π(X), π(Y )) ←Λ( q′, π(X), π(Y )) ∪{(r′, X, Y, r 1)}
+21 π1(q′′)(w)) ←π(ξ) ⊲ This updates ∆ . π1 is ﬁrst element of couple
+22 if dom(π1(q′′)) = W then
+23 Q ←Q ∪{(π1(q′′), ρw(r1, ǫ)}
+24 A ←UpdateAccess(T, q ′′, ρw(r1, ǫ)) ⊲ We record the shortest access to
+(q′′, r1) from (q, r) or the last homing in T
+25 q ←∆ ∗(q′, π(X.w), π(Y.ξ)) if deﬁned else q ←⊥
+26 r ←r2
+27 else
+28 q ←⊥
+29 if ∆ −(∆ , Λ , h, a, A) (where h/a was latest homing in T ) is deﬁned and contains
+a complete strongly connected component (Scc) then ⊲ ∆ − trims the ∆ graph
+from h/a by cutting transitions that cannot be accessed with A and Λ
+30 J ←Is
+31 until ∆ , Λ are complete over Is on a Scc
+32 return T, Q, ∆ , Λ
+11
+Vega Groz Oriat Foster Walkinshaw Sim˜ao
+Algorithm 3 Transferring from q, r to next transition to learn
+1 Function Transfer(q, r, ∆ , Λ , I1, I2) ⊲ We look for deterministic transfer, either through
+unguarded transitions, or when registers and input determi ne known transitions
+2 ⊲ To reach a given input conﬁguration r′, we record the list of parameter values that
+can be set by unguarded transitions while building the path, and can adapt the parameter
+values at the end to set values to r′
+3 ⊲ First we look for a short transfer with a bounded search ( k ≥0 is the bound, tailorable),
+and if that fails, we resort to a path from re-homing
+4 Find short(-est) α ∈(I× O)k and X ∈I1 with ∆ ∗(q, π(α)) = q′ and
+ρw(r, α) = π2(q′) = ρw(r′, ǫ) s.t. π1(∆( q′, π(X), ∗)) is partial, ⊲ First try to learn new
+input from a state, in its reference conﬁguration
+5 ⊲ “partial” means either not deﬁned at all, or there is an outpu t whose characterisation
+is partial; if Ω was the output for π(X) it is not partial regardless of r′ and X; if it was
+ω for a given r′ and X, we can still look for a diﬀerent r′ or X.
+6 or ∃r′ ̸= π2(q′), Y ̸= Y ′ s.t. ρg(r, α) = ρg(r′, ǫ) and
+{(π2(q′), X, Y, ∗), (r′, X, Y ′, ∗)}⊂ Λ( q′, π(X), π(Y )) and
+π1(∆( q′, π(X), π(Y ′))) is partial ⊲ or a guarded transition
+7 if previous fails then ⊲ (otherwise) no transition to learn in current Scc
+8 Find α and X ∈I2 s.t. Λ( q′, π(X), ∗) does not contain ( ∗, X, ∗, ∗) ⊲ transfer to a
+transition to be sampled
+9 q′ = ∆ ∗(q, π(α)), r′ = ρ(r, α)
+10 if all previous fails then ⊲ bounded search failed, resort to homing
+11 (T, a, r ) ←Apply(T, r, h ) and update Λ on the way (if transitions are in Q)
+12 if ∆ −(∆ , Λ , h, π(a), A) no longer contains unsampled states and transitions then
+13 return no path found ⊲ all transitions in reachable Scc already sampled on I2,
+transfer fails
+14 Look by BFS for shortest sequence α in ∆ −(∆ , Λ , h, π(a), A), pick A(π(a))(q′, r′) = α
+and X s.t. π1(∆( q′, π(X), ∗)) is partial or has guarded transition to partial state, or
+failing that has a transition to be sampled
+⊲ Here q′, r′, α, X are deﬁned. If ∆ was partial in q, then α = ǫ, q′ = q
+15 (T, β, r ′) ←Apply(T, r, α ) and update Λ on the way
+16 if β ̸= πo(α) then ⊲ Transfer stopped prematurely on diﬀering output
+17 let β = β′.o′, α = α′.X.α′′/β′.o.β′′ s.t. πo(α′) = β′, o′ ̸= o
+18 Y ←o′, r1 ←r′, r′ ←ρ(r, α′), q′ ←∆ ∗(q, α′) ⊲ We found a new guarded transition
+19 ⊲ If h or W were not correct, we should handle inconsistency if af ter α′ we have
+same input conﬁguration r for o and o′
+20 else ⊲ (q, r) −α(′)/β(′) →(q′, r′) −X/Y →(q′′, r1) →w/ξ →(q′′′, r2)
+21 (T, Y, r 1) ←Apply(T, r ′, X)
+22 A ←UpdateAccess(T, q ′, r′) ⊲ We record the shortest access to (q′, r′) from (q, r) or
+the last homing in T
+23 return (q′, r′, X, Y, r 1)
+12
+Learning EFSM
+Algorithm 4 Main ehW algorithm
+1 Input: I1 ⊂I2 ⊂Is ⊂I, W ⊂I∗
+1 , Rw ⊂Rg ⊂R
+2 h ∈I+
+1 , s.t. ρg(⊥, h) has a value for each register in Rg
+3 Initializing: T ←ǫ ⊲ T is the learning trace
+4 repeat
+5 Q, ∆ , Λ ←∅, Io ←I1
+6 repeat
+7 T, Q, ∆ , Λ ←Backbone(T, I 1, Io, h, W, Q, ∆ , Λ)
+8 handle inconsistencies on the way to update h, W, I1 ⊲ if h & W not trustable
+9 for Io incrementally ranging from I1 to I1 ∪Rw(I2) do
+10 ⊲ Sampling on Rw(I2) ﬁrst to have the smallest set of register conﬁgurations to
+compare, hence smallest number of redundant states
+11 T, Q, ∆ , Λ ←Backbone (T, I 1, Io, h, W, Q, ∆ , Λ)
+12 Io ←I1 ∪Rg(I2)
+13 T, Q, ∆ , Λ ←Backbone (T, I 1, Io, h, W, Q, ∆ , Λ)
+14 for Io incrementally ranging from I1 to I1 ∪Rw(I2) then ∪Rg(I2) do
+15 (T, CE ) ←GetNFSMCounterExample(T, Q, ∆ , Λ , SUL, Io) ⊲ Ask for a CE
+using only inputs from Io
+16 if CE found then
+17 (W, I1, Is, Q, ∆ , Λ) ←ProcessCounterexample ⊲ If W changed, this re-
+sets Q, ∆ , Λ
+⊲ At this point, Is would not be changed
+18 continue to start of repeat Backbone loop
+19 Io ←Is ⊲ If Rg is correct, Is will not change NFSM, just feed generalise
+20 until Backbone terminates with no inconsistency
+21 (Q, ∆ , Λ) ←reduceFSM(Q, ∆ , Λ) ⊲ Reduce, not Minimize, as there is no unique min-
+imum
+22 repeat
+23 M ←generalise(T, h, Q, I, O, P I , PO, ∆ , Λ)
+24 (T, CE ) ←GetCounterExample(M, SUL)
+25 until ¬(CE is a data CE)
+26 if CE found then
+27 (W, I1, Is, Q, ∆ , Λ) ←ProcessCounterexample ⊲ If W modiﬁed, Q, ∆ , Λ are reset
+28 until no counterexample found
+29 return M
+13
+Vega Groz Oriat Foster Walkinshaw Sim˜ao
+14

@@ -1,0 +1,1167 @@
+1
+Adaptation through prediction: multisensory
+active inference torque control
+Cristian Meoa, Giovanni Franzese a, Corrado Pezzato a, Max Spahn a and Pablo Lanillos b
+Abstract—Adaptation to external and internal changes is
+major for robotic systems in uncertain environments. Here we
+present a novel multisensory active inference torque controller
+for industrial arms that shows how prediction can be used to
+resolve adaptation. Our controller, inspired by the predictive
+brain hypothesis, improves the capabilities of current active
+inference approaches by incorporating learning and multimodal
+integration of low and high-dimensional sensor inputs (e.g., raw
+images) while simplifying the architecture. We performed a
+systematic evaluation of our model on a 7DoF Franka Emika
+Panda robot arm by comparing its behavior with previous active
+inference baselines and classic controllers, analyzing both qual-
+itatively and quantitatively adaptation capabilities and control
+accuracy. Results showed improved control accuracy in goal-
+directed reaching with high noise rejection due to multimodal
+ﬁltering, and adaptability to dynamical inertial changes, elasticity
+constraints and human disturbances without the need to relearn
+the model nor parameter retuning.
+I. I NTRODUCTION
+Real world complex robots, such as airplanes, cars and ma-
+nipulators may need to process unstructured high-dimensional
+data coming from different sensors depending on the domain
+or task (e.g., LIDAR in cars, sonar in submarines and different
+sensors to measure the internal state of the robotic system). In
+this context, one of the biggest challenges is mapping this rich
+stream of multisensory information into a lower-dimensional
+space that integrates and compresses all modalities into a
+latent representation; the agent could then use this embedded
+latent representation that encodes the state of the robot and
+the world aiding the controller. Another key challenge is
+how to use this enconded representation to deal with real
+world applications with changes and uncertainty. These en-
+vironments may always present unmodeled behaviours, such
+as air turbulence in airplanes, unmodeled dynamics of water
+streams, or unexpected parameter changes. In the last years,
+some proof-of-concept studies in robotics have shown that
+Active Inference (AIF) may be a powerful framework to
+address challenges [18], such as adaptation [22, 28], ro-
+bustness [1, 2] and multisensory integration [17, 20]. AIF
+is prominent in neuroscientiﬁc literature as a biologically
+plausible mathematical construct of the brain based on the
+Free Energy Principle (FEP) [7]. According to this theory,
+the brain learns a generative model of the world/body that
+is used to perform state estimation (perception) as well as
+to execute control (actions), optimizing one single objective:
+a: Faculty of Mechanical Engineering, Department of Cognitive Robotics,
+Delft University of Technology, Delft, The Netherlands
+b: Donders Institute for Brain, Cognition and behaviour, Department of
+Artiﬁcial Intelligence, Radboud University, Nijmegen, The Netherlands.
+Bayesian model evidence. This approach, which grounds on
+variational inference and dynamical systems estimation [12],
+has strong connections with Bayesian ﬁltering [29] and control
+as inference [21], as it both estimates the system state and
+computes the control commands as a result of the inference
+process. Recent experiments in humans indicates that sensory
+prediction errors may be responsible for body estimation
+and also involuntary adaptive active strategies that suppress
+multisensory conﬂicts [16]. Here we show that once the robot
+has learned to predict the (multi)sensory input then it can
+exploit those predictions to adapt to unexpected world/body
+variations, such as measurements noise, force disturbances,
+environmental changes (e.g., gravity or elasticity constraints)
+and internal changes (e.g., inertia or motor stiffness). We
+combine state representation learning [19] with variational
+free energy optimization in generalized coordinates [8, 22]
+to infer the torques needed to achieve goal-directed behaviors.
+We evaluated our approach in several real-world experiments
+with a 7DoF Franka Emika Panda robot arm and comparing
+it to state-of-the-art baselines in AIF and classic controllers.
+A. Related Works
+In 2003 Yamashita and Tani [30] described a robotic ex-
+periment that can be linked with the theory of what now
+is established as active inference [8]. They were able to
+generate motor primitives from sensorimotor experience in a
+top-down fashion. Since then, many researchers have pursued
+the design of these type of biologically (functional) plausible
+controllers [4]. Recently, a state estimation algorithm and
+an AIF-based reaching controller for humanoid robots were
+proposed in [15] and [22] respectively, showing robust sensory
+fusion (visual, proprioceptive and tactile) and adaptability to
+unexpected sensory changes in real experiments. However,
+they could only handle low-dimensional inputs and did not
+implement low-level torque control. Latterly, adaptive active
+inference torque controllers [2, 25] showed better perfor-
+mances than a state-of-the-art model reference adaptive con-
+troller. However, they cannot handle high-dimensional inputs.
+Furthermore, an AIF planning algorithm was presented in
+[11, 27], showing that the introduction of visual working
+memory and the variational inference mechanism signiﬁcantly
+improve the performance in planning adequate goal-directed
+actions. [28] showed the plausability of using neural networks
+architectures to scale AIF to raw images inputs. Lastly, in a
+previous work we presented a Multimodal Variational Autoen-
+coder Active Inference (MAIC-V AE) [20] torque controller,
+which integrated visual and joint sensory spaces. However,
+arXiv:2112.06752v1  [cs.RO]  13 Dec 2021
+2
+a clear and systematic comparison on adaptation between
+AIF and classic controllers is still missing. Besides, [20]
+did not present the generalized mathematical framework of
+multisensory active inference torque control scheme and the
+experiments were only in simulation.
+B. Contribution
+We describe the multisensory active inference controller
+(MAIC) which extends current active inference control ap-
+proaches in the literature by allowing function learning [14,
+17] through multimodal state representation learning [19]
+while maintaining the adaptation capabilities of an active
+inference controller and working at the level of torque. We
+provide the general mathematical framework of the MAIC and
+we derive two versions of the proposed algorithm as proof-
+of-concepts. Finally, we experimentally evaluated the proposed
+algorithm on a 7DOF Franka Emika Panda arm under different
+conditions. We systematically compared the MAIC with state-
+of-the-art torque active inference controllers, such as the AIC
+[25] and the uAIC [2], and standard controllers, such as model
+predictive control (MPC) and joint impedance control (IC). We
+present both qualitative and quantitative analysis in different
+experiments, focusing on adaptation capability and control
+accuracy.
+II. AIF GENERAL FORMULATION AND NOTATION
+Here we introduce the standard equations and concepts from
+the AIF literature [7], and the notation used in this paper,
+framed for unimodal estimation and control of robotic sys-
+tems [22]. The aim of the robot is to infer its state (unobserved
+variable) by means of noisy sensory inputs (observed). For
+that purpose, it can reﬁne its state using the measurements
+or perform actions to ﬁt the observed world to its internal
+model. This is dually computed by optimizing the variational
+free energy, a bound on the Bayesian model evidence [3].
+System variables. State, observations, actions and their n-
+order time derivatives (generalized coordinates).
+x = [x1,x2,..., xc] , sensors observations (c sensors)
+r = [r1,r2,..., rc] , sensory noise (c sensors)
+˜x = [x,x(1),..., x(nd)] , generalized sensors
+˜z = [z,z(1),..., z(nd)] , multimodal system state
+˜µ= [µ,µ(1),..., µ(nd)] , proprioceptive state
+˜r = [r,r(1),..., r(nd)] , generalized sensory noise
+˜w = [w,w(1),..., w(nd)] , state ﬂuctuations
+a = [a1,a2,...,a p] , actions (p actuators)
+(1)
+Where the notation x(n) = dnx
+dtn is adopted for the n-
+th order derivative and nd is the chosen number of
+generalised motions. Depending on the formulation the
+action a can be force, torque, acceleration or velocity. In
+this work action refers to torque. We further deﬁne the
+time-derivative of the state vector D˜z as:
+D˜z = d
+dt([z,z′,..., zn]) = [z′,z′′,..., zn+1]
+Generative models. Two generative models govern the robot:
+the mapping function between the robot’s state and the
+sensory input g(˜z) (e.g., forward kinematics) and the
+dynamics of the internal state f(˜z) [3].
+˜x = g(˜z) + ˜r (2)
+D˜z = f(˜z) + ˜w (3)
+where r ∼ N(0,Σ˜x) and w ∼ N(0,Σ˜z) are the
+sensory and process noise respectively. Σ˜x and Σ˜z are the
+covariance matrices that represent the controller’s conﬁ-
+dence about each sensory input and about its dynamics
+respectively.
+Variational Free Energy (VFE). The VFE is the optimiza-
+tion objective for both estimation and control. We use
+the deﬁnition of the F based on [8], where the action
+is implicit within the observation model x(a). Using the
+KL-divergence the VFE is:
+F= KL [q(˜z)||p(˜z|˜x)] −log p(˜x) (4)
+where q(˜z), p(˜z|˜x) and p(˜x) are the variational density,
+posterior and prior distribution. The VFE is an upper
+bound on the model evidence, and the minimization of
+the VFE will result in a minimization of surprise, and
+thus, a maximization of model evidence.
+State estimation using gradient optimization:
+˙˜ z= D˜z −kz∇˜zF(˜x,˜z) (5)
+Control using gradient optimization:
+˙a = −ka
+∂˜x
+∂a∇˜xF(˜x,˜z) (6)
+where kz and ka are the gradient descent step sizes. The
+VFE has a closed form under the Laplace and Mean-ﬁeld
+approximations [3, 22] and it is deﬁned as:
+F(˜z,˜x) ≜ −ln p(˜z,˜x) −1
+2ln(2π|Σ|) ≃−p(˜x|˜z)p(˜z)
+≜ (˜x −g(˜z))T Σ−1
+˜x (˜x −g(˜z))
++ (D˜z −f(˜z))T Σ−1
+˜z (D˜z −f(˜z))
++ 1
+2 ln |Σ˜x|+ 1
+2 ln |Σ˜z| (7)
+where Σ is the optimal variance which optimizes the VFE
+[3]. The ﬁrst two terms of Eq. (7) are the sensor and
+dynamics prediction error, while the last two are sensory
+and dynamics log variances (uncertainty associated).
+Deﬁning the goal through the internal dynamics. As in
+[28] we deﬁne the system internal dynamics f(˜z) as:
+f(˜z,ρ=xd) = ∂g(˜z)
+∂˜z (xd −g(˜z)) (8)
+where ρ=xd steers the system towards the desired target.
+In other words, the desired goal xd produces an error
+respect the inferred state g(˜z) which causes an action
+towards xd itself.
+3
+III. A RCHITECTURE AND DESIGN : MULTIMODAL ACTIVE
+INFERENCE CONTROLLER
+As long as we can learn the generative mapping of a certain
+sensory space, we can add any modality to Eq. (5), combining
+free energy optimization [8] with generative model learning
+and performing sensory integration. The online estimation and
+control problem is solved by optimizing the VFE through
+gradient optimization, computing Eq. (5) and (6). We ﬁrst in-
+troduce the required preliminaries. Consequently, we illustrate
+the multimodal active inference update equations and the full
+algorithm.
+A. Multimodal Active Inference
+As discussed in [3], Eq. (7) can be extended for different
+modalities. Hence, state estimation and control equations can
+be derived for the multimodal case as well. We deﬁne the
+sensory generative function g(˜z) with multiple modalities as
+g(˜z) = [ g1(˜z),...,g c(˜z)]. Therefore, substituting Eq. (7) into
+Eq. (5) and (6) and rewriting it for the multimodal case, we
+can obtain the multimodal state estimation update law:
+˙˜z = D˜z +
+c∑
+m=1
+(
+km
+∂gm(˜z)
+∂˜z Σ−1
+m (xm −gm(˜z))
+)
++ kz
+∂f(˜z,ρ)
+∂˜z Σ−1
+˜z (xd −f(˜z,ρ)) (9)
+and the control equation:
+˙a = −
+c∑
+m=1
+kam∂axmΣ−1
+m (xm −gm(˜z)) (10)
+where km and kam are state estimation and control gradient
+descent step sizes related to modality m, and ∂axm = ∂xm
+∂a .
+Algorithm 1 illustrates the general multimodal active inference
+controller scheme.
+Algorithm 1 MAIC
+Require: xd = {xd1 ,xd2 ,..., xdc}
+while ¬goalreached do
+x = [x1,x2,..., xc] ←cSensors
+StateEstimation
+˙˜z ←multimodalstate updatelaw Eq. (9)
+ControlAction
+˙a = −∑c
+m=1 kam∂axmΣ−1
+m (xm −gm(˜z))
+Euler Integration
+˜z += δt˙˜z
+a += δt˙a
+end while
+IV. A LGORITHM IMPLEMENTATIONS
+In this work we present two different implementations of
+the same algorithm as proofs-of-concept, chancing the dimen-
+sionality of the used sensory input. In the ﬁrst case we use
+end-effector positions (i.e. low-dimensional sensory inputs)
+xee, learning the generative mapping with Gaussian Processes
+(MAIC-GP), while in the second case we scale to the full
+raw images xv (i.e. high-dimensional sensory inputs), learning
+the mapping through a multimodal variational autoencoder
+(MAIC-V AE).
+A. MAIC-GP
+Here we describe the multimodal active inference for low-
+dimensional inputs (e.g., end-effector position). We deﬁne
+the multi-sensory state and the sensory generative functions
+respectively as:
+x = [xq, xee] (11)
+gq(µ) = µ (12)
+gee(µ) = GPee(µ) (13)
+where gq(µ), as in [25], is the proprioceptive generative
+sensory function (i.e., joint states), and gee(µ) is the end-
+effector generative sensory function. Since this implementation
+is a proof-of-concept and we are assuming that we do not know
+the system dynamics, as in [15], gee(µ) is computed using
+a Gaussian Process (GP) regressor between proprioceptive
+sensory input and end-effector positions. This approach is
+particularly useful because we can compute a closed form for
+the derivative of the gaussian process with respect to the beliefs
+µ, which is required for the multimodal state update law, Eq.
+(9).
+1) Learning: We train the model through guided self-
+supervised learning. This generated a dataset of 9261 pairs
+end-effector positions and joint values (Xee,Xq). We use a
+squared exponential kernel k of the form:
+k(xqi,xqj ) = σ2
+f e(−1
+2 (xqi−xqj )T Θ(xqi−xqj )) + σ2
+ndij (14)
+where xqi,xqj ∈Xq, dij is the Kronocker delta function and
+Θ is the hyperparameters diagonal matrix. We can compute
+the end-effector location given any joint state conﬁguration as:
+gee(µ) = k(µ,Xq)K−1Xee (15)
+Finally, we can compute the derivative of gee(µ) with respect
+to µas:
+∂gee(µ)
+∂µ = −Θ−1(µ−Xq)T[k(µ,Xq)T ·α] (16)
+where K is the covariance matrix, α = K−1Xee and ·
+represents element-wise multiplication. Additional information
+about GP learning procedure can be found in Appendix B.
+2) State estimation and Control: Substituting Eq. (12) and
+(13) into Eq. (9) and (10), we can now write the state
+estimation update laws:
+˙µ= µ(1)+kµΣ−1
+q ϵxq +keeΣ−1
+ee
+∂gee(µ)
+∂µ ϵxee −kµΣ−1
+µ ϵµ
+(17)
+˙µ(1) = µ(2) + kµΣ−1
+˙q ϵ˙q −kµΣ−1
+µ ϵµ−kµΣ−1
+µ(1) ϵµ(1) (18)
+˙µ(2) = −kµΣ−1
+µ(1) ϵµ(1) (19)
+where Σ−1
+i are the inverse variance (precision) matrices
+related to state observations and internal state beliefs and
+4
+ϵi are the Sensory Prediction Errors (SPE), with i ∈
+{xq,x˙ q,xee,µ,µ(1)}. SPE represent the errors between ex-
+pected sensory inputs and observed ones and are deﬁned as:
+ϵxq = xq −µ (20)
+ϵx˙ q= x˙ q−µ(1) (21)
+ϵxee = xee −gee(µ) (22)
+ϵµ = µ(1) + µ−xqd (23)
+ϵµ(1) = µ(1) + µ(2) (24)
+Finally, we can rewrite the control equation as:
+˙a = −ka(∂axqΣ−1
+q ϵxq +∂ax˙ qΣ−1
+˙q ϵx˙ q+∂axee
+∂gee(µ)
+∂µ Σ−1
+ee ϵxee )
+(25)
+Note that, as in [25], in Eq. (25) the partial derivatives with
+respect to the action are set to identity matrices, encoding
+just the sign of the relation between actions and the change
+in the observations. Although we can compute the action
+inverse models ∂axq,∂ax˙ q,∂axee through online learning
+using regressors [14], we let the adaptive controller absorb the
+non-linearities. Thus, as described by [25] we just consider the
+sign of the derivatives.
+B. MAIC-VAE
+Here we describe the multimodal active inference controller
+for high-dimensional sensory inputs. We use the autoencoder
+architecture to compress the information into a common
+latent space z that represents the system internal state. We
+deﬁne the multi-sensory state and sensory generative functions
+respectively as:
+x = [xq, xv] (26)
+gq(z) = decoderq(z) (27)
+gv(z) = decoderv(z) (28)
+where decoderq(z) and decoderv(z) describe the mapping
+between z and the sensory spaces. The interested reader can
+ﬁnd a detailed description of MAIC-V AE in [20].
+1) Generative models learning: The multimodal varia-
+tional autoencoder (MV AE) was trained through guided self-
+supervised learning. The dataset generated (50000 samples)
+consisted in pairs of images with size (128x128) and joint an-
+gles (Xv,Xq). In order to accelerate the training, we included
+a precision mask Πxv = Σ−1
+xv , computed by the variance of
+all images and highlighting the pixels with more information.
+The augmented reconstruction loss employed was:
+L= MSE((1+Πxv )gv(z), xv) + MSE(gq(z),xq) (29)
+where xq ∈Xq and xv ∈Xv. Appendix C provides a detailed
+description of MV AE learning procedure.
+2) State Estimation and Control: As in MAIC-GP, substi-
+tuting the deﬁned generative mappings, Eq. (27) and (28), into
+Eq. (9) and (10), we can rewrite the state estimation update
+law:
+˙z =kv
+∂gv
+∂z Σ−1
+xv (xv −gv(z)) + kq
+∂gq
+∂z Σ−1
+q (xq −gq(z))
+−kz
+∂f
+∂z Σ−1
+f (xd −f(z,ρ)) (30)
+As we do not have access to the high-order generalized
+coordinates of the latent space z′,z′′, we track both the
+multimodal shared latent space z and the higher orders of
+the proprioceptive (joints) state µ(1),µ(2). Thus, we update
+the proprioceptive state velocity and acceleration using Eq.
+(18) and Eq. (19), while the joint angles are predicted by the
+MV AE:µ= gq(z). Finally, as before the action (torque) is
+computed by optimizing the VFE using Eq. (6). Here, since we
+cannot easily compute the partial derivative of gv with respect
+to the action, we only consider the proprioceptive errors.
+Thus, the torque commands are updated with the following
+differential equation:
+˙a = −ka(Σ−1
+q ϵxq + Σ−1
+˙q ϵx˙ q) (31)
+where even in this case we just consider the sign of the partial
+derivatives ∂aµ,∂aµ(1).
+V. R ESULTS
+A. Experiments and evaluation measures
+We systematically evaluated our MAIC approach in a 7DOF
+Franka Emika Panda robot arm. We performed three different
+experimental analyses and compared the MAIC approach
+against two state-of-the-art torque active inference controllers
+(AIC[25] and uAIC[2]) and two classic controllers: model
+predictive control (MPC, Appendix A) and impedance control
+(IC, Appendix E).
+1) Qualitative analysis in sequential reaching (Sec. V-C).
+We evaluated MAIC approaches qualitative behaviours,
+focusing on how multimodal ﬁltering affects control
+accuracy on the presented controllers.
+2) Adaptation study (Sec. V-D). We evaluated the re-
+sponse of the system to unmodeled dynamics and en-
+vironment variations by altering dynamically the mass
+matrix (Inertial Experiment), by adding an elastic con-
+straint (Constrain Experiment), by adding random human
+disturbances (Human disturbances experiment) and by
+adding random noise to the published joints values (Noisy
+Experiment).
+3) Ablation analysis in sequential reaching (Sec. V-C). We
+evaluated the algorithm accuracy and behaviour removing
+the extra modality from the algorithm.
+In order to evaluate the experiments, we used the following
+evaluation metrics:
+• Joints perception error. It is the error between the inferred
+(belief) and the observed joint angle. The more accurate
+the predictions are, the lower will be the perception error.
+• Joints goal error. It is the error between the current joint
+angles and the desired ones (goal).
+• Image reconstruction error . It is the error between the
+predicted visual input and the observed image. It is com-
+puted as the Frobenius norm of the difference between
+current and goal images. It describes the accuracy of the
+visual generative model.
+• End-effector reconstruction error . It is the Euclidean
+distance between the predicted end-effector positions and
+the ones computed through the forward kinematics of the
+observed joints.
+5
+To summarize, joints perception and image reconstruction
+errors measure how well the state is estimated, while joints
+goal errors give a measure of how well the control task is
+executed.
+B. Experimental setup and parameters
+Experiments were performed on the 7DOF Franka Panda
+robot arm using ROS [13] as the interface, Pytorch [23] for the
+MV AE and Sklearn [24] for the Gaussian Processes. An Intel
+Realsense D455 camera was used to acquire visual grey scaled
+images with size 128x128 pixels. The camera was centred in
+front of the robot arm with a distance of 0.8 m.
+The tuning parameters for the MAIC controllers are:
+• Σxv : Variance representing the visual sensory data con-
+ﬁdence which was set as the variances of the training
+dataset.
+• δt = 0.001: Euler integration step;
+• Σq=3,Σ˙q=3,Σµ=5,Σµ(1) =5,Σf=4,Σee=6: Variances
+representing the conﬁdence of internal belief about the
+states;
+• kµ=18.67,kq=1.5,kv=0.2,kee=1.4,ka=9: The learning
+rates for state update and control actions respectively
+were manually tuned in the ideal settings experiment.
+All experiments were executed on a computer with CPU:
+Intel core i7 8th Gen, GPU: Nvidia GeForce GTX 1050 Ti. 1
+C. Qualitative analysis in a sequential reaching task
+In order to analyse MAIC qualitative behaviour, we de-
+signed a sequential reaching task with desired goals xd =
+[xqd, xeed] and xd = [ xqd, xvd], respectively deﬁned for
+MAIC-GP and MAIC-V AE. The sequential reaching task
+is evaluated using four different desired states, deﬁned by
+the ﬁnal joint angles {xqd1 ,xqd2 ,xqd3 ,xqd4 }, expressed in
+radiants:
+• xqd1 = [0.45, −0.38, 0.32,−2.45, 0.14, 2.06, 1.26 ]
+• xqd2 = [0.70, −0.15, 0.10,−2.65, 0.31, 2.55, 1.23 ]
+• xqd3 = [−0.03,−0.73,−0.25,−2.69,−0.18,1.83,0.79]
+• xqd4 = [0.31, −0.47, 0.38,−2.16, 0.14, 1.71, 1.28 ]
+the desired end-effector positions {xeed1 ,xeed2 ,xeed3 ,xeed4 }
+and the desired visual input {xvd1 ,xvd2 ,xvd3 ,xvd4 }, where
+(a) xvd1
+ (b) xvd2
+ (c) xvd3
+ (d) xvd4
+Fig. 1: Goal poses images.
+both desired end-effector positions and visual input are deﬁned
+consistently with the desired joint positions. In order to
+select unbiased desired goals, all the desired joint poses were
+randomly sampled from the dataset. In all experiments the
+robot starts from the home position ( xqhome= xqd4 rad).
+1For reproducibility, the code is publicly available at https://github.com/
+Cmeo97/MAIC.
+1) MAIC-VAE qualitative behaviour: Figures 2a, 2b and 2c
+illustrate MAIC-V AE qualitative internal behaviour. It can be
+seen that both modalities are successfully estimated. However,
+Fig. 2a shows that joints reconstructions present overshoot,
+leading to a similar behaviour on the control task, as shown
+on Fig. 3. Moreover, the robot updates its internal belief
+by approximating the conditional density, maximizing the
+likelihood of the observed sensations and then generates an
+action that results in a new sensory state, which is consistent
+with the current internal representation. However, the visual
+decoder require much more computational time than the main
+control loop, leading to the irregular behaviour showed on
+0 17 34 51 68 85
+time [s]
+-0.6
+-0.4
+-0.2
+0.0
+0.2
+0.4
+0.6
+0.8Joint Err [rad]
+J_0
+J_1
+J_2
+J_3
+J_4
+J_5
+J_6
+(a) MAIC-V AE: Joints perception
+error
+0 10 20 30 40 50 60 70 80
+time [s]
+0
+3
+6
+9
+12
+15
+18
+21Pixel_Err [Pixel]
+Im_Err
+(b) Image reconstruction error
+(c) Sequence of some predicted visual input gv(z)
+0 17 34 51 68 85
+time [s]
+-0.6
+-0.4
+-0.2
+0
+0.2
+0.4
+0.6Err joint [rad]
+j_0
+j_1
+j_2
+j_3
+j_4
+j_5
+j_6
+(d) MAIC-GP: Joints perception
+error
+0 17 34 51 68 85
+time [s]
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+0.35
+0.4
+Err End-Effector [m]
+End-Effector reconstruction error
+(e) End-effector reconstruction
+error
+Fig. 2: Qualitative analysis of the error measures in the
+sequential reaching of four goals. All errors present peaks
+when a new goal is set. (a-d) Each line represents the error
+between the i-th joint belief and the ground truth. (b) Image
+reconstruction error. (c) Sequence of the predicted images by
+the generative model along the trajectory. (e) End-effector
+Reconstruction error.
+Fig. 2a. Although Fig. 2b shows that image reconstructions
+present different errors for different poses, Fig. 2c shows that
+the image reconstructions through the experiment are well
+6
+reconstructed.
+2) MAIC-GP qualitative behaviour: Figures 2d and 2e
+illustrate MAIC-GP qualitative internal behaviour. As in the
+previous case, both modalities are successfully estimated.
+Figure 2d shows that MAIC-GP joint estimations do not
+overshoot.
+3) Vanilla Comparison: Figure 2 illustrates the qualitative
+behaviour of the compared controllers. From one goal to the
+next one the errors drop down. Although the joint belief errors
+(Fig. 2a) show synchronous convergence without signiﬁcant
+steady-state errors, due to slow algorithmic frequency the
+MV AE-AIC behaviour is not smooth.
+0 17 34 51 68 85
+time [s]
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5Err Joints [rad]
+AIC
+uAIC
+MPC
+MAIC-GP
+MAIC-VAE
+IC
+Fig. 3: Vanilla comparison. Lines represent the average of
+absolute joints goal errors. Peaks are present when the new
+goal is set.
+Moreover, some goals can be better reconstructed than
+others, resulting in different steady-state errors. The reason is
+that different z solutions lead to similar images. Furthermore,
+due to dynamical model errors, MPC and IC present signiﬁcant
+steady-state errors. Finally, MAIC-V AE and uAIC overshoot,
+while all the other present overdamped behaviours.
+D. Adaptation Study
+(a) Inertial
+Experiment
+(b) Constraint
+Experiment
+Fig. 4: Experimental setup. (a) Inertial experiment: a bottle
+half full of water is attached to the 5th joint. (b) Constraint
+Experiment setup: an elastic band links the ﬁrst to the 5th
+joint.
+To investigate our approach adaptability to unmodeled dy-
+namics and environment variations we systematically tested
+the controllers in four experiments. The ﬁrst three experiments
+aim to evaluate the adaptability to unmodeled dynamics and
+the robustness against variations on inertial parameters. First,
+we attached a bottle half full of water to the 5th joint (Fig. 5a).
+As a result, due to water movements, the robot inertia changes
+dynamically. Second, we constrained the robot with an elastic
+band (Fig. 5b), connecting the ﬁrst robot link to the last one
+and, therefore, introducing a substantial change in the robot
+dynamics. Third, we perturbed the robot along the experiment
+pushing it along random directions and, therefore, testing if
+they are able to recover from human random disturbances. Fi-
+nally, we reevaluated the controllers in the presence of sensory
+noise, focusing on the robot behaviour. Again, we compared
+our algorithm implementations (MAIC-GP and MAIC-V AE)
+with AIC, uAIC, MPC and an IC. All controllers parameters
+were the same as in the previous experiments: no retuning
+was done. Table I reports the root-mean-square errors (RMSE)
+and the related standard deviations (std) which represent all
+the results collected during the experiments, the most accurate
+results are highlighted in black bold and the second most
+accurate in blue bold. In order to evaluate quantitatively both
+steady-state errors, transient behaviour and average errors we
+present both RMSE and std for each phase. On average MAIC-
+GP is the most robust against dynamic parameters change
+and the most adaptive to unmodeled dynamics, while MAIC-
+V AE is the best one on noise rejection. Only at the steady-
+state (after 10 seconds of execution) AIC has the lowest
+error on both Vanilla and Human disturbances experiments
+and uAIC at inertial experiment due to its integration term.
+Furthermore, at the steady-state MAIC-GP adapts better in
+the constraint experiment and MAIC-V AE is the best one on
+noise rejection. Finally, although both MPC and IC reported
+the worst performances in all experiments, they presented
+signiﬁcant offsets already in the vanilla comparison. Therefore,
+we will focus just on their qualitative behaviours. We now
+present the details of each experiment:
+1) Inertial experiment: A bottle half full of water has been
+attached to the 5th robot joint. The water moves along the
+experiment, changing the inertial characteristic of the object
+attached to the robot. Figure 5a illustrates the controllers’
+qualitative behaviours during the inertial experiment. It can
+be seen that, due to the unmodeled dynamics, IC and MPC
+show different offsets than the ones in the vanilla comparison.
+Moreover, MPC shows an unstable behaviour in one of the
+desired poses. Furthermore, since all the active inference
+controllers do not use any robot model, they are not affected
+by the change of dynamics. Table I shows that on average
+the most accurate controllers are MAIC-GP ( 3.33E-03), uAIC
+(3.38E-03) and MAIC-V AE (3.40E-03).
+2) Elastic constraint experiment: The experiment aims to
+drastically change the underlying dynamics of the system.
+Speciﬁcally, a rubber band was attached to the robot. To
+prevent the robot from entering to safety mode, we chose to
+link the ﬁrst joint to the last one. We bounded the elastic ten-
+sion to a sustainable value. Figure 5b shows that both classic
+and unimodal AIF controllers are signiﬁcantly affected by the
+elastic tension, presenting remarkable offsets. By contrast, as
+recorded on Tab. I, MAIC-GP and MAIC-V AE present the
+highest control accuracy.
+7
+Controllers Vanilla Experiment Inertial Experiment Constraint Experiment Human disturbances Exp Noisy Experiment
+RMSE std RMSE std RMSE std RMSE std RMSE std
+Full Experiment
+AIC 4.04E-03 4.85E-03 7.23E-03 3.05E-02 5.41E-03 1.42E-02 4.07E-03 1.21E-02 4.91E-03 3.33E-02
+uAIC 3.28E-03 1.32E-02 3.38E-03 1.16E-02 4.10E-03 8.88E-03 3.32E-03 9.56E-03 3.03E-03 2.20E-02
+MAIC-V AE 3.18E-03 1.78E-02 3.40E-03 1.45E-02 3.65E-03 2.26E-02 3.62E-03 1.44E-02 2.38E-03 1.81E-02
+MAIC-GP 3.09E-03 1.71E-02 3.33E-03 1.89E-02 3.20E-03 1.50E-02 3.13E-03 2.20E-02 3.40E-03 1.91E-02
+MPC 2.41E-02 6.81E-03 4.43E-02 1.77E-02 3.31E-02 7.84E-03 2.20E-01 5.00E-02 4.95E-02 1.32E-02
+IC 9.45E-03 2.07E-02 1.95E-02 1.87E-02 1.54E-02 1.23E-02 9.76E-03 2.04E-02 4.84E-03 2.13E-02
+Transient
+AIC 8.09E-03 3.97E-02 9.67E-03 4.18E-02 9.94E-03 1.97E-02 8.14E-03 1.68E-02 9.76E-03 4.22E-02
+uAIC 6.54E-03 1.85E-02 6.75E-03 1.62E-02 8.03E-03 1.24E-02 6.62E-03 1.33E-02 8.98E-03 2.50E-02
+MAIC-V AE 6.36E-03 2.48E-02 6.76E-03 2.02E-02 7.26E-03 3.15E-02 6.48E-03 2.01E-02 6.63E-03 2.71E-02
+MAIC-GP 6.18E-03 2.38E-02 6.63E-03 2.63E-02 6.40E-03 2.09E-02 6.26E-03 3.03E-02 6.78E-03 2.66E-02
+MPC 3.12E-02 9.45E-03 7.04E-02 2.47E-02 5.17E-02 1.09E-02 2.23E-01 4.96E-02 3.36E-02 1.82E-02
+IC 1.63E-02 2.89E-02 3.48E-02 2.62E-02 2.72E-02 1.72E-02 1.69E-02 2.86E-02 1.86E-02 2.98E-02
+Steady-state
+AIC 1.77E-06 1.84E-06 4.88E-05 6.30E-07 8.70E-04 1.50E-03 1.77E-06 8.79E-05 8.33E-05 7.37E-04
+uAIC 1.19E-05 1.14E-05 1.26E-05 1.86E-05 1.69E-04 2.79E-04 3.201E-05 3.32E-05 5.89E-04 7.38E-03
+MAIC-V AE 3.29E-05 2.97E-05 3.50E-05 4.25E-05 3.55E-05 4.16E-05 3.31E-05 3.71E-05 4.04E-05 3.35E-04
+MAIC-GP 1.66E-05 2.02E-05 1.77E-05 2.47E-05 1.54E-05 8.67E-05 1.69E-05 3.21E-03 7.15E-05 4.90E-04
+MPC 1.70E-02 1.54E-03 1.81E-02 1.75E-03 1.44E-02 1.26E-03 1.18E-01 5.04E-02 1.81E-02 3.19E-03
+IC 2.61E-03 2.55E-03 4.32E-03 3.57E-04 3.64E-03 2.45E-03 2.62E-03 2.70E-03 2.91E-03 5.07E-03
+TABLE I: Quantitative joints goal errors comparison. RMSE [rad] and std [rad] of the joints errors are presented, lowest errors
+are showed in black bold and second lowest in blue bold. Errors are computed for the full experiment, transient phase (0-10s)
+and steady-state (10-20s).
+0 17 34 51 68 85
+time [s]
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5Err Joints [rad]
+AIC
+uAIC
+MPC
+MAIC-GP
+MAIC-VAE
+IC
+(a) Inertial Experiment
+0 17 34 51 68 85
+time [s]
+0.0
+0.1
+0.2
+0.3
+0.4Err Joints [rad]
+AIC
+uAIC
+MPC
+MAIC-GP
+MAIC-VAE
+IC (b) Constraint Experiment
+0 17 34 51 68 85
+time [s]
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5Err Joints [rad]
+AIC
+uAIC
+MPC
+MAIC-GP
+MAIC-VAE
+IC (c) Human Disturbances Experiment
+Fig. 5: Lines represent the average of absolute joints goal errors. Peaks coincide with the instants when a new goal is set,
+overshoots instead are present some seconds later, when the error already dropped substantially. 5c) Red rectangles show the
+time intervals on which the disturbances are applied, small peaks represent human disturbances.
+3) Human disturbances experiment: This experiment aims
+to evaluate compliance and controllers recovery ability after
+random disturbances. To do this, a human operator pushed the
+robot in random directions along the experiment. Red shaded
+areas on Fig. 5c indicate the periods on which the robot is
+disturbed. Apart from the MPC, which is not able to recover
+and perform the task, all the other ones fully recover from
+the disturbances, showing a safe behaviour in case of human
+disturbances.
+4) Noise experiment: We reevaluated the controller be-
+haviour in the presence of proprioceptive noise, focusing on
+the noise rejection capabilities of the six controllers. Proprio-
+ceptive noise was implemented as additive noise sampled from
+a Normal distribution rq ∼N(0,Σrq = 0.1). Figure 6 shows
+that MAIC controllers were the most adaptive, presenting the
+smoothest behaviours. The reason is that multimodal ﬁltering
+acts as a ﬁlter for the injected noise, reducing its effect and
+allowing a smooth control behaviour. All the other controllers
+oscillate signiﬁcantly more along the experiment.
+E. Ablation Study
+In order to evaluate the effect of the extra modalities,
+we performed an ablation study removing the extra modality
+from the algorithm scheme. Figure 7 shows that by removing
+the visual modality the behaviour becomes much smoother.
+Indeed, the control loop frequency increase from 120Hz to
+1000Hz. However, Tab. II reports that the control accuracy
+does not change signiﬁcantly. Moreover, from Fig. 7 it can be
+seen that controllers response behaviours do not change when
+they are ablated.
+VI. L IMITATIONS AND ADVANTAGES
+On the one hand, although the quantitative table comparison
+shows that on average MAIC implementations are more adap-
+8
+0 17 34 51 68 85
+time [s]
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5Err Joints [rad]
+AIC
+uAIC
+MPC
+MAIC-GP
+MAIC-VAE
+IC
+Fig. 6: Noisy experiment. Lines represent the average of
+absolute joints goal errors. Peaks coincide with the instants
+when a new goal is set.
+0 17 34 51 68 85
+time [s]
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5Err Joints [rad]
+MAIC-VAE
+MAIC-VAE-ablated
+MAIC-GP
+MAIC-GP-ablated
+Fig. 7: Ablation study. Lines represent the average of absolute
+joints goal errors. Peaks are present when the new goal is set.
+tive and accurate, they still have limitations. First of all, mul-
+timodal ﬁltering requires more computational time, leading to
+irregular behaviours. Indeed, the ablation study clearly shows
+that when removing the visual modality, the control behaviour
+becomes signiﬁcantly smoother. Using a faster GPU may solve
+this issue. Moreover, the multimodal state estimation depends
+on the accuracy of the learned generative mapping. In all ex-
+periments we used a black background to facilitate the image
+reconstruction. Furthermore, another limitation is that for goal-
+directed behaviours we need to provide the desired values for
+all the sensor modalities, which may not be always available.
+However, as in [26], it may be possible to combine MAIC with
+a high-level controller in order to control complex robotics
+systems (e.g. soft robots). On the other hand, MAIC can
+incorporate any type and number of sensors besides the end-
+effector position or images. It can work in an imaginary regime
+Full Experiment
+RMSE [rad] std [rad]
+MAIC-V AE 3.18E-03 1.78E-02
+MAIC-V AE-ablated 3.21E-03 1.36E-02
+MAIC-GP 3.09E-03 1.71E-02
+MAIC-GP-ablated 4.04E-03 4.84E-03
+TABLE II: Ablation study: quantitative analysis. RMSE [rad]
+and std[rad] are shown for both MAICs and their ablated
+versions. Lowest errors are showed in black bold and second
+lowest in blue bold.
+(appendix D) by mentally simulating the expected behaviour,
+opening many opportunities for future research such as model
+predictive active inference controllers, where the controller
+predict N steps head. Besides, the multimodal ﬁltering scheme
+can be integrated into other kinds of controllers, such as an
+IC.
+VII. C ONCLUSION
+We described MAIC, a scalable multisensory enhancement
+of the torque proprioceptive AIF controller presented in [25]
+and the velocity controller presented in [22]. Our approach
+makes use of the alleged adaptability and robustness of AIF,
+taking advantage of previous works and overcoming some
+related limitations. We solved state estimation by combining
+representation learning and multimodal ﬁltering with varia-
+tional free energy optimization, improving the representational
+power and adaptability. Hence, we can perform online multi-
+sensory torque control, without the use of any dynamic or
+kinematic model of the robot at runtime. Furthermore, we
+performed a systematic comparison of several controllers on
+different experiments providing both qualitative and quanti-
+tative analysis on a robotic manipulator. Results showed that
+our proposed algorithm is more adaptive than state-of-the-art
+torque AIF baselines and classical controllers (MPC and IC), it
+was more accurate in the presence of sensory noise, showing
+the strongest noise rejection capability. MAICs were highly
+adaptive and robust to different contexts, such as changes in
+the robot dynamics (i.e., elastic constraint) and changes in
+the robot properties (i.e. inertial properties). Furthermore, our
+simpliﬁed architecture makes the controller easy to deploy in
+any robotic manipulator. In line with the Bayesian hypothesis
+of how the brain processes the information from the senses,
+this work reinforces the idea that learning to predict can be
+directly transformed into adaptive control. The experimental
+validation shows the viability of this approach to standard
+industrial robotic tasks.
+REFERENCES
+[1] Mohamed Baioumy, Paul Duckworth, Bruno Lacerda,
+and Nick Hawes. Active inference for integrated
+state-estimation, control, and learning. arXiv preprint
+arXiv:2005.05894, 2020.
+[2] Mohamed Baioumy, Corrado Pezzato, Riccardo Ferrari,
+Carlos Hernandez Corbato, and Nick Hawes. Fault-
+tolerant control of robot manipulators with sensory faults
+using unbiased active inference. In European Control
+Conference, ECC, 2021.
+[3] Christopher L Buckley, Chang Sub Kim, Simon McGre-
+gor, and Anil K Seth. The free energy principle for
+action and perception: A mathematical review. Journal
+of Mathematical Psychology , 81:55–79, 2017.
+[4] Alejandra Ciria, Guido Schillaci, Giovanni Pezzulo, Ver-
+ena V Hafner, and Bruno Lara. Predictive processing
+in cognitive robotics: a review. Neural Computation ,
+33(5):1402–1432, 2021.
+[5] Alexander Domahidi and Juan Jerez. Forces professional.
+Embotech AG, url=https://embotech.com/FORCES-Pro,
+2014–2019.
+9
+[6] Roy Featherstone. Rigid body dynamics algorithms .
+Springer, 2014.
+[7] Karl Friston. The free-energy principle: a uniﬁed brain
+theory? Nature neuroscience, 11(2):127–138, 2010.
+[8] Karl J Friston, Jean Daunizeau, James Kilner, and Ste-
+fan J Kiebel. Action and behavior: a free-energy formu-
+lation. Biological cybernetics, 102(3):227–260, 2010.
+[9] Neville Hogan. Impedance control: An approach to
+manipulation: Part i—theory. 1985.
+[10] Lill Maria Gjerde Johannessen, Mathias Hauan Arbo,
+and Jan Tommy Gravdahl. Robot dynamics with urdf
+& casadi. In 2019 7th (ICCMA) . IEEE, 2019.
+[11] Minju Jung, Takazumi Matsumoto, and Jun Tani. Goal-
+directed behavior under variational predictive coding:
+Dynamic organization of visual attention and working
+memory. IROS, 2019.
+[12] Frinston K.J, Trujillo-Barreto N., and Daunizeau. Dem:
+a variational treatment of dynamic systems. NeuroImage,
+41, pp. 849-885 , 2008.
+[13] Anis Koubaa. Robot Operating System (ROS): The
+Complete Reference (Volume 2) . Springer Publishing
+Company, Incorporated, 1st edition, 2017.
+[14] Pablo Lanillos and Gordon Cheng. Active inference with
+function learning for robot body perception. In Proc. Int.
+Workshop Continual Unsupervised Sensorimotor Learn. ,
+pages 1–5, 2018.
+[15] Pablo Lanillos and Gordon Cheng. Adaptive robot body
+learning and estimation through predictive coding. In
+2018 IEEE/RSJ International Conference on Intelligent
+Robots and Systems (IROS) , pages 4083–4090. IEEE,
+2018.
+[16] Pablo Lanillos, Sae Franklin, and David W Franklin.
+The predictive brain in action: Involuntary actions reduce
+body prediction errors. bioRxiv, 2020.
+[17] Pablo Lanillos, Jordi Pages, and Gordon Cheng. Robot
+self/other distinction: active inference meets neural net-
+works learning in a mirror. In Proceedings of the 24th
+European Conference on Artiﬁcial Intelligence (ECAI) ,
+pages 2410 – 2416, 2020.
+[18] Pablo Lanillos and Marcel van Gerven. Neuroscience-
+inspired perception-action in robotics: applying active in-
+ference for state estimation, control and self-perception.
+arXiv preprint arXiv:2105.04261 , 2021.
+[19] Timoth ´ee Lesort, Natalia D ´ıaz-Rodr´ıguez, Jean-Franois
+Goudou, and David Filliat. State representation learning
+for control: An overview. Neural Networks , 108:379–
+392, 2018.
+[20] Cristian Meo and Pablo Lanillos. Multimodal vae active
+inference controller. arXiv preprint arXiv:2103.04412 ,
+2021.
+[21] Beren Millidge, Alexander Tschantz, Anil K Seth, and
+Christopher L Buckley. On the relationship between
+active inference and control as inference. In International
+Workshop on Active Inference , 2020.
+[22] Guillermo Oliver, Pablo Lanillos, and Gordon Cheng. An
+empirical study of active inference on a humanoid robot.
+IEEE Transactions on Cognitive and Developmental Sys-
+tems, 2021.
+[23] Adam Paszke, Sam Gross, Francisco Massa, Adam
+Lerer, James Bradbury, Gregory Chanan, Trevor Killeen,
+Zeming Lin, Natalia Gimelshein, Luca Antiga, Alban
+Desmaison, Andreas Kopf, Edward Yang, Zachary De-
+Vito, and Raison. Pytorch: An imperative style, high-
+performance deep learning library. In Advances in Neural
+Information Processing Systems 32 , pages 8024–8035.
+Curran Associates, Inc., 2019.
+[24] F. Pedregosa, G. Varoquaux, A. Gramfort, V . Michel,
+B. Thirion, O. Grisel, M. Blondel, P. Prettenhofer,
+R. Weiss, V . Dubourg, J. Vanderplas, A. Passos, D. Cour-
+napeau, M. Brucher, M. Perrot, and E. Duchesnay. Scikit-
+learn: Machine learning in Python. Journal of Machine
+Learning Research, 12:2825–2830, 2011.
+[25] Corrado Pezzato, Riccardo Ferrari, and Carlos Hern ´andez
+Corbato. A novel adaptive controller for robot manip-
+ulators based on active inference. IEEE Robotics and
+Automation Letters, 5(2):2973–2980, 2020.
+[26] Jeffrey Frederic Queißer, Barbara Hammer, Hisashi Ishi-
+hara, Minoru Asada, and Jochen Jakob Steil. Skill
+memories for parameterized dynamic action primitives
+on the pneumatically driven humanoid robot child af-
+fetto. In 2018 Joint IEEE 8th International Conference
+on Development and Learning and Epigenetic Robotics
+(ICDL-EpiRob), pages 39–45, 2018.
+[27] Jeffrey Frederic QueiSSer, Minju Jung, Takazumi Mat-
+sumoto, and Jun Tani. Emergence of Content-Agnostic
+Information Processing by a Robot Using Active Infer-
+ence, Visual Attention, Working Memory, and Planning.
+Neural Computation, 33(9):2353–2407, 08 2021.
+[28] Cansu Sancaktar, Marcel AJ van Gerven, and Pablo
+Lanillos. End-to-end pixel-based deep active inference
+for body perception and action. In Joint IEEE 10th
+International Conference on Development and Learning
+and Epigenetic Robotics (ICDL-EpiRob) . IEEE, 2020.
+[29] Simo S ¨arkk¨a. Bayesian ﬁltering and smoothing . Num-
+ber 3. Cambridge University Press, 2013.
+[30] Yuichi Yamashita and Jun Tani. Emergence of functional
+hierarchy in a multiple timescale neural network model:
+a humanoid robot experiment. PLoS computational
+biology, 4(11):e1000220, 2008.
+[31] A. Zanelli, A. Domahidi, J. Jerez, and M. Morari. Forces
+nlp: an efﬁcient implementation of interior-point methods
+for multistage nonlinear nonconvex programs. Interna-
+tional Journal of Control , pages 1–17, 2017.
+10
+APPENDIX
+A. Model Predictive Controller
+The results are compared to a standard model predictive
+torque control (MPC) formulation.
+1) Optimization problem: Neglecting external forces, the
+dynamics of the system are deﬁned by the equation of motion
+as
+τ = M(q)¨q + C(q, ˙q)q + g(q),
+which is composed of the mass matrix M, the Coriolis matrix
+C and the gravitational forces g [6]. Various approaches to
+compute the forward dynamics have been proposed [10]. The
+forward dynamics can be discretized to obtain the transition
+function
+zk+1 = f(zk,ak),
+where z is the concatenated vector of joint positions, velocities
+and accelerations.
+The control problem can be formulated as an optimization
+problem as follows
+J⋆ = min
+z0:N,a0:N
+N∑
+k=0
+J(zk,ak), (32)
+s.t. zk+1 = f(zk,ak), (33)
+ak ∈U,zk ∈Z, (34)
+z0 = z(0), (35)
+where J is the objective function, Uand Zare the admissible
+sets of actions and states respectively and z0 is the initial
+condition. The objective function was formulated as follows
+J(zk,ak) = (qk −qgoal)TWgoal(qk −qgoal) + aT
+kWaak,
+(36)
+where Wgoal and Wτ are the weighting matrices for the goal
+conﬁguration and the actions respectively.
+2) Realization: In this work, we used the recursive Newton
+Euler algorithm to solve the forward dynamics and a second
+order explicit Runge-Kutta integrator. The parameter setting is
+summarized in Table III. In accordance to the time step the
+control frequency is 10Hz.
+parameter value
+N 20
+∆t 0.1s
+Wgoal 400I7
+Wa diag([1.75, 2, 2.5, 5, 20, 18.75, 62.5])
+TABLE III: Parameter setting for MPC
+The optimization problem is solved using the nonlinear
+solver proposed in [31] and the corresponding implementation
+[5]. The forward dynamics are computed using [10].
+B. GP training
+Figure 8 illustrates a 3D scatter plot that shows a heatmap
+of the end-effector reconstruction errors. Moreover, the axes
+deﬁne the cartesian workspace we considered in our experi-
+ments, where the robot base is placed at xbase = {0,0,0}and
+is frontally directed toward the x-direction. What is more, in
+order to deﬁne the training set we created a cubic grid of points
+over the deﬁned workspace, splitting the cubic workspaces
+into 9261 points, 21 for every direction (i.e. x, y and z
+axis). Consequently, we used an inverse kinematics algorithm
+from roboticstoolbox-python in order to deﬁne the joint values
+related to the obtained end-effector positions. We used the 80%
+of these paired set as training set and the remaining 20% as
+test set. Finally, from ﬁgure 8 It can be seen that on average
+the reconstruction error is roughly 0.010m.
+Fig. 8: End-effector reconstruction error.
+C. Multimodal VAE training
+In order to create the image dataset we used an impedance
+controller to explore the workspace deﬁned in Appendix B
+and collect pictures of the robot in different poses. We used
+the joint values from the GP training set as reference for the
+controller and with subscriber we collected both joints values
+and related images, creating a dataset of 50000 samples of
+paired joint values and images. The multimodal V AE was
+then trained using the loss function deﬁned by eq. (29). The
+network architecture and parameters are publicly available
+at https://github.com/Cmeo97/MAIC. Figure 9 presents the
+average reconstruction loss during the training, 50 epochs were
+used to train the network.
+D. Mental simulation
+Unlike most of the AIF controllers present in literature, a
+great advantage of combining our approach with a multimodal
+V AE is the possibility to perform imagined simulations. In
+other words, given xd, the entire experiment can be simulated.
+Since sensory data are not available, the state update law
+becomes:
+˙z = −kz
+∂f
+∂z Σ−1
+f (xd −f(z,ρ)) (37)
+As a result, performing the integration step of the new internal
+state and decoding it, the updated {xv,xq}can be computed
+11
+Fig. 9: Image reconstruction error.
+0 17 34 51 68 85
+time [s]
+-0.6
+-0.4
+-0.2
+0
+0.2
+0.4
+0.6
+0.8Err joint [rad]
+j_0
+j_1
+j_2
+j_3
+j_4
+j_5
+j_6
+(a) Imagined joints errors
+0 10 20 30 40 50 60 70 80
+time [s]
+12
+14
+16
+18
+20
+22
+24
+26Err Image [pixel]
+err_Image
+(b) Imagined image reconstruction error
+Fig. 10: Mental simulation of sequential reaching of four goals.
+The goal is updated on time steps where peaks are present. (a)
+Joints errors of an imagined simulation. Each line represents
+the error of the i-th joint. (b) Image reconstruction errors of
+an imagined simulation.
+and the new errors can be back-propagated again, creating a
+loop that allows the system to do imaginary simulations.
+Fig. 10a and 10b show respectively imagined joints error
+and images reconstruction error through the entire simulation.
+These results show that the errors converge faster to zero
+than in the normal regime (Fig. 2a) as it does not need to
+accommodate the real dynamics of the robot.
+E. Impedance Controller
+The presented impedance controller [9] is based on the
+following dynamic equation:
+τ = K(qgoal −q) + D(−˙q) + C(q, ˙q)q + g(q),
+where K is the set joint stiffness D is the corresponding critical
+damping, C is the Coriolis matrix, and g is the gravitational
+term. Considering that the dynamics of the robot are described
+by
+M(q)¨q+ C(q, ˙q) + g(g) = τ+ τext (38)
+with the impedance controller the dynamics results in
+M(q)¨q= K(qgoal −q) + D(−˙q) + τext (39)
+this translates in a second order critically damped dynamics
+of the robot in the the transition towards the desired goal.

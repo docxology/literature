@@ -1,0 +1,3598 @@
+Active inference for action-unaware agents
+Filippo Torresan 1,2,
+ Keisuke Suzuki 3,
+ Ryota Kanai 1,
+ Manuel Baltieri 1,2,†
+1 Araya Inc., Tokyo, Japan
+2 School of Engineering and Informatics, University of Sussex, Brighton, UK
+3 Center for Human Nature, Artificial Intelligence and Neuroscience (CHAIN), Hokkaido University,
+Sapporo, Japan
+Active inference is a formal approach to study cognition based on the notion that adaptive agents
+can be seen as engaging in a process of approximate Bayesian inference, via the minimisation
+of variational and expected free energies. Minimising the former provides an account of percep-
+tual processes and learning as evidence accumulation, while minimising the latter describes how
+agents select their actions over time. In this way, adaptive agents are able to maximise the like-
+lihood of preferred observations or states, given a generative model of the environment. In the
+literature, however, different strategies have been proposed to describe how agents can plan their
+future actions. While they all share the notion that some kind of expected free energy offers an
+appropriate way to score policies, sequences of actions, in terms of their desirability, there are dif-
+ferent ways to consider the contribution of past motor experience to the agent’s future behaviour.
+In some approaches, agents are assumed to know their own actions, and use such knowledge to
+better plan for the future. In other approaches, agents are unaware of their actions, and must infer
+their motor behaviour from recent observations in order to plan for the future. This difference
+reflects a standard point of departure in two leading frameworks in motor control based on the
+presence, or not, of an efference copy signal representing knowledge about an agent’s own ac-
+tions. In this work we compare the performances of action-aware and action-unaware agents in
+two navigations tasks, showing how action-unaware agents can achieve performances comparable
+to action-aware ones while at a severe disadvantage.
+Keywords: active inference, Bayesian inference, POMDP , variational free energy, expected free
+energy
+1. Introduction
+Active inference is a framework originally developed in cognitive science and theoretical neuro-
+science to account for the function(s) of adaptive agents and their nervous systems [22, 24, 33, 59,
+62]. Different mathematical formulations of its core ideas have been proposed, and have been used
+to formally account for the adaptive behaviour of agents in different domains, as well as to model
+neural and behavioural data in computational cognitive neuroscience [1, 10, 16, 34, 26, 30, 35, 38, 52,
+53, 56, 61, 63, 64, 67]. The framework has also received a lot of attention in philosophy of mind and
+cognitive science, with its key insights popularised under the banners of predictive processing and
+prediction error minimisation [12, 14, 39, 40, 72].
+The main idea driving active inference is that information processing in the brain can be explained
+by predictive activity that approximates a process of hierarchical dynamic Bayesian inference on the
+†Correspondence e-mail: manuel baltieri@araya.org
+arXiv:2508.12027v1  [cs.AI]  16 Aug 2025
+Active inference for action-unaware agents
+hidden states of the environment that produce sensory inputs for the agent [46, 23, 33]. On this view,
+the dynamics of brain states implement approximate Bayesian inference updates consistent with
+(the dynamics of) an implicit generative model of, i.e., a joint probability distribution over, sensory
+signals (observations), motor commands (actions), and internal configurations (states). In turn, these
+updates allow an agent to infer its current predicament (perception), to infer the best sequence of
+actions (policies) to reach favourable states (planning/goal-directed decision making), and to learn
+what is possible in its eco-niche (learning relevant sensorimotor contingencies) [12, 13, 63, 11, 42, 9].
+Active inference, its different implementations and ensuing applications have been presented and
+reviewed extensively in the literature. For instance, Buckley et al. [10] provides a review of active in-
+ference for continuous-time state-space models whereas Da Costa et al. [16] offer a synthesis of active
+inference based on the discrete-time framework of partially observable Markov decision processes
+(POMDPs). The main difference between the two formulations revolves around the technicalities re-
+quired to implement a (variational) Bayesian inference scheme according to the dynamical evolution
+of relevant quantities, occurring either in continuous time or at discrete time steps.
+More recently, Smith, Friston, and Whyte [68] presents a more beginner-friendly, yet technical
+tutorial introduction to the discrete-time formulation, with a special focus on empirical applications,
+i.e., how to fit active inference models to behavioural and neural data. The recent implementations of
+active inference in Python [37] and in Julia [55], together with their companion papers and tutorials,
+represent another excellent entry point and could be read alongside [16] for a deeper understanding
+of how the mathematical aspects of the theory have been implemented. Additionally, Lanillos et al.
+[44] provides a survey of the approach with a special interest in robotics applications (especially in-
+volving the continuous-time formulation) whereas Mazzaglia et al. [48] offers a similar survey but
+examining more in detail the connections with related deep learning approaches. Other works, such
+as Gottwald and Braun [36], provide an enlightening mathematical explanation of free-energy mini-
+mization, comparing the main versions of the active inference machinery (those that have appeared
+up to 2020), and also makes a comparison with other Bayesian approaches to adaptive decision-
+making such as control-as-inference [43, 71, 70, 47]. On the other hand, Millidge, Seth, and Buckley
+[49] provides an introduction to the more foundational notion of the free-energy principle (i.e., tying
+free-energy minimization to self-organization in certain dynamical systems), from which a theory of
+sentient behaviour like active inference can be seen to emerge [see, also, 27], while Parr, Pezzulo, and
+Friston [59] bring everything together in a thorough and accessible treatment of the approach and its
+applications.
+Inspired by these and other relevant works in the area, in Sections 2 and 3 we provide a self-
+contained introduction to the standard active inference framework, including in Sections S1 and S2
+further details and derivations of the active inference equations for perception, action selection and
+learning (of both transition dynamics and emission maps), with a breakdown of some its more under-
+explored aspects. Our goal here is to investigate some assumptions that have appeared in parts of the
+active inference literature, and their implications for the study of adaptive behaviour. In particular,
+we will focus on comparing two implementations for classes of agents we shall define asaction-aware,
+inspired by the control-as-inference literature [70, 43, 47], and action-unaware, more closely related to
+classical active inference formulations that draw from work on the equilibrium point hypothesis and
+referent control [19, 20] to argue that classes of biological agents including humans do now have, or
+even need, access to explicit information about their motor signals [34, 28, 25, 1, 4, 5, 6]. Agents of
+the first kind know precisely what actions they took in the past and only need to plan for the future,
+while the latter don’t, and thus have to infer sequences of actions that best fit their past, accounting
+for their observations up to the present, as a pre-condition for inferring what is best to do in the
+2
+Active inference for action-unaware agents
+future. This means that action-aware agents can make use of more knowledge, as they don’t need to
+infer what actions they took in the past.
+We will highlight the main difference between these two strategies, related to how the agent’s
+policies are conceived and used in perceptual inference and planning to infer relevant information
+from observations and evaluate/select future actions. Action-unaware agents build on the standard
+treatment presented in [16, 59], providing the bedrock of a computational and algorithmic frame-
+work in which agents that are unaware of their own actions (executed in the past), are required to
+infer (among other things) the most likely policy currently followed up until the present from evi-
+dence represented by past observations, and to decide subsequently whether to continue performing
+the same policy in the future. On the other hand, more recent proposals [37, 31] adopt a different,
+action-aware approach on policies by viewing them as sequences of actions in the future, since agents
+know exactly what actions they took so far (cf., efference copy [15]). While the latter has become the
+most common approach to simulate active inference agents in discrete settings, a clear experimental
+comparison between the two is still missing.
+We provide thus a Python implementation of these two variations of active inference, and unpack
+results from simulations that compare these two treatments, showing a detailed breakdown of what
+and how agents learn in simple navigation tasks, shedding light on the extent to which an agent’s
+awareness of its past motor trajectory has an impact on its learning and adaptive behaviour.
+In Section 2 we start with a brief overview of how the agent-environment interaction is formally
+modelled in a rigorous manner within the active inference framework. Then, we explain in detail the
+optimisation problem that an active inference agent is designed to solve (Section 3), and the various
+components of the active inference algorithms that go into solving that problem. With two exper-
+iments, we illustrate the typical learning trajectories of action-unaware and action-aware agents in
+a simple grid-world environment (Section 4). We will conclude with a discussion of a few general
+points about active inference as well as a few more specific ones related to the findings of the experi-
+ments (Section 5).
+2. Formalising the Agent-Environment Interaction
+Active inference proposes a formal approach to characterise cognition and adaptive behaviour start-
+ing from a few basic premises:
+1. biological and artificial agents can persist in a complex and ever changing world if and only if
+they keep sensory signal within certain viable ranges, based on the definition of a set of preferred
+states (or observations),
+2. an agent’s internal states parametrise an implicit generative model of the surrounding environ-
+ment,
+3. all the processes that constitute an agent, from perception to action, can be described as con-
+tributing to the minimization of a single quantity, i.e., variational free energy, for a particular
+class of preferred states and a given generative model.
+More formally, in the discrete state-space formulation of active inference, these intuitions are
+translated into the language of discrete-time partially observable Markov decision processes (POMDPs),
+which are used to describe mathematically both the relevant parts of the environment (the genera-
+tive process) and an active inference agent interacting with it (whose dynamics encode parameters’
+updates consistent with probabilistic beliefs of an implicit generative model). The characterisation of
+3
+Active inference for action-unaware agents
+the agent also requires the specification of a probability distribution over preferred states or observa-
+tions, thereby constraining its behaviour to be goal-directed.
+Definition 2.1 (POMDP in active inference, the generative process). A POMDP is a six-element tuple,
+(S, O, A, T , E, T), where:
+• S is a finite set of states,
+• O is a finite set of observations,
+• A is a finite set of admissible actions,
+• Si, Oi, Ai, with i ∈ [1, T], are time-indexed random variables defined over the respective spaces,
+where the time index T represents a terminal time step,
+• T : S × A →∆(S) is a transition function that maps state-action pairs to a probability distribu-
+tion in the set ∆(S) of probability distribution defined over S
+• E : S →∆(O) is an emission function that maps a state to a probability distribution in the set
+∆(O) of probability distribution defined over O. 1
+The transition and emission functions map state-action pairs and states to conditional probability
+distributions that will be denoted by P(·|st, at) and P(·|st), respectively. These distributions define
+the dynamics of the POMDP where,∀t ∈ [1, T], state and observation random variables are sampled,
+St+1 ∼ P(·|st, at) and Ot ∼ P(·|st). In particular, the former can be used to specify the probability
+that the state random variable at t + 1 takes on a certain value, P(St+1 = st+1|st, at), given particular
+values of state and action random variables at the previous time step. The latter can instead be used
+to specify the probability that the observation random variable at time stept takes on a certain value,
+P(Ot = ot|st), given a particular value of the state random variable at the current time step.
+We assume that St+1 ∼ P(·|st, at) and Ot ∼ P(·|st) correspond to categorical (i.e., discrete) ran-
+dom variables taking on a value from a finite set, i.e., the state space S, with a certain probability. In
+active inference, the categorical distributions P(·|st, at) and P(·|st) are often indicated by Cat (st+1)
+and Cat(ot), where st+1 ∈ R|S| and ot ∈ R|O| are vectors of parameters of length |S| and |O|, respec-
+tively, and |·| indicates the cardinality of a set (these probability distributions assign a probability
+to every state/observation in the respective spaces). Also, it is worth highlighting that we use the
+words ‘state’ and ‘observation’ to indicate specifically the values of the corresponding random vari-
+ables, i.e., the elements of the respective spaces, and not the random variable themselves; for the
+latter we use ‘state random variable’ and ‘observation random variable’.
+Given this formal setup, an active inference agent selects a sequence of actions π ∈ Π that can
+give access to one or more desired states or observations. This is usually captured by postulating that
+the agent has goals in the form of preferred states or observations, formalised as the concentration of
+probability mass on a subset of the support for a probability distribution P∗(S) defined over S or for
+P∗(O) defined over O (cf., first premise at the outset of this section). More precisely, by selecting an
+appropriate sequence of action, the agent is trying to make the POMDP evolve or update in such a
+way that P∗(S) or P∗(O) will be the “final” probability distribution over states or observations, i.e.,
+the stationary distribution of the Markov decision process in question.
+1We note also that standard definitions of POMDPs [65, Ch. 16, 54, Ch. 34, 69, Ch. 17] include also a notion ofreward for
+an agent, here we don’t however include them since active inference specifies targets for an agent in a different way, see
+Definition 2.2. Formally, however, this can be easily accommodated in the above definition by stating that our observations
+O include both observations Y and rewards R of standard POMDP definitions: O = Y × R.
+4
+Active inference for action-unaware agents
+In general, however, an agent starts with no knowledge about the POMDP dynamics and emis-
+sion maps, i.e., of how the next state and observation relate to the current state and action (specified
+by the two conditional probability distributions introduced above). Therefore, an active inference
+agent’s task corresponds to the challenge of using observations from an environment (described for-
+mally by the POMDP of Definition2.1) to learn the parameters of an approximate model that captures
+both the environment’s transition dynamics of (hidden) states and how such states map to given ob-
+servations. This is usually called a generative model because it allows the agent to predict or generate
+the most likely next state given a state-action pair and the most likely observation resulting from
+being in that state (cf., second premise). The agent can rely on these predictive capabilities to imple-
+ment a decision-making strategy to pick an action, or a sequence of actions, that allow it to obtain a
+preferred state or observation.
+Therefore, an active inference agent can be defined in terms of the following components:
+Definition 2.2 (Active inference agent) . An active inference agent is described by a five-element
+tuple, (P∗(·), Π, X, d, M), where:
+• P∗(·) is the preferred probability distribution over states S or observations O,
+• Π is a subset of all possible sequences of actions, orpolicies, of length H, i.e., Π ⊆ AH, where AH
+indicates the H-fold Cartesian product A × A × · · · × A= {(a1, . . . ,aH) | ai ∈ A, ∀i ∈ [1, H]},
+• X is either the state space S, the observation space O, the policy space Π, or possibly others,
+used as the domain of the decision rule next,
+• d : X → Ais a decision rule that outputs an action a ∈ Agiven a certain element of the space
+X,
+• M is a generative model that approximates the dynamics of the environment, and comes in the
+form of a POMDP given in Definition 2.1,
+• Q(·) is the variational distribution that approximates components of the generative model (see
+Sections 3.2 and 3.3).
+In the next few sections, we will spell out in some detail what the generative model M and
+the distribution Q(·) involve, and what role they play in an active inference agent. We will show
+that, from a collection of environmental observations, it is possible to characterise perception, action,
+and learning of an embodied active inference agent as particular computational operations with the
+generative model and the variational distribution to minimise a single objective, i.e., variational free
+energy (cf., third premise). By doing so, an active inference agent is able to bring about its preferred
+probability distribution over states/observations.
+3. Sequential Decision-Making with Approximate Bayesian Inference
+3.1. The Generative Model
+As explained in the previous section, an active inference agent interacts with an environment, de-
+scribed in terms of a POMDP , to move towards a preferred set of states (and/or corresponding ob-
+servations), as encoded by the probability distribution P∗(S) (or P∗(O)). To do so, the agent can only
+rely on observations received from the environment and its current generative model, M. This can
+be considered as a more or less accurate “replica” of the POMDP describing the environment [16, 59]
+and is defined as follows:
+5
+Active inference for action-unaware agents
+Definition 3.1 (Generative model in active inference). The generative model M of an active inference
+agent is a POMDP in the sense of Definition 2.1. We specify it in more detail using a joint probability
+distribution over a sequence of state and observation random variables, a policy random variable for
+sequences of actions, and parameters stored in matrix A (for the emission map) and tensor B (for the
+transition map), that is, a joint that factors as:
+P(O1:T, S1:T, π, A, B) =P(π)P(A)P(B)P(S1)
+T
+∏
+t=2
+P(St|St−1, π, B)
+T
+∏
+t=1
+P(Ot|St−1, A). (1)
+The matrix A and the tensor B (one matrix per action) store the parameters for the transition
+and emission probabilities. Specifically, A ∈ Rn×m encodes the probabilities of state-observation
+mappings at every single time step. The second dimension of the matrix (number of columns), m, is
+the number of possible realisations (or values) st ∈ Sof every state random variable St, ∀t ∈ [1, T].
+The index of each column can be thought of as picking one of these realisations, i.e., one among the
+state values s1, . . . ,sm. The first dimension of the matrix, n, is the number of possible realizations of
+an observation random variable Ot, ∀t ∈ [1, T]. Similarly, the index of each row picks one of those
+realisations, i.e., one among the observation values o1, . . . ,on. Thus, the jth column of A, represented
+by A:,j, stores the parameters ot of the categorical distribution followed byOt conditioned on St = sj,
+i.e., Ot ∼ P(·|sj; ot) or, equivalently,Ot ∼ Cat(ot|sj) (where in both expressions we made explicit the
+conditioning value of St and the parameters).
+The tensor B ∈ R|A|×m×m stores all the state-transitions probabilities, depending on the action
+under consideration (indicated by the value of the tensor’s first dimension). Specifically, the matrices
+Ba1 , . . . ,Bad , with d = |A| specify the most likely distributions over states conditioned on a specific
+state value and the execution of a specific action (indicated by the superscript). For each matrix,
+the row and column dimensions represent the number of possible realisations of a state random
+variable St, again meaning that each column and row index identifies a state value among s1, . . . ,sm.
+Thus, the jth column of a matrix Bx, represented by Bx
+:,j, stores the parameters st of the categorical
+distribution followed by St conditioned on St−1 = sj, i.e., St ∼ P(·|sj
+t−1, x; st−1) or, equivalently,
+St ∼ Cat(st|sj
+t−1, x). In both expressions we made explicit that we are conditioning on a valuej of the
+state random variable at t − 1, i.e., sj
+t−1, and on an action x ∈ [a1, . . . ,ad] =A.
+Note that each column of A and Bx can be seen as an output of an approximation (learned by
+the active inference agent) of the emission map E and the transition map T , respectively, given a
+certain input value sj for the former and a certain state-action input pair sj, x for the latter. Both
+maps are assumed to be time-independent: the probability that sj will produce a certain observation
+and the probability that sj will lead to a certain state does not change depending on the particular
+time step indexing the state random variable St. Also, note that st and ot stand for one among the
+values s1, . . . ,sm and o1, . . . ,on, respectively, and we will use the notation without superscript to refer
+generically to one of the values of St and Ot, when it is superfluous to indicate explicitly that we
+are working with state and observation values that correspond to particular columns/rows of the
+matrices just described.
+3.2. Bayesian Inference
+The generative model provides the basis for the following operations:
+6
+Active inference for action-unaware agents
+1. determining the most likely past and/or future states, s1:T := s1, . . . ,sT, given a sequence of
+observations up to the present time step t, o1:T := o1, . . . ,ot, with t = T when we consider only
+past states (e.g., at the end of an episode or trajectory)
+2. predicting the most likely next states following the execution of certain actions and given the
+most probable current state,
+3. determining the most appropriate next action,
+4. updating key parameters to reflect more closely the actual POMDP describing the environment,
+especially when step 1–3 alone do not allow the agent to reach its goal.
+From a computational point of view, these four steps characterise the cognitive life of an active
+inference agent. The first one is usually calledperceptual inference, the second one amounts to planning
+or policy inference, the third one corresponds to the decision-making or action-selection stage, and the
+last corresponds to the learning phase.
+The ultimate goal of the agent is to perform actions that result in desired observations and/or
+environmental states. Observations represent evidence or feedback from the environment for the
+agent that indicate whether the generative model captures the environmental dynamics well enough
+to yield accurate predictions and goal-conducive actions. If not, that evidence can be used to up-
+date the generative model to reflect more precisely what would happen in a certain environment.
+More precisely, it is formally postulated that an agent is trying to solve an inference problem, corre-
+sponding to inference of the most likely (1) hidden states generating an observation, inference of the
+most likely (2) policy and (3) action given some preferred states, and inference of the most likely (4)
+parameters of the generative model to make more accurate prediction in the environment.
+A principled way of performing inference involves Bayes’ rule, which in the POMDP setting
+under consideration can be spelled out as follows:
+P(S1:T, π, A, B|O1:T) =P(O1:T|S1:T, π, A, B)P(S1:T, π, A, B)
+P(O1:T) , ( 2)
+where the generative models M appears in the numerator, factorised as the product between
+two probability distributions: (1) the probability of a sequence of observations, conditioned on a se-
+quence of states, the policy random variable, and certain parameters (explained below), and (2) the
+(prior) probability of the sequence of states, the policy random variable, and the same parameters.
+Importantly, the inference problem represented by Bayes’ rule in Eq. ( 2) involves probability distri-
+butions over the parameters of other probability distributions. To see this, we can factorise the prior
+probability distribution P(S1:T, π, A, B) as follows:
+P(S1:T, π, A, B) =P(S1:T)P(π)P(A)P(Ba1 ) · · ·P(Bad ), ( 3)
+to show explicitly that it involves joint probability distributions over the (vectors of the) matrices
+A and Ba1 , . . . ,Bad (where d is the number of actions), implying that Bayesian inference will update
+the parameters of those distributions as well. In fact, each column of the above matrices should be
+viewed as a random vector following a Dirichlet probability distribution. A realization of one of
+these random vectors forms the set of parameters for another distribution, i.e., one of the categorical
+distributions that specify the state-observation mapping or the action-dependent state transitions.
+Formally, P(A) is a more compact way of writing the joint over random vectors represented by
+the columns A:,i ∀i ∈ [1, m] of the matrix, that is: P(A) := P(A:,1, . . . ,A:,m) = P(A:,1) · · ·P(A:,m),
+with A:,i ∼ P(A:,i), ∀i ∈ [1, m]. Further, the latter is defined as a Dirichlet probability distribution,
+7
+Active inference for action-unaware agents
+P(A:,i) := Dir(αi), where αi is a column vector (of the same length asA:,i) storing its parameters (note
+that these should be kept distinct from the elements of A which are parameters of categorical distri-
+butions instead or, when doing Bayesian inference, are seen as random vectors, whose realizations
+determine the categorical parameters). The same analysis applies for the matrices Ba1 , . . . ,Bad . In a
+nutshell, Bayesian inference consists in updating the Dirichlet parameters αi and βi for each matrix
+above, so that new categorical parameters can be sampled from the Dirichlet distributions, replacing
+the existing elements of the observation mapping and state transition matrices.
+By means of a generative model specified as above and a sequence of observations o1:T, Bayes’
+rule in Eq. (2) allows one to derive an approximate posterior distribution over the state random vari-
+ables, the policy random variable, and the model’s parameters, i.e., the probabilities stored in A, B.
+Deriving this posterior distribution is the inference problem the active inference agent has to solve.
+Ultimately, this amounts to an update of the probabilistic beliefs encoded by the generative model
+following the acquisition of observational evidence. However, since finding an analytic solution to
+Eq. (2) is often intractable, active inference proposes to implement an approximate Bayesian inference
+scheme revolving around the minimisation of variational free energy. This quantity is defined in re-
+lation to a given generative model, so in this case it can be written as follows (see also Section S1.4
+for a standard derivation):
+F
+
+Q(S1:T, π, A, B)
+ := EQ
+h
+log Q(S1:T, π, A, B) − log P(O1:T, S1:T, π, A, B)
+i
+, ( 4)
+where Q(S1:T, π, A, B) is known as the variational posterior, a probability distribution introduced
+to approximate the posterior distribution, P(S1:T, π, A, B|O1:T), in Eq. ( 2) (the outcome of Bayesian
+inference).
+3.3. Optimization of the Free Energy Objective
+To minimize the free energy defined in Eq. ( 4), we make some assumptions about the variational
+posterior so that the optimization procedure described above becomes more tractable. If we simply
+assumed that Q(S1:T, π, A, B) had exactly the same form as P(S1:T, π, A, B|O1:T), making the varia-
+tional posterior a replica of the actual posterior, one would incur again in issues of computational
+intractability, similarly to the original problem of determining an analytic solution to Eq. ( 2). In
+discrete-time active inference, it is thus common to adopt a mean-field approximation [16], meaning
+that the variational posterior is factorised as follows:
+Q(S1:T, π, A, B) =Q(A)Q(B)Q(π)
+T
+∏
+t=1
+Q(St|π). ( 5)
+By substituting this expression in Eq. ( 4) for the variational posterior, and by considering the
+factorization of the generative model, we can rewrite the free energy as follows (cf., [16]):
+F
+
+Q(S1:T, π, A, B)
+
+=DKL
+
+Q(A)
+ P(A)
+
++ DKL
+
+Q(B)
+ P(B)
+
++ DKL
+
+Q(π)
+ P(π)
+
++ EQ(πk)
+"
+T
+∑
+t=1
+EQ(St|πk)
+h
+log Q(St|πk)
+i
+−
+τ
+∑
+t=1
+EQ(St|πk)Q(A)
+h
+log P(ot|St, A)
+i
+− EQ(S1|πk)
+h
+log P(S1)
+i
+−
+T
+∑
+t=2
+EQ(St|πk)Q(St−1|πk)
+h
+log P(St|St−1, πk)
+i#
+,
+(6)
+8
+Active inference for action-unaware agents
+where we have singled out the KL divergences between the posterior probability distributions
+from the variational approximation and the prior probability distributions from the generative model
+(first three terms), and grouped together all the terms involving one of the variational posteriors
+Q(S1:T|πk), k ∈ [1, p] where p is the number of policies (see Section S1.1), inside the expectation
+EQ(πk)[. . .] (last term), which computes an average with respect to all policies.
+Technically, the free energy F is a functional (a term from the calculus of variations), i.e., a map-
+ping from a space of functions to (in this case) the real numbers. Finding its minimum thus consists
+of looking for particular functions over given variables as opposed to particular values of given
+variables for a function, as in more traditional optimization problems. In this case, the functions
+we are looking for are probability distributions, i.e., the variational posteriors of Eq. ( 5). Given the
+assumptions in Section 3.1, finding these functions amounts to tweaking the sets of parameters of
+the variational distribution, until we find those that result in a distribution that minimises the free
+energy. Since we are working with discrete probability distributions, there are analytical solutions
+which can be found by simply setting the gradient of the free energy with respect to each set of pa-
+rameters to zero, i.e., ∇st F[Q(St|πk)] =0, ∇αF[A] =0, . . . , one set for each probability distribution
+in question, and solve for the corresponding parameters. In Section S2, we describe in detail some of
+these solutions.
+When the expression in Eq. ( 6) is optimised with respect to the policy-conditioned variational
+distributions, Q(St|πk) ∀k ∈ [1, p], we can simply focus on the argument of EQ(πk)[. . .] to compute
+the associated gradient (since that is the only term that contributes to the gradient and by noting
+that ignoring the expectation does not change the solution of ∇st F[Q(St|πk)] = 0). That argument
+defines a policy-conditioned free energy:
+Fπk
+
+Q(S1:T|πk)
+ :=
+T
+∑
+t=1
+EQ(St|πk)
+h
+log Q(St|πk)| {z }
+state log-probabilities
+i
+−
+τ
+∑
+t=1
+EQ(St|πk)Q(A)
+h
+log P(ot|St, A)| {z }
+observation log-likelihoods
+i
+−
+− EQ(S1|πk)
+h
+log P(S1)| {z }
+state log-probabilities
+i
+−
+T
+∑
+t=2
+EQ(St|πk)Q(St−1|πk)
+h
+log P(St|St−1, πk)| {z }
+transition log-likelihoods
+i
+.
+(7)
+The update rules for Q(St|πk) ∀k ∈ [1, p], derived by taking the corresponding gradient of the ex-
+pression in Eq. (7), define an optimization/inference scheme called variational message passing which
+makes use of past, present and future information to update, in this case, variational probability dis-
+tributions at different time points along a trajectory. Following standard treatments in the literature
+of stochastic processes and (Bayesian) estimation, it is an example of smoothing, to be contrasted
+with inference (which uses present information only) and filtering (which relies on past and present
+information), and prediction (which uses the past only) [41, 66].
+From Eq. (6), one can derive an update rule for the probability distribution over policies, Q(π),
+which guides the agent in the selection of what to do next (its next action). This update rule is some-
+what tweaked in such a way that the agent will sample actions from a policy that both minimise the
+policy-conditioned and the expected free energy (see SectionS2.2 for the design choice that introduces
+expected free energy). Expected free energy for policy πk and for a single future time step t can be
+defined as follow:
+9
+Active inference for action-unaware agents
+Gt(πk) := EQ(St|πk)
+h
+H
+
+P(Ot|St)
+i
+| {z }
+AMBIGUITY
+−EP(Ot|St)Q(St|πk)
+h
+DKL
+
+Q(A|ot, st)|Q(A)
+i
+| {z }
+A-N OVELTY
++ DKL
+
+Q(St|πk)|P∗(St)
+
+| {z }
+RISK
+−EQ(St+1|πk)Q(St|πk)
+h
+DKL
+
+Q(B|st+1, st)|Q(B)
+i
+| {z }
+B-NOVELTY
+,
+(8)
+where the risk term quantifies the divergence between the predicted and preferred state distri-
+bution, the ambiguity terms quantifies the uncertainty related to the observation map, and the two
+novelty terms are expected information gains for the parameters of the observation and the transi-
+tion maps, thus indicating parts of the generative model that are still inaccurate. Therefore, we can
+associate risk with the instrumental or extrinsic value of a policy, i.e., the extent to which it enables
+an agent to reach its preferred states, whereas ambiguity and novelty with its epistemic or intrinsic
+value, i.e., the extent to which it drives the agent to acquire informative observations (low ambigu-
+ity) and visit states that provide new information about the environment (hight novelty). A policy
+that minimises expected free energy does so by balancing the pursuit of these different targets, i.e.,
+addressing the exploitation vs. exploration dilemma: it makes sure the agent reaches its goals while
+at the same time exploring sufficiently enough to acquire relevant and useful information about the
+environment. Formal details about the minimisation of variational and expected free energies under
+variational message passing are covered in Section S2 for reference.
+The components of the free energy in Eq. ( 6) and Eq. ( 7) involve terms of the variational ap-
+proximation and of the generative model. It is important to note, however, that while the agent’s
+generative model (Definition 2.2) and generative process (Definition 2.1) are both POMDPs, they are
+in general different, they are not “synchronised”. To see why, consider when an agent is first put
+in contact with a new environment: the agent receives observations from a new environment and is
+trying to make sense of the structure that generates such sensory input, at the beginning its states and
+parameters are likely not very helpful, but over time they can be optimised so the agent’s generative
+model aligns, or synchronises, with the generative process. To do so, at every free energy minimisa-
+tion stage, the agent uses the observations received so far to update the model’s parameters, aided
+by the variational approximation (to overcome the burden of Bayesian inference). As learning pro-
+gresses, the generative model will reflect the observation and transition dynamics of the POMDP
+more accurately (which, recall, is used to describe a particular environment).
+3.4. Action-aware vs. action-unaware agents
+The policy-conditioned free energy in Eq. ( 7) is treated differently depending on whether the agent
+knows what actions were performed in the past. This choice has several repercussions for various
+aspects of active inference, mainly on the notion of policy and on what it means to condition on a
+policy.
+Action-aware agents use a known sequence of actions they performed in the past (a1:τ−1). This
+mean that, in Eq. ( 7), policy-conditioned variational distributions for past and present time steps,
+Q(S1 | πk), . . . ,Q(Sτ | πk) for all policies k ∈ [1, p] of length T − 1 2, are identical, because all policies
+share the same sequence of actions a1:τ−1, i.e., the actions that were executed by the agent, but they
+2If we are considering an episodic task and T is the length of an episode, then a policy consists of T − 1 actions because
+the agent does not execute any action at the last time step.
+10
+Active inference for action-unaware agents
+differ with respect to future actions, aτ:T−1 3. On this view, given a sequence of actions already exe-
+cuted and shared by all policies, perceptual inference corresponds to inferring the divergent future
+trajectories in state-space afforded by the various policies, as represented by Q(Sτ|πk), . . . ,Q(ST|πk)
+for all policies k ∈ [1, p] of length T − 1, while policy inference relies on inferred variational beliefs to
+score each policy based on expected free energy. The main implication here is that policy inference
+for action-aware agents involves updating the probability over policies by differentiating them only
+with respect to their future consequences because all policies share the same past. Effectively, this
+means that the number of policies to evaluate shrinks over time, as more knowledge about executed
+actions is accumulated that removes action sequences that were never performed. Equivalently, one
+can also conclude that an agent simply executes a single (known) policy from 1 to τ − 1, a1:τ−1, and
+that different policies aτ:T−1 need to be evaluated for future time steps, see also Section 5).
+In contrast, action-unaware agents must infer the unknown sequence of actions they performed
+in the past, (a1:τ−1), before they can successfully plan for the future. More precisely, for this class
+of agents, each policy is a distinct sequence of past, present and future actions and therefore it
+is no longer the case that all policies share the same sequence of past actions. During percep-
+tual inference, an action-unaware agent will use the policy-conditioned variational distributions,
+Q(S1 | πk), . . . ,Q(Sτ | πk) for all policies k ∈ [1, p] of length T − 1, to represent the likelihood
+that the hidden sequence of actions it executed, and that generated the sequence of past and present
+observations, (o1:τ), comes from a policyπk. Policy-conditioned free energies will thus grow for poli-
+cies that do not explain observations collected up to the present and that most likely have not been
+pursued. Policy inference on the other hand involves combining the evidence for each policy with
+the expected free energy to derive an update of the policy probabilities, guiding the selection of what
+action to perform next. Thus, policy inference for action-unaware agents involves updating the prob-
+ability over policies by taking into account their past, present and future consequences (observations)
+because each policy represents a distinct trajectory over the length T of an episode (as opposed to a
+distinct trajectory for the remaining, future T − τ time steps of an episode).
+Further algorithmic details on integrating the variational message passing scheme (introduced in
+Section 3.3) and the above perspectives on policies can be found in algorithm S1 for action-unaware
+agents and algorithm S2 for action-aware ones. In the next sections, we will report findings from
+simulations of the two types of agents in a T-maze and a Y-maze with episodes characterised by a
+fixed duration, i.e., finite and fixed horizon episodes.
+4. Experiments
+4.1. Experiment 1: Learning in a T-maze
+In the first experiment, the agent moves inside the T-maze drawn in Fig. 1, starting from tile 5 and
+with a preference to reach the goal state in the left arm, i.e., tile 1. We simplify the problem structure
+to be a fully observable MDP (technically, the matrix A is not an identity, but it is diagonal and
+known to the agent), with deterministic but unknown state transitions B. We trained 10 agents of
+each type, with and without knowledge of past actions (i.e., action-aware and action-unaware), for
+100 episodes (of 4 steps each, with a policy horizon H = 3, giving us at most 64 policies to evaluate)
+in the environment represented in Fig. 1.
+3Note that the action the agent takes at the present time step τ is part of the future sequence because it is executed
+by the agent after the perceptual inference and planning stages are over. However, the variational distribution at τ, i.e.,
+Q(Sτ | πk), is the same for all policies because it depends on the action taken at τ − 1.
+11
+Active inference for action-unaware agents
+Fig. 1: Graphical representation of the 4-step T-maze.
+1 20 40 60 80 100
+Episode
+0%
+20%
+40%
+60%
+80%
+100%Percentage of agents
+Agents solving the task
+(action-unaware)
+1 20 40 60 80 100
+Episode
+0%
+20%
+40%
+60%
+80%
+100%Percentage of agents
+Agents solving the task
+ (action-aware)
+Fig. 2: Percentage of agents reaching the goal state in each episode in the 4-step T-maze (10 total agents).
+4.1.1. Results
+In Fig. 2, we report the percentage of agents solving the task across episodes. Both kinds of agents
+are able to find the optimal policy within the first 20 episodes. The main differences are their learning
+speed and pattern. All action-aware agents fail in the fist 6 episodes, start finding their way to the
+goal afterwards, and succeed consistently from episode 33 onwards, with a 100% success rate until
+the end of the experiment, except for some drops in performance in a handful of episodes. Despite
+not having access to past actions, action-unaware agents can also find the optimal policy relatively
+quickly, with a 100% success rate from episode 36 onwards but, overall, make a few more mistakes
+than their action-aware counterparts. These results indicate that both types of agents were able to
+learn relevant aspects of the transition model, i.e., the action-dependent transition matrices encoding
+the (deterministic) effects of performing specific actions in specific states (see Section S3.1.7 for the
+learned transition matrices, nearly identical in both types of agents, and compare them with the
+ground truth ones in Section S3.1.6). To investigate further whether there other major differences
+between the two kinds of agents, we examine and compare free energy and expected free energy for
+the two groups throughout the experiment, the former shedding light on the perceptual side of the
+12
+Active inference for action-unaware agents
+agents that takes into account its past trajectory, and the latter exploring more in detail its decision
+making side that involves its potential future trajectories.
+1 20 40 60 80 100
+Episode
+0
+2
+4
+6
+8
+10Free energy
+Free energy at step 4
+(action-unaware)
+1 20 40 60 80 100
+Episode
+0
+2
+4
+6
+8
+10Free energy
+Free energy at step 4
+ (action-aware)
+Fig. 3: Free energy across episodes (showing average of 10 agents).
+Perceptual inference Figure 3 shows the free energy defined in Eq. ( 6), which needs to be min-
+imised, at the last step (4th) of each episode for action-aware and action-unaware agents. We picked
+the last step because it involves the entire past of an agent within an episode, i.e., the full, episodic
+trajectory of observations, allowing for a quantification of the agent’s uncertainty over the entire time
+interval a policy covers, and also for the inclusion in the expression for free energy (Eq. (6)) of the KL
+divergence between prior and posterior B whose parameters are updated at the end of each episode
+(steps 1, 2 and 3 can be found in Section S3.1.2). The free energy for both agents decreases smoothly
+but converges at a slightly lower value for action-aware agents than for action-unaware.
+Figure 4 shows instead the evolution of the policy-conditioned free energies (see Eq. (7)) at step 4
+for a subset of all the 64 policies (including the optimal one), for both types of agents (again, figures
+with the other steps can be found in Section S3.1.3).
+Starting with action-unaware agents in Fig. 4 (left), the figure reveals information hidden in the
+average reported earlier: for the most part, the policy-conditioned free energy that is minimised the
+most is the one conditioned on the optimal policy. This makes sense since most action-unaware
+agents learn to pursue π8 from the very few first episodes therefore the associated collection of ob-
+servation minimises the free energy conditioned on that policy. However, this free energy is also
+characterised by several spikes, especially towards the end of the experiment, indicating episodes
+when the collected evidence is no longer consistent with the actions of π8: those are episodes in
+which the agent has picked a sub-optimal policy, making the associated free energy drop instead.
+For action-aware agents instead we note that all the lines essentially overlap on the right side
+of Fig. 4, so that the downward trend captured by the (unconditioned) free energy in Fig. 3 is rep-
+resentative of the way the policy-conditioned ones evolve. More precisely, since the free energy is
+computed as an average of all the policy-conditioned free energies, the above findings reveal that
+the values of the latter are all identical. This should not be surprising because we are considering
+the last (4th) step: at this point, in action-aware agents, all the “policy-conditioned” free energies are
+computed by considering the same sequence of actions, the one that produced the state-observation
+trajectory of a particular episode, and there is no longer a divergent future represented by the future
+13
+Active inference for action-unaware agents
+1 20 40 60 80 100
+Episode
+0
+2
+4
+6
+8
+10Free energy
+Policy-conditioned free energy at step 4
+(action-unaware)
+1 20 40 60 80 100
+Episode
+0
+2
+4
+6
+8
+10Free energy
+Policy-conditioned free energy at step 4
+ (action-aware)
+Policies
+1: , , 
+2: , , 
+3: , , 
+4: , , 
+5: , , 
+6: , , 
+7: , , 
+8: , , 
+9: , , 
+10: , , 
+11: , , 
+12: , , 
+13: , , 
+14: , , 
+15: , , 
+16: , , 
+Fig. 4: Policy-conditioned free energies across episodes (showing average of 10 agents).
+actions of each policy (see how the differences among policy-conditioned free energy decrease across
+time steps in Section S3.1.3).
+Overall, this means that observations collected by action-unaware agents correctly minimise the
+policy-conditioned free energy associated with the policy that was executed, whereas observations
+collected by action-aware agents simply minimise the variational free energy for the sequence of
+actions that characterise an entire episode trajectory. To see if other difference emerges between the
+two types of agents, we next examine expected free energy and other metrics connected with the
+planning and action selection mechanisms.
+Planning and learning Figure 5 shows the total expected free energy for each selected policy across
+episodes for both types of agents at time step 1. We chose this step because it involves the sum of
+all the expected free energy in the future: from time step 1 until the end of the episode (see Sec-
+tion S2.2), characterising in terms of risk and B-novelty the entire trajectory afforded by a policy (for
+completeness, time steps 2 and 3 can be found in Section S3.1.4).
+The first thing to notice is that expected free energy increases in the first 30–40 episodes for both
+kinds of agents. This is surprising because agents ought to minimise it, but can be explained by the
+fact that, in our experiments, the transition model of an agent (representing the unknown ground
+truth transitions to be learnt) is randomly initialised at the beginning of the experiment and updated
+only at the end of each episode. Since at an early stage the transition model is not a good reflection of
+ground truth transitions, an agent cannot accurately predict what will happen if a policy is executed.
+More precisely, variational beliefs are uniformly initialised at the beginning of each episode, and need
+to be updated through perceptual inference by using the transition model. However, if the latter has
+yet to align with ground truth transitions, the agent will not be able to form accurate beliefs about
+the locations visited by a certain policy. As a result, since expected free energy is computed based on
+14
+Active inference for action-unaware agents
+1 20 40 60 80 100
+Episode
+0
+2
+4
+6
+8
+10
+12Expected free energy
+Expected free energy at step 1
+(action-unaware)
+1 20 40 60 80 100
+Episode
+0
+2
+4
+6
+8
+10
+12Expected free energy
+Expected free energy at step 1
+ (action-aware)
+Policies
+1: , , 
+2: , , 
+3: , , 
+4: , , 
+5: , , 
+6: , , 
+7: , , 
+8: , , 
+9: , , 
+10: , , 
+11: , , 
+12: , , 
+13: , , 
+14: , , 
+15: , , 
+16: , , 
+Fig. 5: Expected free energy for each policy across episodes (showing average of 10 agents). Notice that we
+only draw 16 expected free energies, representative of the possible 64.
+those beliefs, its values at step 1 of each episode will not accurately estimate uncertainty/desirability
+of any sequence of actions for the first few episodes. Thus, while agents are still learning the tran-
+sition model, expected free energy increases for each policy until it converges to a value that scores
+policies more precisely in the current environment, depending on the agent’s preferences and the
+accuracy of its variational beliefs. To see how different components of this quantity evolve over time,
+in our simplified setup with no ambiguity and constant A-novelty, see Section S3.1.5.
+Expected free energy also plays a significant role in the update of the probabilities over policies at
+each step, which are obtained as a softmax of the negative sum of expected free energies and policy-
+conditioned free energies (see Section S2.2 for more on expected free energy, and Eq. ( S11) for the
+softmax part specifically). To see the contributions of expected free energies, and their balance against
+policy-conditioned free energies, we next look at Fig.6, showing the first-step policy probabilities for
+a subset of all the available policies, including the optimal one, for each type of agent. For both agents,
+we observe that the optimal policy, π8 in the figure, is correctly selected and start to becomes more
+probable than the others after approximately 20 episodes. Some sub-optimal policies also become
+increasingly probable over time, though never enough to surpass the optimal one (e.g., consider the
+spikes of probability mass for the blue and cyan policies in Fig. 6). Further investigations into the
+underlying reasons for this pattern are left for future work.
+Overall, when we consider expected free energies and policy probabilities at the first step of an
+episode, there is no significant difference between the two types of agent. This is to be expected
+because at the beginning of an episode both agents perform perceptual inference, planning, and the
+update of policy probabilities on the same footing, i.e., there are no significant differences between
+the respective policy-conditioned free energies. We have also observed that at a later stage in the
+experiment both agents become less accurate in predicting the consequences of certain future ac-
+15
+Active inference for action-unaware agents
+1 20 40 60 80 100
+Episode
+0.00
+0.01
+0.02
+0.03
+0.04
+0.05
+0.06
+0.07
+0.08Probability mass
+First-step policy probability
+(action-unaware)
+1 20 40 60 80 100
+Episode
+0.00
+0.01
+0.02
+0.03
+0.04
+0.05
+0.06
+0.07
+0.08Probability mass
+First-step policy probability
+ (action-aware)
+Policies
+1: , , 
+2: , , 
+3: , , 
+4: , , 
+5: , , 
+6: , , 
+7: , , 
+8: , , 
+9: , , 
+10: , , 
+11: , , 
+12: , , 
+13: , , 
+14: , , 
+15: , , 
+16: , , 
+Fig. 6: Policies probabilities at step 1 of each episode (showing average of 10 agents). Notice we only draw 16
+representative policies out of the possible 64.
+tion sequences, with this phenomenon appearing more marked in action-aware agents (see plots
+in Fig. S1).
+4.2. Experiment 2: Learning in a grid world
+In the second experiment, we consider an environment with a larger state-space, a 3×3 grid world, as
+depicted in Fig. 7. While only slightly bigger in terms of states, the policy space in this environment
+is much larger and includes multiple optimal policies, which could in principle affect our active
+inference agents. The agent starts in tile 1 and its goal, tile 9 in the bottom right corner, is encoded
+as the most preferred state (target location). Once again, the problem is simplified to be a fully
+observable MDP (with A diagonal and known to the agent), with deterministic but unknown state
+transitions B. Here too, we trained 10 agents of each kind, action-unaware and action-aware, for 180
+rather than 100 episodes (of 5 steps each, with a policy horizon H = 4, giving us at most 256 policies
+to evaluate) to allow our metrics to converge.
+4.2.1. Results
+Similarly to Section 4.1.1, we start by comparing the percentage of agent solving the task across
+episodes in Fig. 8. Again, we note that both kinds of agent display a similar learning pattern, with
+agents taking longer to find one of the optimal policies (there are 6 in total this time) due to the larger
+state-space and number of available policies. The percentage of successful agents grows until episode
+38 and 37, when a 100% success rate is hit in action-unaware and action-aware agents, respectively,
+and then drops afterwards to values below 50% in some episodes, with action-unaware agents reg-
+istering the more dramatic dips. Both kinds of agent quickly recover and the success rate remains
+16
+Active inference for action-unaware agents
+Fig. 7: Graphical representation of the 5-step grid world.
+above 60% for the most part from around episode 60 until the end of the experiment, with more
+drops in performance (i.e., to and below 60%) for both kinds of agent in a handful of episodes. These
+results again indicate that both types of agents successfully learned relevant aspects of the transi-
+tion matrices (see Section S3.2.7 for the learned transition matrices, nearly identical in both types of
+agents, and compare them with the ground truth ones in Section S3.2.6)
+1 20 40 60 80 100 120 140 160 180
+Episode
+0%
+20%
+40%
+60%
+80%
+100%Percentage of agents
+Agents solving the task
+(action-unaware)
+1 20 40 60 80 100 120 140 160 180
+Episode
+0%
+20%
+40%
+60%
+80%
+100%Percentage of agents
+Agents solving the task
+ (action-aware)
+Fig. 8: Percentage of agents reaching the goal state in each episode in the 5-step grid world (10 total agents).
+Perceptual inference The average free energies at the step 5 (last step), see Fig. 9, are predictably
+minimised, but once again hide some relevant information that can be unpacked by showing policy-
+conditioned free energies (steps 1, 2, 3, and 4 can be found in Section S3.2.2).
+For the policy-conditioned free energies at step 5, Fig. 10, we selected 16 policies (among the 256)
+including the 6 optimal policies that lead to the goal state (again, figures with the other steps can be
+found in Section S3.2.3). As seen in the T-maze experiment, in action-aware agents the downward
+trend of the (unconditioned) free energy in Fig. 9 is representative of the way the policy-conditioned
+ones evolve in the right plot of Fig. 10 (i.e., all the policy-conditioned free energies for the selected
+policies overlap). In contrast, all the visualised policy-conditioned free energy of action-unaware
+17
+Active inference for action-unaware agents
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12
+14
+16Free energy
+Free energy at step 5
+(action-unaware)
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12
+14
+16Free energy
+Free energy at step 5
+ (action-aware)
+Fig. 9: Free energy across episodes (showing average of 10 agents).
+agents, in the left plot of Fig. 10, fluctuate considerably throughout the experiment, with none of
+the optimal policies attaining a consistent decrease of the associated free energy. The reason for that
+is that action-unaware agents have discovered all the optimal policies, each offering an alternative
+route to reach the goal state, and assigned them equal probability mass (see Fig. 12). Therefore,
+at the beginning of an episode, agents can randomly choose among alternative paths to the goal,
+resulting in the minimisation of different policy-conditioned free energies at the end of each episode
+(recall that for action-unaware agents, a policy-conditioned free energy at the end of an episode is
+minimised when the observations the agent has received are consistent with having followed the
+policy in question).
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12
+14Free energy
+Policy-conditioned free energy at step 5
+(action-unaware)
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12
+14Free energy
+Policy-conditioned free energy at step 5
+ (action-aware)
+Policies
+1: , , , 
+2: , , , 
+3: , , , 
+4: , , , 
+5: , , , 
+6: , , , 
+7: , , , 
+8: , , , 
+9: , , , 
+10: , , , 
+11: , , , 
+12: , , , 
+13: , , , 
+14: , , , 
+15: , , , 
+16: , , , 
+Fig. 10: Policy-conditioned free energies across episodes (showing average of 10 agents).
+18
+Active inference for action-unaware agents
+Planning and learning The expected free energies at step 1 in Fig. 11, again for the same subset of
+policies considered in Fig. 10, evolve similarly in both kinds of agent: there is no clear distinction
+between optimal vs. sub-optimal policies, not even at convergence, as a few sub-optimal policies
+attain expected free energy values comparable to those of the optimal ones (expected free energies
+at the other steps can be found in Section S3.2.4). As seen in the T-maze experiment, risk is much
+larger than B-novelty in the composition of expected free energy to the point that the trend of the
+latter does not differ substantially from that of risk (compare the expected free energy and risk fig-
+ures, Fig. 11 and Fig. S28, respectively, and see Fig. S29 for B-novelty). Furthermore, there are again
+sub-optimal policies for which risk (hence the expected free energy) drops sharply to levels lower
+than, or comparable to, those of the optimal policies.
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12
+14
+16
+18Expected free energy
+Expected free energy at step 1
+(action-unaware)
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12
+14
+16
+18Expected free energy
+Expected free energy at step 1
+ (action-aware)
+Policies
+1: , , , 
+2: , , , 
+3: , , , 
+4: , , , 
+5: , , , 
+6: , , , 
+7: , , , 
+8: , , , 
+9: , , , 
+10: , , , 
+11: , , , 
+12: , , , 
+13: , , , 
+14: , , , 
+15: , , , 
+16: , , , 
+Fig. 11: Expected free energy for each policy across episodes (showing average of 10 agents). Notice that we
+only draw 16 expected free energies, representative of the possible 256.
+Figure 12 shows the policy probabilities across episodes, revealing key differences between the
+two kinds of agents and between this and the previous experiment. In action-unaware agents, the
+probabilities of the six optimal policies share the same upward trend from around episode 60 on-
+wards with their curves almost perfectly overlapping (only the red and blue are visible in the figure,
+the rest being hidden beneath), and a clear gap emerges between them and those of most sub-optimal
+policies from around episode 150 (see below for exceptions). By the end of the experiment, all op-
+timal policies have been recognised and assigned roughly the same probability mass (see left plot
+in Fig. 12). In action-aware agents, there is a less perfect overlap between the probabilities of the op-
+timal policies, and the optimal vs. suboptimal gap begins somewhat earlier, around episode 120, and
+is wider by the end of the experiment (again with some exceptions; see right plot in Fig.12 and next).
+As in the T-maze experiment, however, some sub-optimal policies also become increasingly probable
+over time, narrowing the gap with optimal policies in both kinds of agents. Unlike in the previous
+experiment, we now find that some of these policies become more probable than optimal ones, even
+in later episodes, when agents have had ample opportunities to refine the transition model.
+19
+Active inference for action-unaware agents
+1 20 40 60 80 100 120 140 160 180
+Episode
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+0.030Probability mass
+First-step policy probability
+(action-unaware)
+1 20 40 60 80 100 120 140 160 180
+Episode
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+0.030Probability mass
+First-step policy probability
+ (action-aware)
+Policies
+1: , , , 
+2: , , , 
+3: , , , 
+4: , , , 
+5: , , , 
+6: , , , 
+7: , , , 
+8: , , , 
+9: , , , 
+10: , , , 
+11: , , , 
+12: , , , 
+13: , , , 
+14: , , , 
+15: , , , 
+16: , , , 
+Fig. 12: Policies probabilities at the first step of each episode (showing average of 10 agents). Notice we only
+draw 16 representative policies out of the possible 256.
+As noted, the evolution of expected free energy is similar in both agents and is not particularly
+informative about which policies are to be preferred. Yet, agents can infer a probability distribution
+over policies that is mostly accurate as it singles out the six optimal policies (despite the significant
+probability mass acquired by some suboptimal policies). This can be explained by the relatively low
+values, achieved by the optimal policies, of the other key quantity used to compute policy probabil-
+ities, i.e., the policy-conditioned free energy (at step 1, since we are considering policy probabilities
+at that step; see Fig. S21). When a policy-conditioned free energy is minimised at step 1, it means the
+agent is more certain about the future consequences of following the corresponding policy for the rest
+of the episode. Therefore, more informative policy-conditioned free energies can compensate for less
+informative expected free energies: given two policies with similar expected free energy, the agent
+will assign more probability to the one associated with more accurate predictions at the perceptual
+inference stage (i.e., with the lowest policy-conditioned free energy).
+In the case of the sub-optimal policies mentioned above, which at some point surpass the optimal
+ones in probability, both the expected free energy and the policy-conditioned free energy (at step
+1) are informative, but in opposing ways: the expected free energy increases the likelihood of these
+policies, whereas the policy-conditioned free energy decreases it (compare Fig.11 and Fig. S21) 4. For
+both kinds of agent, the net effect in this case is that sub-optimal policies gain more probability than
+optimal ones, indicating that the expected free energy had a greater influence on policy probabilities
+than the policy-conditioned free energy (see again plots in Fig. 12). Further investigations into the
+opposing contributions of these quantities to the policy probabilities, as well as into the reasons why
+agents’ performance does not deteriorate more substantially despite the increased probability of sub-
+optimal policies, are again left for future work.
+4This is due to the use of the softmax to compute policy probabilities based on the sum of the negative expected free
+energy and negative policy-conditioned free energy (see Section S2.2)
+20
+Active inference for action-unaware agents
+5. Discussion
+An important difference between reinforcement learning and most active inference works is the par-
+ticular meaning attributed to the word ‘policy’. In the former, a policy is often defined as a probability
+function π : S × A →[0, 1], and usually written asπ(a | s) to indicate that a policy returns the proba-
+bility of performing a certain action (at a certain time step) given a state. In standard active inference
+algorithms (considered here), a policy is just a sequence of actions indexed by time (recent active
+inference works have proposed slightly different algorithms in which the notion of policy is much
+closer to that used in reinforcement learning, see, e.g., [31, 17]).
+Furthermore, how an active inference agent computes and selects among its policies at each time
+step, in the more traditional active inference sense of actions indexed by time, is also subject to differ-
+ent interpretations. On the one hand, a policy can be intended as a motor plan covering a complete
+trajectory of actions in the past, present and future of an agent’s experience. For instance, a policy
+could cover a complete trajectory of H = T − 1 actions, π := [a1, . . . ,aH], from the beginning to the
+end of an episode [16]. In this case, at a given time step τ (the present), an agent assigns a proba-
+bility to each policy based on how likely it is that its past τ − 1 actions have generated its past and
+present observations, and on how likely it is that the policy will lead to the agent’s goal in the re-
+maining H − τ + 1 (or T − τ) future actions. On the other hand, a policy can be seen as a motor plan
+of future actions only. In this sense, policies correspond to sequences of H actions from the current
+time step t = τ to a future time step t = H + τ, i.e., the planning horizon of each policy such that
+π := [aτ, . . . ,aH], see for instance [36, 37, 17, 31] 5.
+In this work, we have taken this difference to characterise agents that are aware and agents that
+are not aware of the actions that they executed in the past, i.e., action-aware vs. action-unaware
+agents. Action-aware agents plan to infer the most likely sequences of actions to be followed from the
+current time step onwards, i.e., their policies contain exclusively future actions. On the other hand,
+action-unaware agents plan to infer the most likely sequences of actions that should be continued
+in the future given beliefs about what sequences of actions they performed in the past, since they
+don’t have access to explicit past knowledge of their own actions, i.e., their policies include both past
+and future actions. Action-aware agents encode variational beliefs that need not be conditional on
+different past action sequences for past state variables, S1:τ, because these agents know which ones
+were executed. On the other hand, if an agent does not know what its past actions were, then the
+same beliefs need to be conditioned on the permissible sequences of actions that can account for past
+and present observations properly, i.e., sequence of actions compatible with the agent’s experience.
+This distinction has some implications for how the agent evaluates future action sequences. Hav-
+ing access to past actions, an agent can use them to more accurately infer its present location (state)
+and from there consider different future action sequences, i.e., policies as future plans, based on
+their most likely and desired consequences. This lends itself to a separation between free energy
+minimization of past states/observations and of future ones, potentially relying on two distinct gen-
+erative models (see [60, 57, 31] for examples of this sort of separation, and [4] for connection to the
+separation principle of control theory). Without access to past actions, an agent’s variational beliefs
+for past, present and future states are conditional on all possible policies.
+This discrepancy builds on an established literature in active inference that assumes that agents
+do not have explicit knowledge of (or access to) the actions they take, either in the past or the
+5Note that in the case of episodes with a fixed number of T time steps (as those of the experiments described in this
+work), for action-aware agent we would have that H ≤ T, if we use H to represent the length of policies intended as
+sequences of actions from the current time step onwards.
+21
+Active inference for action-unaware agents
+present [25, 1, 59], and constitutes one of its main departures from “control as inference” approaches,
+which instead do [47]. Concretely, this means that actions executed by an agent, ground truth actions,
+are not part of its generative model, but only of the generative process of the environment [32, 34,
+28]. A generative model contains instead a policy random variable that stands for sequences of ac-
+tions, whose likelihood needs to be inferred from observations by the agent. These sequences are not
+simple copies of ground truth actions [4] but represent all the possible motor paths an agent could
+have initiated in the past and could be completing in the future. Agents without such knowledge
+have to infer the consequences of their own hidden actions (indirectly, as part of the effects a policy
+has) and the environment’s hidden states at the same time, from the same given observations, and
+this puts a heavier burden on their ability to plan for the future, since they are effectively operating
+without the classical efference copy mechanism [15]. This is however compatible with variations
+of the “equilibrium point hypothesis” and “referent control” [21, 19, 20], which contrast proposals
+of forward and inverse models based on linear quadratic Gaussian control and the separation prin-
+ciple from control theory, see [2, 5, 3, 7] for a more comprehensive perspective, and constitute the
+basis for continuous-time formulations of active inference minimising variational free energy [34,
+28, 59]. While seemingly disadvantageous when considering the same active inference architecture
+(knowing one’s actions would clearly help), it is often claimed that this constitutes an overall im-
+provement over the standard use of inverse models, see [25], replacing complex (forward) model
+inversions with proprioceptive predictions in a low dimensional latent space and pre-programmed
+reflexes translating those predictions into actions, which in turn ought to provide a more biologically
+plausible account of motor control in humans among others [25, 1].
+In this light, action-aware agents, following [37], deviate from the classic active inference litera-
+ture just illustrated because, at each time step, they have access to a copy of the ground truth past
+actions. Despite the fact that this occurs within a Bayesian framework that no longer distinguishes
+between forward and inverse models ([see 14, Ch. 4]), it is closer to a reinstatement of the notion of
+efference copy mechanism. One could object that in this active inference framework policies and ac-
+tions still correspond to proprioceptive predictions, and therefore they should not be confused with
+the standard notion of efference copy. However, action-aware agents are required to store copies of
+ground truth proprioceptive predictions, an operation that is not part of the standard active inference
+formulation (to the best of our knowledge) and that, again, brings the notion of proprioceptive pre-
+diction closer to that of efference copy. In contrast, action-unaware agents, as formulated in [16], can
+be seen as the discrete-time counterpart, operating at slower time scales and at a higher abstraction
+level, to standard continuous-time active inference, usually focused on low-level motion generation
+skills [58], matching its architecture inspired by referent control, where action/motor commands as
+proprioceptive predictions are inferred and conditioned upon sensory observations.
+Our work provides a Python implementation that relaxes the strong assumption of action-aware
+agents in [37], more closely follows standard formulations of active inference and its proposal of
+more biological plausible models without the traditional mechanism of efference copy, and shows
+evidence from simulations that action-unaware agents can match the performances of their action-
+aware counterparts which have explicit knowledge of their own actions.
+While action-unaware agents constitute, according to active inference, a more biologically plausi-
+ble implementation of active inference agents, this comes at a cost. As showcased by algorithms Al-
+gorithm S1 and Algorithm S2, the alternative ways of viewing policies that characterise action-aware
+and action-unaware agents have important consequences on the corresponding implementations. In
+particular, they affect the computations that go into perceptual inference and, in turn, its time com-
+plexity. At each step, action-aware agents need to update only one collection of variational distri-
+22
+Active inference for action-unaware agents
+butions over past state variables: those conditioned on the sequence of actions that was executed
+(this explains why in these agents there is only a single variational free energy for past states, as re-
+marked earlier and as we saw in Figs.4 and 10). In contrast, at each time step, action-unaware agents
+have to update as many collections of variational distribution as the number of policies, to compute
+the policy-conditioned free energies that quantify the extent to which a policy is consistent with the
+collected observations. In other words, the time complexity of the perceptual stage is O(n) in action-
+aware agent and O(nm) in action-unaware, where n is the number of past state variables and m is
+the number of policies. This makes the algorithm for action-aware agents clearly more efficient than
+the latter by assuming that the agent has access to more information.
+This may suggest that action-unaware agents are more tailored for finite-horizon tasks in which
+episodes have a fixed duration, corresponding to the number of actions in each policy plus 1, i.e.,
+T = H + 1 time steps, because there is no action at the last time step. In this learning setting, action-
+unaware agents keeps track of how many time steps have passed from the beginning of an episode
+to evaluate policies based on the remaining actions only. Conversely, action-aware agents appear to
+be more congenial to finite-horizon tasks in which episodes have anindefinite duration because of the
+separation between past and future sequences of actions which predisposes them to consider at each
+time step a certain fixed number of H actions into the future.
+6. Concluding Remarks
+Active inference has gained traction in computational neuroscience as a modelling framework to
+study adaptive decision making in a variety of context. In this work, we introduced the essential
+aspects of the framework in detail, showing how free energy minimisation can be used as a guiding
+principle to understand perception, planning, action-selection, and learning in an adaptive agent
+moving in a simple grid-world environment.
+We investigated active inference in two different regimes, studying the typical behaviour of
+agents that are not aware of their past actions (action-unaware) and of agents that are (action-aware).
+The former follows more strictly the tradition of active inference frameworks inspired by the “equi-
+librium point hypothesis” and “referent control” [21, 19], claiming that humans, among other biolog-
+ical agents, do not possess or even need the ability to discount the effects of their actions from their
+observations [8, 20, 45]. The latter assumes that knowledge of past action sequences is available to
+an agent, which can thus simply discount the effects of known executed actions from its recollection
+of past observations and from current ones so to more easily plan for the future.
+Our simulations in two toy environments, a T-maze and a 3x3 grid world, showed that, while
+in principle at a severe disadvantage, action-unaware agents can overall match the performances
+of action-aware ones. While impressive, this comes at a heavy computational cost, which currently
+prevents action-unaware agents from being fully scalable to larger simulations, since there is a com-
+binatorial explosion of possible action sequences to be checked that depends not only on present and
+future time steps and their associated actions, but also on past ones. At this stage, we speculate that
+mechanisms such as weight-based sampling of action sequences may provide an affordable imple-
+mentation in high-dimensional action-sequence spaces, but we leave this and other investigations to
+future work.
+23
+Active inference for action-unaware agents
+Acknowledgments
+F.T., R.K. and M.B. were supported by JST, Moonshot R&D, Grant Number JPMJMS2012. F.T. and
+K.S. were partially supported by Tokyo Electron. K.S. was supported by JST, CREST Grant Number
+JPMJCR21P4, Japan.
+References
+[1] Rick A. Adams, Stewart Shipp, and Karl J. Friston. “Predictions Not Commands: Active In-
+ference in the Motor System”. In: Brain Structure and Function 218.3 (2013), pp. 611–643. ISSN :
+18632653. DOI : 10.1007/s00429-012-0475-5 .
+[2] Manuel Baltieri. “Active Inference: Building a New Bridge between Control Theory and Em-
+bodied Cognitive Science.” PhD thesis. University of Sussex, 2019.
+[3] Manuel Baltieri. “A Bayesian Perspective on Classical Control”. In: 2020 International Joint Con-
+ference on Neural Networks (IJCNN). IEEE, 2020, pp. 1–8.
+[4] Manuel Baltieri and Christopher L. Buckley. “The Modularity of Action and Perception Re-
+visited Using Control Theory and Active Inference”. In: Artificial Life Conference Proceedings 30.
+MIT Press One Rogers Street, Cambridge, MA 02142-1209, USA journals-info . . ., 2018, pp. 121–
+128.
+[5] Manuel Baltieri and Christopher L. Buckley. “Active Inference: Computational Models of Mo-
+tor Control without Efference Copy”. In: Proceedings of the 2019 Conference on Cognitive Compu-
+tational Neuroscience. ACM, New York, 2019.
+[6] Manuel Baltieri and Christopher L. Buckley. “Nonmodular Architectures of Cognitive Systems
+Based on Active Inference”. In: 2019 International Joint Conference on Neural Networks (IJCNN) .
+IEEE, 2019, pp. 1–8.
+[7] Manuel Baltieri and Christopher L. Buckley. “PID Control as a Process of Active Inference with
+Linear Generative Models”. In: Entropy. An International and Interdisciplinary Journal of Entropy
+and Information Studies 21.3 (2019), p. 257.
+[8] Bruce Bridgeman. “Efference Copy and Its Limitations”. In: Computers in Biology and Medicine.
+Vision and Movement in Man and Machines 37.7 (July 1, 2007), pp. 924–929. ISSN : 0010-4825.
+DOI : 10.1016/j.compbiomed.2006.07.001.
+[9] Jelle Bruineberg. “Active Inference and the Primacy of the ‘I Can’”. In: Philosophy and Predictive
+Processing. Ed. by Thomas Metzinger and Wanja Wiese. Frankfurt am Main, Germany: MIND
+Group, 2017, pp. 1–18. ISBN : 978-3-95857-306-2.
+[10] Christopher L. Buckley et al. “The Free Energy Principle for Action and Perception: A Math-
+ematical Review”. In: Journal of Mathematical Psychology 81 (2017), pp. 55–79. ISSN : 10960880.
+DOI : 10.1016/j.jmp.2017.09.004.
+[11] Ozan C ¸ atal et al. “Learning Generative State Space Models for Active Inference”. In: Frontiers
+in Computational Neuroscience 14 (2020), p. 103. ISSN : 1662-5188. DOI : 10.3389/fncom.2020.
+574372.
+[12] Andy Clark. “Whatever next? Predictive Brains, Situated Agents, and the Future of Cognitive
+Science”. In: Behavioral and Brain Sciences 36.3 (2013), pp. 181–204. ISSN : 14691825. DOI : 10 .
+1017/S0140525X12000477. PMID: 23663408.
+24
+Active inference for action-unaware agents
+[13] Andy Clark. “Radical Predictive Processing”. In: The Southern Journal of Philosophy 53.S1 (2015),
+pp. 3–27. ISSN : 00384283. DOI : 10.1111/sjp.12120.
+[14] Andy Clark. Surfing Uncertainty: Prediction, Action, and the Embodied Mind. Oxford, UK: Oxford
+University Press, 2016. ISBN : 978-0-19-021703-7.
+[15] Trinity B. Crapse and Marc A. Sommer. “Corollary Discharge across the Animal Kingdom”.
+In: Nature Reviews Neuroscience 9.8 (Aug. 2008), pp. 587–600. ISSN : 1471-0048. DOI : 10.1038/
+nrn2457.
+[16] Lancelot Da Costa et al. “Active Inference on Discrete State-Spaces: A Synthesis”. In: Journal
+of Mathematical Psychology 99 (Dec. 1, 2020), p. 102447. ISSN : 0022-2496. DOI : 10.1016/j.jmp.
+2020.102447.
+[17] Lancelot Da Costa et al. “Reward Maximization Through Discrete Active Inference”. In: Neural
+Computation 35.5 (Apr. 18, 2023), pp. 807–852. ISSN : 0899-7667. DOI : 10.1162/neco_a_01574.
+[18] Marc Peter Deisenroth, A. Aldo Faisal, and Cheng Soon Ong. Mathematics for Machine Learning.
+Cambridge University Press, Apr. 2020. ISBN : 978-1-108-45514-5.
+[19] Anatol G. Feldman. “New Insights into Action–Perception Coupling”. In: Experimental Brain
+Research 194.1 (Mar. 1, 2009), pp. 39–58. ISSN : 1432-1106. DOI : 10.1007/s00221-008-1667-3 .
+[20] Anatol G. Feldman. “Active Sensing without Efference Copy: Referent Control of Perception”.
+In: Journal of Neurophysiology 116.3 (Sept. 2016), pp. 960–976. ISSN : 0022-3077. DOI : 10.1152/jn.
+00016.2016.
+[21] Harriet Feldman and Karl J. Friston. “Attention, Uncertainty, and Free-Energy”. In: Frontiers in
+Human Neuroscience 4 (December 2010), pp. 1–23. ISSN : 16625161. DOI : 10.3389/fnhum.2010.
+00215.
+[22] Karl Friston. “A Theory of Cortical Responses”. In: Philosophical Transactions of the Royal Society
+B: Biological Sciences 360.1456 (2005), pp. 815–836. ISSN : 0962-8436. DOI : 10.1098/rstb.2005.
+1622.
+[23] Karl Friston. “Hierarchical Models in the Brain”. In: PLoS Computational Biology 4.11 (2008),
+pp. 1–24. ISSN : 1553734X. DOI : 10.1371/journal.pcbi.1000211. PMID: 18989391.
+[24] Karl Friston. “The Free-Energy Principle: A Rough Guide to the Brain?” In: Trends in Cognitive
+Sciences 13.7 (2009), pp. 293–301. ISSN : 13646613. DOI : 10.1016/j.tics.2009.04.005 . PMID:
+19559644.
+[25] Karl Friston. “What Is Optimal about Motor Control?” In: Neuron 72.3 (Nov. 3, 2011), pp. 488–
+498. ISSN : 0896-6273. DOI : 10.1016/j.neuron.2011.10.018.
+[26] Karl Friston. “Prediction, Perception and Agency”. In: International Journal of Psychophysiology
+83.2 (Feb. 2012), pp. 248–252. ISSN : 01678760. DOI : 10.1016/j.ijpsycho.2011.11.014 . PMID:
+22178504.
+[27] Karl Friston. “A Free Energy Principle for a Particular Physics”. In: (2019), pp. 1–140.
+[28] Karl Friston, Spyridon Samothrakis, and Read Montague. “Active Inference and Agency: Op-
+timal Control without Cost Functions”. In: Biological Cybernetics 106.8–9 (2012), pp. 523–541.
+ISSN : 03401200. DOI : 10.1007/s00422-012-0512-8 . PMID: 22864468.
+[29] Karl Friston et al. “Active Inference and Learning”. In: Neuroscience and Biobehavioral Reviews
+68 (2016), pp. 862–879. ISSN : 18737528. DOI : 10 . 1016 / j . neubiorev . 2016 . 06 . 022. PMID:
+27375276.
+25
+Active inference for action-unaware agents
+[30] Karl Friston et al. “Active Inference: A Process Theory”. In: Neural Computation 29.1 (2017),
+pp. 1–49. DOI : 10.1162/NECO_a_00912.
+[31] Karl Friston et al. “Sophisticated Inference”. In: Neural Computation 33.3 (Feb. 24, 2021), pp. 713–
+763. ISSN : 0899-7667. DOI : 10.1162/neco_a_01351.
+[32] Karl J. Friston, Jean Daunizeau, and Stefan J. Kiebel. “Reinforcement Learning or Active Infer-
+ence?” In: PLoS ONE 4.7 (2009). ISSN : 19326203. DOI : 10.1371/journal.pone.0006421. PMID:
+19641614.
+[33] Karl J. Friston, Thomas Parr, and Bert de Vries. “The Graphical Brain: Belief Propagation and
+Active Inference”. In: Network Neuroscience 1.4 (2017), pp. 381–414. ISSN : 2472-1751. DOI : 10.
+1162/NETN_a_00018.
+[34] Karl J. Friston et al. “Action and Behavior: A Free-Energy Formulation”. In: Biological Cyber-
+netics 102.3 (2010), pp. 227–260. ISSN : 03401200. DOI : 10.1007/s00422- 010- 0364- z. PMID:
+20148260.
+[35] Karl J. Friston et al. “Deep Temporal Models and Active Inference”. In: Neuroscience & Biobehav-
+ioral Reviews 90 (2018), pp. 486–501. ISSN : 0149-7634. DOI : 10.1016/j.neubiorev.2018.04.004.
+[36] Sebastian Gottwald and Daniel A. Braun. “The Two Kinds of Free Energy and the Bayesian
+Revolution”. In: PLOS Computational Biology 16.12 (2020), pp. 1–32. DOI : 10.1371/journal.
+pcbi.1008420.
+[37] Conor Heins et al. “Pymdp: A Python Library for Active Inference in Discrete State Spaces”. In:
+Journal of Open Source Software 7.73 (May 2022), p. 4098. ISSN : 2475-9066. DOI : 10.21105/joss.
+04098.
+[38] R. Conor Heins et al. “Deep Active Inference and Scene Construction”. In: Frontiers in Artificial
+Intelligence 3 (2020), pp. 1–23. ISSN : 2624-8212. DOI : 10.3389/frai.2020.509354.
+[39] Jakob Hohwy. The Predictive Mind. Oxford, UK: Oxford University Press, 2013. ISBN : 978-0-19-
+968673-5.
+[40] Jakob Hohwy. “New Directions in Predictive Processing”. In: Mind and Language 35.2 (2020),
+pp. 209–223. ISSN : 14680017. DOI : 10.1111/mila.12281.
+[41] Andrew H. Jazwinski. Stochastic Processes and Filtering Theory. New York, USA: Academic Press,
+1970. ISBN : 978-0-12-381550-7.
+[42] Raphael Kaplan and Karl J. Friston. “Planning and Navigation as Active Inference”. In: Biolog-
+ical Cybernetics 112.4 (2018), pp. 323–343. ISSN : 14320770. DOI : 10.1007/s00422-018-0753-2 .
+[43] Hilbert J. Kappen, Vicenc ¸ G´omez, and Manfred Opper. “Optimal Control as a Graphical Model
+Inference Problem”. In: Machine Learning 87.2 (May 1, 2012), pp. 159–182. ISSN : 1573-0565. DOI :
+10.1007/s10994-012-5278-7 .
+[44] Pablo Lanillos et al. “Active Inference in Robotics and Artificial Agents: Survey and Chal-
+lenges”. In: ArXiv211201871v1 CsRO (2021), pp. 1–20. arXiv: 2112.01871v1 [cs.RO].
+[45] Mark L. Latash. “Efference Copy in Kinesthetic Perception: A Copy of What Is It?” In: Journal
+of Neurophysiology 125.4 (Apr. 2021), pp. 1079–1094. ISSN : 0022-3077. DOI : 10.1152/jn.00545.
+2020.
+[46] Tai Sing Lee and David Mumford. “Hierarchical Bayesian Inference in the Visual Cortex”. In:
+Journal of the Optical Society of America A 20.7 (2003), pp. 1434–1448. ISSN : 1084-7529. DOI : 10.
+1364/josaa.20.001434. PMID: 12868647.
+26
+Active inference for action-unaware agents
+[47] Sergey Levine. “Reinforcement Learning and Control as Probabilistic Inference: Tutorial and
+Review”. In: ArXiv180500909v3 CsLG (2018), pp. 1–22. arXiv: 1805.00909v3 [cs.LG].
+[48] Pietro Mazzaglia et al. “The Free Energy Principle for Perception and Action: A Deep Learning
+Perspective”. In: Entropy 24.2 (2022), pp. 1–22. ISSN : 1099-4300. DOI : 10.3390/e24020301.
+[49] Beren Millidge, Anil Seth, and Christopher L Buckley. Predictive Coding: A Theoretical and Ex-
+perimental Review. 2021. DOI : 10.48550/arXiv.2107.12979 . arXiv: 2107.12979v4 [cs.AI].
+Pre-published.
+[50] Beren Millidge, Alexander Tschantz, and Christopher L Buckley. Whence the Expected Free En-
+ergy? 2020. DOI : 10.48550/arXiv.2004.08128. arXiv: 2004.08128 [cs.AI]. Pre-published.
+[51] Beren Millidge, Alexander Tschantz, and Christopher L. Buckley. “Whence the Expected Free
+Energy?” In: Neural Computation 33.2 (Feb. 1, 2021), pp. 447–482.ISSN : 0899-7667. DOI : 10.1162/
+neco_a_01354.
+[52] M. Berk Mirza et al. “Scene Construction, Visual Foraging, and Active Inference”. In: Frontiers
+in Computational Neuroscience 10 (2016), pp. 1–16. ISSN : 16625188. DOI : 10.3389/fncom.2016.
+00056.
+[53] M. Berk Mirza et al. “Introducing a Bayesian Model of Selective Attention Based on Active
+Inference”. In: Scientific Reports 9.1 (2019), pp. 1–22. ISSN : 20452322. DOI : 10.1038/s41598-
+019-50138-8. PMID: 31558746.
+[54] Kevin P . Murphy. Probabilistic Machine Learning: Advanced Topics . Cambridge, Massachusetts:
+The MIT Press, 2023.
+[55] Samuel William Nehrer et al. “Introducing ActiveInference.Jl: A Julia Library for Simulation
+and Parameter Estimation with Active Inference Models”. In: Entropy 27.1 (1 Jan. 2025), p. 62.
+ISSN : 1099-4300. DOI : 10.3390/e27010062.
+[56] Thomas Parr and Karl J. Friston. “Uncertainty, Epistemics and Active Inference”. In: Journal of
+The Royal Society Interface 14.136 (Nov. 2017), p. 20170376.ISSN : 1742-5689. DOI : 10.1098/rsif.
+2017.0376. PMID: 15944135.
+[57] Thomas Parr and Karl J. Friston. “Generalised Free Energy and Active Inference”. In: Biological
+Cybernetics 113.5–6 (2019), pp. 495–513. ISSN : 14320770. DOI : 10.1007/s00422-019-00805-w .
+PMID: 31562544.
+[58] Thomas Parr, Karl J. Friston, and Tanmay Shankar. “The Discrete and Continuous Brain: From
+Decisions to Movement—and Back Again”. In: Neural Computation 30.9 (2018), pp. 2319–2347.
+DOI : 10.1162/neco_a_01102.
+[59] Thomas Parr, Giovanni Pezzulo, and Karl J. Friston. Active Inference: The Free Energy Principle in
+Mind, Brain, and Behavior. The MIT Press, 2022. ISBN : 978-0-262-04535-3.
+[60] Thomas Parr et al. “Neuronal Message Passing Using Mean-Field, Bethe, and Marginal Ap-
+proximations”. In: Scientific Reports 9.1 (2019), pp. 1–18. ISSN : 20452322. DOI : 10.1038/s41598-
+018-38246-3.
+[61] Thomas Parr et al. “Prefrontal Computation as Active Inference”. In: Cerebral Cortex 30.2 (2020),
+pp. 682–695. ISSN : 1047-3211. DOI : 10.1093/cercor/bhz118.
+[62] Giovanni Pezzulo, Thomas Parr, and Karl Friston. “Active Inference as a Theory of Sentient
+Behavior”. In: Biological Psychology 186 (Feb. 1, 2024), p. 108741. ISSN : 0301-0511. DOI : 10.1016/
+j.biopsycho.2023.108741.
+27
+Active inference for action-unaware agents
+[63] Giovanni Pezzulo, Francesco Rigoli, and Karl Friston. “Active Inference, Homeostatic Regu-
+lation and Adaptive Behavioural Control”. In: Progress in Neurobiology 134 (2015), pp. 17–35.
+ISSN : 18735118. DOI : 10.1016/j.pneurobio.2015.09.001. PMID: 26365173.
+[64] Giovanni Pezzulo, Francesco Rigoli, and Karl J. Friston. “Hierarchical Active Inference: A The-
+ory of Motivated Control”. In:Trends in Cognitive Sciences22.4 (2018), pp. 294–306.ISSN : 1879307X.
+DOI : 10.1016/j.tics.2018.01.009. PMID: 29475638.
+[65] Stuart Russell and Peter Norvig. Artificial Intelligence: A Modern Approach. 4th ed. Pearson Series
+in Artificial Intelligence. Pearson, 2021. ISBN : 978-1-292-15396-4.
+[66] Simo S ¨arkk¨a. Bayesian Filtering and Smoothing . Cambridge: Cambridge University Press, 2013.
+ISBN : 978-1-107-03065-7. DOI : 10.1017/CBO9781139344203.
+[67] Anil K. Seth and Karl J. Friston. “Active Interoceptive Inference and the Emotional Brain”. In:
+Philosophical Transactions of the Royal Society B: Biological Sciences371.1708 (2016), pp. 1–10. ISSN :
+14712970. DOI : 10.1098/rstb.2016.0007.
+[68] Ryan Smith, Karl J. Friston, and Christopher J. Whyte. “A Step-by-Step Tutorial on Active Infer-
+ence and Its Application to Empirical Data”. In: Journal of Mathematical Psychology 107 (Apr. 1,
+2022), p. 102632. ISSN : 0022-2496. DOI : 10.1016/j.jmp.2021.102632.
+[69] Richard S. Sutton and Andrew G. Barto. Reinforcement Learning: An Introduction. Adaptive Com-
+putation and Machine Learning. The MIT Press, 2018. ISBN : 978-0-262-03924-6.
+[70] Emanuel Todorov. “General Duality between Optimal Control and Estimation”. In: 47th IEEE
+Conference on Decision and Control. 47th IEEE Conference on Decision and Control. 2008, pp. 4286–
+4292. DOI : 10.1109/CDC.2008.4739438.
+[71] Marc Toussaint and Amos Storkey. “Probabilistic Inference for Solving Discrete and Contin-
+uous State Markov Decision Processes”. In: Proceedings of the 23rd International Conference on
+Machine Learning. ICML ’06. New York, NY, USA: Association for Computing Machinery, 2006,
+pp. 945–952. ISBN : 1-59593-383-2. DOI : 10.1145/1143844.1143963.
+[72] Wanja Wiese and Thomas K. Metzinger. “Vanilla PP for Philosophers: A Primer on Predic-
+tive Processing”. In: Philosophy and Predictive Processing . Ed. by Thomas K. Metzinger and
+Wanja Wiese. Frankfurt am Main: MIND Group, 2017.ISBN : 978-3-95857-302-4. DOI : 10.15502/
+9783958573024.
+28
+Active inference for action-unaware agents
+Supplementary Material
+S1. Mathematical Background
+S1.1. Notation
+Table S1: Summary of notation.
+Symbol Meaning
+t,τ,T integers, i.e., generic, current, and terminal time index, respectively
+1 : t, 1 :T sequences of times steps up tot andT, respectively
+H integer, length of a sequence of actions (i.e., the policy horizon), in generalH ≤T
+p integer, the number of action sequences (policies) the agent considers
+Xt random variable with support inX, and witht ∈[1,T]
+X1:T,x1:T sequence of random variables with time index and related values
+X:,j jth column of matrixXor random vector associated with that column
+P(Xt), P(xt) probability distribution of random variableXt and probability thatXt =xt (when defined)
+H[Xt] Shannon entropy of random variableXt
+Cat(xt) categorical distribution with vector of parametersxt
+Dir(xt) Dirichlet distribution with vector of parametersxt
+S finite set of cardinality|S|, i.e., the set of states
+O finite set of cardinality|O|, i.e., the set of observations
+A finite set of cardinality|A|, i.e., the set of actions
+AH finite set of action tuples (H-fold Cartesian product)
+Π subset of action sequences, i.e.,Π⊆ AH
+(a1, . . . ,aH) element inAH, shortened as(a1:H)
+St,Ot, At,π categorical random variables with support inS,O,A,Π, respectively, i.e.,St ∼Cat(st), . . .
+st,ot,at,πk elements inS,O,A,Π, respectively, wherek ∈[1,p] andp ∈[1,|Π|]
+st,ot,π, column vectors of parameters for state, observation, and policy random variables, respectively
+st[i],ot[i],π[i] ith element of the parameter vector for state, observation, and policy random variables, respectively
+st,ot,at one-hot vectors, i.e., for somei ∈ |S|, st[i] =1, andst[j] =0,∀j ̸=i, similarly forot,at
+T transition map/function
+E emission map/function
+P(st|st,at) transition probability distribution (returned byT)
+P(ot|st) emission probability distribution (returned byE)
+P∗(st), P∗(ot) stationary distributions overSandO, respectively
+d function that maps an elementx of a state spaceX to an actiont inA
+M generative model (collection of probability distributions)
+A matrix inRn×m storing parameters ofP(Ot|St−1) (the same for anyt)
+B tensor inR|A|×m×m storing parameters ofP(St|St−1) (the same for anyt)
+Ba1, . . . ,Bad state-transition matrices inRm×m for each available action,d =|A|
+F free energy
+Faτ−1 action-conditioned free energy in vanilla active inference
+Fπk policy-conditioned free energy in variational message passing
+Gt single-step expected free energy
+GH total expected free energy, i.e., sum of expected free energies forHtime steps in the future
+∇stFπk gradient of policy-conditioned free energy with respect to vector of parametersst
+∇πF gradient of free energy with respect to vector of policy parametersπ
+F⊺π row-vector inR1×|Π| of policy-conditioned free energies
+GH⊺ row-vector inR1×|Π| of total expected free energy
+29
+Active inference for action-unaware agents
+S1.2. Categorical random variable
+If St follows a categorical distribution with m categories or values, then the random variable can
+be realised in m different ways, each having a corresponding probability p, where ∑m
+j=1 pj = 1 (the
+probabilities sum to one). We can then indicate one such value of St (the state random variable
+at t) as st and use P(St = st) for the probability that the random variable takes that value, i.e.,
+P(St = st) = pj for some j ∈ [1, m]. Note that these probabilities are regarded as parameters of the
+categorical distribution and can be stored in a vector, st = [p1, . . . ,pm]⊺, which allowed us to write
+St ∼ Cat(st) in the main text.
+S1.3. Dirichlet distribution as conjugate prior
+The choice of Dirichlet distributions to model the parameters of categorical distributions is not ar-
+bitrary. In the context of Bayesian inference, the former are conjugate priors for the latter, meaning
+that using a Dirichlet distribution as a prior distribution in the presence of a categorical likelihood
+(the other term in the numerator of Bayes’ rule) results in a posterior distribution (the outcome of
+Bayesian inference) with the same form as the prior, i.e., a Dirichlet posterior. In other words, this
+simplifies the process of inferring posterior parameters. So, for instance, if we consider inference
+on A:,i ∼ Dir(αi), this would roughly amount to adjusting the parameters αi based on the acquired
+observations, resulting in the Dirichlet posterior P∗(A:,i) := Dir(α∗
+i ), where we used the asterisk to
+identify the posterior and the new, revised, set of Dirichlet parameters. For a more detailed introduc-
+tion to Bayesian inference with conjugate priors [see, e.g., 18, Ch. 6].
+S1.4. Derivation of the Free Energy Objective
+Given a sequence of observations o1, . . . ,oT, the goal of performing Bayesian inference using Eq. ( 2)
+is to derive the posterior probability of a certain state trajectory of the POMDP , s1, . . . ,sT, the most
+probable policy pursued so far, π, and the most probable parameters specifying state-observation
+mapping A, and state transitions B. However, these posterior probabilities cannot be computed
+analytically using that equation because this would require evaluating the denominator P(O1:T) =
+∑ P(O1:T|S1:T, π, A, B)P(S1:T, π, A, B) by considering all the possible sequences of observations,o1, . . . ,oT,
+in relation to all possible state sequences, s1, . . . ,sT, all possible policies, and all combinations of ma-
+trices’ parameters. This is however usually computationally intractable: with T = 5 and ot, st ∈ [0, 8],
+i.e., states and observations taking one of 9 possible values, there are 59049 observation sequences to
+evaluate by summing 59049 probabilities, each related to one state sequence. In other words, there
+would be a total of 590492 values to be computed, and this is omitting the combinations with respect
+to policies and matrices’ parameters.
+Variational Bayesian inference is a technique to make the above inference problem more tractable.
+It involves the introduction of an approximate posterior distribution,Q(·), also called the variational
+posterior, that ought to becomes “as close as possible” to the true posterior. This can be achieved by
+solving a tractable optimisation problem, thereby avoiding the intractable computations described
+above.
+The variational posterior is one of the defining elements of the active inference agent (see Defi-
+nition 2.2) and it is commonly indicated by Q(S1:T, π, A, B). To make this approximate posterior “as
+close as possible” to the true one, P(S1:T, π, A, B|O1:T), one usually minimises the Kullback-Leibler
+(KL) divergence, DKL.
+Therefore, we can write (cf. Equation 2 in [16]):
+30
+Active inference for action-unaware agents
+DKL
+
+Q(S1:T, π, A, B)
+ P(S1:T, π, A, B|O1:T)
+
+(S1a)
+= EQ
+h
+log Q(S1:T, π, A, B) − log P(S1:T, π, A, B|O1:T)
+i
+≥ 0 ( S1b)
+= EQ
+h
+log Q(S1:T, π, A, B) − log P(S1:T, π, A, B, O1:T) +log P(O1:T)
+i
+(S1c)
+= EQ
+h
+log Q(S1:T, π, A, B) − log P(O1:T, S1:T, π, A, B)
+i
++ log P(O1:T), ( S1d)
+where each expectation E is with respect to Q(S1:T, A, B, π) and is shortened as EQ[. . .].
+We obtain Eq. ( S1b) using the definition of the KL divergence. Having noted that the second
+logarithm corresponds to the posterior probability distribution in Eq. ( 2) (Bayes’ rule), we replaced
+it with the right-hand side of that equation and obtain Eq. ( S1c). Finally, since log P(O1:T) does not
+involve variables over which the expectation is computed, we can take it out from the expectation
+and arrive at Eq. (S1d).
+By defining the free energy F as the expectation in Eq. (S1d), i.e.:
+F
+
+Q(S1:T, π, A, B)
+ := EQ
+h
+log Q(S1:T, π, A, B) − log P(O1:T, S1:T, π, A, B)
+i
+, ( S2)
+and by the non-negativity of the KL divergence, it follows that the free energy is an upper bound
+on the negative logarithm of the sequence of observations:
+−log P(O1:T) ≤ F
+
+Q(S1:T, π, A, B)
+
+. ( S3)
+where the term on the left-hand side of Eq. (S3) is known as surprisal and measures how unlikely
+a sequence of observation is.
+The closer the surprisal and the free energy are to each other, the closer the KL is to zero. Thus, if
+the goal is to reduce the KL divergence between the variational posterior and the true posterior, this
+can be achieved by optimising the variational distributions’ parameters on which F depends so that
+the free energy upper bound is as tight as possible.
+Minimising the free energy is the tractable optimisation problem that provides a solution to the
+intractable Bayesian inference problem described earlier. Also, the derivation reveals how perform-
+ing Bayesian inference via free energy minimisation involves finding ways to increase the likelihood
+of observations (to reduce surprisal) because F can be seen as a proxy for surprisal. Then, the notion
+that an active inference agent exists insofar as it can avoid unexpected states or observations and
+move towards desired ones can be understood as a consequence of free energy minimisation.
+S2. Perception, Planning, and Action Selection via variational message
+passing
+In active inference, perception, planning, action selection, and learning can be regarded as different
+stages in the process of minimising the expression in Eq. (7). In the next few sections, we will illustrate
+the actual update equations used to implement them (Sections S2.1 to S2.4).
+31
+Active inference for action-unaware agents
+S2.1. Perception as State Estimation
+Since the goal is to minimize Eq. ( 7), the expectations over the state log-probabilities need to be
+minimised so to concentrate the probability mass onto one realization of every state random variable
+S1, . . . ,ST, depending on what the actual trajectory afforded by the conditioning policy is (assigning
+equal probabilities to all those realizations would not achieve the minimum of this term and would
+misrepresent what a policy really achieves). Thus, the minimisation here consists in updating the pa-
+rameters of the variational distributions Q(S1|πk), . . . ,Q(ST|πk) at every time step, with an increas-
+ingly longer sequence of collected observations. This is akin to perception since the object of those
+operations is to uncover the causes of sensory evidence, i.e., observations, and everything occurs at
+a fast time scale, i.e., at every time step. Perception is thus framed as the update of the parameters of
+the variational probability distributions Q(S1|πk), . . . ,Q(ST|πk), according to the available, collected
+evidence, with the goal of minimising Fπk
+
+Q(S1:T|πk)
+
+(see Eq. (7)).
+To obtain the update equations for the collection of parameters s1:T := s1, . . . ,sT, where each st
+is the vector of probabilities defining Q(St|πk), we rewrite Fπk [Q(S1:T|πk)] in vectorised form, by
+substituting the vector of parameters for the various probability distributions, then we compute the
+gradients with respect to each of those vectors, namely:
+∇st Fπk (s1:T) =1 + log s⊺
+t −
+
+
+
+o⊺
+t · Sα + s⊺
+t+1 · log Bat
++ log s⊺
+1 if t = 1
+o⊺
+t · Sα + s⊺
+t+1 · log Bat
++
+h
+(log Bat−1
+) · st−1
+i⊺
+if 1 < t ≤ τ
+s⊺
+t+1 · log Bat
++
+h
+(log Bat−1
+) · st−1
+i⊺
+if t > τ
+(S4)
+where:
+• o⊺
+t is the transposed (one-hot) observation vector, i.e.,o⊺
+t [i] =1 if i corresponds to the observation
+category (value) of Ot observed at t;
+• Bat
+is the transition matrix for the action aj, with j ∈ [1, |A|], that the policy πk mandates at
+time step t, note that we indicate such action by at, omitting the reference to the policy and the
+subscript j to avoid too much notational clutter;
+• Sα := ψ
+
+[α1:m]
+
+−ψ
+
+Jn,m · [α1:m]
+
+, where:
+– α1:m := α1, . . . ,αm are the column vectors of Dirichlet parameters forA (one for each column,
+see Section 3.2), and with [α1:m] ∈ Rn×m representing the matrix whose columns are those
+vectors;
+– ψ([α1:m]) is the digamma function applied element-wise to the matrix of Dirichlet param-
+eters whereas ψ(Jn,m · [α1:m]) is the digamma function applied to the result of the matrix
+multiplication between the matrix of ones Jn,m and [α1:m] (note that a column j of the re-
+sulting matrix is filled with the same value, namely, the dot product or sum 1⊺αj, usually
+indicated by α0, cf. [16]) 6;
+6The difference between digamma functions appears because of the term EQ(St |πk )Q(A)[log P(ot|St, A)]. If we consider
+the gradient of the free energy with respect to the element st[i] of the parameter vector st, then we obtain the expression
+EQ(A:,i )[log A:,i], assuming we did not know the value of Ot. That expression is the expectation of the log of a Dirichlet-
+distributed random vector which is equal to ψ(αi) − ψ(α0) where α0 is the vector whose elements are all equal to 1⊺αi.
+Considering all the elements of st gives us the matrix Sα which is vector-multiplied by ot to arrive at the correct expression
+for the gradient.
+32
+Active inference for action-unaware agents
+• finally, · stands for the inner product, log is applied element-wise to both the elements of vec-
+tors and matrices, and the vectors of parameters are now transposed because we consider the
+numerator layout when taking the gradient of a vector-valued function 7.
+By setting the above gradients to zero, we can derive analytically the new unnormalised parame-
+ters of the various Q(St|πk) that minimize free energy, that is:
+log s⊺
+t =
+
+
+
+o⊺
+t · Sα + s⊺
+t+1 · log Bat
++ log s⊺
+1 − 1 if t = 1
+o⊺
+t · Sα + s⊺
+t+1 · log Bat
++
+h
+(log Bat−1
+) · st−1
+i⊺
+−1 if 1 < t ≤ τ
+s⊺
+t+1 · log Bat
++
+h
+(log Bat−1
+) · st−1
+i⊺
+−1 if t > τ
+(S5)
+Since these parameters stand for probabilities defining categorical probability distributions, we
+need to impose that each set of parameters sums to one. This is usually done by applying the softmax
+function σ(·) to the expressions in Eq. (S5) (an alternative method is to set up the whole problem as
+one of constrained optimization and use Lagrange multipliers).
+In active inference studies that aim to describe neuronal dynamics as a form of gradient descent
+on free energy, where the gradient can be considered as prediction error, the following update rule is
+used instead.
+st := σ(st − ∇st Fπi ), ( S6)
+where again the softmax function σ(·) is used to make sure the parameters represent legitimate
+probability distributions.
+S2.2. Planning with Expected Free Energy
+The minimization of the free energy with respect to the policy random variable, πk, also occurs at
+every time step and can be associated with the cognitive operations of planning, but it requires a
+separate treatment that considers the expectation over Fπk
+
+Q(S1:T|πk)
+
+(last term of Eq. (6)) and the
+expected free energy.
+Once the agent has updated its probabilistic beliefs about the past, present, and future states vari-
+ables, it can proceed to update its probabilistic beliefs over the set of policies. This is achieved by
+predicting what is most likely to happen if a certain policy is followed and by scoring each policy
+depending on whether it would result in a desired sensorimotor trajectory. An updated probability
+distribution over the policies can then be paired with a decision rule d (see Definition 2.2) to deter-
+mine what action the agent will perform at the next time step.
+For each policy, this process involves computing an expected free energy, one for each future time
+step of the potential trajectory that the policy might realize:
+7The numerator layout specifies the order in which to compute the partial derivatives of a vector-valued function,
+resulting in a Jacobian matrix whose numbers of columns and rows correspond to the number of function’s inputs and
+outputs, respectively. Given a function f : Rn → Rm that maps a vector x ∈ Rn to a vector y ∈ Rm, the m elements in
+y define the rows of the Jacobian whereas the n elements in x define its columns, i.e., J ∈ Rm×n. For instance, if we have
+the function f : Rn → R1, then the Jacobian is a row vector, i.e., ∇x f = [∂ f (x)/∂x1, . . . ,∂ f (x)/∂xn ], where x1, . . . ,xn are the
+elements of x. In the main text, when the free energy is considered with respect to one of its vectors of parameters, e.g. st,
+it can be seen precisely as a vector-valued function, Fπk (st) : Rn → R, with the Jacobian being a row vector.
+33
+Active inference for action-unaware agents
+Gt(πk) =EQ(St|πk)
+h
+H
+
+P(Ot|St)
+i
+| {z }
+AMBIGUITY
+−EP(Ot|St)Q(St|πk)
+h
+DKL
+
+Q(A|ot, st)|Q(A)
+i
+| {z }
+A-N OVELTY
++ DKL
+
+Q(St|πk)|P∗(St)
+
+| {z }
+RISK
+−EQ(St+1|πk)Q(St|πk)
+h
+DKL
+
+Q(B|st+1, st)|Q(B)
+i
+| {z }
+B-NOVELTY
+.
+(S7)
+In other words, each of these expected free energies can be approximately regarded as the free
+energy most likely to be registered at a future time step, if the actions of the conditioning policy are
+performed up to that point (see Millidge, Tschantz, and Buckley [51] for why, technically, describing
+the expected free energy in this way is not entirely correct, but nonetheless common in the active in-
+ference literature). The sum of these expected free energies is indicative of how much the considered
+policy would allow the agent to reduce uncertainty and achieve a preferred distribution over states
+at some point in the future.
+The total expected free energy for policy πk, GH(πk), is then defined as the sum of expected free
+energies at future time steps up to the policy horizon, H, i.e.:
+GH(πk) =
+H
+∑
+t=τ+1
+Gt(πk). ( S8)
+The different terms that constitute the expected free energy tend to be associated with distinct
+behavioural drives.
+The ambiguity term is the expected value of the entropy, H·, of the state-observation mappings,
+and quantifies the uncertainty about future outcomes given hidden states. A policy for which this
+term is low is a policy that drives the agent towards unambiguous parts of the environment.
+The risk term introduces another defining component of the active inference agent (Definition2.2),
+i.e., a probability distribution that specifies its preference(s) or goal(s), expressed in this case over
+state variables. In other words, this is a probability distribution with the probability mass concen-
+trated on one or a few states, representing states in the environment to which the agent is moving.
+The KL divergence between the expected states in the future and these agent’s preferences over states
+quantifies how much the policy will allow the agent to get there, thereby achieving its goal(s).
+The two novelty terms are expected values of KL divergences between the posterior and prior
+distributions over generative model’s parameters, i.e., those of state-observation mappings and tran-
+sition probabilities. Since they are subtracted from the expected free energy and the agent is looking
+for a policy that minimises it, the agent is pushed to pick a policy whose actions may increase these
+terms, i.e., leading to environmental consequences that were not very well captured by the current
+generative model. Therefore, these terms are interpreted as capturing the exploratory drives of an ac-
+tive inference agent insofar as they score a policy based on how likely it will disclose as-yet unknown
+parts of the environment, which may be informative about state-observation mappings and transi-
+tion probabilities. In other words, a policy for which these terms are very high will provide new
+information to the agent, not already encoded in its generative model.
+To understand how the computation of expected free energy fit in the process of free energy
+minimisation, i.e., of minimising the free energy in Eq. ( 6), we take the gradient of that expression
+with respect to the parameters π of Q(π), obtaining:
+∇πF[Q(π)] =ln π⊺
+Q − ln π⊺
+P + F⊺
+π + 1, ( S9)
+34
+Active inference for action-unaware agents
+where π⊺
+Q and π⊺
+P are the row vectors of parameters of Q(π) and P(π), respectively, and F⊺
+π is
+the row vector of policy-conditioned free energies (one for each policy, i.e., for each value the policy
+random variable can take, see Eq. (7)).
+As done earlier, setting the above gradient to zero gives us the new, unnormalised vector of pa-
+rameters for Q(π):
+ln π⊺
+Q = ln π⊺
+P − F⊺
+π − 1. ( S10)
+Again, to obtain a proper, normalised probability distribution, the softmax map is applied. For
+this update equation there is a further issue, as we have not clarified what the (column) vector of
+parameters πP represents. This vector stores the probabilities that define the distributionP(π) which
+gets compared to Q(π) in Eq. (6) by means of the KL divergence. Therefore, it can be regarded as the
+prior probability distribution over the policies provided by the agent’s generative model. Essentially,
+the above equation says that in order to update the probabilistic beliefs about the policy random
+variable, the current evidence represented by the free energy values has to be integrated with the
+agent’s prior beliefs (this is in line with the notion of Bayesian inference, and it holds true for the
+other variational updates as well).
+The crucial question is how that prior should be specified. According to active inference, the an-
+swer is provided by expected free energy insofar as it manages to balance instrumental and epistemic
+values when it comes to policy and action selection (offering a solution to the exploration-exploitation
+dilemma). In particular, we have that πP := σ(−GH ), where GH is the vector of expected free en-
+ergies (one for each policy, i.e., for each value the policy random variable can take), giving us the
+following update rule:
+π⊺
+Q = σ(−GH⊺ − F⊺
+π), ( S11)
+where the constant 1 can be dropped as it does not affect the softmax function (whether using
+expected free energy represents a principled way of specifying that prior has been a subject of debate,
+see [50]) 8.
+The above parameters can also be used to update the policy-independent state probabilities, that
+is:
+Q(Sτ) =
+|Π|
+∑
+k=0
+Q(Sτ|πk)Q(πk), ( S12)
+where the marginal probabilities over the state random variable at τ are computed using the
+updated policy probabilities. These marginal probabilities provide an indication of what the agent
+believes are the most probable state values at a certain point in the training process. As learning pro-
+gresses, they should converge to the probabilities representing the agent’s preferences (over states).
+After obtaining an approximate posterior probability distribution over policies, the agent can
+proceed to implement an action selection procedure, which will be described next.
+S2.3. Action Selection
+With updated probabilistic beliefs on past and future sensorimotor trajectories, afforded by different
+policies, and a new probability distribution over them, the agent is equipped to select an action to-
+8In some active inference works, an additional prior term is included in the softmax, i.e., a probability distribution
+representing preferences for one or more “habitual” policy/policies, see, e.g., [37, p. 33].
+35
+Active inference for action-unaware agents
+wards the goal state. The decision rule d of an active inference agent implements the action-selection
+mechanism which can take many forms.
+One strategy is to pick the policy with the highest probability and perform one of its actions,
+since the objective of the agent is to minimise free energy now and in the future, and the look-ahead
+operations with expected free energy ultimately scored the different policies based on that require-
+ment. This could be described as a kind of greedy strategy that priorities executing whatever policy
+was deemed to be more conducive to low free energy states in the future. In this case, the decision
+rule would be a function d : Π × {1, . . . ,T} → A(see Definition 2.2) that maps from the Cartesian
+product between the policy space and the set of time indices to the action space, in a such a way that
+at time step τ the agent will pick the following action:
+at = d(π∗, t) =π∗[t] (S13)
+i.e., simply, this decision function returns the action that the policy chosen as input (the most
+probable in this case) specifies for that time step (recall that each policy is a sequence of time-indexed
+actions). Alternatively, the policy that goes into the decision function could be sampled from Q(π),
+adding some randomness into the action selection procedure.
+The above strategies narrowly focus on the action specified by a single policy. That is, once a
+policy has been picked, the action that the policy dictates is going to be performed regardless of what
+the other policies suggest. This may turn out to be a suboptimal way of selecting the next action if in
+the current learning phase the agent does not have (yet) a highly probable policy. For instance, if the
+selected policy is only slightly more probable than the others, and all these agree on the same action
+to perform, then it might be better to perform the action backed by most policies than the action
+indicated by the most probable one. In light of the above considerations, in Da Costa et al. [16] and
+in the following experiments, the agent picks the most likely action under all possible policies. This
+specific action is found by computing a Bayesian model average, that is:
+at = d(Π, t) =arg max
+a∈A
+ 
+∑
+πk∈Π
+δa,c
+πk
+t
+Q(πk)
+!
+, ( S14)
+where, given a candidate action a from the set of possible actions A and for every policy πk,
+k ∈ [1, . . . ,p], we sum the products δa,c
+πk
+t
+Q(πk). The first factor of those products is the Kronecker
+delta between the candidate action a and the action that the considered policy dictates at time step t,
+indicated by cπk
+t . If these two actions are equal, i.e., a = cπk
+t , then δa,c
+πk
+t
+= 1, and zero otherwise (this
+is the definition of the Kronecker delta for two variables). The second factor is the probability of the
+given policy.
+Thus, for every action we are going to compute a sum of policy probabilities, according to how
+many policies would suggest to perform that action at the current time step. The action with the
+highest sum of probabilities will be selected. If an action is not dictated by any policy, then the
+Kronecker delta will make it the worst possible candidate for what to do at time step t. If the same
+action is dictated by very likely policies, then that will be a good candidate. In other words, this
+procedure recommends to pick the action that most policies agree upon at the current time step as
+long as those policies or a subset thereof have a high probability.
+36
+Active inference for action-unaware agents
+S2.4. Learning as Evidence Accumulation
+The second term in Eq. ( 7), the negative sum of expectations of the observation log-likelihoods,
+involves log-probabilities of the observation values collected until the present time stepτ. Intuitively,
+the minimization of this term will occur when a high probability value for the current observation
+is matched by a high probability for that state value that truly generated the observation in the first
+place. Concretely, if the agent strongly believes that St = st, then it should be the case that the
+observation at t reflects that, i.e., that Ot = ot and ot = st, meaning that the categorical values of
+both random variables are equal (recall that for the categorical random variables in question st and
+ot amount to indices that identify one of state/observation categories). In contrast, for all the other
+realizations of the same state random variable, the probability of receiving that observation should
+be low (unless there are environmental states that admit of identical observations).
+The last term is the negative sum of expectations of the transition log-likelihoods. This term
+captures how well the agent is modelling the transition dynamics of the environment. That is, if
+performing the action policy πk dictates at t − 1, from state st−1, leads to state st at the next time step
+t, then the corresponding probability that St = st given St−1 = st−1 (and the execution of that action)
+should be high (in other words, in expectation the agent should assign high probabilities to those
+state transitions that characterize a certain sequence of action).
+The optimization of both log-likelihoods requires updating the parameters stored in theA-matrices
+and B-tensors, respectively. This can also be done at every time step but the impact of the update is
+in general small because the collected observation will affect mostly a single state-observation map-
+ping and state transitions, i.e., the one involving the present time step. Therefore, the update of
+A-matrices and B-tensors occurs at a slower time scale as the agent acquires experience about the
+most common state-observation mappings and state transition in the given environment. For this
+reason, these computational operations have been regarded as a form of learning, i.e., adaptation
+that require longer time (concretely, in implementations the update of these parameters is carried out
+in batch at the end of an episode or trajectory).
+After the agent has collected a full trajectory of observations (e.g., at the end of an episode),
+learning consists in updating the parameters of the emission and transition maps, stored in the ob-
+servation matrix A and in the transition tensor B, respectively (crucial components of the generative
+model used to model the environment, see Section 2).
+To derive the update rules, one starts again with the free energy introduced in Eq. ( 6) and takes
+its gradient with respect to each of the Dirichlet distributions P(A:,1), . . . ,P(A:,m), defined on the
+random vectors associated with the corresponding columns of the observation matrix, and each of
+the Dirichlet distributions P(Bai
+:,1), . . . ,P(Bai
+:,m), ∀i ∈ [1, . . . ,|A|], defined on the random vectors as-
+sociated with the corresponding columns of the various matrices forming the transition tensor. The
+derivation requires considering the KL divergence between many pairs of Dirichlet distributions.
+For instance, the KL term DKL
+
+Q(A)|P(A)
+
+in Eq. ( 6) is a more compact way of writing those KL
+divergences, that is:
+DKL
+
+Q(A)|P(A)
+
+=
+m
+∑
+i=1
+DKL
+
+Q(AQ
+:,i)|P(AP
+:,i)
+
+, ( S15)
+where AQ
+:,i ∼ Dir(αQ
+i ) and AP
+:,i ∼ Dir(αP
+i ), and the superscripts P and Q are used to indicate
+that we are dealing with different distributions and parameters, i.e., the prior and the posterior,
+respectively.
+For reference, we state the update rules here as follows:
+37
+Active inference for action-unaware agents
+αQ
+:,i := αP
+:,i +
+T
+∑
+t=1
+ot ⊙ sτ[i] (S16)
+βQ
+:,i := βP
+:,i +
+T
+∑
+t=2
+∑
+πk∈Π
+δa,cπ
+t Q(π)
+ 
+sπ
+t ⊙ sπ
+t−1[i]
+
+(S17)
+∀i ∈ [1, m], where recall: st is the vector of parameters for Q(St|πk); ot is a one-hot vector indi-
+cating the category of observation that has been acquired at that time step; and the symbol ⊙ is used
+to indicate the element-wise (or Hadamard) product between a vector and theith element of another
+vector (for a derivation of the above rules refer to [16]).
+To gain some insight on these update rules, first notice that they return the parameters of (ap-
+proximate) posterior Dirichlet distributions (indicated by superscript Q) through an adjustment of
+the prior parameters (indicated by superscript P). Crucially, this revision of the prior parameters is
+made using the observations and the (updated) state-variable beliefs obtained from interacting with
+the environment for T time steps.
+More specifically, in Eq. (S16) the value of an element in αP
+:,i is increased by the probability rep-
+resented by st[i]. The particular value in αP
+:,i which is updated depends on the location of the 1 in
+the one-hot vector ot. This captures the idea that if a certain observation value, say, ot, is repeatedly
+acquired at t, and the probability st[i] associated with the ith value of St is large, then the agent has
+some reasons to consider that observation as more likely when it is somewhat confident of being in
+state St = st. In a nutshell, the probability P(Ot = ot|St = st) should be increased proportionally to
+the probability that St = st at t when ot has been registered from the environment.
+Since the Dirichlet parameters αP
+:,i are used to sample the values in A:,i, which are in turn the
+parameters of the categorical distribution P(Ot|St = st), adjusting the Dirichlet parameters using
+the above rule has the desired learning effect, i.e., that of improving on the current state-observation
+mapping by capturing what are the most likely observational consequences of being in various states.
+A similar reasoning applies to the Dirichlet parameters in Eq. ( S17), where this time the key evi-
+dence is represented by the amount of state transitions of a certain type that have been encountered.
+For instance, the more state transitions have been observed from state st−1 to state st upon perform-
+ing action at, the more the corresponding probabilities P(St = st|St = st) in matrix Bat
+should be in-
+creased. One of the subtleties here is that these probability updates should be weighted according to
+how likely it is that an action was indeed performed to realise that state transition, which is achieved
+with the Kronecker delta term, δa,cπτ Q(π), in the equation, i.e., by considering the probability of those
+policies suggesting that action at t.
+The accumulation of experience throughout an episode of interaction with the environment al-
+lows the agent to update its model of what the most probable observations and state transitions are
+in that environment. These update rules establish a learning dynamics that is supposed to occur at
+a much slower temporal scale than perceptual inference, planning, and action selection so they are
+generally implemented at the end of an episode and/or a sequence of observation, and they have
+been described as a form of synaptic Hebbian plasticity [see, e.g, 29, 33, 16].
+In summary, during an episode of lengthT, an active inference agent goes through a phase of per-
+ceptual inference, planning, and action selection at each time step whereas at the end of the episode
+it capitalises on the acquired experience through a learning phase, before a new episode begins. This
+active inference cycle is summarised in algorithm S1 and algorithm S2 for the action-unaware and
+action-aware agent, respectively.
+38
+Active inference for action-unaware agents
+Algorithm S1: Action-unaware Active Inference
+Hyperparameters:: T, epidode length, N, number of episodes, Tmax = T × N, max
+number of steps, p = |Π|, number of policies.
+Data: sensory observations, o1, . . . ,ot, and policies, π1 . . .πp.
+Result: updated Q(S1|πk), . . . ,Q(ST|πk), ∀k ∈ [1, p].
+Result: updated Q(π), and next action, aτ.
+Result: updated Q(A) and Q(B)
+1 for t ∈ [1, . . . ,Tmax] do
+2 1. Perceptual Phase:
+3 for k ∈ [1, . . . ,p] do
+4 a. Update probabilities over states:
+5 for t ∈ [1, . . . ,T] do
+6 ∇st Fπk = 0 ⇒ st := σ(ln st), see Eq. (S5)
+7 end for
+8 end for
+9 2. Planning Phase:
+10 for k ∈ [1, . . . ,p] do
+11 a. Compute total expected free energy:
+12 GH(πk) =∑T
+t=τ+1 Gt(πk)
+13 end for
+14 b. Update probabilities over policies:
+15 π = σ(−GH⊺ − F⊺
+π)
+16 Q(π) ∼ Cat(π)
+17 3. Action Selection Phase:
+18 at = d(Π, t)
+19 end for
+20 4. Learning Phase:
+21 if t mod T = 0 then
+22 for i ∈ [1, . . . ,m] do
+23 αQ
+:,i := αP
+:,i + ∑T
+t=1 ot ⊙ sτ[i]
+24 βQ
+:,i := βP
+:,i + ∑T
+t=2 ∑πk∈Π δa,cπ
+t Q(π)
+ 
+sπ
+t ⊙ sπ
+t−1[i]
+
+25 end for
+26 5. Reset (before a new episode starts):
+27 Reset Q(S1|πk), . . . ,Q(ST|πk), ∀k ∈ [1, p] to uniform probability distributions.
+28 end if
+39
+Active inference for action-unaware agents
+Algorithm S2: Action-aware Active Inference
+Hyperparameters:: T, epidode length, N, number of episodes, Tmax = T × N, max
+number of steps, p = |Π|, number of policies.
+Data: sensory observations, o1, . . . ,ot, and policies, π1 . . .πp.
+Result: updated Q(St|at−1), ∀t ∈ [1, . . . ,τ] and Q(Sτ+1|πk), . . . ,Q(ST|πp),
+∀k ∈ [1, . . . ,p].
+Result: updated Q(π), and next action, aτ.
+Result: updated Q(A) and Q(B)
+1 for t ∈ [1, . . . ,Tmax] do
+2 1. Perceptual Phase:
+3 a. Update probabilities over states:
+4 for t ∈ [1, . . . ,T] do
+5 if t < τ then
+6 ∇st F(a1:τ−1) = 0 ⇒ st := σ(ln st), see Eq. (S5)
+7 else
+8 for k ∈ [1, . . . ,p] do
+9 ∇st Fπk = 0 ⇒ st := σ(ln st), see Eq. (S5)
+10 end for
+11 end if
+12 end for
+13 2. Planning Phase:
+14 for k ∈ [1, . . . ,p] do
+15 a. Compute total expected free energy:
+16 GH(πk) =∑T
+t=τ+1 Gt(πk)
+17 end for
+18 b. Update probabilities over policies:
+19 π = σ(−GH⊺ − F⊺
+(a1:τ−1))
+20 Q(π) ∼ Cat(π)
+21 3. Action Selection Phase:
+22 at = d(Π, t)
+23 end for
+24 4. Learning Phase:
+25 if t mod T = 0 then
+26 for i ∈ [1, . . . ,m] do
+27 αQ
+:,i := αP
+:,i + ∑T
+t=1 ot ⊙ sτ[i]
+28 βQ
+:,i := βP
+:,i + ∑T
+t=2 ∑πk∈Π δa,cπ
+t Q(π)
+ 
+sπ
+t ⊙ sπ
+t−1[i]
+
+29 end for
+30 5. Reset (before a new episode starts):
+31 Reset Q(S1|πk), . . . ,Q(ST|πk), ∀k ∈ [1, p] to uniform probability distributions.
+32 end if
+40
+Active inference for action-unaware agents
+S3. Further Information on Experiments
+S3.1. Experiment 1: 4-step T-maze
+S3.1.1. How to Reproduce the Results of the Experiment
+The results reported in Section 4.1 were obtained by using the following command line arguments.
+For the action-unaware agent:
+1 main_aif_paths -- exp_name aif_paths -- gym_id gridworld -v1 -- env_layout
+tmaze4 -- num_runs 10 -- num_episodes 100 -- num_steps 4 -- inf_steps
+10 -- action_selection kd -lB -- num_policies 64 -- pref_loc all_goal
+For the action-aware agent:
+1 main_aif_plans_pi_cutoff -- exp_name aif_plans -- gym_id gridworld -v1 --
+env_layout tmaze4 -- num_runs 10 -- num_episodes 100 -- num_steps 4 --
+inf_steps 10 -- action_selection kd -lB -- num_policies 64
+The plots were obtained using the following command line instructions:
+1 vis_aif -gid gridworld -v1 -el tmaze4 -nexp 2 -rdir
+episodic_e100_pol16_maxinf10_learnB -fpi 0 1 2 3 -i 4 -v 8 -ti 4 -
+tv 8 -vl 3 -hl 3 -xtes 20 -ph 3 - selrun 0 -selep 24 49 74 99 -npv
+16 -sb 4 -ab 0 1 2 3
+With these instructions, one can visualise more metrics than those reported in the main text. We
+offer a selection next.
+S3.1.2. Free energy at steps 1-3
+1 20 40 60 80 100
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0Free energy
+Free energy at step 1
+(action-unaware)
+(a) Free energy.
+1 20 40 60 80 100
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0Free energy
+Free energy at step 1
+ (action-aware) (b) Free energy.
+Fig. S1: Free energy at step 1 across episodes (showing average of 10 agents).
+41
+Active inference for action-unaware agents
+1 20 40 60 80 100
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+4.0Free energy
+Free energy at step 2
+(action-unaware)
+(a) Free energy.
+1 20 40 60 80 100
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+4.0Free energy
+Free energy at step 2
+ (action-aware) (b) Free energy.
+Fig. S2: Free energy at step 2 across episodes (showing average over 10 agents).
+1 20 40 60 80 100
+Episode
+0
+1
+2
+3
+4
+5
+6Free energy
+Free energy at step 3
+(action-unaware)
+(a) Free energy.
+1 20 40 60 80 100
+Episode
+0
+1
+2
+3
+4
+5
+6Free energy
+Free energy at step 3
+ (action-aware) (b) Free energy.
+Fig. S3: Free energy at step 3 across episodes (showing average of 10 agents).
+42
+Active inference for action-unaware agents
+S3.1.3. Policy-conditioned free energy at steps 1-3
+1 20 40 60 80 100
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+4.0Free energy
+Policy-conditioned free energy at step 1
+(action-unaware)
+1 20 40 60 80 100
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+4.0Free energy
+Policy-conditioned free energy at step 1
+ (action-aware)
+Policies
+1: , , 
+2: , , 
+3: , , 
+4: , , 
+5: , , 
+6: , , 
+7: , , 
+8: , , 
+9: , , 
+10: , , 
+11: , , 
+12: , , 
+13: , , 
+14: , , 
+15: , , 
+16: , , 
+Fig. S4: Policy-conditioned free energies at step 1 across episodes (showing average of 10 agents).
+1 20 40 60 80 100
+Episode
+0
+1
+2
+3
+4
+5
+6
+7
+8Free energy
+Policy-conditioned free energy at step 2
+(action-unaware)
+1 20 40 60 80 100
+Episode
+0
+1
+2
+3
+4
+5
+6
+7
+8Free energy
+Policy-conditioned free energy at step 2
+ (action-aware)
+Policies
+1: , , 
+2: , , 
+3: , , 
+4: , , 
+5: , , 
+6: , , 
+7: , , 
+8: , , 
+9: , , 
+10: , , 
+11: , , 
+12: , , 
+13: , , 
+14: , , 
+15: , , 
+16: , , 
+Fig. S5: Policy-conditioned free energies at step 2 across episodes (showing average of 10 agents).
+43
+Active inference for action-unaware agents
+1 20 40 60 80 100
+Episode
+0
+1
+2
+3
+4
+5
+6
+7
+8Free energy
+Policy-conditioned free energy at step 3
+(action-unaware)
+1 20 40 60 80 100
+Episode
+0
+1
+2
+3
+4
+5
+6
+7
+8Free energy
+Policy-conditioned free energy at step 3
+ (action-aware)
+Policies
+1: , , 
+2: , , 
+3: , , 
+4: , , 
+5: , , 
+6: , , 
+7: , , 
+8: , , 
+9: , , 
+10: , , 
+11: , , 
+12: , , 
+13: , , 
+14: , , 
+15: , , 
+16: , , 
+Fig. S6: Policy-conditioned free energies at step 3 across episodes (showing average of 10 agents).
+S3.1.4. Expected free energy at steps 2–3
+1 20 40 60 80 100
+Episode
+0
+1
+2
+3
+4
+5
+6
+7
+8Expected free energy
+Expected free energy at step 2
+(action-unaware)
+1 20 40 60 80 100
+Episode
+0
+1
+2
+3
+4
+5
+6
+7
+8Expected free energy
+Expected free energy at step 2
+ (action-aware)
+Policies
+1: , , 
+2: , , 
+3: , , 
+4: , , 
+5: , , 
+6: , , 
+7: , , 
+8: , , 
+9: , , 
+10: , , 
+11: , , 
+12: , , 
+13: , , 
+14: , , 
+15: , , 
+16: , , 
+Fig. S7: Expected free energy at step 2 for each policy across episodes (showing average of 10 agents).
+44
+Active inference for action-unaware agents
+1 20 40 60 80 100
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0Expected free energy
+Expected free energy at step 3
+(action-unaware)
+1 20 40 60 80 100
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0Expected free energy
+Expected free energy at step 3
+ (action-aware)
+Policies
+1: , , 
+2: , , 
+3: , , 
+4: , , 
+5: , , 
+6: , , 
+7: , , 
+8: , , 
+9: , , 
+10: , , 
+11: , , 
+12: , , 
+13: , , 
+14: , , 
+15: , , 
+16: , , 
+Fig. S8: Expected free energy at step 3 for each policy across episodes (showing average of 10 agents).
+There is no expected free energy at step 4 because this is the step at which the environment terminates
+in the episodic setting considered in this work and, regardless of its location, the agent is no longer
+given the ability to plan forward in time.
+45
+Active inference for action-unaware agents
+S3.1.5. Expected free energy at step 1 breakdown
+1 20 40 60 80 100
+Episode
+0
+2
+4
+6
+8
+10
+12Risk
+Risk at step 1 (action-unaware)
+1 20 40 60 80 100
+Episode
+0
+2
+4
+6
+8
+10
+12Risk
+Risk at step 1 (action-aware)
+Policies
+1: , , 
+2: , , 
+3: , , 
+4: , , 
+5: , , 
+6: , , 
+7: , , 
+8: , , 
+9: , , 
+10: , , 
+11: , , 
+12: , , 
+13: , , 
+14: , , 
+15: , , 
+16: , , 
+Fig. S9: Risk (expected free energy term) for each policy across episodes (showing average of 10 agents).
+1 20 40 60 80 100
+Episode
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0B-novelty
+B-novelty at step 1 (action-unaware)
+1 20 40 60 80 100
+Episode
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0B-novelty
+B-novelty at step 1 (action-aware)
+Policies
+1: , , 
+2: , , 
+3: , , 
+4: , , 
+5: , , 
+6: , , 
+7: , , 
+8: , , 
+9: , , 
+10: , , 
+11: , , 
+12: , , 
+13: , , 
+14: , , 
+15: , , 
+16: , , 
+Fig. S10: B-novelty (expected free energy term) for each policy across episodes (showing average of 10 agents).
+46
+Active inference for action-unaware agents
+S3.1.6. Ground truth transition maps
+1 2 3 4 5
+States
+1
+2
+3
+4
+5 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+1 2 3 4 5
+States
+1
+2
+3
+4
+5 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+Fig. S11: Ground truth transition maps for action → and ← in the T-maze.
+1 2 3 4 5
+States
+1
+2
+3
+4
+5 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+1 2 3 4 5
+States
+1
+2
+3
+4
+5 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+Fig. S12: Ground truth ransition maps for action ↓ and ↑ in the T-maze.
+47
+Active inference for action-unaware agents
+S3.1.7. Learned transition maps in action-unaware and action-aware agents
+1 2 3 4 5
+States
+1
+2
+3
+4
+5 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+1 2 3 4 5
+States
+1
+2
+3
+4
+5 States
+Transition matrix for action 
+ (action-aware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+Fig. S13: Transition maps for action →.
+1 2 3 4 5
+States
+1
+2
+3
+4
+5 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+1 2 3 4 5
+States
+1
+2
+3
+4
+5 States
+Transition matrix for action 
+ (action-aware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+Fig. S14: Transition maps for action ↓.
+48
+Active inference for action-unaware agents
+1 2 3 4 5
+States
+1
+2
+3
+4
+5 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+1 2 3 4 5
+States
+1
+2
+3
+4
+5 States
+Transition matrix for action 
+ (action-aware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+Fig. S15: Transition maps for action ←.
+1 2 3 4 5
+States
+1
+2
+3
+4
+5 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+1 2 3 4 5
+States
+1
+2
+3
+4
+5 States
+Transition matrix for action 
+ (action-aware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+Fig. S16: Transition maps for action ↑.
+S3.2. Experiment 2: 5-step Gridw9
+S3.2.1. How to Reproduce the Results of the Experiment
+The results reported in Section 4.2 were obtained by using the following command line arguments.
+For the action-unaware agent:
+1 main_aif_paths -- exp_name aif_paths -- gym_id gridworld -v1 -- env_layout
+gridw9 -- num_runs 10 -- num_episodes 180 -- num_steps 5 -- inf_steps
+10 -- action_selection kd -lB -- num_policies 256 -- pref_loc all_goal
+For the action-aware agent:
+1 main_aif_plans_pi_cutoff -- exp_name aif_plans -- gym_id gridworld -v1 --
+env_layout gridw9 -- num_runs 10 -- num_episodes 180 -- num_steps 5 --
+inf_steps 10 -- action_selection kd -lB -- num_policies 256
+49
+Active inference for action-unaware agents
+The plots were obtained using the following command line instructions:
+1 vis_aif -gid gridworld -v1 -el gridw9 -nexp 2 -rdir
+episodic_e180_pol16_maxinf10_learnB -fpi 0 1 2 3 4 -i 4 -v 8 -ti 4
+-tv 8 -vl 3 -hl 3 -xtes 20 -ph 4 - selrun 0 -selep 24 49 74 99 -npv
+16 -sb 4 -ab 0 1 2 3
+With these instructions, one can visualize more metrics than those reported in the main text. We
+offer a selection next.
+S3.2.2. Free energy at steps 1-4
+1 20 40 60 80 100 120 140 160 180
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0Free energy
+Free energy at step 1
+(action-unaware)
+(a) Free energy.
+1 20 40 60 80 100 120 140 160 180
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0Free energy
+Free energy at step 1
+ (action-aware) (b) Free energy.
+Fig. S17: Free energy at step 1 across episodes (showing average of 10 agents).
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+1
+2
+3
+4
+5Free energy
+Free energy at step 2
+(action-unaware)
+(a) Free energy.
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+1
+2
+3
+4
+5Free energy
+Free energy at step 2
+ (action-aware) (b) Free energy.
+Fig. S18: Free energy at step 2 across episodes (showing average of 10 agents).
+50
+Active inference for action-unaware agents
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+1
+2
+3
+4
+5
+6
+7
+8Free energy
+Free energy at step 3
+(action-unaware)
+(a) Free energy.
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+1
+2
+3
+4
+5
+6
+7
+8Free energy
+Free energy at step 3
+ (action-aware) (b) Free energy.
+Fig. S19: Free energy at step 3 across episodes (showing average of 10 agents).
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12Free energy
+Free energy at step 4
+(action-unaware)
+(a) Free energy.
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12Free energy
+Free energy at step 4
+ (action-aware) (b) Free energy.
+Fig. S20: Free energy at step 4 across episodes (showing average of 10 agents).
+51
+Active inference for action-unaware agents
+S3.2.3. Policy-conditioned free energy at steps 1–4
+1 20 40 60 80 100 120 140 160 180
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0Free energy
+Policy-conditioned free energy at step 1
+(action-unaware)
+1 20 40 60 80 100 120 140 160 180
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0Free energy
+Policy-conditioned free energy at step 1
+ (action-aware)
+Policies
+1: , , , 
+2: , , , 
+3: , , , 
+4: , , , 
+5: , , , 
+6: , , , 
+7: , , , 
+8: , , , 
+9: , , , 
+10: , , , 
+11: , , , 
+12: , , , 
+13: , , , 
+14: , , , 
+15: , , , 
+16: , , , 
+Fig. S21: Policy-conditioned free energies at step 1 across episodes (showing average of 10 agents).
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10Free energy
+Policy-conditioned free energy at step 2
+(action-unaware)
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10Free energy
+Policy-conditioned free energy at step 2
+ (action-aware)
+Policies
+1: , , , 
+2: , , , 
+3: , , , 
+4: , , , 
+5: , , , 
+6: , , , 
+7: , , , 
+8: , , , 
+9: , , , 
+10: , , , 
+11: , , , 
+12: , , , 
+13: , , , 
+14: , , , 
+15: , , , 
+16: , , , 
+Fig. S22: Policy-conditioned free energies at step 2 across episodes (showing average of 10 agents).
+52
+Active inference for action-unaware agents
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12Free energy
+Policy-conditioned free energy at step 3
+(action-unaware)
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12Free energy
+Policy-conditioned free energy at step 3
+ (action-aware)
+Policies
+1: , , , 
+2: , , , 
+3: , , , 
+4: , , , 
+5: , , , 
+6: , , , 
+7: , , , 
+8: , , , 
+9: , , , 
+10: , , , 
+11: , , , 
+12: , , , 
+13: , , , 
+14: , , , 
+15: , , , 
+16: , , , 
+Fig. S23: Policy-conditioned free energies at step 3 across episodes (showing average of 10 agents).
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12Free energy
+Policy-conditioned free energy at step 4
+(action-unaware)
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12Free energy
+Policy-conditioned free energy at step 4
+ (action-aware)
+Policies
+1: , , , 
+2: , , , 
+3: , , , 
+4: , , , 
+5: , , , 
+6: , , , 
+7: , , , 
+8: , , , 
+9: , , , 
+10: , , , 
+11: , , , 
+12: , , , 
+13: , , , 
+14: , , , 
+15: , , , 
+16: , , , 
+Fig. S24: Policy-conditioned free energies at step 4 across episodes (showing average of 10 agents).
+53
+Active inference for action-unaware agents
+S3.2.4. Expected free energy at steps 2–4
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12
+14Expected free energy
+Expected free energy at step 2
+(action-unaware)
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12
+14Expected free energy
+Expected free energy at step 2
+ (action-aware)
+Policies
+1: , , , 
+2: , , , 
+3: , , , 
+4: , , , 
+5: , , , 
+6: , , , 
+7: , , , 
+8: , , , 
+9: , , , 
+10: , , , 
+11: , , , 
+12: , , , 
+13: , , , 
+14: , , , 
+15: , , , 
+16: , , , 
+Fig. S25: Expected free energy at step 2 for each policy across episodes (showing average of 10 agents).
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10Expected free energy
+Expected free energy at step 3
+(action-unaware)
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10Expected free energy
+Expected free energy at step 3
+ (action-aware)
+Policies
+1: , , , 
+2: , , , 
+3: , , , 
+4: , , , 
+5: , , , 
+6: , , , 
+7: , , , 
+8: , , , 
+9: , , , 
+10: , , , 
+11: , , , 
+12: , , , 
+13: , , , 
+14: , , , 
+15: , , , 
+16: , , , 
+Fig. S26: Expected free energy at step 3 for each policy across episodes (showing average of 10 agents).
+54
+Active inference for action-unaware agents
+1 20 40 60 80 100 120 140 160 180
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+4.0Expected free energy
+Expected free energy at step 4
+(action-unaware)
+1 20 40 60 80 100 120 140 160 180
+Episode
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+4.0Expected free energy
+Expected free energy at step 4
+ (action-aware)
+Policies
+1: , , , 
+2: , , , 
+3: , , , 
+4: , , , 
+5: , , , 
+6: , , , 
+7: , , , 
+8: , , , 
+9: , , , 
+10: , , , 
+11: , , , 
+12: , , , 
+13: , , , 
+14: , , , 
+15: , , , 
+16: , , , 
+Fig. S27: Expected free energy at step 4 for each policy across episodes (showing average of 10 agents).
+There is no expected free energy at step 5 because this is the step at which the environment terminates
+in the episodic setting considered in this work and, regardless of its location, the agent is no longer
+given the ability to plan forward in time.
+55
+Active inference for action-unaware agents
+S3.2.5. Expected free energy at step 0 breakdown
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12
+14
+16
+18Risk
+Risk at step 1 (action-unaware)
+(a) Risk
+1 20 40 60 80 100 120 140 160 180
+Episode
+0
+2
+4
+6
+8
+10
+12
+14
+16
+18Risk
+Risk at step 1 (action-aware) (b) Risk
+Policies
+1: , , , 
+2: , , , 
+3: , , , 
+4: , , , 
+5: , , , 
+6: , , , 
+7: , , , 
+8: , , , 
+9: , , , 
+10: , , , 
+11: , , , 
+12: , , , 
+13: , , , 
+14: , , , 
+15: , , , 
+16: , , , 
+Fig. S28: Risk (expected free energy term) for each policy across episodes (showing average of 10 agents).
+1 20 40 60 80 100 120 140 160 180
+Episode
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+2.00B-novelty
+B-novelty at step 1 (action-unaware)
+(a) Risk
+1 20 40 60 80 100 120 140 160 180
+Episode
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+2.00B-novelty
+B-novelty at step 1 (action-aware) (b) Risk
+Policies
+1: , , , 
+2: , , , 
+3: , , , 
+4: , , , 
+5: , , , 
+6: , , , 
+7: , , , 
+8: , , , 
+9: , , , 
+10: , , , 
+11: , , , 
+12: , , , 
+13: , , , 
+14: , , , 
+15: , , , 
+16: , , , 
+Fig. S29: B-novelty (expected free energy term) for each policy across episodes (showing average of 10 agents).
+56
+Active inference for action-unaware agents
+S3.2.6. Ground truth transition maps
+1 2 3 4 5 6 7 8 9
+States
+1
+2
+3
+4
+5
+6
+7
+8
+9 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+1 2 3 4 5 6 7 8 9
+States
+1
+2
+3
+4
+5
+6
+7
+8
+9 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+Fig. S30: Ground truth transition maps for action → and ← in the grid world.
+1 2 3 4 5 6 7 8 9
+States
+1
+2
+3
+4
+5
+6
+7
+8
+9 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+1 2 3 4 5 6 7 8 9
+States
+1
+2
+3
+4
+5
+6
+7
+8
+9 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+Fig. S31: Ground truth ransition maps for action ↓ and ↑ in the grid world.
+57
+Active inference for action-unaware agents
+S3.2.7. Learned transition maps in action-unaware and action-aware agents
+1 2 3 4 5 6 7 8 9
+States
+1
+2
+3
+4
+5
+6
+7
+8
+9 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+1 2 3 4 5 6 7 8 9
+States
+1
+2
+3
+4
+5
+6
+7
+8
+9 States
+Transition matrix for action 
+ (action-aware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+Fig. S32: Transition maps for action →.
+1 2 3 4 5 6 7 8 9
+States
+1
+2
+3
+4
+5
+6
+7
+8
+9 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+1 2 3 4 5 6 7 8 9
+States
+1
+2
+3
+4
+5
+6
+7
+8
+9 States
+Transition matrix for action 
+ (action-aware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+Fig. S33: Transition maps for action ↓.
+58
+Active inference for action-unaware agents
+1 2 3 4 5 6 7 8 9
+States
+1
+2
+3
+4
+5
+6
+7
+8
+9 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+1 2 3 4 5 6 7 8 9
+States
+1
+2
+3
+4
+5
+6
+7
+8
+9 States
+Transition matrix for action 
+ (action-aware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+Fig. S34: Transition maps for action ←.
+1 2 3 4 5 6 7 8 9
+States
+1
+2
+3
+4
+5
+6
+7
+8
+9 States
+Transition matrix for action 
+(action-unaware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+1 2 3 4 5 6 7 8 9
+States
+1
+2
+3
+4
+5
+6
+7
+8
+9 States
+Transition matrix for action 
+ (action-aware)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Probability
+Fig. S35: Transition maps for action ↑.
+59

@@ -1,0 +1,931 @@
+Active Probabilistic Inference on Matrices
+for Pre-Conditioning in Stochastic Optimization
+Filip de Roos Philipp Hennig
+Max Planck-Institute for Intelligent Systems and University of T¨ ubingen, Germany
+[filip.de.roos|ph]@tue.mpg.de
+Abstract
+Pre-conditioning is a well-known concept that
+can signiﬁcantly improve the convergence of
+optimization algorithms. For noise-free prob-
+lems, where good pre-conditioners are not
+known a priori, iterative linear algebra meth-
+ods oﬀer one way to eﬃciently construct
+them. For the stochastic optimization prob-
+lems that dominate contemporary machine
+learning, however, this approach is not read-
+ily available. We propose an iterative al-
+gorithm inspired by classic iterative linear
+solvers that uses a probabilistic model to
+actively infer a pre-conditioner in situations
+where Hessian-projections can only be con-
+structed with strong Gaussian noise. The
+algorithm is empirically demonstrated to eﬃ-
+ciently construct eﬀective pre-conditioners for
+stochastic gradient descent and its variants.
+Experiments on problems of comparably low
+dimensionality show improved convergence.
+In very high-dimensional problems, such as
+those encountered in deep learning, the pre-
+conditioner eﬀectively becomes an automatic
+learning-rate adaptation scheme, which we
+also empirically show to work well.
+1 INTRODUCTION
+Contemporary machine learning heavily features em-
+pirical risk minimization, on loss functions of the form
+L(w) = 1
+|D|
+|D|∑
+i∈D
+li(w), (1)
+Proceedings of the 22 nd International Conference on Ar-
+tiﬁcial Intelligence and Statistics (AISTATS) 2019, Naha,
+Okinawa, Japan. PMLR: Volume 89. Copyright 2019 by
+the author(s).
+where Dis a data-set and w are parameters of the
+optimization problem (e.g. the weights of a neural
+network). Data sub-sampling in such problems gives
+rise to stochastic optimization problems: If gradients
+are computed over a randomly sampled batch B⊂D
+of data-points, they give rise to a stochastic gradient
+∇˜L(w) = 1
+|B|
+|B|∑
+i∈B
+∇li(w). (2)
+If Dis large and Bis sampled iid., then ∇˜Lis an
+unbiased estimator and, by the multivariate Central
+Limit Theorem, is approximately Gaussian distributed
+(assuming |B|≪|D| ) around the full-data gradient as
+(e.g. Balles et al., 2017; van der Vaart, 1998, §2.18)
+p
+(
+∇˜L(w)
+⏐⏐∇L
+)
+= N
+(
+∇˜L(w); ∇L(w),|B|−1 cov(∇L)
+)
+(3)
+where cov(∇L) is the empirical covariance over D. For
+problems of large scale in both data and parameter-
+space, stochastic optimization using stochastic gradi-
+ent descent (Robbins & Monro, 1951) and its by now
+many variants (e.g., momentum (Polyak, 1964), Adam
+(Kingma & Ba, 2014), etc.) are standards.
+For (non-stochastic) gradient descent, it is a classic re-
+sult that convergence depends on the condition-number
+of the objective’s Hessian B(w) := ∇∇⊺L(w). For
+example, Thm. 3.4 in Nocedal & Wright (Nocedal
+& Wright, 2006) states that the iterates of gradi-
+ent descent with optimal local step sizes on a twice-
+diﬀerentiable objective L(w) : RN _R converge to a
+local optimum w∗such that, for suﬃciently large i,
+L(wi+1) −L(w∗) ≤r2(L(wi) −L(w∗)),
+with r∈
+(λN −λ1
+λN + λ1
+,1
+)
+, (4)
+where λN and λ1 are the largest and smallest eigen-
+value of the Hessian B(w), respectively. In noise-free
+optimization, it is thus common practice to try and
+reduce the condition number κ:= λN/λ1 of the Hes-
+sian, by a linear re-scaling ¯w= P⊺w of the input space
+using a pre-conditioner P ∈RN×N.
+arXiv:1902.07557v1  [cs.LG]  20 Feb 2019
+Active Probabilistic Inference on Matrices for Pre-Conditioning in Stochastic Optimization
+For ill-conditioned problems ( κ ≫ 1), eﬀective
+pre-conditioning can drastically improve the conver-
+gence. Choosing a good pre-conditioner is a problem-
+dependent art. A good pre-conditioner should decrease
+the condition number of the problem and be cheap to
+apply, either through sparseness or low-rank structure.
+Sometimes pre-conditioners can be constructed as
+a good ‘a-priori’ guess of the inverse Hessian B−1.
+I no such good guess is available, then in the
+deterministic/non-stochastic setting, iterative linear-
+algebra methods can be used to build a low-rank pre-
+conditioner. For example, if P spans the leading eigen-
+vectors of the Hessian, the corresponding eigen-values
+can be re-scaled to change the spectrum, and by ex-
+tension the condition number. Iterative methods such
+as those based on the Lanczos process (Golub & C.F
+Van Loan, 2012, §10.1) try to consecutively expand
+a helpful subspace by choosing B-conjugate vectors,
+which can fail in the presence of inexact computations.
+Due to these intricate instabilities (Trefethen & Bau
+III, 1997, p. 282) such algorithms tend not to work
+with the level of stochasticity encountered in practical
+machine learning applications.
+Below, we propose a framework for the eﬃcient con-
+struction of pre-conditioners in settings with noise-
+corrupted Hessian-vector products available.Our algo-
+rithm consists of three main components: We ﬁrst
+build a probabilistic Gaussian inference model for ma-
+trices from noisy matrix-vector products (Section 2.1)
+by extending existing work on matrix-variate Gaus-
+sian inference. Then we construct an active algorithm
+that selects informative vectors aiming to explore the
+Hessian’s dominant eigen-directions (Section 2.2). The
+structure of this algorithm is inspired by that of the clas-
+sic Arnoldi and Lanczos iterations designed for noise-
+free problems. Finally (Section 2.3), we provide some
+“plumbing” to empirically estimate hyper-parameters
+and eﬃciently construct a low-rank pre-conditioner and
+extend the algorithm to the case of high-dimensional
+models (Section 2.4). We evaluate the algorithm on
+some simple experiments to empirically study its prop-
+erties as a way to construct pre-conditioners and test
+it on both a low-dimensional 1, and a high-dimensional
+deep learning problem . While we use pre-conditioning
+as the principal setting, the main contribution of our
+framework is the ability to construct matrix-valued
+estimates in the presence of noise, and to do so at com-
+plexity linear in the width and height of the matrix.
+It is thus applicable to problems of large scale, also
+in domains other than pre-conditioning and optimiza-
+tion in general. In contrast to a simple averaging of
+random observations, our algorithm actively chooses
+projections in an eﬀort to improve the estimate.
+1Code repository.
+1.1 Related Work
+Our approach is related to optimization methods that
+try to emulate the behaviour of Newton’s method with-
+out incurring its cubic per-step cost. That is, iterative
+optimization updates wi+1 = wi−di that try to ﬁnd a
+search direction di that is an approximate solution to
+the linear problem
+B(wi)di = ∇L(wi). (5)
+This includes quasi-Newton methods like BFGS and its
+siblings (Dennis & Mor´ e, 1977), and Hessian-free opti-
+mization (Pearlmutter, 1994; Martens, 2010). These
+methods try to keep track of the Hessian during the
+optimization. Pre-conditioning is a simpler approach
+that separates the estimation of the (inverse) Hessian
+from the on-line phase of optimization and moves it to
+an initialization phase. Our algorithm could in princi-
+ple be run in every single step of the optimizer, such
+as in Hessian-free optimization. However, this would
+multiply the incurred cost, which is why we here only
+study its use for pre-conditioning.
+There are stochastic variants of quasi-Newton methods
+and other algorithms originally constructed for noise-
+free optimization (e.g. Schraudolph et al., 2007; Byrd
+et al., 2016). These are generally based on collecting
+independent random (not actively designed) samples of
+quasi-Newton updates. Estimates can also be obtained
+by regularizing estimates (e.g. Wills & Sch¨ on, 2018)
+or partly update the stochastic gradient by reusing
+elements of a batch (e.g. Bollapragada et al., 2018).
+The conceptual diﬀerence between these methods and
+ours is that we actively try to design informative ob-
+servations by explicitly taking evaluation uncertainty
+into account.
+Our inference scheme is an extension of Gaussian mod-
+els for inference on matrix elements, which started with
+early work by Dawid (1981) and was recently extended
+in the context of probabilistic numerical methods (Hen-
+nig & Kiefel, 2013; Hennig, 2015; Wills & Sch¨ on, 2018).
+Our primary addition to these works is the algebra
+required for dealing with structured observation noise.
+2 THEORY
+Our goal in this work is to construct an active infer-
+ence algorithm for low-rank pre-conditioning matrices
+that can deal with data in the form of Hessian-vector
+multiplications corrupted by signiﬁcant (not just in-
+ﬁnitesimal) Gaussian noise. To this end, we will adopt
+a probabilistic viewpoint with a Gaussian observation
+likelihood, and design an active evaluation policy that
+aims to eﬃciently collect informative, non-redundant
+Filip de Roos, Philipp Hennig
+Hessian-vector products. The algorithm will be de-
+signed so that it produces a Gaussian posterior measure
+over the Hessian of the objective function, such that
+the posterior mean is a low-rank matrix.
+2.1 Matrix Inference
+Bayesian inference on matrices B ∈ RN×N can be
+realised eﬃciently in a Gaussian framework by re-
+arranging the matrix elements into a vector − →B ∈
+RN2×1, then performing standard Gaussian inference
+on this vector (e.g. Dawid, 1981). Although Hessian
+matrices are square and symmetric, the following deriva-
+tions apply equally well to rectangular matrices. There
+are specializations for symmetric matrices (Hennig,
+2015), but since they signiﬁcantly complicate the deriva-
+tions below, we use this weaker model.
+Assume that we have access to observationsY ∈RN×m
+of matrix-vector products Y = BS along the search
+directions S ∈ RN×m. In the vectorized notation,
+this amounts to a linear projection of − →B through the
+Kronecker product matrix (I S⊺):
+Yab = (I S⊺)− →B =
+∑
+ij
+δaiBijSjb = [BS]ab.
+If the observations are exact (noise-free), the likelihood
+function is a Dirac distribution,
+p(Y |B,S) = δ(− →Y −(I S⊺)B) =
+= lim
+β→0
+N(Y; (I S⊺)B,βΛ0). (6)
+For conjugate inference, we assign a Gaussian prior
+over B, with a prior mean matrix B0 and a covari-
+ance consisting of a Kronecker product of 2 symmetric
+positive-deﬁnite matrices.
+N(B,B0,V W) = 1
+((2π)n2
+/|V|n|W|n)1/2
+·exp
+(
+−1
+2(− →B −− →B0)⊺(V W)−1(− →B −− →B0)
+)
+. (7)
+This is an equivalent re-formulation of the matrix-
+variate Gaussian distribution (Dawid, 1981). For sim-
+plicity, and since we are inferring a Hessian matrix
+B (which is square and symmetric), we set V = W.
+This combination of prior (7) and likelihood (6) has
+previously been discussed (detailed derivation, e.g., in
+Hennig, 2015). It gives rise to a Gaussian posterior
+distribution, whose mean matrix is given by
+Bm =B0 + (W W)(I S)− →X = B0 + WXS⊺W =
+B0 + (Y −B0S)(S⊺WS)−1S⊺W
+(8)
+where X is found as the solution to the linear system
+(W S⊺WS  
+=:G
+)− →X = −−−−−−−→(Y −B0S)  
+=:− →∆
+, (9)
+using the Kronecker product’s property that ( A 
+B)−1 = A−1 B−1 (note that the matrix ( S⊺WS) ∈
+Rm×m can be inverted in O(m3)).
+2.1.1 Adding Noise
+While noise-free observations of Gaussian-distributed
+matrices have been studied before, observation noise
+beyond the fully iid. case, (cf. Wills & Sch¨ on, 2018)
+is a challenging complication. A lightweight inference-
+scheme for noisy observations is one of the core contri-
+butions of this paper. In empirical risk minimization
+problems, mini-batching replaces a large or inﬁnite sum
+(the population risk, Eq. (1)) into a small sum of indi-
+vidual loss functions (Eq. (2)). Analogous to Eq. (3),
+the Hessian ˜B of the batch risk ˜Lis thus corrupted
+relative to the true Hessian by B a Gaussian likelihood:
+˜B(w) = B(w) + Γ with Γ ∼N(0,Σ)
+and Σ = cov( ∇∇⊺L)/|B|. (10)
+If we now compute matrix-vector products of this batch
+Hessian with vectors S ∈RN×m, even under the sim-
+plifying assumption of Kronecker structure Σ = Λ Λ
+in the covariance, the observation likelihood becomes
+p(Y |B,S) = N(− →Y; −→BS,Λ (S⊺ΛS)ii  
+=:R
+). (11)
+The subscript ii in Eq. (11) is there to highlight the
+diagonal structure of the right matrix due to the inde-
+pendent batches we use to calculate the Hessian-vector
+products. Relative to Eq (9), this changes the Gram
+matrix to be inverted from G to (G+ R).
+To get the posterior of B in the noisy setting after m
+observations, instead of Eq. (9), we now have to solve
+the linear problem
+(G+ R)  
+Rnm×nm
+− →X = − →∆. (12)
+This is a more challenging computation, since the sum
+of Kronecker products does not generally have an ana-
+lytic inverse. However, Eq. (12) is a so-called matrix
+pencil problem, which can be eﬃciently addressed us-
+ing a generalized eigen-decomposition (e.g. Golub &
+C.F Van Loan, 2012, §7.7). That is, by a matrix U and
+diagonal matrix D= diag(λ) such that
+GV = DRV with V⊺RV = I. (13)
+Active Probabilistic Inference on Matrices for Pre-Conditioning in Stochastic Optimization
+Eigen-decompositions distribute over a Kronecker prod-
+uct (C.F. Van Loan, 2000). And this property is in-
+herited by the generalized eigen-decomposition, which
+oﬀers a convenient way to rewrite a matrix in terms
+of the other. Eq. (12) can thus be solved with two
+generalized eigen-decompositions. The left and right
+parts of the Kronecker products of Eq. (12) are written
+with separate generalized eigen-decompositions as
+WU =ΛUD, U ⊺ΛU = I
+(S⊺WS)V =(S⊺ΛS)iiVΩ, V ⊺(S⊺ΛS)iiV = I.
+U,D contain the generalized eigen-vectors and eigen-
+values from the left Kronecker term and V,Ω are anal-
+ogous for the right Kronecker term.
+− →∆ = (W S⊺WS + Λ (S⊺ΛS)ii)− →X
+= (ΛU (S⊺ΛS)iiV)(DΩ + I I)(U−1 V−1)− →X
+= (U−T V−T)(DΩ + I I)(U−1 V−1)− →X
+In the ﬁrst step above, the left matrix is expressed
+in terms of the right matrix in both terms by means
+of the generalized eigen-decomposition. In remaining
+step, the conjugacy property in Eq. (13) is used to
+simplify the expression to the inversion of a diagonal
+matrix and the Kronecker product of the generalized
+eigen-vectors. The solution now becomes
+− →X = (U V) (DΩ + I I)−1−−−−→U⊺∆V  
+1
+(DjjΩii+1) ⊙U⊺∆V=Ψji
+= (U V)− →Ψ = UΨV⊺
+(14)
+where ⊙refers to the Hadamard product of the two
+matrices. Using this form, we can represent the pos-
+terior mean estimate for B with Eq. (8) where X is
+replaced with the solution from Eq. (14).
+Bm = B0 + WX
+RN×m
+S⊺W
+Rm×N
+This matrix can generally not be written in a simpler
+analytic form. If the prior mean B0 is chosen as a
+simple matrix (e.g. a scaled identity), then Bm would
+admit fast O(Nm) multiplication and inversion (using
+the matrix inversion lemma) due to its low-rank outer-
+product structure.
+2.2 Active Inference
+The preceding section constructed an inference algo-
+rithm that turns noisy projections of a matrix into a
+low-rank estimate for the latent matrix. The second
+ingredient of our proposed algorithm, outlined in this
+section, is an active policy that chooses non-redundant
+projection directions to eﬃciently improve the posterior
+mean. Algorithm 1 summarizes as pseudo-code.
+The structure of this algorithm is motivated, albeit
+not exactly matched to, that of stationary iterative
+linear solvers and eigen-solvers such as GMRES (Saad
+& Schultz, 1986) and Conjugate gradients (Hestenes
+& Stiefel, 1952) (and the corresponding eigen-value-
+iterations, the Arnoldi process and the Lanczos process.
+Cf. (Golub & C.F Van Loan, 2012, §10) and (Trefethen
+& Bau III, 1997, §VI)). These algorithms can be inter-
+preted as optimization methods that iteratively expand
+a low-rank approximation to (e.g. in the case of Conju-
+gate gradients / Lanczos) the Hessian of a quadratic
+problem, then solve the quadratic problem within the
+span of this approximation. In our algorithm, the exact
+low-rank approximation is replaced by the posterior
+mean estimate arising from the Bayesian inference rou-
+tine described in Section 2.1. This leads the algorithm
+to suppress search directions that are co-linear with
+those collected in previous iterations, focussing instead
+on the eﬃcient collection of new information.
+Readers familiar with linear solvers like conjugate gra-
+dients will be able to recognise the structural similarity
+of Algorithm 1 to linear solvers, with two diﬀering as-
+pects. Each iteration constructs a projection direction
+si, collects one matrix-vector multiplication, yi = ˜Bsi
+and rescales them by a step size βi (here set to 1 and
+omitted). A linear solver would update the solution
+xi and residual ri using si, yi and βi but we let the
+algorithm stay at x0 and sample new search directions
+and projections. The core diﬀerence to a solver is in
+line 7: Where the classic solvers would perform a Gram-
+Schmidt step, we instead explicitly perform Gaussian
+inference on the Hessian B. In the noise-free limit the
+proposed method would choose the same search direc-
+tions as projection methods, a superclass of iterative
+solvers containing algorithms such as GMRES and CG
+(Hennig, 2015).
+2.3 Algorithmic Details
+Like all numerical methods, our algorithm requires the
+tuning of some internal parameters and some imple-
+mentational engineering. We set all free parameters in
+an empirical fashion, via cheap pre-computations, and
+use standard linear-algebra tools for the internals.
+2.3.1 Estimating Parameters
+The Gaussian prior (7) and likelihood (11) (also used
+as parameters of Alg. 1) have several parameters. For
+simplicity and to limit computational cost, we set all
+these to scaled identity matrices: prior mean B0 = b0I,
+Filip de Roos, Philipp Hennig
+variance W = w0I and noise covariance Λ = λ0I. We
+set these parameters empirically: Before the method
+tries to estimate the Hessian, it gathers gradients and
+Hessian-gradient products locally, from a small number
+of initial batches. Then we set the parameters of the
+prior over B as the empirical estimates
+1/b0 =
+√
+s⊺Bs
+s⊺BBs and w0 = s⊺Bs
+s⊺s . (15)
+The noise variance for the likelihood set by an empirical
+esimate
+λ0 = (E[g2] −(E[g]
+¯g
+)2)/
+√
+s⊺s.
+Since batch elements can vary quite extremely, however,
+we use a more robust choice, by setting it to the median
+of the variance estimates. The mean gradient ( ¯g) from
+the initial sampling is used for the ﬁrst iteration of
+the Hessian-inference scheme, line 2. A new search
+direction along which a Hessian-vector product is to be
+computed, is obtained by applying the inverse of the
+current estimated Hessian to a stochastic gradient:
+si+1 = −ˆB−1
+i ∇˜L(w). (16)
+The estimated Hessian is updated by ﬁrst solving
+Eq. (12) and using the result in Eq. (8) to get the
+posterior mean: It is a sum of the prior mean and a
+low-rank outer product of two N ×m matrices, with
+N the number of parameters and m the number of
+observations/iterations. A diagonal prior mean oﬀers
+eﬃcient inversion of the estimated Hessian by the ma-
+trix inversion lemma, and subsequent multiplication in
+Eq. (16).
+In the experiments below, the algorithm is used to
+construct a pre-conditioner for stochastic optimizers.
+In this application, it runs at the beginning of an opti-
+mization process, collecting several batches “in-place”,
+each time computing a noisy matrix-Hessian product.
+To ﬁnd the dominant k eigen-directions, especially if
+noise is signiﬁcant, the solver usually requires a number
+m>k of iterations, producing a posterior estimate Bm
+of rank m. To reduce the computational cost and mem-
+ory requirements in the subsequent actual optimization
+run, we reduce the rank of this approximation down to
+k using a standard fast singular value decomposition
+and obtain the singular values Σ and the left singu-
+lar vectors U and estimate the Hessian B ≈UΣU⊺.
+This is equivalent to taking the symmetric part of
+a polar decomposition which yields the closest sym-
+metric approximation to a matrix in Frobenius norm
+(Higham, 1988). For an N-dimensional problem and
+a pre-conditioner of rank k, this method requires the
+storage of O(Nk) numbers and has a computational
+overhead of O(Nk) additional FLOPS compared to
+a standard sgd update. Such overhead is negligible
+for batch-sizes |B|> k, the typical case in machine
+learning.
+Algorithm 1 Active probabilistic solver for linear
+problems of the form Bx = b, where multiplications
+with the matrix B can only be performed corrupted by
+noise. When used in optimization, the target vector b
+is set to the (noisy) gradient ∇˜L(which amounts to
+searching for the Newton direction).
+1 procedure InfHess(x0,B(·), b, p(B), p(Y |S,B))
+2 r0 = Btrue ·x0 −b  initial noisy gradient
+3 for i= 1,... do
+4 si = −B−1
+i−1ri−1  step direction
+5 yi = Btrue ·si  observe
+6 ri = Btrue ·x0 −b new noisy gradient at x0
+7 Bi = Infer(B|Yi,Si,p(B),p(Y |S,B))
+7  estimate B, using results from Section 2.1
+8 end for
+9 end procedure
+2.3.2 Pre-conditioning
+A pre-conditioner P is constructed to rescale the
+stochastic gradients in the direction of the singular
+vectors.
+P = α(I+ U[βIk/
+√
+Σ −Ik]U⊺) (17)
+By rescaling the gradients with P2, the linear sys-
+tem in Eq. (5) is transformed into P⊺ ˜B(wi)PP−1di =
+P⊺∇˜L(wi). The goal, as outlined above, is to re-
+duce the condition number of the transformed Hessian
+P⊺B(wi)P. If the estimated vectors U,Σ are indeed
+the real eigen-vectors and eigen-values, this approach
+would rescale these directions to have length β. Theo-
+retically β = 1 would be ideal if the real eigen-pairs are
+used. When instead an approximation of the subspace
+is used with poor approximations of the eigen-values
+˜λi, it is possible to scale a direction too much so the
+eigen-vectors corresponding to the largest eigen-values
+become the new smallest eigen-values. In our experi-
+ments this rarely happened because the Hessian con-
+tained many eigen-values λi ≪1 and so β = 1 could
+be used. The improved condition number allows usage
+of a larger step-size. We scale up by the empirical
+improvement of the condition number, i.e. the ﬁxed
+step-size of sgd η is multiplied with α2 = Σ1/Σk (in
+Eq. (17)), the ratio between largest and the smallest
+estimated eigen-value. Using the current notation we
+can write the pre-conditioned sgd update as
+wi+1 = wi −ηP2∇˜L(wi).
+Active Probabilistic Inference on Matrices for Pre-Conditioning in Stochastic Optimization
+0 2 4
+·105
+10−1
+100
+101
+Data
+SRMSE
+|B|= 4
+prec-sgd
+sgd
+avg-inv
+CG
+oracle
+0 2 4
+·105Data
+|B|= 16
+0 2 4
+·105Data
+|B|= 64
+0 2 4
+·105Data
+|B|= 256
+Figure 1: Comparison of sgd and pre-conditioned sgd on the linear test problem, along with other baselines.
+Details in text. The plots show data for four diﬀerent choices of batch size |B|(and thus varying observation
+noise). For fairness to sgd, the abscissa is scaled in the number of data points loaded from disk (as opposed to
+the number of steps). Due to the noisy setting, vanilla CG is unstable and diverges in the ﬁrst few steps.
+0 20 40 60 80 100 120
+0
+0.2
+0.4
+0.6
+0.8
+1
+Iteration
+Train Loss
+0 20 40 60 80 100 120
+0.5
+0.75
+0.9
+0.95
+1
+Iteration
+Test Accuracy
+sgd (αopt)
+sgd (αprec)
+prec-sgd (αprec)
+oracle
+Figure 2: Progress of pre-conditioned and standard sgd
+on the MNIST logistic regression problem (details in
+text). Top plot shows progress on the raw optimization
+objective (train loss), the bottom plot shows general-
+ization in terms of test accuracy. Two lines are shown
+for sgd. The solid one uses a step-size αopt optimized
+for good performance. This directly induces a step-
+size αprec. for the pre-conditioner. For comparison, we
+also show progress of sgd when directly using this step
+size—it makes sgd unstable.
+2.4 High-Dimensional Modiﬁcation
+Deep learning has become the benchmark for stochastic
+optimizers and it imposes many new constraints on the
+optimizers. Due to the large number of parameters,
+even if we would have access to the fraction of eigen-
+directions which make the Hessian ill-conditioned it
+would likely be ineﬃcient to use because each vector
+has the same size as the network, and the approach
+would only work if a few of the eigen-values of the
+Hessian have a clear separation in magnitude. This
+changes the functionality we can expect from a pre-
+conditioner to keeping the parameter updates relevant
+with respect to the current condition number rather
+than ﬁnding all directions with problematic curvature.
+Some simpliﬁcations are required in order to adapt
+the algorithm for deep learning. The most important
+change is that we approximate the Hessian as a layer-
+wise block matrix, eﬀectively treating each layer of
+a deep net as an independent task. Hessian-vector
+products are calculated using automatic diﬀerentiation
+(Pearlmutter, 1994). Good estimates of the eigen-values
+for the algorithm proved diﬃcult to get because of
+large deviations, likely due to the noisy Hessian-vector
+products. To alleviate this problem we changed the
+multiplicative update of the step-size presented in sec-
+tion 2.3.2 to redeﬁning the step-length. Each time the
+algorithm is used to build a pre-conditioner, a new
+step-length is set to the scalar prior mean in Eq. (15).
+The last modiﬁcation is how the empirical parameters
+of the prior (section 2.3.1) are set. 1 /b0 is used as the
+new step-length and gave better results when a smaller
+step-size of s⊺Bs/s⊺BBs was used and λ0 is estimated
+to λ0 =
+√
+(∑[g⊺g] −ˆg⊺ˆg)/n, with ˆg= ∑g(B). All the
+parameters of the prior and likelihood ( b0, w0 and λ0)
+are shared among the layers. No clear improvement
+was visible when treating the parameters separately for
+each layer.
+3 RESULTS
+We analyze and compare the performance of the pro-
+posed algorithm on a simple test problem along with
+two standard applications in machine learning.
+Filip de Roos, Philipp Hennig
+3.1 Regression
+Figure 1 shows results from a conceptual test setup
+designed to showcase the algorithm’s potential: An ill-
+conditioned linear problem of a scale chosen such that
+the analytical solution can still be found for comparison.
+We used linear parametric least-squares regression on
+the SARCOS data-set (Vijayakumar & Schaal, 2000)
+as a test setup. The data-set contains |D|= 44,484
+observations of a uni-variate2 response function yi =
+f(xi) in a 21-dimensional space xi ∈R21. We used the
+polynomial feature functions φ(x) = A[x,vec(xx⊺)] ∈
+R253, with a linear mapping, A, manually designed to
+make the problem ill-conditioned. The model f(x) =
+φ(x)⊺w with a quadratic loss function then yields a
+quadratic optimization problem,
+w∗= arg min
+w
+α∥w∥2 + 1
+|D|∥Φ⊺w−y∥2 =
+α∥w∥2 + 1
+|D|
+|D|∑
+i=1
+(φ(xi)⊺w−yi)2, (18)
+where Φ ∈R253×44,484 is the map from weights to data.
+The exact solution of this problem is given by the
+regularized least-squares estimate w∗ = (ΦΦ ⊺/|D|+
+αI)−1Φy/|D|. For this problem size, this solution
+can be computed easily, providing an oracle baseline
+for our experiments. But if the number of features
+were higher (e.g. ≳ 104), then exact solutions would
+not be tractable. One could instead compute, as in
+deep learning, batch gradients from Eq. (18), and also
+produce a noisy approximation of the Hessian B =
+(ΦΦ⊺/|D|+ αI) as the low rank matrix
+˜B = αI+ 1
+|B|
+∑
+b∈B
+φ(xb)φ(xb)⊺ (19)
+where Bis a batch. Clearly, multiplying an arbitrary
+vector with this low-rank matrix has cost O(|B|), thus
+providing the functionality required for our noisy solver.
+Figure 1 compares the progress of vanilla sgd with
+that of pre-conditioned sgd if the pre-conditioner is
+constructed with our algorithm. In each case, the
+construction of the pre-conditioner was performed in
+16 iterations of the inference algorithm. Even in the
+largest case of B= 256, this amounts to 4096 data
+read, and thus only a minuscule fraction of the overall
+runtime.
+An alternative approach would be to compute the in-
+verse of ˜B separately for each batch, then average over
+the batch-least-squares estimate ˜w = ˜B−1Φy/|B|. In
+our toy setup, this can again be done directly in the
+2The data-set contains 7 such univariate target variables.
+Following convention, we used the ﬁrst one.
+feature space. In an application with larger feature
+space, this is still feasible using the matrix-inversion
+lemma on Eq. (19), instead inverting a dense matrix of
+size |B|×|B| . The Figure also shows the progression
+of this stochastic estimate (labelled as avg-inv, always
+using |B|= 256 since smaller batch-sizes did not work
+at all). It performs much worse unless the batch-size
+is increased, which highlights the advantage of the ac-
+tive selection of projection directions for identifying
+appropriate eigen-vectors. A third option is to use an
+iterative solver with noise-corrupted observations to
+approach the optimum. In ﬁgure 1 a barely visible line
+labelled CG can be seen which used the method of con-
+jugate gradients with a batch-size of 256. This method
+required a batch-size |B|>10000 to show reasonable
+convergence on the training objective but would still
+perform poorly on the test set.
+3.2 Logistic Regression
+Figure 2 shows an analogous experiment on a more
+realistic, and non-linear problem: Classic linear logis-
+tic regression on the digits 3 and 5 from the MNIST
+data-set (i.e. using linear features φ(x) = x, and
+p(y|x) = σ(φ(x)⊺w)). Here we used the model pro-
+posed in Rasmussen & Williams (2005, §3.4), which de-
+ﬁnes a convex, non-linear regularized empirical risk min-
+imization problem that again allows the construction
+of stochastic gradients, and associated noisy Hessian-
+vector products. Analogous to Figure 1, Figure 2 shows
+progress of sgd and pre-conditioned sgd. As before,
+this problem is actually just small enough to com-
+pute an exact solution by Newton optimization (gray
+baseline in plot). And as before, computation of the
+pre-conditioner takes up a small fraction of the opti-
+mization runtime.
+3.3 Deep Learning
+For a high-dimensional test bed, we used a deep net
+consisting of convolutional and fully-connected layers
+(see appendix A for details) to classify the CIFAR-10
+data-set (Krizhevsky, 2009). The proposed algorithm
+was implemented in PyTorch (Paszke et al., 2017),
+using the modiﬁcations listed in section 2.4.
+To stabilize the algorithm, a predetermined ﬁxed
+learning-rate was used for the ﬁrst epoch of the pre-
+conditioned sgd. Figure 3 and 4 compare the con-
+vergence for the proposed algorithm against sgd for
+training loss and test loss respectively on CIFAR-10.
+In both ﬁgures we see that the pre-conditioned sgd has
+similar performance to a well-tuned sgd regardless of
+the initial learning rate. To keep the cost of computa-
+Active Probabilistic Inference on Matrices for Pre-Conditioning in Stochastic Optimization
+0 50 100 150 200 250
+0.5
+1
+1.5
+2
+Epoch
+Train Loss sgd
+0 50 100 150 200 250
+0.5
+1
+1.5
+2
+Epoch
+Train Loss p-sgd
+α0 = 0.1
+α0 = 0.05
+α0 = 0.01
+Figure 3: Training loss for sgd (left) and pre-conditioned sgd (right) on the CIFAR-10 data-set for diﬀerent
+learning rates and batch-size of 32 over 250 epochs. Both graphs share y-axis and colors to facilitate comparison
+between the optimizers. The solid lines represent the mean of several individual runs plotted as translucent.
+0 50 100 150 200 250
+0.5
+1
+1.5
+2
+Epoch
+Test Loss sgd
+0 50 100 150 200 250
+0.5
+1
+1.5
+2
+Epoch
+Test Loss p-sgd
+α0 = 0.1
+α0 = 0.05
+α0 = 0.01
+Figure 4: Test loss for sgd (left) and pre-conditioned sgd (right) on the CIFAR-10 data-set for diﬀerent learning
+rates and batch-size of 32 over 250 epochs. Both graphs share y-axis and colors to facilitate comparison between
+the optimizers. These graphs were collected at the same runs as the results in Fig. 3.
+0 50 100 150 200 250
+10−4
+10−2
+100
+Epoch
+Updated step-length α
+α0 = 0.1
+α0 = 0.05
+α0 = 0.01
+Figure 5: Evolution of the estimated learning rate α
+over 250 epochs for diﬀerent initial values.
+tions and storage low we used a rank 2 approximation
+of the Hessian that was recalculated at the beginning
+of every epoch. The cost of building the rank 2 approx-
+imation was 2–5% of the total computational cost per
+epoch.
+The improved convergence of pre-conditioned sgd over
+normal sgd is mainly attributed the adaptive step-
+size, which seems to capture the general scale of the
+curvature to eﬃciently make progress. This approach
+oﬀers a more rigorous way to update the step-length
+over popular empirical approaches using exponentially
+decaying learning-rates or division upon plateauing. By
+studying the scale of the found learning rate, see Fig. 5,
+we see that regardless of the initial value, all α follow
+the same trajectory although spanning values across
+four orders of magnitude.
+4 CONCLUSION
+We have proposed an active probabilistic inference
+algorithm to eﬃciently construct pre-conditioners in
+stochastic optimization problems. It consists of three
+conceptual ingredients: First, a matrix-valued Gaussian
+inference scheme that can deal with structured Gaus-
+sian noise in observed matrix-vector products. Second,
+an active evaluation scheme aiming to collect infor-
+mative, non-redundant projections. Third, additional
+statistical and linear algebra machinery to empirically
+estimate hyper-parameters and arrive at a low-rank
+pre-conditioner. The resulting algorithm was shown
+to signiﬁcantly improve the behaviour of sgd in imper-
+fectly conditioned problems, even in the case of severe
+observation noise typical for contemporary machine
+learning problems. It scales from low- to medium- and
+high-dimensional problems, where its behaviour quali-
+tatively adapts from full and stable pre-conditioning to
+low-rank pre-conditioning and, eventually, scalar adap-
+tation of the learning rate of sgd-type optimization.
+Acknowledgements
+Filip de Roos acknowledges support by the Interna-
+tional Max Planck Research School for Intelligent Sys-
+tems. Philipp Hennig gratefully acknowledges ﬁnancial
+support by the European Research Council through
+ERC StG Action 757275 / PANAMA.
+Filip de Roos, Philipp Hennig
+References
+Balles, L., J. Romero, & P. Hennig (2017). “Coupling
+Adaptive Batch Sizes with Learning Rates”. In: Pro-
+ceedings Conference on Uncertainty in Artiﬁcial In-
+telligence (UAI) 2017 . Association for Uncertainty
+in Artiﬁcial Intelligence (AUAI), pp. 410–419.
+Bollapragada, R. et al. (2018). “A Progressive Batching
+L-BFGS Method for Machine Learning”. In: ArXiv
+e-prints. arXiv: 1802.05374.
+Byrd, R.H, S.L Hansen, J. Nocedal, & Y. Singer (2016).
+“A stochastic quasi-Newton method for large-scale
+optimization”. In: SIAM Journal on Optimization
+26.2, pp. 1008–1031.
+Dawid, A.P. (1981). “Some matrix-variate distribution
+theory: Notational considerations and a Bayesian
+application”. In: Biometrika 68.1, pp. 265–274.
+Dennis, J.E. & J.J. Mor´ e (1977). “Quasi-Newton meth-
+ods, motivation and theory”. In: SIAM Review 19.1,
+pp. 46–89.
+Golub, G.H & C.F Van Loan (2012). Matrix computa-
+tions. Vol. 3. JHU Press.
+Hennig, P. (2015). “Probabilistic Interpretation of Lin-
+ear Solvers”. In: SIAM Journal on Optimization 25.1,
+pp. 234–260.
+Hennig, P. & M. Kiefel (2013). “Quasi-Newton method:
+A new direction”. In: Journal of Machine Learning
+Research 14.Mar, pp. 843–865.
+Hestenes, M.R. & E. Stiefel (1952). “Methods of conju-
+gate gradients for solving linear systems”. In:Journal
+of Research of the National Bureau of Standards 49.6,
+pp. 409–436.
+Higham, N.J. (1988). “Computing a nearest symmetric
+positive semideﬁnite matrix”. In: Linear Algebra and
+its Applications 103, pp. 103–118.
+Kingma, D.P. & J. Ba (2014). “Adam: A method
+for stochastic optimization”. In: arXiv preprint
+1412.6980.
+Krizhevsky, A. (2009). Learning multiple layers of fea-
+tures from tiny images . Tech. rep. Citeseer.
+Martens, J. (2010). “Deep learning via Hessian-free
+optimization”. In: International Conference on Ma-
+chine Learning (ICML).
+Nocedal, J. & S.J. Wright (2006). Numerical Optimiza-
+tion. second. New York, NY, USA: Springer.
+Paszke, A. et al. (2017). “Automatic diﬀerentiation in
+PyTorch”. In: NIPS-Workshops.
+Pearlmutter, B.A. (1994). “Fast exact multiplication by
+the Hessian”. In: Neural computation 6.1, pp. 147–
+160.
+Polyak, B. T. (1964). “Some methods of speeding up the
+convergence of iteration methods”. In: USSR Com-
+putational Mathematics and Mathematical Physics
+4.5, pp. 1–17.
+Rasmussen, C.E. & C.K.I. Williams (2005). Gaussian
+Processes for Machine Learning (Adaptive Computa-
+tion and Machine Learning) . The MIT Press.
+Robbins, H. & S. Monro (1951). “A stochastic approx-
+imation method”. In: The Annals of Mathematical
+Statistics, pp. 400–407.
+Saad, Y. & M.H. Schultz (1986). “GMRES: A gener-
+alized minimal residual algorithm for solving non-
+symmetric linear systems”. In: SIAM Journal on
+scientiﬁc and statistical computing 7.3, pp. 856–869.
+Schraudolph, N.N, J. Yu, & S. G¨ unter (2007). “A
+stochastic quasi-Newton method for online convex
+optimization”. In: Artiﬁcial Intelligence and Statis-
+tics, pp. 436–443.
+Trefethen, L.N. & D. Bau III (1997). Numerical Linear
+Algebra. SIAM.
+van der Vaart, A.W. (1998). Asymptotic Statistics .
+Cambridge Series in Statistical and Probabilistic
+Mathematics. Cambridge University Press.
+Van Loan, C.F. (2000). “The ubiquitous Kronecker
+product”. In: Journal of Computational and Applied
+Mathematics 123, pp. 85–100.
+Vijayakumar, S. & S. Schaal (2000). “Locally Weighted
+Projection Regression: Incremental Real Time Learn-
+ing in High Dimensional Space”. In: Proceedings of
+the Seventeenth International Conference on Ma-
+chine Learning, pp. 1079–1086.
+Wills, A. & T. Sch¨ on (2018). “Stochastic quasi-Newton
+with adaptive step lengths for large-scale problems”.
+In: ArXiv e-prints. arXiv: 1802.04310.
+Active Probabilistic Inference on Matrices for Pre-Conditioning in Stochastic Optimization
+Supplementary Material
+Active Probabilistic Inference on Matrices
+for Pre-Conditioning in Stochastic Optimization
+0 50 100 150 200 250
+0
+20
+40
+60
+80
+Test accuracy sgd
+0 50 100 150 200 250
+0
+20
+40
+60
+80
+Test accuracy p-sgd
+32-0.1
+32-0.05
+32-0.01
+Figure 6: Test accuracy for sgd (left) and pre-conditioned sgd (right) on the CIFAR-10 data-set for diﬀerent
+learning rates and batch-size of 32 over 250 epochs. Both graphs share y-axis and colors to facilitate comparison
+between the optimizers. These graphs were collected at the same runs as the results in Fig. 3.
+A Deep Learning
+All deep learning experiments used a neural network
+consisting of 3 convolutional layers with 64, 96 and
+128 output channels of size 5 ×5, 3 ×3 and 3 ×3
+followed by 3 fully connected layers of size 512, 256, 10
+with cross entropy loss function on the output and L2
+regularization with magnitude 0.01. All layers used the
+ReLU nonlinearity and the convolutional layers had
+additional max-pooling.

@@ -1,0 +1,2438 @@
+IEEE TRANSACTIONS ON ROBOTICS. ACCEPTED, NOVEMBER 2022 1
+Active Inference and Behavior Trees for
+Reactive Action Planning and Execution in Robotics
+Corrado Pezzato, Carlos Hern ´andez Corbato, Stefan Bonhof, and Martijn Wisse
+Abstract—We propose a hybrid combination of active inference
+and behavior trees (BTs) for reactive action planning and
+execution in dynamic environments, showing how robotic tasks
+can be formulated as a free-energy minimization problem. The
+proposed approach allows handling partially observable initial
+states and improves the robustness of classical BTs against
+unexpected contingencies while at the same time reducing the
+number of nodes in a tree. In this work, we specify the nominal
+behavior ofﬂine, through BTs. However, in contrast to previous
+approaches, we introduce a new type of leaf node to specify the
+desired state to be achieved rather than an action to execute.
+The decision of which action to execute to reach the desired
+state is performed online through active inference. This results
+in continual online planning and hierarchical deliberation. By
+doing so, an agent can follow a predeﬁned ofﬂine plan while
+still keeping the ability to locally adapt and take autonomous
+decisions at runtime, respecting safety constraints. We provide
+proof of convergence and robustness analysis, and we validate
+our method in two different mobile manipulators performing
+similar tasks, both in a simulated and real retail environment.
+The results showed improved runtime adaptability with a fraction
+of the hand-coded nodes compared to classical BTs.
+Index Terms—Active Inference, Reactive Action Planning, Be-
+havior Trees, Mobile Manipulators, Biologically-Inspired Robots,
+Free-energy Principle
+I. I NTRODUCTION
+D
+ELIBERATION and reasoning capabilities for acting are
+crucial parts of online robot control, especially when
+operating in dynamic environments to complete long-term
+tasks. Over the years, researchers developed many task plan-
+ners with various degrees of optimality, but little attention
+has been paid to actors [1], [2], i.e. algorithms endowed with
+reasoning and deliberation tools during plan execution. Works
+as [1], [2] advocate a change in focus, explaining why this
+lack of actors could be one of the main causes of the limited
+spread of automated planning applications. Authors in [3]–[5]
+proposed the use of BTs as graphical models for more reactive
+task execution, showing promising results. Other authors also
+tried to answer the call for actors [6], [7], but there are still
+open challenges to be addressed. These challenges have been
+identiﬁed and highlighted by many researchers, and can be
+summarized as in [1], [4] in two properties that an actor should
+possess:
+This research was supported by Ahold Delhaize. All content represents the
+opinion of the authors, which is not necessarily shared or endorsed by their
+respective employers and/or sponsors
+Corrado Pezzato, Carlos Hern ´andez Corbato, Stefan Bonhof, and Martijn
+Wisse are with the Cognitive Robotics Department, TU Delft, 2628 CD Delft,
+The Netherlands {c.pezzato, c.h.corbato, s.d.bonhof,
+m.wisse}@tudelft.nl
+• Hierarchical deliberation: each action in a plan may be
+a task that an actor may need to further reﬁne online.
+• Continual online planning and reasoning: an actor should
+monitor, reﬁne, extend, update, change, and repair its
+plans throughout the acting process, generating activities
+dynamically at run-time.
+Actors should not be mere action executors then, but they
+should be capable of intelligently taking decisions. This is
+particularly useful for challenging problems such as mobile
+manipulation in dynamic environments, where actions planned
+ofﬂine are prone to fail. In this paper, we consider mobile
+manipulation tasks in a retail environment with a partially
+observable initial state. We propose an actor based on active
+inference. Such an actor is capable of following a task planned
+ofﬂine while still being able of taking autonomous decisions
+at run-time to resolve unexpected situations.
+Active inference is a neuroscientiﬁc theory that has re-
+cently shown its potential in control engineering and robotics
+[8]–[11], particularly in real-world experiments for low-level
+adaptive control [12], [13]. Active inference describes a bio-
+logically plausible algorithm for perception, action, planning,
+and learning. This theory has been initially developed for
+continuous processes [14]–[16] where the main idea is that
+the brain’s cognition and motor control functions could be
+described in terms of free-energy minimization [17]. In other
+words, we, as humans, take actions in order to fulﬁll prior
+expectations about a desired prior sensation [18]. Active
+inference has also been extended to Markov decision processes
+for discrete decision making [19], recently gathering more and
+more interest [20]–[23]. In this formulation, active inference
+is proposed as a uniﬁed framework to solve the exploitation-
+exploration dilemma by acting to minimize the free-energy.
+Agents can solve complicated problems once provided a
+context sensitive prior about preferences. Probabilistic beliefs
+about the state of the world are built through Bayesian
+inference, and a ﬁnite horizon plan is selected in order to
+maximize the evidence for a model that is biased toward the
+agent’s preferences. At the time of writing, the use of discrete
+Active Inference for symbolic action planning is limited to low
+dimensional and simpliﬁed simulations [22], [23]. In addition,
+current solutions rely on fundamental assumptions such as
+instantaneous actions without preconditions, which do not hold
+in real robotic situations.
+To tackle these limitations of active inference and to address
+the two main open challenges of hierarchical deliberation and
+continual planning, we propose a hybrid combination of active
+inference and BTs. We then apply this new idea to mobile
+manipulation in a dynamic retail environment.
+arXiv:2011.09756v4  [cs.RO]  25 Nov 2022
+2 IEEE TRANSACTIONS ON ROBOTICS. ACCEPTED, NOVEMBER 2022
+A. Related Work
+In this section, we mainly focus on related work on reactive
+action planning and execution, a class of methods that exploits
+reactive plans, which are stored structures that contain the
+behavior of an agent. To begin with, BTs [3], [24] gathered
+increasing popularity in robotics to specify reactive behaviors.
+BTs are de-facto replacing ﬁnite state machines (FSM) in
+several state-of-the-art systems, for instance in the successor
+of the ROS Navigation Stack, Nav2. [25] BTs are graphical
+representations for action execution. The general advantage
+of BTs is that they are modular and can be composed into
+more complex higher-level behaviors, without the need to
+specify how different BTs relate to each other. They are also
+an intuitive representation that modularizes other architectures
+such as FSM and decision trees, with proven robustness and
+safety properties [3]. These advantages and the structure of
+BTs make them particularly suitable for the class of dynamic
+problems we are considering in this work, as explained later
+on in Section II. However, in classical formulations of BTs, the
+plan reactivity still comes from hard-coded recovery behaviors.
+This means that highly reactive BTs are usually big and
+complex and that adding new robotic skills would require
+revising a large tree. To partially cope with these problems,
+the authors in [4] proposed a blended reactive task and action
+planner which dynamically expands a BT at runtime through
+back-chaining. The solution can compensate for unanticipated
+scenarios, but cannot handle partially observable environments
+and uncertain action outcomes. Conﬂicts due to contingencies
+are handled by prioritizing (shifting) sub-trees. Authors in [5]
+extended [4] and showed how to handle uncertainty in the
+BT formulation as well as planning with non-deterministic
+outcomes for actions and conditions. Other researchers com-
+bined the advantages of BTs with the theoretical guarantees
+on the performance of planning with the Planning Domain
+Deﬁnition Language (PDDL) by representing robot task plans
+as robust logical-dynamical systems (RLDS) [6]. RLDS results
+in a more concise problem description with respect to using
+BTs only, but online reactivity is again limited to the scenarios
+planned ofﬂine. For unforeseen contingencies, re-planning
+would be necessary, which is more resource-demanding than
+reacting as shown in the experimental results in [6]. The output
+of RLDS is equivalent to a BT, yet BTs remain more intuitive
+to compose and have more support from the community with
+open-source libraries and design tools.
+Goal-Oriented Action Planning (GOAP) [26], instead, fo-
+cuses on online action planning. This technique is used for
+non-player-characters (NPC) in video games [27]. Goals in
+GOAP do not contain predetermined plans. Instead, GOAP
+considers atomic behaviors which contain preconditions and
+effects. The general behavior of an agent can then be speciﬁed
+through very simple Finite State Machines (FSMs) because the
+transition logic is separated from the states themselves. GOAP
+generates a plan at run-time by searching in the space of
+available actions for a sequence that will bring the agent from
+the starting state to the goal state. However, GOAP requires
+hand-designed heuristics that are scenario-speciﬁc and it is
+computationally expensive for long-term tasks.
+Hierarchical task Planning in the Now (HPN) [28] is an
+alternate plan and execution algorithm where a plan is gener-
+ated backward starting from the desired goal, using A*. HPN
+recursively executes actions and re-plans. To cope with the
+stochasticity of the real world, HPN has been extended to
+belief HPN (BHPN) [29]. A follow-up work [30] focused on
+the reduction of the computational burden by implementing se-
+lective re-planning to repair local poor choices or exploit new
+opportunities without the need to re-compute the whole plan
+which is very costly since the search process is exponential in
+the length of the plan.
+A different method for generating plans in a top-down man-
+ner is the Hierarchical Task Network (HTN) [31]. At each step,
+a high-level task is reﬁned into lower-level tasks. In practice
+[32], the planner exploits a set of standard operating proce-
+dures for accomplishing a given task. The planner decomposes
+the given task by choosing among the available ones until
+the chosen primitive is directly applicable to the current state.
+Tasks are then iteratively replaced with new task networks. An
+important remark is that reactions to failures, time-outs, and
+external events are still a challenge for HTN planners. HTN
+requires the designer to write and debug potentially complex
+domain-speciﬁc recipes and, in very dynamic situations, re-
+planning might occur too often.
+Finally, active inference is a normative principle under-
+writing perception, action, planning, decision-making, and
+learning in biological or artiﬁcial agents. Active inference on
+discrete state spaces [33] is a promising approach to solving
+the exploitation-exploration dilemma and empowers agents
+with continuous deliberation capabilities. The application of
+this theory, however, is still in an early stage for discrete
+decision making where current works only focus on simpliﬁed
+simulations as proof of concept [20]–[23]. In [23], for instance,
+the authors simulated an artiﬁcial agent which had to learn and
+solve a maze given a set of simple possible actions to move
+(up, down, left, right, stay ). Actions were assumed instanta-
+neous and always executable. In general, current discrete active
+inference solutions lack a systematic and task-independent
+way of specifying prior preferences, which is fundamental
+to achieving a meaningful behavior, and they never consider
+action preconditions that are crucial in real-world robotics.
+As a consequence, plans with conﬂicting actions which might
+arise in dynamic environments are never addressed in the
+current state-of-the-art.
+B. Contributions
+In this work, we propose the hybrid combination of BTs and
+active inference to obtain more reactive actors with hierarchi-
+cal deliberation and continual online planning capabilities. We
+introduce a method to include action preconditions and conﬂict
+resolution in active inference, as well as a systematic way of
+providing prior preferences through BTs. The proposed hybrid
+scheme leverages the advantages of online action selection
+with active inference and it removes the need for complex
+predeﬁned fallback behaviors while providing convergence
+guarantees. In addition, we provide extensive mathematical
+derivations, examples, and code, to understand, test, and
+reproduce our ﬁndings.
+PEZZATO et al.: ACTIVE INFERENCE AND BEHA VIOR TREES FOR REACTIVE ACTION PLANNING AND EXECUTION IN ROBOTICS 3
+C. Paper structure
+The remainder of the paper is organized as follows. In
+Section II we provide an extensive background on active
+inference and BTs. Our novel hybrid approach is presented
+in Section III, and its properties in terms of robustness and
+stability are analyzed in Section IV. In Section V we report
+the experimental evaluation, showing how our solution can be
+used with different mobile manipulators for different tasks in a
+retail environment. Finally, Section VI contains the discussion,
+and Section VII the conclusions.
+II. B ACKGROUND ON ACTIVE INFERENCE AND BTS
+A. Background on Active Inference
+Active inference provides a unifying theory for perception,
+action, decision-making, and learning in biological or artiﬁcial
+agents [33]. Our active inference agent rests on the tuple
+(O,S,A,P,Q ). This is composed of: a ﬁnite set of obser-
+vations O, a ﬁnite set of states S, a ﬁnite set of actions A, a
+generative model P and an approximate posterior Q.
+Active inference proposes a solution for action and percep-
+tion by assuming that actions will fulﬁll predictions that are
+based on inferred states of the world, given some observations.
+The generative model contains beliefs about future states and
+action plans, where plans that lead to preferred observations
+are more likely. Perception and action are achieved through
+the optimization of two complementary objective functions,
+the variational free-energy F, and the expected free-energy
+G. These quantities to optimize are derived based on the
+generative model and the approximate posterior, as detailed
+later. Variational free-energy measures the ﬁt between the
+generative model and past and current sensory observations,
+while expected free-energy scores future possible courses of
+action according to prior preferences and predicted observa-
+tions. Fig. 1 depicts the general high level idea. For a ﬁrst
+time reader of active inference, we advise consulting [20] for
+a more extensive introduction.
+Fig. 1. High-level visualization of an active inference agent. The generative
+process describes the true causes of the agent’s observations o. An agent can
+apply actions to change the state of the world and to get observations that are
+aligned with its internal preferences.
+In the following, we explain the form of the generative
+model and how the model parameters relate to states, actions,
+and observations. Based on this model, we present the ex-
+pressions for the free-energy and expected free-energy that
+are used to derive the equations for perception and decision
+making. We complement the theory with pen-and-paper ex-
+amples and associated Python code 1. All the other necessary
+1https://github.com/cpezzato/discrete active inference/blob/main/discrete
+ai/scripts/paper examples.py
+mathematical derivations are added in the appendices.
+1) Generative model: In active inference [20], the genera-
+tive model P is chosen to be a Markov process that allows to
+infer the states of the environment and to predict the effects
+of actions as well as future observations. This is expressed
+as a joint probability distribution P(¯o,¯s,η,π), where ¯o is
+a sequence of observations, ¯s is a sequence of states, η
+represents model parameters, and π is a plan. In particular,
+once given ﬁxed model parameters ηfor a task2, we can write:
+P(¯o,¯s,π) = P(π)
+T∏
+τ=1
+P(sτ|sτ−1,π)P(oτ|sτ) (1)
+The full derivation of the generative model in eq. (1),
+the assumptions under its factorization, and how this joint
+probability is used to deﬁne the free-energy F can be found
+in Appendix A. The probability distributions in eq. (1) are
+represented internally by an active inference agent through
+the following parameters:
+• A∈[0,1]r,m is a matrix representation of the conditional
+probability P(oτ|sτ), where r is the number of possible
+observations and m the number of possible states. A
+is also called the likelihood matrix, and it indicates
+the probability of observations given a speciﬁc state.
+Each column of Ais a categorical distribution. It holds
+that P(oτ|sτ,A) = Cat(Asτ). For a generic entry
+Aij = P(oτ = i|sτ = j).
+• B∈[0,1]m,m represents a transition matrix. In particular
+P(sτ+1|sτ, aτ) = Cat(Baτsτ). For a symbolic action
+aτ in a plan π, Baτ represents the probability of state
+sτ+1 while applying action aτ from state sτ. The columns
+of Baτ are categorical distributions.
+• π is a sequence of actions over a time horizon T. π is
+the posterior distribution, a vector holding the probability
+of different plans. These probabilities depend on the ex-
+pected free-energy in future time steps under plans given
+the current belief: P(π) = σ(−G(π)). Here, σ indicates
+the softmax function used to normalize probabilities.
+An active inference agents contains also a model D ∈
+[0,1]m that represents the belief about the initial state at τ = 1.
+So P(s0) = Cat(D). Additionally, an agent also represents
+prior preferences about desired observations for goal-directed
+behavior in C∈Rr, such that P(oτ) = C.
+In the context of this paper, we do not consider additional
+generative model parameters such as the E vector to encode
+priors over plans used to represent habits [34], [35]. The pa-
+rameter Ecould be used to include common sense knowledge
+in the decision making process, but this will be addressed
+in future work. Table I summarises the notation adopted in
+this paper. The top part contains quantities computed by
+active inference, while the bottom part the domain parameters
+required. As explained next, these internal models will be used
+by an active inference agent to compute the free-energy and
+the expected free-energy.
+2Note that, in the general case, model parameters are not ﬁxed and can be
+updated as well through active inference [20].
+4 IEEE TRANSACTIONS ON ROBOTICS. ACCEPTED, NOVEMBER 2022
+TABLE I
+NOTATION FOR ACTIVE INFERENCE
+Symbol Description
+sτ ∈{0,1}m
+One-hot encoding of the hidden state at time τ,
+where m is the number of mutually exclusive
+states in the discrete state space.
+sπ
+τ ∈[0,1]m Posterior distribution over the state under a plan
+π, where the elements sum up to one.
+oτ ∈{0,1}r Observation at time τ that can have r mutually
+exclusive possible values.
+oπ
+τ ∈[0,1]r Posterior distribution of observations under a
+plan.
+π
+Plan specifying a sequence of symbolic actions
+π= [aτ, aτ+1,...,a T]⊤, where T is the time
+horizon.
+π∈[0,1]p Posterior distribution over plans, where p is the
+number of different plans.
+F(π) ∈R Plan speciﬁc variational free-energy.
+Fπ ∈Rp Fπ = (F(π1),F(π2),...)⊤is a column vector
+containing the free-energy for every plan.
+G(π,τ) ∈R Expected free-energy for a plan at time τ.
+Gπ ∈Rp
+Gπ = (G(π1),G(π2),...)⊤is a column vector
+containing the expected free-energy for every
+plan.
+A∈[0,1]r×m Likelihood matrix, mapping from hidden states
+to observations P(oτ|sτ,A) =Cat(Asτ).
+Baτ ∈[0,1]m×m Transition matrix,
+P(sτ+1|sτ, aτ) =Cat(Baτsτ).
+C∈Rr Prior preferences over observations P(oτ) =C.
+D∈[0,1]m Prior over initial states P(s0) =Cat(D).
+σ Softmax function.
+2) Variational Free-energy: Given the generative model as
+before, one can derive an expression for the variational free-
+energy. By minimizing F, an agent can determine the most
+likely hidden states given sensory information. The expression
+for F is given by:
+F(π) =
+T∑
+τ=1
+sπ⊤
+τ
+[
+ln sπ
+τ −ln (Baτ−1 sπ
+τ−1) −ln (A⊤oτ)
+]
+(2)
+where F(π) is a plan speciﬁc free-energy. The logarithm is
+considered element-wise. For the derivations please refer to
+Appendix B.
+3) Perception: According to active inference, both percep-
+tion and decision making are based on the minimization of
+free-energy. In particular, for state estimation, we take partial
+derivatives of F with respect to the states and set the gradient
+to zero. The posterior distribution of the state, conditioned by
+a plan, is given by:
+sπ
+τ=1 = σ(ln D+ ln (B⊤
+aτsπ
+τ+1) + ln (A⊤oτ)) (3a)
+sπ
+1<τ<T = σ(ln (Baτ−1 sπ
+τ−1) + ln (B⊤
+aτsπ
+τ+1) + ln (A⊤oτ))
+(3b)
+sπ
+τ=T = σ(ln (Baτ−1 sπ
+τ−1) + ln (A⊤oτ)) (3c)
+where σ is the softmax function. The column of B⊤
+aτ
+are normalized. For the complete derivation, please refer to
+Appendix C. Note that when τ = 1 it holds ln (Baτ−1 sπ
+τ−1) =
+ln D. We provide below an example of state update and
+highlight the effect of uncertain action outcomes in the state
+estimation process.
+Example 1. State estimation: An active inference agent lives
+in a simple world composed of one state which can have two
+possible values. The only action the agent can do is to stay
+still (Bidle), so π= aτ∀τ with aτ = idle. However, there are
+some chances that unwanted transitions between states can
+occur. The agent can only predict one step ahead ( T = 2) and
+it receives an observation oτ=1 at the start, that is related to
+the state through A. The agent has no prior information about
+the initial state or future observations, thus D is uniform as
+well as the initial guess about the posterior distributions of
+the state. This is modeled as follows:
+A=
+[
+0.9 0 .1
+0.1 0 .9
+]
+, Bidle =
+[
+0.8 0 .2
+0.2 0 .8
+]
+, D=
+[
+0.5
+0.5
+]
+oτ=1 =
+[
+1
+0
+]
+, oτ=2 =
+[
+0
+0
+]
+, sπ
+τ=1 = sπ
+τ=2 =
+[
+0.5
+0.5
+]
+The update of the posterior distribution for state estimation
+is, according to (3):
+sπ
+τ=1 = σ
+(
+ln
+[
+.5
+.5
+]
++ ln
+([
+.8 .2
+.2 .8
+][
+.5
+.5
+])
++ ln
+([.9 .1
+.1 .9
+][1
+0
+]))
+=
+[.9
+.1
+]
+sπ
+τ=2 = σ
+(
+ln
+([.8 .2
+.2 .8
+][.9
+.1
+])
++ ln
+([.9 .1
+.1 .9
+][0
+0
+]))
+=
+[.74
+.26
+]
+As commonly done in active inference literature, a small
+number (for instance e−16 [34]) is added when computing the
+logarithms. This prevents numerical errors in case of ln(0).
+Note that, if there would be no uncertainty on the actions the
+agent can take, i.e. Bidle is the identity in this case, then the
+estimated hidden state at τ = 2 would be sπ
+τ=2 = [0.9,0.1]⊤.
+The agent would then be more conﬁdent under this action.
+4) Expected Free-energy: Active inference uniﬁes action
+selection and perception by assuming that actions fulﬁll pre-
+dictions based on inferred states. Since the internal model
+can be biased toward preferred states or observations ( prior
+desires), active inference induces actions that will bring the
+current beliefs towards the preferred states. An agent builds
+beliefs about future states which are then used to compute
+the expected free-energy. The latter is necessary to evaluate
+alternative plans. Plans that lead to preferred observations are
+more likely. Preferred observations are speciﬁed in the model
+parameter C. This enables action to realize the next (proximal)
+observation predicted by the plan that leads to (distal) goals.
+The expected free-energy for a plan π at time τ is given by:
+G(π,τ) = oπ⊤
+τ [ln oπ
+τ −ln C]  
+Reward seeking
+−diag(A⊤ln A)⊤sπ
+τ  
+Information seeking
+(4)
+The diag() function simply takes the diagonal elements of
+a matrix and puts them in a column vector. This is just a
+method to extract the correct matrix entries in order to compute
+the expected free-energy [34]. By minimizing expected free-
+energy the agent balances reward and information seeking (see
+Appendix D for derivations). Reward and information-seeking
+behaviors that arise from the formulation of the expected free-
+energy are illustrated respectively in Examples 2 and 3. To
+PEZZATO et al.: ACTIVE INFERENCE AND BEHA VIOR TREES FOR REACTIVE ACTION PLANNING AND EXECUTION IN ROBOTICS 5
+keep the examples reasonably simple to be computed by hand,
+we consider that the posterior over states according to different
+plans have already been computed following (3), and are given.
+Example 2. Reward seeking: Consider an agent has com-
+puted the posterior distribution of the states sπ1
+τ , sπ2
+τ under
+two different plans π1 and π2. The agent has a preference for
+a particular value of the state encoded in C. The model for
+this example is the following:
+A=
+[0.9 0 .1
+0.1 0 .9
+]
+, C=
+[1
+0
+]
+, sπ1
+τ =
+[0.95
+0.05
+]
+, sπ2
+τ =
+[0.05
+0.95
+]
+Let us consider the reward-seeking term in (4) (note that
+the information-seeking term is equal in both plans for this
+example). The observations expected under the two different
+plans are:
+oπ1
+τ = Asπ1
+τ =
+[0.86
+0.14
+]
+, oπ2
+τ = Asπ2
+τ =
+[0.14
+0.86
+]
+Intuitively, according to C, the ﬁrst plan is preferable and it
+should have the lowest expected free-energy because it leads to
+preferred observations with higher probability. Numerically:
+oπ1⊤
+τ [ln oπ1
+τ −ln C] =
+[0.86
+0.14
+]⊤[
+ln
+[0.86
+0.14
+]
+−ln
+[1
+0
+]]
+≈1.84
+Similarly for π2, oπ2⊤
+τ [ln oπ2
+τ −ln C] ≈ 13.35. As can be
+noticed, the plan that brings the posterior state closest to the
+preference speciﬁed in C leads to the lowest reward-seeking
+term.
+Example 3. Information seeking: Let us consider a variation
+of Example 2. The agent is not given any preference for a
+speciﬁc state, and the likelihood matrix A encodes now the
+fact that observations are expected to provide more precise
+information when the agent is in the second state (second
+column of A). This results in the following models:
+A=
+[0.7 0 .1
+0.3 0 .9
+]
+, C=
+[0
+0
+]
+, sπ1
+τ =
+[0.9
+0.1
+]
+, sπ2
+τ =
+[0.1
+0.9
+]
+We expect that the plan which leads to a state with less
+ambiguous information has the lowest information-seeking
+term. For the ﬁrst plan:
+− diag(A⊤ln A)⊤sπ1
+τ =
+− diag
+([
+0.7 0 .3
+0.1 0 .9
+]
+ln
+[
+0.7 0 .1
+0.3 0 .9
+])⊤[
+0.9
+0.1
+]
+≈0.58
+For the second plan, the information-seeking term is instead
+≈0.35. The state achieved with the second plan generates
+less ambiguous observations. Plans that lead to the lowest
+ambiguity in sensory information, and thus minimize G, are
+preferred.
+In more complex examples, minimizing G leads to a bal-
+ance in reward and information seeking. For a fully-ﬂedged
+exploration-exploitation problem, we refer the reader to a
+recently released Python library for active inference [36] which
+contains an interactive and visual example 3 of the emergent
+3https://pymdp-rtd.readthedocs.io/en/latest/notebooks/cue chaining demo.
+html
+behavior of a rat in a grid world which has to collect cues to
+disclose the location of the reward.
+a) Planning and decision making: Taking the gradient of
+F with respect to plans, and recalling that the generative model
+speciﬁes the approximate posterior over plans as a softmax
+function of the expected free-energy [33] it holds that:
+π= σ(−Gπ −Fπ) (5)
+where the vector π encodes the posterior distribution over
+plans reﬂecting the predicted value of each plan. Fπ =
+(F(π1),F(π2),...)⊤ and Gπ = ( G(π1),G(π2),...)⊤. See
+Appendix E for the details.
+b) Plan independent state-estimation: Given the proba-
+bility over ppossible plans, and the plan dependent states sπ
+τ,
+we can compute the overall probability distribution for the
+states over time through Bayesian Model Average:
+sτ =
+∑
+i
+sπi
+τ πi, where i∈{1,...,p } (6)
+were sπi
+τ is the probability of a state at time τ under plan iand
+πi is the probability of plan i. This is the average prediction for
+the state at a certain time, so sτ, according to the probability
+of each plan. In other words, this is a weighted average over
+different models. Models with high probability receive more
+weight, while models with lower probabilities are discounted.
+c) Action selection: The action for the agent to be
+executed is the ﬁrst action of the most likely plan:
+λ= max([π1,π2,..., πp]  
+π⊤
+), aτ = πλ(τ = 1) (7)
+where λ is the index of the most likely plan.
+Example 4. Plan and action selection: By computing the ex-
+pected free-energy of Exercise 2 using(4) and including the in-
+formation seeking term, we obtain Gπ = [G(π1),G(π2)]⊤≈
+[2.16,13.68]⊤. For the sake of this example, let us assume
+the free-energy is equal for both plans, that is Fπ =
+[F(π1),F(π2)]⊤ ≈[1.83,1.83]⊤. The posterior distribution
+over plans is then:
+π= σ
+(
+−
+[2.16
+13.68
+]
+−
+[1.83
+1.83
+])
+≈
+[0.99
+0.01
+]
+As can be seen, the most likely plan is the ﬁrst one, in
+accordance with the conclusions of Exercise 2. The action to
+be applied by the agent is the ﬁrst action of π1.
+The active inference algorithm is summarised in pseudo-
+code in Algorithm 1.
+5) Multiple sets of states and observations: The active
+inference model introduced in this section can also handle
+multiple sets of independent states and observations [34]. A
+famous example in the active inference literature covers a
+rat in a T-maze [20]. The rat is seeking a reward (cheese)
+but the location of the cheese is only known after receiving
+a cue. In this case, one set of states encodes the location
+of the rat, while another set encodes the initially unknown
+location of the cheese. Each independent set of states is called
+a state factor . In the same way, there can be multiple sets
+of observations coming from different sensors. Each set is a
+6 IEEE TRANSACTIONS ON ROBOTICS. ACCEPTED, NOVEMBER 2022
+Algorithm 1 Action selection with active inference
+1: Set C ⊿ prior preferences
+2: for τ = 1 : T do
+3: If not speciﬁed, get state from D if τ == 1
+4: If not speciﬁed, get observation from A
+5: Compute F for each plan ⊿ eq. (2)
+6: Update posterior state sπ
+τ ⊿ eq. (3)
+7: Compute G for each plan ⊿ eq. (4)
+8: Bayesian model averaging ⊿ eq. (6)
+9: Action selection ⊿ eq. (7)
+10: end for
+11: Return a ⊿ Preferred action
+different observation modality . Works as [34], [35] provide
+a step-by-step tutorial on active inference with fully worked
+out toy examples including multiple factors and modalities.
+We provide explicit models for our robotic case with multiple
+state factors and observations in Sec. III-A.
+B. Background on BTs
+We now describe the high-level concepts at the basis of BTs
+according to previous work such as [3], [24]. These concepts
+will be useful to understand the novel hybrid scheme proposed
+in the next section. A BT is a directed tree composed of nodes
+and edges that can be seen as a graphical modeling language.
+It provides a structured representation for the execution of
+actions that are based on conditions and observations in a
+system. The nodes in a BT follow the classical deﬁnition
+of parents and children. The root node is the only node
+without a parent, while the leaf nodes are all the nodes without
+children. In a BT, the nodes can be divided into control ﬂow
+nodes ( Fallback, Sequence, Parallel, or Decorator), and into
+execution nodes (Action or Condition) which are the leaf nodes
+of the tree. When executing a given BT in a control loop, the
+root node sends a tick to its child. A tick is nothing more than a
+signal that allows the execution of a child. The tick propagates
+in the tree following the rules dictated by each control node.
+A node returns a status to the parent, which can be running
+if its execution has not ﬁnished yet, success if the goal is
+achieved, or failure in the other cases. At this point, the return
+status is propagated back up the tree, which is traversed again
+following the same rules. The most important control nodes
+are:
+Fallback nodes: A fallback node ticks its children from
+left to right. It returns success (or running) as soon as one of
+the children returns success (or running). When a child returns
+success or running, the fallback does not tick the next child, if
+present. If all the children return failure, the fallback returns
+failure. This node is graphically identiﬁed by a gray box with
+a question mark ” ?”;
+Sequence nodes: The sequence node ticks its children
+from left to right. It returns running (or failure) as soon as a
+child returns running (or failure). The sequence returns success
+only if all the children return success. If a child returns running
+or failure, the sequence does not tick the next child, if present.
+In the library, we used to implement our BTs [37] thesequence
+node, indicated with [ →], keeps ticking a running child, and
+it restarts only if a child fails. [37] provides also reactive
+sequences [→R] where every time a sequence is ticked, the
+entire sequence is restarted from the ﬁrst child.
+The execution nodes are Actions and Conditions:
+Action nodes: An Action node performs an action in the
+environment. While an action is being executed, this node
+returns running. If the action is completed correctly it returns
+success, while if the action cannot be completed it returns
+failure. Actions are represented as red rectangles;
+Condition nodes: A Condition node determines if a con-
+dition is met or not, returning success or failure accordingly.
+Conditions never return running and do not change any states
+or variables. They are represented as orange ovals;
+An example BT is given in Fig. 2.
+Fig. 2. Example of BT. The tick traverses the tree starting from the Root. If
+Condition is true Action1 is executed. Then, if Action1 returns success,
+the Root returns success, otherwise Action2 is executed.
+III. A CTIVE INFERENCE AND BTS FOR REACTIVE ACTION
+PLANNING AND EXECUTION
+In this section, we introduce our novel approach using
+BTs and active inference. Even though active inference is
+a very promising theory, from a computational perspective
+computing the expected free-energy for each possible plan
+that a robot might take is cost-prohibitive. This curse of
+dimensionality is due to the combinatorial explosion when
+looking deep into the future [33]. To solve this problem, we
+propose to replace deep plans with shallow decision trees that
+are hierarchically composable. This will allow us to simplify
+our ofﬂine plans, exploit opportunities, and act intelligently to
+resolve local unforeseen contingencies. Our idea consists of
+two main intuitions:
+• To avoid combinatorial explosion while planning and act-
+ing with active inference for long-term tasks we specify
+the nominal behavior of an agent through a BT, used
+as a prior. In doing so, BTs provide global reactivity to
+foreseen situations
+• To avoid coding every possible contingency in the BT, we
+program only desired states ofﬂine, and we leave action
+selection to the online active inference scheme. Active
+inference provides then local reactivity to unforeseen
+situations.
+To achieve such a hybrid integration, and to be able to de-
+ploy this architecture on real robotic platforms, we addressed
+the following three fundamental problems: 1) how to deﬁne the
+PEZZATO et al.: ACTIVE INFERENCE AND BEHA VIOR TREES FOR REACTIVE ACTION PLANNING AND EXECUTION IN ROBOTICS 7
+generative models for active inference in robotics, 2) how to
+use BTs to provide priors as desired states to active inference,
+3) how to handle action preconditions in active inference, and
+possible conﬂicts which might arise at run-time in a dynamic
+environment.
+A. Deﬁnition of the models for active inference
+The world in which a robot operates needs to be abstracted
+such that the active inference agent can perform its reasoning
+processes. In this work, we operate in a continuous environ-
+ment with the ability of sensing and acting through symbolic
+decision making. In the general case, the decision making
+problem will include multiple sets of states, observations, and
+actions. Each independent set of states is a factor, for a total of
+nf factors. For a generic factor fj where j ∈J = {1,...,n f},
+the corresponding state factor is:
+s(fj) =
+[
+s(fj,1),s(fj,2),...,s (fj,m(fj))
+]⊤
+,
+S=
+{
+s(fj)|j ∈J
+}
+(8)
+where m(fj) is the number of mutually exclusive symbolic
+values that a state factor can have. Each entry of s(fj) is a
+real value between 0 and 1, and the sum of the entries is
+1. This represents the current belief state. Then, we deﬁne
+x∈X the continuous states of the world and the internal states
+of the robot are accessible through the symbolic perception
+system. The role of this perception system is to compute the
+symbolic observations based on the continuous state x, such
+that they can be manipulated by the discrete active inference
+agent. Observations o are used to build a probabilistic belief
+about the current state. Assuming one set of observations per
+state factor with r(fj) possible values, it holds:
+o(fj) =
+[
+o(fj,1),o(fj,2),...,o (fj,r(fj))
+]⊤
+,
+O=
+{
+o(fj)|j ∈J
+}
+(9)
+Additionally, the robot has a set of symbolic skills to modify
+the corresponding state factor:
+aτ ∈α(fj) =
+{
+a(fj,1),a(fj,2),...,a (fj,k(fj))}
+,
+A=
+{
+α(fj)|j ∈J
+}
+(10)
+where k(fj) is the number of actions that can affect a speciﬁc
+state factor fj. Each generic action a(fj,·) has associated a
+symbolic name, parameters, pre- and postconditions:
+Action a(fj,·) Preconditions Postconditions
+action_name(par) prec a(fj,·) posta(fj,·)
+where preca(fj,·) and posta(fj,·) are ﬁrst-order logic pred-
+icates that can be evaluated at run-time. A logical predicate is
+a boolean-valued function P: X→{ true, false}.
+Finally, we deﬁne the logical state l(fj) as a one-hot
+encoding of s(fj). We indicate as Lc(τ) =
+{
+l(fj)|j ∈ J
+}
+the (time varying) current logical state of the world. Deﬁning
+a logic state based on the probabilistic belief s built with
+active inference, instead of directly using the observation
+of the states o, increases robustness against noisy sensor
+readings, as we will explain in Example 12. Given the model
+of the world just introduced, we can now deﬁne for each
+factor fj the likelihood matrix A(fj), the k(fj) transition
+matrices Ba
+(fj,·)
+τ
+and the prior preferences C(fj). When an
+observation is available, A(fj) provides information about the
+corresponding value of a state factor s(fj). For a particular
+state, the probability of a state observation pair o(fj)
+τ , s(fj)
+τ
+is given by A(fj) ∈ Rr(fj)×m(fj)
+. In case a state factor
+is observable with full certainty, each state maps into the
+corresponding observation thus the likelihood matrix is the
+identity of size m(fj), Im(fj) . Note that knowing the mapping
+between observations and states does not necessarily mean
+that we can observe all the states at all times. Observations
+can be present or not, and when they are the likelihood matrix
+indicates the relation between that observation and the state.
+This relation can be more complex and incorporate uncertainty
+in the mapping as well. To deﬁne the transition matrices, we
+need to encode in a matrix form the effects of each action on
+the relevant state factors. The probability of a ending up in a
+state s(fj)
+τ+1, given s(fj)
+τ and action a(fj,·)
+τ is given by:
+P(s(fj)
+τ+1|s(fj)
+τ ,a(fj,·)
+τ ) = Cat(Ba
+(fj,·)
+τ
+s(fj)
+τ ),
+Ba
+(fj,·)
+τ
+∈Rm(fj)×m(fj)
+(11)
+In other words, we deﬁne Ba
+(fj,·)
+τ
+as a square matrix encoding
+the post-conditions of action a(fj,·)
+τ . The prior preferences over
+observations (or states) need to be encoded, for each factor,
+in C(fj) ∈Rm(fj)
+, with C=
+{
+C(fj)|j ∈J
+}
+. The higher the
+value of a preference, the more preferred a particular state is,
+and vice-versa. Priors are formed according to speciﬁc desires
+and they will be used to interface active inference and BTs.
+Finally, one has also to deﬁne the vector encoding the initial
+belief about the probability distribution of the states, that is
+D(fj) ∈Rm(fj)
+. This vector is normalized, and when no prior
+information is available, each entry will be 1/m(fj). In this
+work, we assume the model parameters such as likelihood and
+transition matrices to be known. However, one could use the
+free-energy minimization to learn them [38].
+Example 5. Consider a mobile manipulator in a retail en-
+vironment. We want the robot to be able to decide when to
+navigate to a certain goal location. To achieve so we need one
+state factor s(loc), one observation o(loc), and one symbolic
+action a(loc,1) = moveTo(goal). The robot can also decide
+not to do anything, so a(loc,2) = idle.
+Actions Preconditions Postconditions
+moveTo(goal) - l(loc) = [1 0]⊤
+idle - -
+The current position in space of the robot is a continuous
+value x ∈X . However, during execution the robot is given
+an observation o(loc) which indicates simply if the goal has
+been reached or not. In this case A(loc) = I2. The agent is
+then constantly building a probabilistic belief s(loc) encoding
+the chances of being at the goal. In case the robot has not
+8 IEEE TRANSACTIONS ON ROBOTICS. ACCEPTED, NOVEMBER 2022
+yet reached the goal, a possible conﬁguration at time τ is the
+following:
+o(loc) =
+[isAt(goal)
+!isAt(goal)
+]
+=
+[0
+1
+]
+, s(loc) =
+[0.08
+0.92
+]
+, (12)
+l(loc) =
+[
+0
+1
+]
+, BmoveTo =
+[
+0.95 0 .9
+0.05 0 .1
+]
+, Bidle =
+[
+1 0
+0 1
+]
+The preference over a state to be reached is given through
+C(loc). A robot wanting to reach a location will have, for
+instance, a preference C(loc) = [1,0]⊤.
+The transition matrix BmoveTo encodes the probability of
+reaching a goal location through the action moveTo(goal),
+which might fail with a certain probability. We also encode an
+Idle action, which does not modify any state, but it provides
+information on the outcome of the action selection process as
+we will see in the next subsections. In this simple case, the
+world state is just a single state factor s(loc). On the other
+hand, in later more complicated examples, the world state
+will contain all the different aspects of the world, for which a
+probabilistic representation of their value is built and updated.
+Using the proposed problem formulation for the active in-
+ference models, we can abstract redundant information which
+is not necessary to make high-level decisions. For instance,
+in the example above, we are not interested in building a
+probabilistic belief of the current robot position. To decide
+if to use the action moveTo(goal) or not, it is sufﬁcient to
+encode if the goal has been reached or not.
+B. BTs integration: planning preferences, not actions
+To achieve a meaningful behavior in the environment
+through active inference, we need to encode speciﬁc desires
+into the agent’s brain through C=
+{
+C(fj)|j ∈J
+}
+.
+A prior as BT: We propose to extend the available BT
+nodes in order to be able to specify desired states to be
+achieved as leaf nodes. We introduce a new type of leaf node
+called prior nodes , indicated with a green hexagon. These
+nodes can be seen as standard action nodes but instead of
+commanding an action, they simply set the desired value of a
+state in Cand they run active inference for action selection.
+The prior node is then just a leaf node in the BT which returns:
+Success if a state is achieved, Running while trying to
+achieve it, or Failure if for some reason it is not possible to
+reach the desired state. The return statuses are according to the
+outcome of our reactive action selection process as explained
+in Section III-D.
+Sub-goals through BTs: To reach a distal goal state, we
+plan achievable sub-goals in the form of desired logical states
+l, according to the available actions that a robot possesses.
+This idea of using sub-goals was already used in [23], but in
+our solution with BTs, we provide a task-independent way to
+deﬁne sub-goals which is only based on the set of available
+skills of the robot, such that we can make sure that it can
+complete the task. At planning time, we deﬁne the ideal
+sequence of states and actions to complete a task such that
+subsequent sub-goals (or logical desired states) are achievable
+by means of one action. This can be done manually or through
+automated planning. At run-time, however, we only provide
+the sequence of states to the algorithm, as in Fig. 3.
+Fig. 3. The path among states is planned ofﬂine using the available set of
+actions but only the sequence of states is provided at run-time. Actions are
+chosen online from the available set with active inference.
+Example 6. To program the behavior of the robot in Exam-
+ple 5 to visit a certain goal location, the BT will set the prior
+over s(loc) to C(loc) = [1,0]⊤ meaning that the robot would
+like to sense to be at goal.
+A classical BT and a BT for active inference with prior
+nodes are reported in Fig. 4. Note that the action is left out
+in the BT for active inference because these are selected at
+runtime. In this particular case, the condition isAt(goal)
+can be seen as the desired observation to obtain.
+Fig. 4. BT to navigate to a location using a classical BT and a BT for
+active inference. One action moveTo(goal) is available and one condition
+isAt(goal) provides information if the current location is at the goal. The
+prior node for active inference (green hexagon) sets the desired prior and runs
+the action selection process.
+Note that the amount of knowledge (i.e. number of states
+and actions) that is necessary to code a classical BT or our
+active inference version in Example 6 is the same. However,
+we abstract the fallback by planning in the state space and
+not in the action space. Instead of programming the action
+moveTo(goal) we only set a prior preference over the state
+isAt(goal) since the important information is retained in
+the state to be achieved rather than in the sequence of actions
+to do so. Action selection through active inference will then
+select the appropriate skills to match the current state of
+the world with the desired one, minimizing this discrepancy
+through free-energy minimization.
+Example 7. Consider the scenario in Example 5 with the prior
+as in Example 6. The prior is specifying a preference over be-
+PEZZATO et al.: ACTIVE INFERENCE AND BEHA VIOR TREES FOR REACTIVE ACTION PLANNING AND EXECUTION IN ROBOTICS 9
+ing at the desired goal location, but the mobile manipulator is
+not. The plan generated at runtime with Alg. 1 (see Examples
+2 and 4) would be to perform the action moveTo(goal),
+since this increases the probability of getting an observation
+isAt(goal).
+As we will thoroughly explain in Sec. IV-A, our algorithm
+creates online a stable region of attraction from the current
+state to the goal state instead of planning it ofﬂine through
+fallbacks. See Example 11 for a concrete case.
+C. Action preconditions and conﬂicts
+Past work on active inference, such as [23], was based on
+the assumption that actions were always executable and non-
+conﬂicting, but these do not hold in more realistic scenarios.
+Action preconditions in active inference: We propose
+to encode action preconditions as desired logical states that
+need to hold to be able to execute a particular action. This is
+illustrated in the next example.
+Example 8. We add one more action to the set of skills of our
+mobile manipulator: pick(obj) and the relative transition
+matrix Bpick. The action templates are extended as follows:
+Actions Preconditions Postconditions
+moveTo(goal) - l(loc) = [1 0]⊤
+l(reach) = [1 0]⊤
+pick(obj) isReachable(obj) l(hold) = [1 0]⊤
+o(hold) =
+[isHolding(obj)
+!isHolding(obj)
+]
+, B pick =
+[0.95 0 .9
+0.05 0 .1
+]
+o(reach) =
+[
+isReachable(obj)
+!isReachable(obj)
+]
+(13)
+where we added a new logical state l(hold), the relative
+belief s(hold) and observation o(hold), which indicates if the
+robot is holding the object obj. In the simplest case, we
+suppose that the only precondition for successful grasping is
+that obj is reachable. We then add a logical state l(reach), as
+well as s(reach) and o(reach), to provide active inference with
+information about this precondition. o(reach) can be built for
+instance trying to compute a grasping pose for a given object.
+The robot can act on the state l(hold) through pick, and it
+can act on l(reach) through moveTo.
+Conﬂicts resolution in active inference: Conﬂict resolu-
+tion due to dynamic changes in the environment and online
+decision making is handled through modiﬁcation of the prior
+preferences in C. The BT designed ofﬂine speciﬁes at runtime
+the desired state to be achieved. This is done by populating the
+prior preference over a state with the value of one. Note that
+if there is no goal, the preferences over states are set to zero
+everywhere so there is no incentive to act to achieve a different
+state. Given some preferences over states, the online decision
+making algorithm with active inference selects an action, and
+checks if the preconditions are holding according to the current
+belief state. If so, the action is executed, if not, the missing
+preconditions are added to the current preferred state with a
+higher preference (i.e. > 1), in our case with value 2. This
+can lead to conﬂicts with the original BT [4], that is the
+robot might want to simultaneously achieve two conﬂicting
+states. However, the state relative to a missing precondition
+has higher priority (i.e. >1) by construction. As explained in
+Algorithm 2, if preconditions are missing at runtime, action
+selection is performed again with the updated prior C, such that
+actions that will satisfy them are more likely. With our method,
+there is no need to explicitly detect a conﬂict and re-ordering a
+BT then, as was done in past work on the dynamic expansion
+of BTs [4]. In fact, since the decision making with active
+inference happens continuously during task execution, once a
+missing precondition is met this is removed from the current
+desired state. Thus, the only remaining preference is the one
+imposed by the BT, which can now be resumed. This leads to
+a natural conﬂict resolution and plan resuming without ad-hoc
+recovery mechanisms. The advantage of active inference is that
+we can represent which state is important but also when with
+different values of preference. Since missing preconditions are
+added to the current prior with a higher preference with respect
+to the ofﬂine plan, this will induce a behavior that can initially
+go against the initial BT because the new desire is more
+appealing to be satisﬁed. Conﬂict resolution is then achieved
+by locally updating prior desires about a state, giving them
+higher preference. The convergence analysis of this approach
+is reported in Section IV, and a concrete example of conﬂict
+resolution in a robotic scenario is presented in Sec. V-D,
+Example 13.
+D. Complete control scheme
+Our solution is summarised in Algorithm 2 and Fig. 5. Every
+time a BT is ticked, given a certain frequency, Algorithm 2 is
+run. The symbolic perception layer takes the sensory readings
+and translates these continuous quantities into logical obser-
+vations. This can be achieved through user-deﬁned models
+according to the speciﬁc environment and sensors available.
+The logical observations are used to perform belief updating
+to keep a probabilistic representation of the world in S. Then,
+the logical state Lc(τ) is formed. Every time a prior node in
+the BT is ticked, the corresponding priors in Care set.
+For both missing preconditions and conﬂicts, high priority
+priors are removed from the preferences C whenever the
+preconditions are satisﬁed or the conﬂicts resolved (lines
+6-10), allowing to resume the nominal ﬂow of the BT.
+Active inference from Algorithm 1 is then run for action
+selection. If no action is required since the logical state
+corresponds to the prior, the algorithm returns Success,
+otherwise, the selected action’s preconditions are checked and
+eventually pushed with higher priority. Then, action selection
+is performed with the updated prior. This procedure is repeated
+until either an executable action is found, returning Running,
+or no action can be executed, returning Failure. The case of
+Failure is handled through the global reactivity provided by
+the BT. This creates dynamic and stable regions of attraction as
+explained in Section IV-A, by means of sequential controller
+composition [39] (lines 17-31 of Algorithm 2).
+Crucially, in this work, we propose the new idea of us-
+ing dynamic priors . For a factor fj, C(fj) is not ﬁxed a
+10 IEEE TRANSACTIONS ON ROBOTICS. ACCEPTED, NOVEMBER 2022
+Fig. 5. Overview of the control architecture for reactive action planning and execution using active inference. Adaptive action selection is performed according
+to Algorithm 2. The symbolic perception module computes the symbolic observations based on the continuous state. In this work we assume this mapping
+known and encode it through simple rules based on measurements from the robot’s sensors. However learning methods to deﬁne this relationship from data
+could be employed as well.
+priori as in past active inference works, but instead, it can
+change over time according to the BT for a task. This allows
+preconditions checking and conﬂict resolution within active
+inference. A robot can follow a long programmed routine
+while autonomously taking decisions to locally compensate
+for unexpected events. This reduces considerably the need
+for hard-coded fallbacks, allowing to compress the BT to a
+minimal number of nodes.
+Algorithm 2 Pseudo-code for Adaptive Action Selection
+1: Get desired prior and parameters from BT:
+2: C, param ←BT ⊿ With priority 1
+3: Set current observations, beliefs and logical state:
+4: Set O, S, Lc(τ)
+5: Remove preferences with high-priority (i.e. > 1) if satis-
+ﬁed:
+6: for all priors C(fj) with preference ≥1 do
+7: if l(fj)
+c holds then
+8: Remove pushed preference for l(fj)
+c ;
+9: end if
+10: end for
+11: Run active inference given O, Sand C:
+12: aτ ←Action_selection(O,S,C) ⊿ Alg. 1
+13: Update Lc(τ)
+14: if aτ == Idle then
+15: return Success; ⊿ No action required
+16: else
+17: Check action preconditions:
+18: while aτ !=Idle do
+19: if precaτ ∈Lc(τ) OR precaτ = ∅then
+20: Execute(aτ);
+21: break, return Running; ⊿ Executing aτ
+22: else
+23: Push missing preconditions in C:
+24: C← precaτ; ⊿ With priority 2
+25: Exclude aτ and re-run Alg. 1 :
+26: Remove(aτ);
+27: aτ ←Action_selection(O,S,C)
+28: if aτ == Idle then
+29: return Failure; ⊿ No solution
+30: end if
+31: end if
+32: end while
+33: end if
+IV. T HEORETICAL ANALYSIS
+A. Analysis of convergence
+We provide a theoretical analysis of the proposed control
+architecture. There are two possible scenarios that might occur
+at run-time. Speciﬁcally, the environment might or might
+not differ from what has been planned ofﬂine through BTs.
+These two cases are analyzed in the following to study the
+convergence to the desired goal of our proposed solution.
+1) The dynamic environment IS as planned: In a nominal
+execution, where the environment in which a robot is operating
+is the same as the one at planning time, there is a one-to-
+one equivalence between our approach and a classical BT
+formulation. This follows directly by the fact that the BT
+is deﬁned according to Section III-B, so each subsequent
+state is achievable by means of one single action. At any
+point of the task, the robot ﬁnds itself in the planned state
+and has only one preference over the next state given by
+the BT through C. The only action which can minimize the
+expected free-energy is the one used during ofﬂine planning.
+In a nominal case, then, we maintain all the properties of BTs,
+which are well explained in [3]. In particular, the behavior will
+be Finite-Time Successful (FTS) [3] if the atomic actions are
+assumed to return success after a ﬁnite time. Note that so
+far we did not consider actions with the same postconditions.
+However, in this case, Algorithm 2 would sequentially try
+all the alternatives following the given order at design time.
+This can be improved for instance by making use of semantic
+knowledge at runtime to inform the action selection process
+about preferences over actions to achieve the same outcome.
+This information can be stored for instance in a knowledge
+base and can be used to parametrize the generative model for
+active inference.
+2) The dynamic environment IS NOT as planned: The most
+interesting case is when a subsequent desired state is not
+reachable as initially planned. As explained before, in such a
+case we push the missing preconditions of the selected action
+into the current prior Cto locally and temporarily modify the
+goal. We analyze this idea in terms of sequential controllers (or
+actions) composition as in [39], and we show how Algorithm 2
+generates a plan that will eventually converge to the initial
+goal. First of all, we provide some assumptions and deﬁnitions
+that will be useful for the analysis.
+Assumption 1: The action templates with pre- and post-
+conditions provided to the agent are correct;
+PEZZATO et al.: ACTIVE INFERENCE AND BEHA VIOR TREES FOR REACTIVE ACTION PLANNING AND EXECUTION IN ROBOTICS 11
+Assumption 2: A given desired goal is achievable by at
+least one atomic action;
+Deﬁnition 1: The domain of attraction of an action ai is
+deﬁned as the set of its preconditions. This domain for ai is
+indicated as D(ai);
+Deﬁnition 2: We say that an action a1 prepares action
+a2 if the postconditions Pc of a2 lie within the domain of
+attraction of a1, so Pc(a2) ⊆D(a1);
+Note: For the derivations in this section we consider,
+without lack of generality, one single factor such that we can
+drop the superscripts, i.e. C(fj) = C.
+Following Algorithm 2 each time a prior leaf node is ticked
+in the BT, active inference is used to deﬁne a sequence of ac-
+tions to bring the current state towards the goal. It is sufﬁcient
+to show, then, that the asymptotically stable equilibrium of a
+generic generated sequence is the initial given goal.
+Lemma 1. Let Lc(τ) be the current logic state of the world,
+and Athe set of available actions. An action ai ∈ Acan
+only be executed within its domain of attraction, so when
+Lc(τ) ∈D(ai). Let us assume that the goal encoded in C
+is a postcondition of an action a1 such that Pc(a1) = C, and
+that Lc(τ) ̸= C. If Lc(τ) ̸∈D(a1), Algorithm 2 generates
+a plan π = {a1,...,a N}with domain of attraction D(π)
+according to the steps below.
+1) Let the initial sequence contain a1 ∈A, π(1) = {a1},
+D(π) = D(a1), set N = 1
+2) Remove aN from the available actions, and add the
+unmet preconditions D(aN) to the prior C with higher
+priority, such that C= C∪D(aN)
+3) Select aN+1 through active inference (Algorithm 1).
+Then, aN+1 prepares aN by construction, π(N + 1) =
+π(N) ∪{aN}, DN+1(π) = DN(π) ∪D(aN+1), and
+N = N + 1
+4) Repeat 2, 3 until Lc(τ) ∈D(aN) OR aN == Idle
+If Lc(τ) ∈D(aN), the sequential composition π with region
+of attraction D(π) = ⋃
+ai D(ai) for i= 1,...,N stabilizes the
+system at the given desired state C. If ai ∈A are FTS, then
+π is FTS.
+Proof. Since Lc(τ) ∈ D(aN) and Pc(aN) ⊆ D(aN−1),
+it follows that Lc(τ) is moving towards C. Moreover, by
+construction D(a1) ⊆ ⋃
+ai Pc(ai) for i = 2 ,...,N . After
+completing action a1, it results Lc(τ) ≡Csince by deﬁnition
+Pc(a1) = C.
+Note that if Lc(τ) ∈D(aN) does not hold after sampling
+all available actions, it means that the algorithm is unable
+to ﬁnd a set of actions that can satisfy the preconditions of
+the initially planned action. This situation is a major failure
+that needs to be handled by the overall BT. Lemma 1 is a
+direct consequence of the sequential behavior composition of
+FTS actions where each action has effects within the domain
+of attraction of the action below. The asymptotically stable
+equilibrium of each controller is either the goal C, or it is
+within the region of attraction of another action earlier in the
+sequence, see [3], [39], [40]. One can visualize the idea of
+sequential composition in Fig. 6.
+Fig. 6. Schematic visualization of the domain of attraction D(·) of different
+controllers around the current logical state Lc(τ), as well as their postcondi-
+tions within the domain of attraction of the controller below.
+B. Analysis of robustness
+It is not easy to ﬁnd a common and objective deﬁnition of
+robustness to analyze the characteristics of algorithms for task
+execution. One possible way is to describe robustness in terms
+of domains or regions of attraction as in past work [3], [39].
+When considering task planning and execution with classical
+BTs, often these regions of attraction are deﬁned ofﬂine
+leading to a complex and extensive analysis of the possible
+contingencies that might eventually happen [3], and these
+are speciﬁc to each different task. Alternatively, adapting the
+region of attraction requires either re-planning [6] or dynamic
+BT expansion [4]. Robustness can be measured according to
+the size of this region, such that a robot can achieve the desired
+goal from a plurality of initial conditions. With Algorithm 2 we
+achieve robust behavior by dynamically generating a suitable
+region of attraction according to the minimization of free-
+energy. This region brings the current state towards the desired
+goal. We then cover only the necessary region in order to be
+able to steer the current state to the desired goal, changing
+prior preferences at run-time.
+Corollary 1. When an executable action aN is found dur-
+ing task execution through Algorithm 2 such that π =
+{a1,...,a N}, the plan has a domain of attraction towards
+a given goal that includes the current state Lc(τ). If D(a1) ⊆⋃
+ai Pc(ai) for i= 2,...,N the plan is asymptotically stable.
+Proof. The corollary follows simply from Lemma 1.
+Example 9. Let us assume that Algorithm 2 produced a plan
+π= {a1, a2}, a set of FTS actions, where a2 is executable so
+Lc(τ) ∈D(a2), and its effects are such that Pc(a2) ≡D(a1).
+Since a2 is FTS, after a certain running time Lc(τ) ∈Pc(a2).
+The next tick after the effects of a2 took place, π = {a1}
+where this time a1 is executable since Lc(τ) ∈D(a1) and
+Pc(a1) = C. The overall goal is then achieved in a ﬁnite
+time.
+Instead of looking for globally asymptotically stable plans
+from each initial state to each possible goal, which can be
+unfeasible or at least very hard [39], we deﬁne smaller regions
+of attractions dynamically, according to the current state and
+goal.
+12 IEEE TRANSACTIONS ON ROBOTICS. ACCEPTED, NOVEMBER 2022
+V. E XPERIMENTAL EVALUATION
+In this section, we evaluate our algorithm in terms of
+robustness, safety, and conﬂicts resolution in two validation
+scenarios with two different mobile manipulators and tasks.
+We also provide a theoretical comparison with classical and
+dynamically expanded BTs.
+A. Experimental scenarios
+1) Scenario 1: The task is to pick one object from a crate
+and place it on top of a table. This object might or might not be
+reachable from the initial robot conﬁguration, and the placing
+location might or might not be occupied by another movable
+box. Crucially, the state of the table cannot be observed until
+the table is reached. This results in a partially observable initial
+state at the start of the mission where the place location has
+a 50% chance of being either free or occupied. Additionally,
+we suppose that other external events, or agents, can interfere
+with the execution of the task, resulting in either helping or
+adversarial behavior. The robot used for the ﬁrst validation
+scenario is a mobile manipulator consisting of a Clearpath
+Boxer mobile base, in combination with a Franka Emika Panda
+arm. The experiment for this scenario was conducted in a
+Gazebo simulation in a simpliﬁed version of a real retail store,
+see Fig. 7.
+Fig. 7. Simulation of the mobile manipulation task.
+2) Scenario 2: The task is to fetch a product in a mockup
+retail store and stock it on a shelf using the real mobile
+manipulator TIAGo, as in Fig. 8.
+Importantly, the BT for completing the task in the real
+store with TIAGo is the same one used for simulation with
+the Panda arm and the mobile base, just parametrized with a
+different object and place location. The code developed for the
+experiments and theoretical examples is publicly available. 4.
+B. Implementation
+1) Models for Scenarios 1 and 2: In order to program the
+tasks for Scenarios 1 and 2, we extended the robot skills
+deﬁned in our theoretical Example 8. We added then two extra
+states and their relative observations: isPlacedAt(loc,
+obj) called s(place), and isLocationFree(loc) called
+s(free). The state s(place) indicates whether or not obj is
+at loc, with associated probability, while s(free) indicates
+4https://github.com/cpezzato/discrete active inference
+Fig. 8. Experiments with TIAGo, stocking a product on the shelf.
+whether loc is occupied by another object. Then, we also
+had to add three more actions, which are 1) place(obj,
+loc), 2) push(obj) to free a placing location, and 3)
+placeOnPlate(obj), to place the object held by the
+gripper on the robot’s plate. We summarise states and skills
+for the mobile manipulator in Table II.
+TABLE II
+NOTATION FOR STATES AND ACTIONS
+State, Boolean State Description
+s(loc), l(loc) Belief about being at the goal location
+s(hold), l(hold) Belief about holding an object
+s(reach), l(reach) Belief about reachability of an object
+s(place), l(place) Belief about an object being placed at a
+location
+s(free), l(free) Belief about a location being free
+Actions Preconditions Postconditions
+moveTo(goal) - l(loc) = [1 0]⊤
+l(reach) = [1 0]⊤
+pick(obj) isReachable(obj) l(hold) = [1 0]⊤
+!isHolding
+place(obj,loc) isLocationFree(loc) l(place) = [1 0]⊤
+push() !isHolding l(free) = [1 0]⊤
+placeOnPlate() - l(hold) = [0 1]⊤
+The likelihood matrices are just the identity, while the
+transition matrices simply map the postconditions of actions,
+similarly to Example 8. Note that the design of actions and
+states is not unique, and other combinations are possible. One
+can make atomic actions increasingly more complex, or add
+more preconditions. The plan, speciﬁed in a BT, contains the
+desired sequence of states to complete the task, leaving out
+from the ofﬂine planning other complex fallbacks to cope
+with contingencies associated with the dynamic nature of
+the environment. The BT for performing the tasks in both
+Scenario 1 and Scenario 2 is reported in Fig. 9. Note that
+the fallback for the action moveTo could be substituted
+by another prior node as in Fig. 4, however, we opted for
+this alternative solution to highlight the hybrid combination
+of classical BTs and active inference. Design principles to
+choose when to use prior nodes and when normal fallbacks
+are reported in Sec.V-F.
+2) Execution of Algorithm 2: We provide a full execution
+of Algorithm 2 in Example 10. We consider Scenario 1, for
+PEZZATO et al.: ACTIVE INFERENCE AND BEHA VIOR TREES FOR REACTIVE ACTION PLANNING AND EXECUTION IN ROBOTICS 13
+Fig. 9. BT with prior nodes to complete the mobile manipulation task in the
+retail store, Scenario 1 and 2. locs, locp are respectively the location in front
+of the shelf in the store and the desired place location of an item
+which the initial conﬁguration of the robot is depicted in Fig. 7,
+and the BT for the task is the one if Fig. 9.
+Example 10. Let us consider Algorithm 2 and Scenario 1.
+At the start of the task, the ﬁrst node isHolding(obj) in
+the BT is ticked, and the corresponding prior preference is set,
+C(hold) = [1,0]⊤(line 2 Alg. 2). Since the robot is not holding
+the desired obj and it is not reachable, o(hold) = o(reach) =
+[0,1]⊤. At the start, the initial states are a uniform distribution
+s(hold) = s(reach) = [0.5,0.5]⊤ (line 4). Since the task just
+started, the only prior preference is the one set by the BT,
+so there are no high-priority priors (lines 6-10). Algorithm 1
+is then run (line 12), updating the states s(hold), s(reach)
+according to the given observations, and selecting an action
+aτ. In this example, the updated most probable logical state
+(line 13) will be l(hold)
+c = l(reach)
+c = [0,1]⊤ and aτ will be
+pick(obj) since there is a mismatch between the C(hold)
+and l(hold)
+c . The preconditions of pick(obj) are checked
+(line 19). This action requires the object to be reachable, so
+this missing precondition is added to the preferences with high
+priority, that is C(reach) = [2 ,0]⊤. Active inference is run
+again with the update prior (line 27). This process (lines 17-
+32) is repeated until either an executable action is found (lines
+19-21) or the selected action is idle (lines 28-30). In the ﬁrst
+case, aτ is executed and the algorithm returns running. In the
+second case, a failure is returned indicating that no action can
+be performed to satisfy prior preferences. In this example, re-
+running active inference (line 27) with C(hold) = [1,0]⊤ and
+C(reach) = [2,0]⊤ would return the action moveTo. There
+are no preconditions for this action, thus it can be executed
+(lines 20-21). The BT keeps being ticked at a certain frequency,
+and until the object becomes reachable, the same steps as just
+described will be repeated. As soon as the robot can reach
+the object, so l(reach)
+c = [1,0]⊤, the preference for C(reach)
+is removed (lines 6-10) and set to [0,0]⊤. This time, when the
+action pick is selected, its preconditions are satisﬁed and
+thus it can be executed. After holding the object, when the
+BT is ticked no action is needed since the prior is already
+satisﬁed. Algorithm 2 returns success (lines 14-16) and the
+task can proceed with the next node in the BT.
+Note that the BT designed for Scenario 1 was entirely
+reused in Scenario 2, with the only adaptation of the desired
+object and locations in the BT. In Sec. V-C and Sec. V-D,
+robustness and run-time conﬂicts resolution are analyzed for
+Scenario 1 , but similar considerations can be derived for
+scenario 2.
+C. Robustness: Dynamic regions of attraction
+With our approach we improve robustness compared to
+classical BTs in two different ways: 1) in terms of task
+execution, and 2) against noisy sensory readings. We elaborate
+on the following:
+1) Robustness of task execution: With our algorithm we
+can generate complex regions of attraction dynamically at
+runtime, alleviating the burden of programming every fallback
+beforehand in a BT, which is prone to fail in edge cases that
+haven’t been considered at design time. We illustrate this in
+the example below. Consider Example 10. According to the
+current world’s state, Algorithm 2 selects different actions to
+generate a suitable domain of attraction:
+Example 11. The initial conditions are such that the object
+is not reachable. Let s(hold) be the probabilistic belief of
+holding an object, and s(reach) be the probabilistic belief
+of its reachability. The domain of attraction generated by
+Algorithm 2 at runtime is depicted in Fig. 10 using phase
+portraits as in [3]. Actions, when performed, increase the
+probability of their postconditions.
+Fig. 10. Dynamic domain of attraction generated by Algorithm 2 for
+Example 11. (a) relates to the action pick(obj), and (b) is the composition
+of moveTo(loc) and pick(obj) after automatically updating the prior
+preferences
+From Fig. 10, we can see that the goal of the active inference
+agent is to hold obj so C(hold) = [1 0] ⊤. The ﬁrst selected
+action is then pick(obj). However, since the current logical
+state is not contained in the domain of attraction of the action,
+the prior preferences are updated with the missing (higher pri-
+ority) precondition according to the action template provided,
+that is isReachable so C(reach) = [2,0]⊤. This results in a
+sequential composition of controllers with a stable equilibrium
+corresponding to the postconditions of pick(obj). On the
+other hand, to achieve the same domain of attraction with
+a classical BT, one would require several additional nodes,
+as explained in Sec. V-F and visualized in Fig. 14. Instead
+of extensively programming fallback behaviors, Algorithm 2
+endows our actor with deliberation capabilities and allows the
+14 IEEE TRANSACTIONS ON ROBOTICS. ACCEPTED, NOVEMBER 2022
+agent to reason about the current state of the environment, the
+desired state, and the available action templates.
+2) Robustness against noisy sensory readings: BTs are
+purely reactive which means that every action, or sub-behavior,
+is executed in response to an event or a condition determined
+at the current time step τ. If an instantaneous observation
+is erroneous, wrong transitions could be triggered because in
+classical BTs there is no notion and representation of a “state”
+that is maintained and updated over time. This might be a
+problem in the presence of noise in the observations.
+Example 12. Consider a generic fallback based on a con-
+dition check in a BT, as in Fig. 11. The perception system,
+on which the condition check is based produced at time τ
+an erroneous observation, for instance, due to poor lighting
+conditions in an object detection algorithm. If the condition
+is checked at time τ, a purely reactive system would produce
+a wrong transition because the condition returns failure, and
+the fallback would tick the action.
+Fig. 11. Erroneous transition in a purely reactive BT due to a noisy
+observation at time τ. F, S, and R mean respectively, Failure, Success
+and Running.
+In active inference, the probabilistic representation of a
+state helps ﬁlter out this kind of spurious sensory input. For
+instance, a wrong observation like the one above would have
+caused the robot to be just slightly less conﬁdent about that
+state, with no erroneous transition.
+D. Resolving run-time conﬂicts
+Unexpected events affecting the system during action selec-
+tion can lead to conﬂicts with the initial ofﬂine plan. This is
+the case in one execution of the mobile manipulation task as
+in Fig. 12 where after picking the object and moving in front
+of the table, the robot senses that the place location is not
+free. In this situation, a conﬂict with the ofﬂine plan arises,
+where there is a preference for two mutually exclusive states,
+namely holding the red cube but also having the gripper free
+in order to empty the place location. We describe this situation
+more formally in Example 13, and we then explain how such
+a conﬂict is resolved.
+Example 13. For solving the situation in Fig. 12 using the
+BT in Fig. 9, the robot should 1) hold the object, 2) be at
+the desired place location, and 3) have the object placed.
+The preferences are planned ofﬂine and the BT populates the
+relative priors with a unitary preference at runtime (eq. (14a)).
+At this point of the execution, there is a mismatch between the
+current logical belief about the state l(place) and the desired
+one, in fact C(place) differs from l(place) (eq. (14b)) because
+the object is not placed at the desired location.
+C(hold) =
+[1
+0
+]
+, C(place) =
+[1
+0
+]
+(14a)
+l(hold) =
+[1
+0
+]
+, l(place) =
+[0
+1
+]
+(14b)
+The selected action with active inference in this situation is
+place(obj,loc). The missing precondition on the place
+location to be free is added to the prior (see C(free) in
+eq. (15)) and the action selection is performed again. The
+only action that can minimize free-energy further is now
+push. Then, the missing precondition for this action (i.e.
+!isHolding) is added in the current prior with higher
+priority in C(hold) (line 24 in Algorithm 2).
+C(free) =
+[2
+0
+]
+, C(hold) =
+[1
+2
+]
+(15)
+The required push action to proceed with the task has a
+conﬂicting precondition with the ofﬂine plan, see C(hold) in
+eq. (15).
+Fig. 12. Example of conﬂict during mobile manipulation using the BT from
+Fig. 9. The BT is deﬁning a preference of 1 over holding the red cube, but the
+runtime situation requires a free gripper to safely push away an unexpected
+object. Active inference is then required to achieve an unmet precondition
+with higher preference.
+Even though the desired state speciﬁed in the BT is
+isHolding(obj), at this particular moment there is a
+higher preference for having the gripper free due to a missing
+precondition to proceed with the plan. Algorithm 2 selects
+then the action that best matches the current prior desires,
+or equivalently that minimises expected free-energy the most,
+that is placeOnPlate to obtain l(hold) = [0 , 1]⊤. This
+allows, then, to perform the action push. Once the place
+location is free after pushing, the high-priority preference on
+having the location free is removed from the prior. As a
+consequence, there are also no more preferences pushed with
+high priority over the state l(hold) which is only set by the BT
+as C(hold) = [1, 0]⊤. The red cube is then picked again and
+placed on the table since no more conﬂicts are present.
+Videos of the simulations and experiments can be found
+online5. The BTs to encode priors for active inference are
+implemented using a standard library [37].
+5https://youtu.be/dEjXu-sD1SI
+PEZZATO et al.: ACTIVE INFERENCE AND BEHA VIOR TREES FOR REACTIVE ACTION PLANNING AND EXECUTION IN ROBOTICS 15
+E. Safety
+When designing adaptive behaviors for autonomous robots,
+attention should be paid to safety. The proposed algorithm
+allows to retain control over the general behavior of the robot
+and to force a speciﬁc routine in case something goes wrong
+leveraging the structure of BTs. In fact, we are able to include
+adaptation through active inference only in the parts of the task
+that require it, keeping all the properties of BTs intact. Safety
+guarantees for the whole task can easily be added by using
+a sequence node where the leftmost part is the safety criteria
+to be satisﬁed [3] by the right part of the behavior, as shown
+in Fig. 13. In this example, the BT allows avoiding battery
+Fig. 13. BT with safety guarantees while allowing runtime adaptation.
+drops below a safety-critical value while performing a task.
+The sub-tree on the right can be any other BT, for instance,
+the one used to solve Scenario 1 and Scenario 2 from Fig. 9.
+Since, by construction, a BT is executed from left to right,
+one can assure that the robot is guaranteed to satisfy the
+leftmost condition ﬁrst before proceeding with the rest of the
+behavior. In our speciﬁc case, this allows us to easily override
+the online decision making process with active inference where
+needed, in favor of safety routines. Note that safety guarantees
+can also be provided in speciﬁc parts of the three only, and
+not necessarily for the whole tree. For example in Fig. 9, one
+might ensure navigation at a low speed only while transporting
+an object to a place location.
+F . Comparison and design principles
+1) Comparison with other BT approaches: The hybrid
+scheme of active inference and BTs aims at providing a
+framework for reactive action planning and execution in
+robotic systems. For this reason, we compare the properties of
+our approach with standard BTs [3] and with BTs generated
+through expansion from goal conditions [4]. Scenario 1 and
+Scenario 2 can be tackled, for instance, by explicitly planning
+every fallback behavior with classical BTs, as in Fig. 14. Even
+if this provides the same reactive behavior as the one generated
+by Fig. 9, far more (planning) effort is needed: to solve the
+same task one would require 12 control nodes, 8 condition
+nodes, and 7 actions, for a total of 27 nodes compared to the
+6 needed in our approach that is an ∼88% compression.
+Importantly, the development effort of a prior node in a BT
+is the same as a standard action node. It is true that active
+inference requires specifying the likelihood and transition
+matrices encoding actions pre- and postconditions, but this
+has to be done only once while deﬁning the available skills of
+a robot, and it is independent of the task to be solved. Thus, a
+designer is not concerned with this when adding a prior node
+in a BT.
+Instead of planning several fallbacks ofﬂine, [4] dynam-
+ically expands a BT from a single goal condition, through
+backchaining, to blend planning and acting online. To solve
+Scenario 1 and Scenario 2 with this approach, one needs to
+deﬁne a goal condition isPlacedAt(obj, loc) similarly
+to our solution, and deﬁne the preconditions of the action
+place(obj, loc) such that they contain the fact that the
+robot is holding the object, that the place location is reachable,
+and it is free. Then, to solve Scenarios 1 and 2 one needs
+to deﬁne only the ﬁnal goal condition and run the algorithm
+proposed in [4]. Even though this allows to complete tasks
+similar to what we propose, [4] comes with a fundamental
+theoretical limitation: adaptation cannot be selectively added
+only to speciﬁc parts of the tree. The whole behavior is indeed
+determined at runtime based on preconditions and effects of
+actions starting from a goal condition. The addition of safety
+guarantees can only happen for the whole task, and not in
+selected parts of the tree derived online.
+To conclude, the hybrid combination of active inference
+and BTs allows for combining the advantages of both ofﬂine
+design of BTs and online dynamic expansion. In particular:
+it drastically reduces the number of necessary nodes planned
+ofﬂine in a BT, it can handle partial observability of the initial
+state, and it allows to selectively add adaptation and safety
+guarantees in speciﬁc parts of the tree.
+Another important difference between our approach and
+other BTs solutions is that we introduced the concept of state
+in a BT through the prior node for which a probabilistic belief
+is built, updated, and used for action planning at runtime with
+uncertain action outcomes.
+Table III reports a summary of the comparison with standard
+BTs and BT with dynamic expansion for Scenarios 1 and 2.
+TABLE III
+SUMMARY OF COMPARISON
+Approach
+# Hand-
+crafted
+nodes
+Unforeseen
+contingen.
+Selective
+adaptation
+Adaptive
+safety
+guarantees
+Standard
+BT 27   
+Dynamic
+BT [4] 1  
+Only for the
+task as a
+whole
+Ours 6   
+2) Comparison with ROSPlan: One may argue that other
+solutions such as ROSPlan [41] could also be used for
+planning and execution in robotics in dynamic environments.
+ROSPlan leverages automated planning with PDDL2.1, but it
+is not designed for fast reaction in case of dynamic changes
+in the environment caused by external events, and would not
+work in case of a partially observable initial state. Consider
+Scenario 1. At the start of the task, the robot can sense that the
+gripper is empty and it has access to its current base location.
+16 IEEE TRANSACTIONS ON ROBOTICS. ACCEPTED, NOVEMBER 2022
+Fig. 14. Possible standard BT to perform Scenario 1 and Scenario 2 without prior nodes for active inference. Parts of the behavior that require several
+fallbacks can be substituted by prior nodes for online adaptation instead.
+However, it has no information about the state of the table
+(occupied or free) on which the red cube needs to be placed.
+At the start of the mission, the table has then 50% chance
+of being occupied and a 50% chance of being free, since it
+cannot be observed. Yet, the whole task can be planned at
+a high level, as in Fig. 9, and be executed. Once the robot
+reaches the placing location, observations regarding the state
+of the table become available and the internal beliefs can be
+updated until enough evidence is collected and a decision can
+be taken. Without knowing the full state at the start, a solution
+with ROSPlan would require making assumptions on the value
+of the unknown states, and either planning for the worst-case
+scenario, which might not even be needed, or failing during
+execution and re-plan.
+3) Design principles: We position our work in between
+two extremes, namely fully ofﬂine planning and fully online
+dynamic expansion of BTs. In our method, a designer can
+decide if to lean towards a fully ofﬂine approach or a fully
+online synthesis. The choice depends on the task at hand and
+the modeling of the actions pre- and postconditions. Even
+though the design of behaviors is still an art, we give some
+design principles which can be useful in the development of
+robotic applications using this hybrid BTs and active inference
+method. Take for instance Fig. 14 and Fig. 9. Prior nodes for
+local adaptation can be included in the behavior when there
+are several contingencies to consider or action preconditions
+to be satisﬁed in order to achieve a sub-goal. A designer can:
+1) plan ofﬂine where the task is certain or equivalently where
+a small number of things can go wrong; 2) use prior nodes
+implemented with active inference to decide at runtime the
+actions to be executed whenever the task is uncertain. This is
+a compromise between a fully deﬁned plan where the behavior
+of the robot is predeﬁned in every part of the state space and
+a fully dynamic expansion of BTs which can result in a sub-
+optimal action sequence [4]. This is illustrated in Fig.9, where
+the actions for holding and placing an object are chosen online
+due to various possible unexpected contingencies, whereas
+the moveTo action is planned. Prior nodes should be used
+whenever capturing the variability of a part of a certain task
+would require much effort during ofﬂine planning.
+VI. D ISCUSSION
+In this work, we considered a mobile manipulator in a
+retail store domain with particular focus on plan execution.
+In this scope, ofﬂine planning is arguably better suited to
+ofﬂoad computations at runtime for the parts of the task that
+do not change frequently. In our case, this was the sequence
+of states to stock a product that was encoded in a BT. On
+the other hand, at the cost of additional online computations,
+local online planning is better suited for execution in uncertain
+environments such as a busy supermarket, because one can
+avoid planning beforehand for every contingency. We achieved
+this through active inference. With the proposed method we
+can leverage the complementary advantages of both ofﬂine and
+online planning, and in the following we discuss in detail the
+choice of using BTs and active inference speciﬁcally.
+A. Active inference as a planning node in a BT
+We opted for the use of active inference with action pre-
+conditions as a planning node in the BT because this allows
+achieving online PDDL-style planning with noisy observations
+and partially observable probabilistic states. An alternative
+solution to our approach could be to use a simple PDDL
+planner in conjunction with a ﬁltering scheme. By re-planning
+for a small sub-task at the same frequency used for the active
+inference node, one can achieve similar reactiveness to our
+approach. However, by means of active inference, one can
+make use of the full probabilistic information on the states,
+and one does not require full knowledge of the symbolic initial
+state.
+B. Why choosing BTs
+An experienced roboticist could also wonder why we opted
+for BTs in the ﬁrst place, instead of other PDDL-style planning
+approaches to encode the solution to a task. First of all, the
+focus of this paper is on the runtime adaptability and reactivity
+in dynamic environments with partially observable initial state,
+and not on the generation of complex ofﬂine plans.
+In this context, BTs are advantageous because they are
+designed to dispatch and monitor actions execution at runtime.
+PEZZATO et al.: ACTIVE INFERENCE AND BEHA VIOR TREES FOR REACTIVE ACTION PLANNING AND EXECUTION IN ROBOTICS 17
+This allows to quickly react to changes in the environment
+that are not necessarily a consequence of the robot’s own
+actions. A plan that is generated through PDDL planning and
+executed bypassing BTs cannot provide this type of reactivity
+unless one deﬁnes speciﬁc re-planning strategies to mimic
+BTs’ reactiveness.
+However, we see potential extensions of this work by
+combining it with other PDDL planning methods. For instance,
+PDDL can be used to automatically generate plans for which
+their execution is optimized through BTs [42]. This allows
+for instance to take advantage of parallel action execution and
+would remove the need to hand-design a BT. Additionally, an
+action at runtime can be executed as soon as its requirements
+are available instead of waiting for what is established ofﬂine
+by the planner.
+C. Why choose active inference
+Active inference could potentially be substituted by other
+valid POMDP approaches. We see two possible ways of doing
+so, that is either using an ofﬂine or an online POMDP solver.
+First, one could solve a policy ofﬂine and then use it for
+online decision making. This approach can be more effective
+than active inference once the transition matrices, the reward,
+and the task are ﬁxed. However, the addition of new symbolic
+actions (so new skills as transitions), or a substantial change
+in the task while using the same skills, would require re-
+computing the policy. In addition, planning ofﬂine for all
+possible states and actions combinations is a much larger
+problem than computing a plan online for the current state
+only. As concluded in [43], for the parts of a task subject to
+frequent unpredictable changes, computing locally an online
+plan as we do with active inference is preferable to ofﬂine
+policies.
+Second, one could perform online decision making without
+ofﬂine computations and achieve similar performance, see
+[44], [45]. Compared to both ofﬂine and online POMDPs,
+however, active inference exposes extra model parameters
+to bridge abstract common sense knowledge with discrete
+decision making. These extra model parameters can be updated
+with runtime information to adapt plans on the ﬂy. Take for
+instance the prior over plans p(π) = Cat(E). The E vector
+can be updated at runtime to steer the decision making while
+computing the posterior distribution π= σ(ln E−Gπ−Fπ)
+[34]. This vector can be used to encode common sense and
+habits [34], [35], but can also be used to adapt the plans
+online due for instance to runtime component failure. This
+opens up many possibilities for extensions, to be explored in
+future work. We are particularly interested in active inference
+because it is a ﬂexible and uniﬁed framework that connects
+different branches of control theory at different abstraction
+levels. Active inference can unify (i) abstract decision making
+with guarantees, as in this paper, (ii) adaptive [12] and fault
+tolerant [10], [11], [46] torque control, as well as (iii) state
+estimation and learning.
+VII. C ONCLUSIONS
+In this work, we tackled the problem of action planning
+and execution in real-world robotics. We addressed two open
+challenges, namely hierarchical deliberation, and continual
+online planning, by combining BTs and active inference.
+The proposed algorithm and its core idea are general and
+independent of the particular robot platform and task. Our
+solution provides local reactivity to unforeseen situations while
+keeping the initial plan intact. In addition, it is possible to
+easily add safety guarantees to override the online decision
+making process thanks to the properties of BTs. We showed
+how robotic tasks can be described in terms of free-energy
+minimization, and we introduced action preconditions and
+conﬂict resolution for active inference by means of dynamic
+priors. This means that a robot can locally set its own sub-goals
+to resolve a local inconsistency, and then return to the initial
+plan speciﬁed in the BT. We performed a theoretical analysis
+of the convergence and robustness of the algorithm, and the
+effectiveness of the approach is demonstrated on two different
+mobile manipulators and different tasks, both in simulation
+and real experiments.
+APPENDIX A
+GENERATIVE MODELS
+Consider the generative model in active inference
+P(¯o,¯s,η,π). By using the chain rule, we can write:
+P(¯o,¯s,η,π) = P(¯o|¯s,η,π)P(¯s|η,π)P(η|π)P(π) (16)
+Note that ¯o is conditionally independent from the model
+parameters η and π given ¯s. In addition, under the Markov
+property, the next state and current observations depend only
+on the current state:
+P(¯o|¯s,η,π) =
+T∏
+τ=1
+P(oτ|sτ) (17)
+The model is further simpliﬁed considering that ¯s and η are
+conditionally independent given π:
+P(¯s|η,π) =
+T∏
+τ=1
+P(sτ|sτ−1,π) (18)
+Finally, consider the model parameters explicitly:
+P(¯o,¯s,η,π) = P(¯o,¯s,A,B,D,π) =
+P(π)P(A)P(B)P(D)
+T∏
+τ=1
+P(sτ|sτ−1,π)P(oτ|sτ) (19)
+P(A),P(B),P(D) are Dirichlet distributions over the model
+parameters, [20]. In case the model parameters are ﬁxed by
+the user, as in this work, it holds:
+P(¯o,¯s,π) = P(π)
+T∏
+τ=1
+P(sτ|sτ−1,π)P(oτ|sτ) (20)
+Given the generative model above, we are interested in
+ﬁnding the posterior hidden causes of sensory data. For the
+sake of these derivations, we consider that the parameters
+associated with the task are known and do not introduce
+uncertainty. Using Bayes rule:
+P(¯s,π|¯o) = P(¯o|¯s,π)P(¯s,π)
+P(¯o) (21)
+18 IEEE TRANSACTIONS ON ROBOTICS. ACCEPTED, NOVEMBER 2022
+Computing the model evidence P(¯o) exactly is a well-known
+and often intractable problem in Bayesian statistics. The
+exact posterior is then computed minimizing the Kullback-
+Leibler divergence ( DKL, or KL-Divergence) with respect
+to an approximate posterior distribution Q(¯s,π). Doing so,
+we can deﬁne the free-energy as a functional of approximate
+posterior beliefs which result in an upper bound on surprise.
+By deﬁnition DKL is a non-negative quantity given by the
+expectation of the logarithmic difference between Q(¯s,π) and
+P(¯s,π|¯o). Applying the KL-Divergence:
+DKL [Q(¯s,π)||P(¯s,π|¯o)] =
+EQ(¯s,π) [ln Q(¯s,π) −ln P(¯s,π|¯o)] ≥0 (22)
+DKL is the information loss when Q is used instead of P.
+Considering equation (21) and the chain rule, equation (22)
+can be rewritten as:
+DKL [·] = EQ(¯s,π)
+[
+ln Q(¯s,π) −ln P(¯o,¯s,π)
+P(¯o)
+]
+= EQ(¯s,π) [ln Q(¯s,π) −ln P(¯o,¯s,π)]  
+F[Q(¯s,π)]
++ lnP(¯o)
+(23)
+We have just deﬁned the free-energy as the upper bound of
+surprise:
+F[Q(¯s,π)] ≥−ln P(¯o) (24)
+APPENDIX B
+VARIATIONAL FREE -ENERGY
+To fully characterize the free-energy in equation (23), we
+need to specify a form for the approximate posterior Q(¯s,π).
+There are different ways to choose a family of probability
+distributions [47], compromising between complexity and ac-
+curacy of the approximation. In this work, we choose the
+mean-ﬁeld approximation. It holds:
+Q(¯s,π) = Q(¯s|π)Q(π) = Q(π)
+T∏
+τ=1
+Q(sτ|π) (25)
+Under mean-ﬁeld approximation, the plan-dependent states at
+each time step are approximately independent of the states
+at any other time step. We can now ﬁnd an expression
+for the variational free-energy. Considering the mean-ﬁeld
+approximation and the generative model in eq. (20) we can
+write:
+F[Q(¯s,π)] = EQ(¯s,π)
+[
+ln Q(π) +
+T∑
+τ=1
+ln Q(sτ|π)
+−ln P(π) −
+T∑
+τ=1
+ln P(sτ|sτ−1,π) −
+T∑
+τ=1
+ln P(oτ|sτ)
+]
+(26)
+Since Q(¯s,π) = Q(¯s|π)Q(π), and since the expectation of a
+sum is the sum of the expectation, we can write:
+F[·] = DKL [Q(π)||P(π)] + EQ(π) [F(π) [Q(¯s|π)]] (27)
+where
+F(π) [Q(¯s|π)] = EQ(¯s|π)
+[ T∑
+τ=1
+ln Q(sτ|π)
+−
+T∑
+τ=1
+ln P(sτ|st−τ,π) −
+T∑
+τ=1
+ln P(oτ|sτ)
+]
+(28)
+One can notice that F(π) is accumulated over time, or in other
+words, it is the sum of free energies over time and plans:
+F(π) =
+T∑
+τ=1
+F(π,τ) (29)
+Substituting the agent’s belief about the current state at time
+τ given π with sπ
+τ, we obtain a matrix form for F(π,τ) that
+we can compute given the generative model:
+F(π) =
+T∑
+τ=1
+sπ⊤
+τ
+[
+ln sπ
+τ −ln (Baτ−1 sπ
+τ−1) −ln (A⊤oτ)
+]
+(30)
+Given a plan π, the probability of state transition
+P(sτ|sτ−1,π) is given by the transition matrix under plan
+π at time τ, multiplied by the probability of the state at the
+previous time step. In the special case of τ = 1, we can write:
+F(π,1) = sπ⊤
+1
+[
+ln sπ
+1 −ln D−ln (A⊤o1)
+]
+(31)
+Finally, we can compute the expectation of the plan dependant
+variational free-energy F(π) as EQ(π)
+[
+F(π)
+]
+= π⊤Fπ. We
+indicate Fπ = ( F(π1),F(π2)...)⊤ for every allowable plan.
+To derive state and plan updates that minimize free-energy, F
+in equation (27) is partially differentiated and set to zero, as
+we will see in the next appendixes.
+APPENDIX C
+STATE ESTIMATION
+We differentiate F with respect to the sufﬁcient statistics
+of the probability distribution of the states. Note that the only
+part of F dependent on the states is F(π). Then:
+∂F
+∂sπτ
+= ∂F
+∂F(π)
+∂F(π)
+∂sπτ
+= π⊤[
+1 + lnsπ
+τ −ln (Baτ−1 sπ
+τ−1)
+−ln (B⊤
+aτsπ
+τ+1) −ln (A⊤oτ)
+]
+(32)
+Setting the gradient to zero and using the softmax function for
+normalization:
+sπ
+τ = σ(ln (Baτ−1 sπ
+τ−1) + ln (B⊤
+aτsπ
+τ+1) + ln (A⊤oτ))
+(33)
+Note that the softmax function is insensitive to the constant
+1. Also, for τ = 1 the term ln (Baτ−1 sπ
+τ−1) is replaced by
+D. Finally, ln (A⊤oτ) contributes only to past and present
+time steps, so for this term is null for t<τ ≤T since those
+observations are still to be received.
+PEZZATO et al.: ACTIVE INFERENCE AND BEHA VIOR TREES FOR REACTIVE ACTION PLANNING AND EXECUTION IN ROBOTICS 19
+APPENDIX D
+EXPECTED FREE -ENERGY
+We indicate with G(π) the expected free-energy obtained
+over future time steps until the time horizon T while following
+a plan π. Basically, this is the variational free-energy of future
+trajectories which measures the plausibility of plans according
+to future predicted observations [21]. To compute it we take
+the expectation of variational free-energy under the posterior
+predictive distribution P(oτ|sτ). Following [21] we can write:
+G(π) =
+T∑
+τ=t+1
+G(π,τ) (34)
+then:
+G(π,τ) = E ˜Q
+[
+ln Q(sτ|π) −ln P(oτ,sτ|sτ−1)
+]
+= E ˜Q
+[
+ln Q(sτ|π) −ln P(sτ|oτ,sτ−1) −ln P(oτ)
+]
+(35)
+where ˜Q= P(oτ|sτ)Q(sτ|π). The expected free-energy is:
+G(π,τ) ≥E ˜Q
+[
+ln Q(sτ|π)−ln Q(sτ|oτ,sτ−1,π)−ln P(oτ)
+]
+(36)
+Equivalently, we can express the expected free-energy in terms
+of preferred observations [33]:
+G(π,τ) = E ˜Q
+[
+ln Q(oτ|π)−ln Q(oτ|sτ,sτ−1,π) −ln P(oτ)
+]
+(37)
+Making use of Q(oτ|sτ,π) = P(oτ|sτ) since the predicted
+observations in the future are only based on Awhich is plan
+independent given sτ, we have:
+G(π,τ) = DKL [Q(oτ|π)||P(oτ)]  
+Expected cost
++ EQ(sτ|π) [H(P(oτ|sτ))]  
+Entropy
+(38)
+were H[P(oτ|sτ)] = EP(oτ|sτ) [−ln P(oτ|sτ)] is the entropy.
+We are now ready to express the expected free-energy in
+matrix form, such that we can compute it. From the previous
+equation, one can notice that plan selection aims at minimizing
+the expected cost and ambiguity. The latter relates to the uncer-
+tainty about future observations given hidden states. In a sense,
+plans tend to bring the agent to future states that generate
+unambiguous information over states. On the other hand, the
+cost is the difference between predicted and prior beliefs about
+ﬁnal states. Plans are more likely if they minimize cost, and
+lead to observations that match prior desires. Minimizing G
+leads to both exploitative (cost minimizing) and explorative
+(ambiguity minimizing) behavior. This results in a balance
+between goal-oriented and novelty-seeking behaviors
+Substituting the sufﬁcient statistics in equation (38), and
+recalling that the generative model speciﬁes P(oτ) = C, one
+obtains [34]:
+G(π,τ) = oπ⊤
+τ [ln oπ
+τ −ln C]  
+Reward seeking
+−diag(A⊤ln A)⊤sπ
+τ  
+Information seeking
+(39)
+Note that prior preferences are passed through the softmax
+function before computing the logarithm.
+APPENDIX E
+UPDATING PLAN DISTRIBUTION
+The update rule for the distribution over possible plans
+follows directly from the variational free-energy:
+F[·] = DKL [Q(π)||P(π)] + π⊤Fπ (40)
+The ﬁrst term of the equation above can be written as:
+DKL [Q(π)||P(π)] = EQ(π) [ln Q(π) −ln P(π)] (41)
+Recalling that the approximate posterior over policies is a soft-
+max function of the expected free-energy Q(π) = σ(−G(π))
+[20], [33], and taking the gradient with respect to πit results:
+∂F
+∂π = ln π+ Gπ + Fπ + 1 (42)
+where Gπ = (G(π1),G(π2),...)⊤Finally, setting the gradient
+to zero and normalizing through softmax, the posterior distri-
+bution over plans is obtained:
+π= σ(−Gπ −Fπ) (43)
+The plan that an agent should pursue is the most likely one.
+REFERENCES
+[1] M. Ghallab, D. Nau, and P. Traverso, “The actor’s view of automated
+planning and acting: A position paper,” Artiﬁcial Intelligence, vol. 208,
+pp. 1 – 17, 2014.
+[2] D. S. Nau, M. Ghallab, and P. Traverso, “Blended planning and act-
+ing: Preliminary approach, research challenges,” in Twenty-Ninth AAAI
+Conference on Artiﬁcial Intelligence , 2015.
+[3] M. Colledanchise and P. Ogren, “How Behavior Trees Modularize Hy-
+brid Control Systems and Generalize Sequential Behavior Compositions,
+the Subsumption Architecture, and Decision Trees,” IEEE Transactions
+on Robotics, vol. 33, no. 2, pp. 372–389, 2017.
+[4] M. Colledanchise, D. Almeida, M, and P. ¨Ogren, “Towards blended
+reactive planning and acting using behavior tree,” in IEEE International
+Conference on Robotics and Automation (ICRA) , 2019.
+[5] E. Safronov, M. Colledanchise, and L. Natale, “Task planning with
+belief behavior trees,” IEEE/RSJ International Conference on Intelligent
+Robots and Systems (IROS) , 2020.
+[6] C. Paxton, N. Ratliff, C. Eppner, and D. Fox, “Representing robot
+task plans as robust logical-dynamical systems,” in 2019 IEEE/RSJ
+International Conference on Intelligent Robots and Systems (IROS) ,
+2019, pp. 5588–5595.
+[7] C. R. Garrett, C. Paxton, T. Lozano-P ´erez, L. P. Kaelbling, and D. Fox,
+“Online replanning in belief space for partially observable task and
+motion problems,” in 2020 IEEE International Conference on Robotics
+and Automation (ICRA) . IEEE, 2020, pp. 5678–5684.
+[8] A. Meera and M. Wisse, “Free energy principle based state and input
+observer design for linear systems with colored noise,” in2020 American
+Control Conference (ACC), 2020, pp. 5052–5058.
+[9] M. Baioumy, P. Duckworth, B. Lacerda, and N. Hawes, “Active inference
+for integrated state-estimation, control, and learning,” in International
+conference on Robotics and Automation, ICRA , 2021.
+[10] C. Pezzato, M. Baioumy, C. H. Corbato, N. Hawes, M. Wisse, and
+R. Ferrari, “Active inference for fault tolerant control of robot manipula-
+tors with sensory faults,” in International Workshop on Active Inference.
+Springer, 2020, pp. 20–27.
+[11] M. Baioumy, C. Pezzato, R. Ferrari, C. H. Corbato, and N. Hawes,
+“Fault-tolerant control of robot manipulators with sensory faults using
+unbiased active inference,” European Control Conference, ECC , 2021.
+[12] C. Pezzato, R. Ferrari, and C. H. Corbato, “A novel adaptive controller
+for robot manipulators based on active inference,” IEEE Robotics and
+Automation Letters, vol. 5, no. 2, pp. 2973–2980, 2020.
+[13] G. Oliver, P. Lanillos, and G. Cheng, “An empirical study of active
+inference on a humanoid robot,” IEEE Transactions on Cognitive and
+Developmental Systems, 2021.
+[14] K. J. Friston, “The free-energy principle: a uniﬁed brain theory?” Nature
+Reviews Neuroscience, vol. 11(2), pp. 27–138, 2010.
+20 IEEE TRANSACTIONS ON ROBOTICS. ACCEPTED, NOVEMBER 2022
+[15] C. Buckley, C. Kim, S. McGregor, and A. Seth, “The free energy
+principle for action and perception: A mathematical review,” Journal
+of Mathematical Psychology , vol. 81, pp. 55–79, 2017.
+[16] R. Bogacz, “A tutorial on the free-energy framework for modelling
+perception and learning,” Journal of mathematical psychology , 2015.
+[17] K. J. Friston, J. Mattout, and J. Kilner, “Action understanding and active
+inference,” Biological cybernetics, vol. 104(1-2), 2011.
+[18] K. J. Friston, J. Daunizeau, and S. Kiebel, “Action and behavior: a free-
+energy formulation,” Biological cybernetics, vol. 102(3), 2010.
+[19] K. Friston, S. Samothrakis, and R. Montague, “Active inference and
+agency: optimal control without cost functions,” Biological cybernetics,
+vol. 106, no. 8-9, pp. 523–541, 2012.
+[20] K. Friston, T. FitzGerald, F. Rigoli, P. Schwartenbeck, and G. Pezzulo,
+“Active inference: a process theory,”Neural computation, vol. 29, no. 1,
+pp. 1–49, 2017.
+[21] N. Sajid, P. J. Ball, T. Parr, and K. J. Friston, “Active inference:
+demystiﬁed and compared,” Neural Computation , vol. 33, no. 3, pp.
+674–712, 2021.
+[22] P. Schwartenbeck, J. Passecker, T. U. Hauser, T. H. FitzGerald, M. Kro-
+nbichler, and K. J. Friston, “Computational mechanisms of curiosity and
+goal-directed exploration,” Elife, vol. 8, p. e41703, 2019.
+[23] R. Kaplan and K. J. Friston, “Planning and navigation as active infer-
+ence,” Biological cybernetics, vol. 112, no. 4, pp. 323–343, 2018.
+[24] M. Colledanchise and P. ¨Ogren, Behavior trees in robotics and AI: an
+introduction. ser. Chapman and Hall/CRC Artiﬁcial Intelligence and
+Robotics Series. CRC Press, Taylor & Francis Group, 2018.
+[25] S. Macenski, F. Mart ´ın, R. White, and J. G. Clavero, “The marathon 2:
+A navigation system,” in 2020 IEEE/RSJ International Conference on
+Intelligent Robots and Systems (IROS) . IEEE, 2020, pp. 2718–2725.
+[26] J. Orkin, “Applying goal-oriented action planning to games,” AI Game
+Programming Wisdom, vol. 2, pp. 217–228, 2003.
+[27] ——, “Three states and a plan: the AI of FEAR,” in Game Developers
+Conference, 2006, pp. 1–18.
+[28] L. P. Kaelbling and T. Lozano-P ´erez, “Hierarchical task and motion
+planning in the now,” Proceedings - IEEE International Conference on
+Robotics and Automation , pp. 1470–1477, 2011.
+[29] L. Pack Kaelbling and T. Lozano-P ´erez, “Integrated task and motion
+planning in belief space,” International Journal of Robotics Research ,
+pp. 1–60, 2013.
+[30] M. Levihn, L. P. Kaelbling, T. Lozano-P ´erez, and M. Stilman, “Foresight
+and reconsideration in hierarchical planning and execution,” in IEEE
+International Conference on Intelligent Robots and Systems , 2013, pp.
+224–231.
+[31] K. Erol, J. Hendler, and D. S. Nau, “Htn planning: Complexity and
+expressivity,” in AAAI, vol. 94, 1994, pp. 1123–1128.
+[32] M. Ghallab, D. Nau, and P. Traverso, Automated planning and acting .
+Cambridge University Press, 2016.
+[33] L. Da Costa, T. Parr, N. Sajid, S. Veselic, V . Neacsu, and K. Friston,
+“Active inference on discrete state-spaces: a synthesis,” Journal of
+Mathematical Psychology, vol. 99, p. 102447, 2020.
+[34] R. Smith, K. J. Friston, and C. J. Whyte, “A step-by-step
+tutorial on active inference and its application to empirical data,”
+Journal of Mathematical Psychology , vol. 107, p. 102632, 2022.
+[Online]. Available: https://www.sciencedirect.com/science/article/pii/
+S0022249621000973
+[35] C. Hesp, R. Smith, T. Parr, M. Allen, K. J. Friston, and M. J. Ramstead,
+“Deeply felt affect: The emergence of valence in deep active inference,”
+Neural computation, vol. 33, no. 2, pp. 398–446, 2021.
+[36] C. Heins, B. Millidge, D. Demekas, B. Klein, K. Friston, I. Couzin, and
+A. Tschantz, “pymdp: A python library for active inference in discrete
+state spaces,” Journal of Open Source Software , vol. 7, no. 73, p. 4098,
+2022.
+[37] Davide Faconti, “BehaviorTree.CPP,” https://www.behaviortree.dev/.
+[38] K. Friston, T. FitzGerald, F. Rigoli, P. Schwartenbeck, J. O’Doherty, and
+G. Pezzulo, “Active inference and learning,” Neuroscience & Biobehav-
+ioral Reviews, vol. 68, pp. 862–879, 2016.
+[39] R. R. Burridge, A. A. Rizzi, and D. E. Koditschek, “Sequential compo-
+sition of dynamically dexterous robot behaviors,” International Journal
+of Robotics Research , vol. 18, no. 6, pp. 534–555, 1999.
+[40] E. Najaﬁ, R. Babu ˇska, and G. A. Lopes, “An application of sequential
+composition control to cooperative systems,” in 2015 10th International
+Workshop on Robot Motion and Control, RoMoCo 2015 , 2015, pp. 15–
+20.
+[41] M. Cashmore, M. Fox, D. Long, D. Magazzeni, B. Ridder, A. Carrera,
+N. Palomeras, N. Hurtos, and M. Carreras, “Rosplan: Planning in the
+robot operating system,” in Proceedings of the International Conference
+on Automated Planning and Scheduling , vol. 25, no. 1, 2015.
+[42] F. Mart ´ın, M. Morelli, H. Espinoza, F. J. Lera, and V . Matell ´an,
+“Optimized execution of pddl plans using behavior trees,” in 20th In-
+ternational Conference on Autonomous Agents and MultiAgent Systems
+(AAMAS), 2021, pp. 1596–1598.
+[43] M. Baioumy, B. Lacerda, P. Duckworth, and N. Hawes, “On solving
+a stochastic shortest-path markov decision process as probabilistic
+inference,” in 2nd International Workshop on Active Inference (IWAI) ,
+2021.
+[44] S. Paquet, L. Tobin, and B. Chaib-Draa, “An online pomdp algorithm
+for complex multiagent environments,” in Proceedings of the fourth
+international joint conference on Autonomous agents and multiagent
+systems, 2005, pp. 970–977.
+[45] N. Ye, A. Somani, D. Hsu, and W. S. Lee, “Despot: Online pomdp
+planning with regularization,”Journal of Artiﬁcial Intelligence Research,
+vol. 58, pp. 231–266, 2017.
+[46] M. Baioumy, C. Pezzato, C. H. Corbato, N. Hawes, and R. Ferrari, “To-
+wards stochastic fault-tolerant control using precision learning and active
+inference,” in International Workshop on Active Inference . Springer,
+2021.
+[47] S. Schw ¨obel, S. Kiebel, and D. Markovi ´c, “Active inference, belief
+propagation, and the bethe approximation,” Neural computation, vol. 30,
+no. 9, pp. 2530–2567, 2018.
+Corrado Pezzato received the B.Sc. degree (with
+Hons.) in Automation Engineering at the Alma
+Mater Studiorum, Bologna, Italy, in 2017. He re-
+ceived his M.Sc. in Systems and Control (with
+Hons.) at the Delft University of Technology in
+2019, where he is currently working towards his
+Ph.D. degree in robotics. He is part of AIRLab, the
+AI for Retail Lab in Delft. His research interests
+include low-level control, high-level decision mak-
+ing, and their interconnection, with a strong focus
+on robotics and active inference.
+Carlos Hern ´andez Corbato received the Graduate
+degree (with Hons.) in industrial engineering (2006)
+and the M.Sc. in 2008, and Ph.D. in 2013, in
+automation and robotics all from the Universidad
+Polit´ecnica de Madrid, Madrid, Spain. He is Assis-
+tant Professor in Cognitive Robotics at Delft Univer-
+sity of Technology. He has coordinated and partici-
+pated in European projects on cognitive robotics and
+factories of the future. His research interests include
+self-adaptive systems, knowledge representation and
+reasoning, model-based system engineering.
+Stefan Bonhof is born in Rotterdam, The Nether-
+lands in 1996. He received his B.Sc. in Mechanical
+Engineering in 2018 and his M.Sc. (with Hons.) in
+Vehicle Engineering (specializing in autonomy) in
+2020, both from the Delft University of Technology.
+He is currently team lead for students following the
+MSc Robotics program doing their thesis at AIRLab
+Delft, as well as technical support and robotics
+engineer for the whole lab.
+Martijn Wisse received the M.Sc. and Ph.D. degrees
+in mechanical engineering from the Delft University
+of Technology, Delft, The Netherlands, in 2000 and
+2004, respectively. He is currently a Professor at
+the Delft University of Technology. His previous
+research focused on passive dynamic walking robots
+and passive stability in the ﬁeld of robot manipula-
+tors. He worked on underactuated grasping, open-
+loop stable manipulator control, design of robotic
+systems, and the creation of startups in this ﬁeld. His
+current research interests focus on the neuroscientiﬁc
+principle of active inference and its application and advancements in robotics.

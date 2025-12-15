@@ -1,0 +1,446 @@
+End-Eﬀect Exploration Drive for Eﬀective
+Motor Learning
+Emmanuel Dauc´ e1,2[0000−0001−6596−8168]
+1 Institut de Neurosciences de la Timone, CNRS/Aix-Marseille Univ, France
+2 Ecole Centrale de Marseille, France
+emmanuel.dauce@univ-amu.fr
+Abstract. Stemming on the idea that a key objective in reinforcement
+learning is to invert a target distribution of eﬀects, end-eﬀect drives are
+proposed as an eﬀective way to implement goal-directed motor learning,
+in the absence of an explicit forward model. An end-eﬀect model relies on
+a simple statistical recording of the eﬀect of the current policy, here used
+as a substitute for the more resource-demanding forward models. When
+combined with a reward structure, it forms the core of a lightweight
+variational free energy minimization setup. The main diﬃculty lies in
+the maintenance of this simpliﬁed eﬀect model together with the online
+update of the policy. When the prior target distribution is uniform,
+it provides a ways to learn an eﬃcient exploration policy, consistently
+with the intrinsic curiosity principles. When combined with an extrinsic
+reward, our approach is ﬁnally shown to provide a faster training than
+traditional oﬀ-policy techniques.
+Keywords: Reinforcement Learning · Intrinsic reward · Model-based
+Exploration · Motor learning
+1 Introduction
+Recent developments in artiﬁcial intelligence have produced important qualitative
+leaps in the ﬁeld of pattern recognition, in video games and assisted driving.
+However, a number of tasks considered as simple, are struggling to ﬁnd a convincing
+artiﬁcial implementation... This is the ﬁeld of action selection and motor control.
+For instance, the ﬁne manipulation of objects, as well as movement in natural
+environments, and their combination through real time motor control, remain
+major scientiﬁc challenges at present. Compared to the case of video games,
+reinforcement learning, for instance, remains rather limited in the ﬁeld of robotic
+and motor control. The huge improvements “from-scratch” obtained in virtual
+environments are diﬃcult to transfer to real robotics, where millions of plays can
+not be engaged under risk of breakage, and simulators are expensive to develop.
+The brain capability to develop motor skills in a very wide range of areas has
+thus no equivalent in the ﬁeld of artiﬁcial learning.
+In short, learning a motor command, or a motor skill, happens to become
+diﬃcult when considering a moderately complex set of eﬀectors, like a multi-joint
+arXiv:2006.15960v2  [cs.AI]  5 Oct 2020
+2 E. Dauc´ e
+arm for instance, operating in the physical world. One aspect of the problem is
+that the set of circuits that process the sensory signals and produce a motor
+response is composed of digital units, the neurons, operating at fast pace, and
+adapting rapidly, while, on the other side, the operation space is made of many
+joints, rigid elements and muscles covering a wide, continuous domain of responses
+with many degrees of freedom and much longer response times.
+The reinforcement learning framework [16] provides a very generic setup to
+address the question of learning, both from a machine learning and the brain
+modelling perspectives. It contains many of the interesting constraints that an
+agent is facing in order to learn a motor act. The theory, however, is constructed
+around digital (discrete) control principles. The aim of a digital controller is to
+establish a one to one correspondence between stimuli and actions, by matching
+the input with a template action. Given a set of pre-deﬁned actions, an agent is
+expected to pick the one that matches the most the input. In order to learn how
+to act, the agent is guided by a reward signal, that is much cheaper to extract
+than an exact set point. Then the choice of the action is monitored by a scalar
+quantity, the utility, that is the long term sum of rewards [16]. A Reinforcement
+Learning agent is agnostic about what the world is. It is just acting so as to
+maximize the utility. Supported by the solid principles of dynamic programming,
+this agent is expected to end-up in an optimal motor behavior with regards to
+the reward constraints provided by the environment. A hidden diﬃculty however
+lies in ﬁnding a good training dataset for the agent. A classical problem in that
+case is the lack of sampling eﬃcacy due to the sparsity of the rewards, or to the
+closed-loop structure of the control task, where the examples encountered are
+statistically dependent on the controller parameters, providing a risk of a self
+referential loop and local optimum.
+The counterpart to digital control is analog control, corresponding to the
+“classic” way to design a controller in the majority of real-world scenarios. In
+the analog control case, both the controller and the environment are dynamical
+systems. The control of a dynamic system generally relies on a model [14]. The
+controller is capable to mimic the behavior of the environment, and know the
+eﬀect of its actions on the environment. When a certain objective is given,
+the controller can act so as to reach the objective through model inversion ,
+though, in most cases of interest (like the control of an articulated body), the
+models are not invertible and no single deﬁnite control can be established from a
+given objective [7] without setting up additional and task-speciﬁc regularization
+constraints. This kind of controller needs a forward model, that is generally given,
+containing a large engineering knowledge about the agent’s eﬀector structure
+and its environment. A problem arises when the learning of a motor command is
+considered. Such controllers generally lack in adaptivity, and motor adaptation
+is generally hard to train when the environmental conditions change.
+There is thus an apparent trade-oﬀ between, on one side, maintaining a
+model, that may include the many mechanical, environmental and sensory data
+interactions, and, on the other side, being guided by a simplistic reward, concentrating
+all the complexity of the external world constraints in a single scalar. The main
+End-Eﬀect Exploration Drive for Eﬀective Motor Learning 3
+diﬀerence between both approaches appears to be the presence (or the absence)
+of a deﬁnite model of the external world. Knowing the eﬀect of our own actions
+in the world provides ways to anticipate and do planning to reach an objective,
+at the cost of maintaining and updating a model of the world [11]. At present
+time, the trade-oﬀ between model-free and model-based control has provoked
+many debates in the reinforcement learning community, with a preference toward
+model-free approaches for they are cheaper to maintain and easier to control,
+leaving unsolved the problem of the sampling eﬃcacy and causing very long
+training sessions in moderately complex environments.
+Our argument here is that the sampling eﬃcacy is bound to the problem of
+training a model, and one can not expect to have an eﬃcient sampling without a
+minimal model of the eﬀect of action. This model does not need to be perfectly
+accurate, but it needs to be good enough to allow the agent to eﬃciently sample
+its environment in order to grab all the disposable information in relation to the
+task at hand. We assert here that a simple eﬀect model is enough to provide all
+the needed variability in probing the eﬀect of an action or a policy.
+2 Method
+2.1 A probabilistic view to motor supervision
+The probabilistic view to learning cause-eﬀect relationships is at the core of many
+recent developments in machine learning, with a body of optimization techniques
+known as “variational inference” implementing model training from data [10].
+We assume for simplicity that the environment is not hidden to the agent, i.e.
+the environment is fully observable. We also assume a discrete updating of states
+and actions, like in classic reinforcement learning. Then, if s is the state of the
+environment (or a context), and aan action performed by the agent, consider e
+as the eﬀect of the action performed by the agent in that particular state.
+The eﬀect may reﬂect, to some point, the result, or the outcome, of the action.
+Modelling an eﬀect thus supposes that an action should come to an end, a ﬁnal
+point, from which it is possible to evaluate or record a result. Consistently with
+a bunch of neurological observations [5], a simple end-eﬀector open-loop control
+is here assumed to take place, with a compositional motor command [8] driving
+a multi-joint eﬀector toward a ﬁxed point, without feedback during the motor
+realization.
+The eﬀect can be a short-term eﬀect, like reading a new state from the
+environment. It can also be a long term eﬀect, like winning or loosing a game, or
+reaching an objective s∗ in the future. Because there is a lot of uncertainty on
+the eﬀect of an action, it is modeled as a probability distributionp(E|s,a). When
+the eﬀect is not dependent on a context, it can be noted more simply p(E|a).
+Given a certain policy π(a|s), one can also consider the average distribution of
+eﬀects obtained when applying that speciﬁc policy, namely
+p(E|s) = Ea∼π(A|s)p(E|s,a) (1)
+4 E. Dauc´ e
+This marginal distribution is said the eﬀect distribution. By construction, it is
+dependent on a particular policy (possibly stochastic) over states and actions,
+and may, for instance, represent the invariant measure of an MDP under that
+given policy. In our case however, we mostly consider the open-loop control
+case. The policy is deﬁned over the elements of a compositional action, that is
+choosing the components of an action. The end-eﬀect of such a compositional
+action is the terminal state attained at the end of the action, without reading
+the intermediate states.
+In goal-directed control, if e is an expected eﬀect, an inverse control policy,
+whose role is to maximize the chance to reach the eﬀect, can be deﬁned using
+Bayes rule as:
+π(a|s,e) = p(e|s,a)π(a|s)
+p(e|s) (2)
+That is the inversion of the model in a probabilistic setup [1]. Here the marginal
+eﬀect distribution plays the role of a set point, that ﬁxates the distribution of
+states toward which the action should head for.
+Assume now p∗(e|s) be a target distribution of eﬀects. This distribution is
+distinct from p(e|s) that is the distribution of eﬀects under the current policy.
+It is assumed to be realizable from an (unknown) target policy π∗(a|s), that can
+be decomposed into:
+π∗(a|s) = Ee∼p(E|s,a)π∗(a|s,e) p∗(e|s)
+p(e|s,a) (3)
+The right side of the equation provides an estimation of the optimal policy
+based on a sample eof the eﬀect of the action. Unfortunately, the optimal inverse
+control policy π∗(a|s,e) is unknown. A shortcut is to approximate it with the
+current inverse control policy π(a|s,e). In that case, it happens from equation
+(2) that the formula simpliﬁes to :
+π∗(a|s) ≃Ee∼p(E|s,a)π(a|s,e) p∗(e|s)
+p(e|s,a) (4)
+= π(a|s)Ee∼p(E|s,a)
+p∗(e|s)
+p(e|s) (5)
+This formula shows that a correction term can be applied to the current policy
+without owning an explicit forward model, but rather through reading the average
+eﬀect of the policy. This forms the basis of a supervised approach to motor
+learning, allowing to update a policy so as to reach a target marginal distribution.
+For instance, in a dicrete setup, assuming there exists a Z(s) ∈R such that
+log π(a|s) = βQ(s,a)+ Z(s) (softmax policy) makes it possible to update Q(s,a)
+with the last eﬀect sample e like:
+Q(s,a) ←Q(s,a) −α
+β(log p(e|s) −log p∗(e|s)) (6)
+End-Eﬀect Exploration Drive for Eﬀective Motor Learning 5
+This update renders the current policy closer to the optimal one. A side eﬀect of
+this update is that it also changes the eﬀect model that includes the contribution
+of the policy (see eq. (1)). Repeating the operation with a small αand diﬀerent
+samples of aand eshould, on average, reduce the divergence between π and π∗.
+Equation (6) also provides an interesting identity when considering the classical
+(reward-based) TD-error, with 1
+β(log p(e|s) −log p∗(e|s)) taking the role of the
+TD error, i.e. being identiﬁed with Q(s,a) −˜R(e) (with ˜R(e) a putative sum of
+rewards up to e), making it possible, for instance, to set up an intrinsic reward
+implementing a policy that realizes a known prior on the eﬀects. This intrinsic
+reward is called here the “End-Eﬀect Drive”.
+This supervised approach to policy relies on an eﬀect model p(e|s) that is
+less detailed than a forward model. Various kinds of approximate forward models
+can be found in goal-directed motor control literature, like dynamic goals [9] and
+distal teacher [7], though generally learning to associate the current action with
+a distal eﬀect [15,11]. In our case, the model knows nothing about the actions
+that are performed by the agent. Only the end-eﬀects are recorded to build the
+model. This “action-agnostic” forward model is close to the concept of state-visit
+counter, as it is proposed in [2].
+2.2 A uniform exploration drive
+An important special case is when the objective is not to reach a certain eﬀect,
+but rather to explore uniformly the range of all possible eﬀects. In that case,
+the objective eﬀect distribution p∗is uniform over the eﬀect space. This kind of
+supervision can be seen as a generalization of multiple-goal supervision [6] toward
+deﬁning each possible eﬀect as a goal. The expected outcome of this uniform
+drive is to provide a uniform sampling over the eﬀect space, i.e. implement a
+uniform exploration policy. This intrinsic reward is called here the “End-Eﬀect
+Exploration Drive” (E3D in short). It is consistent with the pseudo-count bonus
+proposed in [2]. A similar drive was also proposed in a recent draft as the “state
+marginal matching” drive [12].
+By construction, the E3D is positive wheneis rarely visited under the current
+policy ( p(e|s) < p∗(e)), and negative the other way. It thus tries to promote
+rare and “surprising” eﬀects, and lower the occurrence of habitual “boring”
+eﬀects. It must be noticed that the promotion of rare eﬀects tends to make
+them less rare, and the rejection of habitual eﬀects tends to make them less
+habitual, up to an equilibrium where the log-probability ratio should be close to
+zero. Though the circular dependence between the policy update and the eﬀect
+model update can provoke some convergence issues, and the equilibrium may
+not be reached in the case of too fast ﬂuctuations of both distributions during
+the training process. Some form of regularization is needed in most cases, and,
+most importantly, should be counterbalanced with some form of utility drive, in
+order to implement policy optimization through reward maximization. This is
+the reason why a variational inference setup is particularly well suited in that
+case, with the distal uniform drive taking the role of a prior under a variational
+formulation.
+6 E. Dauc´ e
+2.3 Link with variational inference
+A key intuition in Friston’s “uniﬁed brain theory” paper [4] is interpreting the
+utility, as it is deﬁned in economy and reinforcement learning, as a measure of
+the negative surprise (i.e the log probability over the sensory data distribution).
+Combined with a prior distribution in the control space, the action takes the
+role of a latent variable that is updated so as to reduce the prediction error with
+regards to the prior, much like in predictive coding.
+The uniﬁed approach proposed by Friston and colleagues is more generally
+consistent with the variational auto-encoder principles, in which a latent description
+of the data is constructed so as to implement a trade-oﬀ between the complexity
+of the description and the accuracy of the prediction. Variational reinforcement
+learning was recently proposed as a way to reconcile the discrete view to motor
+control with the continuous processing of the latent variable in variational auto-
+encoders [13,3,6], with the motor command playing the role of a latent code for
+the reward data. In our simpliﬁed writing, the utility maximization (or surprise
+minimization) rests on minimizing:
+−Ea∼π(a|s);e∼p(e|s,a)βR(e) + KL(π(a|s)||π∗(a)) (7)
+with R(e) here a measure of the sum of (extrinsic) rewards, up toe. Interestingly,
+the current policy π(a|s) lies at the crossroad of a reference (maximum entropy)
+policy π∗ and reward maximization, with the softmax policy representing a
+compromise between both tendencies in the discrete case.
+Extending toward a uniform prior over the space of eﬀects can be written
+when both considering the motor command and the eﬀect as latent variables
+that may both explain the current observation, that writes:
+−Ea,e∼p(a,e|s))βR(e) + KL(p(a,e|s))||p∗(a,e)) (8)
+For the purpose of illustration, we propose here an additional simpliﬁcation,
+that is assuming anindependence of both factors (eand a) on causing the current
+data (Na¨ ıve Bayes assumption), dividing the KL term in two parts:
+−Ea∼π(a|s);e∼p(e|s,a)βR(e) + KL(π(a|s))||π∗(a)) + KL(p(e|s))||p∗(e)) (9)
+This forms the baseline of our variational policy update setup. The optimization,
+that is done onπ(a|s), obeys in that case on a triple constraint, that is maximizing
+the reward through minimizing both the distance to a baseline policy and the
+distance of the eﬀect to a reference (supposedly uniform) eﬀect distribution.
+In a discrete setup, the uniform prior on the action is supposed implemented
+with the softmax decision rule. It is then suﬃcient to assume the following update
+for the action-value function. After reading e, the TD-error should be deﬁned
+as:
+TD(s,a,e ) = λ(Q(s,a) −R(e)) + 1
+β(log p(e|s) −log p∗(e))) (10)
+End-Eﬀect Exploration Drive for Eﬀective Motor Learning 7
+With λ a precision hyperparameter accounting for the diﬀerent magnitudes
+of rewards, allowing to manipulate the balance between reward seeking and
+exploration-seeking drives. Interestingly, the reward R(e) has here the role of a
+regularizer with regards to the current Q-value. The sum of the future rewards
+can be estimated using the classical Bellman recurrence equation, i.e. Q(s,a) ∼
+r(s,a) + Q(s′,a′), in which case the training procedure needs to maintain an
+estimate of a standard action-value function Qref(s,a) to update the actual
+parameters of the policy Q(s,a).
+3 Results
+We present in simulation a pilot implementation of the principle presented in
+the previous section. The principal idea is to illustrate an important feature of
+biological motor control, that is the control of an eﬀector showing many degrees
+of freedom, like e.g. an articulated limb with many joints.
+Let Aa control space accounting for a single degree fo freedom (here a discrete
+set of actions i.e. A= {E,S,W,N }), each motor command owning n degrees
+of freedom, i.e. a1:n = a1,...,a n ∈An. The eﬀect space is expected to be much
+smaller, like it is the case in end-eﬀector control, where only the ﬁnal set point
+of a movement in the peripheral space is considered as the result of the action.
+Each degree of freedom is supposed to be independent, i.e. the choice of ai does
+not depend on the choice of aj, so that π(a1:n|s0) = π(a1|s0) ×...×π(an|s0).
+When a single context s0 is considered, the policy writes simply π(a1:n). The
+size of the action space is thus combinatorially high, and one can not expect to
+enumerate every possible action in reasonable computational time. In contrast,
+the eﬀect space is bounded, and the number of all ﬁnal states can be enumerated.
+However, the environment is constructed in such a way that some ﬁnal states
+are very unlikely to be reached under a uniform sampling of the action space.
+The environment we consider is a grid world with only 18 states and two
+rooms, with a single transition allowing to pass from room A to room B (see
+ﬁgure 1). Starting in the upper left corner of room A, the agent samples a
+trajectory a1:7 ∈ Afrom a policy π, that trajectory being composed of 7
+elementary displacements. The agent does not have the capability to read the
+intermediate states it is passing through, it can only read the ﬁnal state after the
+full trajectory is realized. In such an environment, a baseline uniform exploration
+does not provide a uniform distribution of the ﬁnal states. In particular, when
+acting at random, the chance to end-up in the ﬁrst room is signiﬁcantly higher
+than the chance to end up in the second room.
+The agent starts from scratch, and has to build a policy π(a) and an eﬀect
+model p(sn), with sn the ﬁnal state. There are two task at hand. A ﬁrst task
+is a simple exploration task and the objective is to uniformly sample the eﬀect
+space, which should imply a non-uniform sampling policy. A second task consists
+in reaching the lower-right corner, the state that shows the lowest probability
+with a uniform sampling. For that, a reward of 1 is given when the agent reaches
+the lower corner, and 0 otherwise.
+8 E. Dauc´ e
+START
+😀
+🌟
+Fig. 1: A simple two-rooms environment. Starting from the upper-left corner, the
+agent is asked to plan a full sequence made of 7 elementary actionsa1,...,a 7, each
+elementary action being in (E,S,W,N). The only read-out from the environment
+is the ﬁnal state, and a reward, that is equal to 1 if the ﬁnal state is the lower-
+right corner, and 0 otherwise.
+The update procedure is made of a single loop (see algorithm 1). The update
+is done online at each trial. Both the policy and the eﬀect model are updated,
+with diﬀerent training parameters. The general idea is to train the eﬀect model
+a little more “slowly” than the policy, for the policy improvement to ﬁrmly take
+place before they are passed on the eﬀect model.
+Stemming from a uniform policy, the eﬀect of the E3D drive is to render the
+”rare” states more attractive, for they are bound with a positive intrinsic reward,
+while the more commonly visited states are bound with a negative reward, that
+reﬂects a form of ”boredom”. Marking a rare state as “attractive” tends to
+increase the number of visits, and ﬁnally lower the initial positive reward. In the
+case of a “gradient” in the likelihood of the ﬁnal states, with a number of ﬁnal
+visits inversely proportional to the distance to the initial state, the E3D drive
+favors a progressive “expansion” of the visiting territory, for each peripheral
+state attained will increase the probability to reach its further neighbors, up to
+the ﬁnal limit of the state space. In small environment like the one proposed
+here, the limit is rapidly attained and a rapid alternation of visits is observed
+over the full state space.
+The ﬁnal distribution of states is compared in ﬁgure 2 in the case of a uniform
+policy and the E3D drive. In that speciﬁc setup, a strong bias in favor of the ﬁrst
+room is observed, and a gradient of likelihood is observed from the initial state
+toward the lower right corner (ﬁgure 2A). In contrast, a time consistent uniform
+pattern of visit is observed in the second case, that illustrates the capability of
+the E3D drive to set up speciﬁc polices devoted to the wide exploration of the
+environment.
+When a reward ris provided by the environment, the question comes whether
+to balance the policy update procedure in favor of seeking for rewards or seeking
+for novel eﬀects. By construction, the exploration drive is insensitive to the
+value of β, for the update is exactly proportional to 1
+β. A high β is associate
+with a small update and vice versa. this is not the case for the leftmost part
+of the update (equation 10). A high β render the agent more sensitive to the
+extrinsic rewards. In practice, while no reward (or a uniform reward) is provided
+End-Eﬀect Exploration Drive for Eﬀective Motor Learning 9
+Algorithm 1End-Eﬀect Exploration Drive (E3D)
+Require: α, β, λ, η
+Q←⃗0|A|×n
+p←Uniform
+p∗←Uniform
+while number of trials not exceeded do
+sample a1:n ∼π(A1:n)
+read sn,r
+p←(1 −η)p+ η1S=sn
+for i∈1..n do
+Q(ai) ←(1 −αλ)Q(ai) + αλr−α
+β(log p(sn) −log p∗(sn))
+end for
+end while
+(A)
+(B)
+(a) Fig. 2. Task 1 : no reward is provided
+by the environment. Empirical distribution
+of the ﬁnal states, after 5000 trials. A.
+Uniform policy. B. End-Eﬀect Exploration
+Drive (E3D) algorithm. α = 0 .3, β = 1,
+λ= 0.03, η= 10−2.
+(b) Fig. 3. Task 2 : a reward r =
+1 is provided by the environment
+when the agent reaches the lower-
+right corner. Cumulative sum
+of rewards over 5000 trials, on
+10 training sessions. The E3D
+algorithm is compared with state-
+of-the-art epsilon-greedy update.
+α = 0 .3, β = 100, λ = 0 .03,
+η= 10−2, ε= 0.1.
+by the environment, the agent is only guided by the exploration drive. Once
+a reward is encountered, it tends to overtake the initial uniform exploration,
+providing a ﬁrm tendency toward a reward-eﬀective selection of action. This is
+in contrast with the standard epsilon-greedy strategy, imposing to balance the
+exploration/exploitation trade-oﬀ by hand.
+The E3D approach ﬁnally provides an Online/on-Policy training procedure
+that conforms to the main requirements of eﬃcient reinforcement learning, showing
+both an eﬃcient exploration policy when the rewards are sparse, and the capability
+to monitor the exploration/exploitation tradeoﬀ with the inverse temperature β
+in function of the magnitude of the rewards.
+The cumulative rewards obtained with the E3D update and a state-of-the
+art oﬀ-policy/epsilon greedy update are compared in ﬁgure 3, with ε set to 0.1.
+If both techniques manage to reach a reward-eﬃcient policy in the long run, the
+exploration strategy developed in E3D makes it easier to reach the rewarding
+10 E. Dauc´ e
+state, providing the reward earlier in time and developing a fast-paced reward-
+seeking strategy that overtakes the baseline approaches.
+4 Conclusions
+Despite its simplicity, our pilot training setup allows to illustrate the main
+features expected from the inversion of a target distribution of eﬀects, that is the
+capability to rapidly explore the environment through a reciprocal update of the
+policy and the eﬀect model. We found in practice that the update of the model
+needs to be a bit slower than that of the policy to allow for the policy to improve
+over time and increase the extent of the eﬀect space in a step by step manner.
+By balancing the eﬀect of the rewards with the inverse temperature parameter,
+it is possible to catch and exploit very sparse rewards in large environments.
+The model is developed here as a ﬁrst draft in an “end-eﬀect” setup, with very
+little inﬂuence of the context or the states visited in the monitoring of the policy.
+Extensions toward closed-loop state-action policies is not far from reach, for
+equation (10) allows to exploit the Bellman recurrence to guide the exploration-
+driven policy with a reference action-value function, that should be updated
+in parallel to the model and the current policy. Extensions toward continuous
+action spaces are also needed in order to address eﬀective motor control learning,
+which resorts to a deeper interpretation of our approach toward the variational
+inference setup.
+References
+1. Bays, P.M., Wolpert, D.M.: Computational principles of sensorimotor control that
+minimize uncertainty and variability. The Journal of physiology 578(2), 387–396
+(2007)
+2. Bellemare, M., Srinivasan, S., Ostrovski, G., Schaul, T., Saxton, D., Munos, R.:
+Unifying count-based exploration and intrinsic motivation. In: Advances in neural
+information processing systems. pp. 1471–1479 (2016)
+3. Fox, R., Pakman, A., Tishby, N.: Taming the noise in reinforcement learning via
+soft updates. arXiv preprint arXiv:1512.08562 (2015)
+4. Friston, K.: The free-energy principle: a uniﬁed brain theory? Nature reviews
+neuroscience 11(2), 127–138 (2010)
+5. Graziano, M.S., Taylor, C.S., Moore, T.: Complex movements evoked by
+microstimulation of precentral cortex. Neuron 34(5), 841–851 (2002)
+6. Haarnoja, T., Tang, H., Abbeel, P., Levine, S.: Reinforcement learning with deep
+energy-based policies. arXiv preprint arXiv:1702.08165 (2017)
+7. Jordan, M.I., Rumelhart, D.E.: Forward models: Supervised learning with a distal
+teacher. Cognitive science 16(3), 307–354 (1992)
+8. Kadmon Harpaz, N., Ungarish, D., Hatsopoulos, N.G., Flash, T.: Movement
+decomposition in the primary motor cortex. Cerebral Cortex 29(4), 1619–1633
+(2019)
+9. Kaelbling, L.P.: Learning to achieve goals. In: IJCAI. pp. 1094–1099. Citeseer
+(1993)
+End-Eﬀect Exploration Drive for Eﬀective Motor Learning 11
+10. Kingma, D.P., Welling, M.: Auto-encoding variational bayes. arXiv preprint
+arXiv:1312.6114 (2013)
+11. Kurutach, T., Clavera, I., Duan, Y., Tamar, A., Abbeel, P.: Model-ensemble trust-
+region policy optimization. arXiv preprint arXiv:1802.10592 (2018)
+12. Lee, L., Eysenbach, B., Parisotto, E., Xing, E., Levine, S., Salakhutdinov, R.:
+Eﬃcient exploration via state marginal matching. arXiv preprint arXiv:1906.05274
+(2019)
+13. Levine, S., Koltun, V.: Guided policy search. In: International Conference on
+Machine Learning. pp. 1–9 (2013)
+14. Miall, R.C., Wolpert, D.M.: Forward models for physiological motor control. Neural
+networks 9(8), 1265–1279 (1996)
+15. Mishra, N., Abbeel, P., Mordatch, I.: Prediction and control with temporal segment
+models. arXiv preprint arXiv:1703.04070 (2017)
+16. Sutton, R.S., Barto, A.G.: Reinforcement learning: An introduction. MIT press
+(2018)

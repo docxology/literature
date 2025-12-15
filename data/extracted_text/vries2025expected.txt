@@ -1,0 +1,909 @@
+Expected Free Energy-based Planning
+as Variational Inference
+Bert de Vries∗1,2, Wouter Nuijten1,2, Thijs van de Laar1, Wouter
+Kouw1, Sepideh Adamiat1, Tim Nisslbeck1, Mykola Lukashchuk1,
+Hoang Minh Huu Nguyen1, Marco Hidalgo Araya1, Raphaël Trésor1,
+Thijs Jenneskens1, Ivana Nikoloska1, Raaja Ganapathy
+Subramanian1,3, Bart van Erp1,2, Dmitry Bagaev1,2, and Albert
+Podusenko1,2
+1Eindhoven University of Technology, Eindhoven, the Netherlands
+2Lazy Dynamics B.V., Eindhoven, the Netherlands
+3ASML, Veldhoven, the Netherlands
+October 8, 2025
+Abstract
+We address the problem of planning under uncertainty, where an
+agent must choose actions that not only achieve desired outcomes but
+also reduce uncertainty. Traditional methods often treat exploration
+and exploitation as separate objectives, lacking a unified inferential
+foundation. Active inference, grounded in the Free Energy Princi-
+ple, provides such a foundation by minimizing Expected Free Energy
+(EFE), a cost function that combines utility with epistemic drives, such
+as ambiguity resolution and novelty seeking. However, the computa-
+tional burden of EFE minimization had remained a significant obsta-
+cle to its scalability. In this paper, we show that EFE-based planning
+arises naturally from minimizing a variational free energy functional
+on a generative model augmented with preference and epistemic pri-
+ors. This result reinforces theoretical consistency with the Free Energy
+Principle by casting planning under uncertainty itself as a form of vari-
+ational inference. Our formulation yields policies that jointly support
+goal achievement and information gain, while incorporating a com-
+plexity term that accounts for bounded computational resources. This
+unifying framework connects and extends existing methods, enabling
+scalable, resource-aware implementations of active inference agents.
+Keywords:Active Inference, Bounded Rationality, Epistemic Uncer-
+tainty, Expected Free Energy, Free Energy Principle, Planning as Inference,
+Policy Optimization, Variational Inference
+∗bert.de.vries@tue.nl
+1
+arXiv:2504.14898v4  [stat.ML]  7 Oct 2025
+Contents
+1 Introduction 2
+2 The Expected Free Energy Cost Function 3
+3 Related Work 5
+4 EFE-based Planning as Variational Inference 7
+5 Discussion 9
+5.1 Optimal Planning by Variational Inference . . . . . . . . . . . 9
+5.2 Interpretation of the Epistemic Priors . . . . . . . . . . . . . 9
+5.3 On the Complexity TermC(u). . . . . . . . . . . . . . . . . 10
+5.4 PAI in a Synthetic Active Inference Agent . . . . . . . . . . . 10
+5.5 Toward Scalable Synthetic Active Inference . . . . . . . . . . 11
+5.6 Limitations . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12
+6 Conclusions 13
+A Proof of the Main Theorem 15
+B The Entropy and Kullback-Leibler Divergence 17
+1 Introduction
+Planningunderuncertainty isafundamentalchallengein bothartificialintel-
+ligence and cognitive neuroscience. Agents must select actions that not only
+achieve desired outcomes but also reduce uncertainty about their environ-
+ment. Classical approaches—rooted in reinforcement learning and optimal
+control—typically address this by optimizing long-term utility through value
+function estimation or policy learning Sutton and Barto [2018], Bertsekas
+[2012]. However, these methods often treat reward maximization (exploita-
+tion) and uncertainty reduction (exploration) as separate objectives, using
+heuristics to strike a balance between them. Moreover, they struggle in
+high-dimensional or deep-horizon settings due to compounding errors and
+the curse of dimensionality.
+Active inference offers a principled alternative. Grounded in the Free
+Energy Principle (FEP)1, it casts perception, learning, and action selection
+as inference processes that minimize a variational bound on surprise Friston
+[2010], Parr et al. [2022]. Central to this framework is the Expected Free En-
+ergy (EFE), a unified objective that combines instrumental (goal-directed)
+1We use the following abbreviations in this paper: Expected Free Energy (EFE), Free
+Energy Principle (FEP), Kullback-Leibler (KL), Planning as Inference (PAI), Variational
+Free Energy (VFE).
+2
+and epistemic (information-seeking) components Friston et al. [2015]. Mini-
+mizing EFE yields behavior that simultaneously pursues preferred outcomes
+and resolves uncertainty, providing a theoretically grounded solution to the
+exploration–exploitation trade-off.
+Despite its promise, practical implementations of EFE-based planning re-
+main computationally demanding Kappen et al. [2012], Palmieri et al. [2022],
+van de Laar et al. [2024], Friston et al. [2021], Paul et al. [2024]. Existing
+methods often resort to approximations that undermine alignment with the
+FEP, particularly the foundational claim that all processing arises from vari-
+ational free energy minimization. In this work, we address these limitations.
+We show that EFE-based planning can be rigorously formulated as vari-
+ational inference on a generative model augmented with preference and epis-
+temic priors. Our central result demonstrates that minimizing a well-defined
+variational free energy functional naturally yields policies that integrate goal-
+directed behavior, information-seeking exploration, and bounded rationality.
+This formulation improves full theoretical alignment with the FEP, and uni-
+fies active inference with the broader planning-as-inference paradigm, offer-
+ing a scalable and principled framework for decision-making under uncer-
+tainty.
+The next section introduces the formal definition of EFE and highlights
+its desirable properties for planning under uncertainty. Section 3 reviews
+prior work on EFE minimization and outlines several limitations of existing
+approaches. Thecentralcontributionofthispaper—demonstratinghowEFE
+minimization can be recast as standard variational inference—is presented
+as a formal theorem in Section 4. The paper concludes with a discussion
+of the theorem’s implications and its relevance for building scalable active
+inference agents.
+2 The Expected Free Energy Cost Function
+Consider an agent described by a generative modelp(yxθu).2 In this paper,
+we are only concerned with planning, so we will assume that the model
+predicts a sequence of future observations. A typical example of this model
+would be a rollout of a state space model, for instance
+p(yxθu) =p(x t)p(θ)
+TY
+k=t+1
+p(yk|xk, θ)p(xk|xk−1, uk)p(uk)
+| {z }
+rollout to the future
+(1)
+wheretholds the current time step. In this model,ydenotes the sequence
+of future observations,xrepresents the (latent) states,θcontains the model
+2For brevity, we omit commas in the notation for joint variables, e.g.,p(yxθu) =
+p(y, x, θ, u).
+3
+parameters, andurefers to the policy, i.e., a sequence of future actions
+(controls). Because all of these variables are defined as part of a model
+rollout into the future, they are all treated as unobserved variables. Since
+(1) is designed to predict how the future is expected to unfold, we refer to
+it as the predictive model.
+In model (1), the prior distributionp(u)can be understood as an empir-
+ical distribution over allowable policies based on contextual data. Assume
+that we are additionally provided with a distribution
+ˆp(x),(2)
+which describes thepreferredfuture states, sometimes referred to as target
+states. Theplanningobjective is to infer a policy posteriorq(u)that, if
+executed, would efficiently guide the agent to these preferred states.3
+In the active inference literature, candidate policies are evaluated by a
+cost functionG(u), known as the Expected Free Energy, which is defined as
+G(u) =E q
+
+log q(x|u)
+ˆp(x)
+
+| {z }
+risk
++E q
+
+log 1
+q(y|x)
+
+| {z }
+ambiguity
+−E q
+
+log q(θ|yx)
+q(θ|x)| {z }
+novelty
+
+| {z }
+epistemic costs
+,(3)
+where the expectations are with respect toq=q(yxθ|u). In (3), the as-
+sumption is thatq(yxθu)is the variational posterior with respect to the
+joint modelp(yxθu)ˆp(x). In section 4, we will refine this statement. Policies
+with a lowerG(u)value are regarded as more favorable, i.e., a priori more
+likely to be selected. Active inference processes are based on the Free Energy
+Principle, a sophisticated theory grounded in core physics concepts that ac-
+counts for the behavior of living systems as ifG(u)were their planning cost
+function. The most contemporary reference is Friston et al. [2023]. On a
+more practical level, we summarize this theory by discussing the incentives
+behind the three components ofG(u).
+•Riskrefers to the KL-divergence betweenq(x|u), which is the state
+that we expect to reach under policyu, and the target stateˆp(x). EFE
+minimization aligns with risk minimization.
+•Ambiguityis the expected entropyE q(x|u)
+
+H[q(y|x)]
+
+of future ob-
+servationsyunder policyu. Minimizing EFE results in policies that
+seek well-predicted (i.e., unambiguous) observations, leading to accu-
+rate state estimates.
+3Sinceq(u)is conditioned solely on priors, namely the generative modelp(yxθu)and a
+preference priorˆp(x), it would be more appropriate to speak about an updated priorq(u)
+rather than a posterior. For simplicity, in this paper, all distributions that result from
+inference are denoted byq(·)and termed posteriors.
+4
+•Noveltyextends information-seeking policies to includeactiveparam-
+eter learning. Minimizing EFE results in policies that maximize the
+mutual information between observationsyand parametersθ.
+EFE minimization can be viewed as a unifying framework for planning
+under uncertainty, integrating principles from both decision theory and op-
+timal control. Several established paradigms emerge as special cases of EFE
+minimization under specific assumptions. For example, Kullback-Leibler
+(KL) control Todorov [2006], Rawlik et al. [2013] arises when epistemic
+(information-seeking) terms are omitted, effectively reducing EFE to a risk-
+based utility optimization. Conversely, when the risk term is removed, EFE
+minimization reduces to Bayesian experimental design Lindley [1956], which
+focuses purely on maximizing information gain.
+As an aside, if preferences were instead described by a distributionˆp(y)
+over desired future observations, it is common to define an alternative EFE
+as
+G′(u) =E q
+
+log 1
+ˆp(y)
+
+| {z }
+pragmatic
+costs
+−E q
+
+log q(x|y)
+q(x|u)
+
+| {z }
+salience
+−E q
+
+log q(θ|yx)
+q(θ|x)| {z }
+novelty
+
+| {z }
+epistemic costs
+,(4)
+where, as before, the expectations are with respect toq=q(yxθ|u). Al-
+thoughG(u)andG ′(u)are distinct cost functions with different definitions
+of epistemic costs, they are centered around the same criteria. They can
+be regarded as specific instances of a broader policy cost function template
+given by
+Eq(yxθ|u)
+
+log q(xθ|u)
+¯p(yxθ)
+
+(5)
+where the denominator features a “biased” model¯p(yxθ), incorporating both
+preference incentivesˆp(·)and variational posteriorsq(·). Specifically,G(u)in
+(3) uses¯p(yxθ) =q(θ|yx)q(y|x)ˆp(x), and¯p(yxθ)in (4) factorizes as¯p(yxθ) =
+q(θ|yx)q(x|y)ˆp(y). In the following discussion, we focus onG(u), noting that
+similar derivations and arguments apply toG′(u).
+3 Related Work
+We shortly review recent efforts on how to find policies that minimize EFE
+efficiently.
+In the Sophisticated Inference (SI) framework introduced by Friston et al.
+[2021], a layer of recursive belief modeling is added to the EFE formulation.
+This enables deeper forms of planning, where agents consider not only “What
+5
+will happen if I do this?” but also “What will I believe will happen if I do
+this?”—allowing for richer introspective evaluation of future outcomes.
+While conceptually compelling, the computational implementation of SI
+relies on an explicit tree search over candidate policies. As the planning hori-
+zon increases, the number of possible policy sequences grows combinatorially,
+making the exhaustive evaluation of EFE increasingly intractable.
+To address this scalability issue, Paul et al. proposed the Dynamic Pro-
+gramming Expected Free Energy (DPEFE) framework Paul et al. [2024]. By
+leveraging dynamic programming principles, DPEFE computes expected free
+energy recursively, reducing the computational cost of long-horizon planning.
+This reformulation allows active inference agents to plan efficiently in more
+complex environments without sacrificing theoretical rigor.
+A conceptual limitation of approaches such as Sophisticated Inference
+and dynamic programming-based policy selection is that they rely on ex-
+plicitly designed, human-crafted algorithms for policy selection. This sits
+uncomfortably with the FEP, which posits that all cognitive and behavioral
+processes should emerge from the automatic, event-driven minimization of
+variational free energy. From this perspective, policy selection should ideally
+arise entirely through an inference process, rather than through externally
+imposed algorithmic procedures.
+The motivation for adopting a Planning-as-Inference (PAI) perspective is
+notmerelyphilosophicalalignmentwiththeFEP;italsostemsfrompractical
+considerations. Specifically, policyselectionshouldbeinterruptible—capable
+of producing a valid approximate result at any time—and should scale grace-
+fully with available computational resources. These properties are naturally
+afforded by embedding policy selection within a reactive message-passing
+scheme on a factor graph, where each local message incrementally reduces
+free energy [Bagaev and de Vries, 2023]. In such a framework, computa-
+tion is inherently flexible and distributed, and intermediate solutions retain
+semantic coherence. In contrast, algorithmic approaches based on procedu-
+ral code—with nested loops and conditionals—lack this interruptibility and
+adaptability, making them ill-suited for real-time or resource-constrained
+settings.
+The PAI framework, proposed initially by Attias [2003] and later ex-
+tended by Toussaint [2009] and Solway and Botvinick [2012], reinterprets
+planning as a probabilistic inference problem: the goal is to infer action tra-
+jectories that are most consistent with prior preferences over outcomes. This
+perspective enables the use of approximate inference techniques, such as vari-
+ational inference and message passing, to develop computationally efficient
+planning algorithms.
+However, the mentioned PAI formulations focus on maximizing expected
+utility and do not explicitly incorporate epistemic value, i.e., the drive to
+reduce uncertainty, which is a defining feature of EFE–based approaches.
+As a result, their applicability in highly uncertain or partially observable
+6
+environments is limited, as they lack a principled mechanism for information-
+seeking behavior.
+Palmieri et al. [2022] introduced a comprehensive framework that unifies
+estimation and control through belief propagation on factor graphs, with a
+particular emphasis on path planning applications. Building on this perspec-
+tive, van de Laar et al. [2024] extended the PAI framework by integrating
+epistemic value into the policy evaluation process, enabling agents to account
+for both expected utility and information gain during planning. Specifically,
+they propose modifying the Variational Free Energy (VFE) by subtract-
+ing a mutual information term when inference is performed over future (i.e.,
+planned) segments of the factor graph. This adjustment allows reactive mes-
+sage passing to naturally account for both instrumental and epistemic value,
+yielding an interruptible and entirely local inference procedure for evaluating
+candidate policies.
+In contrast to above mentioned PAI methods, the approach proposed by
+Van de Laar and Koudahl yields results that align with EFE minimization,
+but unfortunately it also introduces some conceptual and practical chal-
+lenges. Conceptually, it is somewhat inelegant to alternate between different
+cost functions depending on the location of computation within the factor
+graph. This bifurcation undermines the principle of a unified objective func-
+tion underlying all natural inference processes. Practically, it complicates
+the design and implementation of inference toolkits: developers must now
+account for two distinct message computations for each node—one for stan-
+dard inference and another for planning—thereby significantly increasing
+implementation complexity and reducing modularity.
+Finally, outside the FEP community and more within the reinforcement
+learning literature, the recent work by Lázaro-Gredilla et al. [2024] offers
+a compelling perspective on the relationship between planning and infer-
+ence. Similar to our approach, their work highlights the role of entropy and
+information-seeking behavior in planning. The key distinction lies in the
+formulation of the inference objective: while Lázaro-Gredilla et al. [2024]
+demonstrate that planning corresponds to a specific weighting of entropy
+terms within a general variational objective, we introduce a VFE functional
+for a generative model that is augmented with epistemic priors, which yields
+EFE-based planning as a natural consequence.
+In the next section, we develop a PAI framework that is not only consis-
+tent with the FEP but also addresses some of the conceptual and practical
+limitations of the approaches discussed above.
+4 EFE-based Planning as Variational Inference
+The main contribution of the paper is described by a theorem, which we
+conveniently label as the Expected Free Energy theorem.
+7
+Theorem 1(Expected Free Energy Theorem).Consider an agent with gen-
+erative (predictive) model
+p(yxθu),(6)
+and prior beliefs
+ˆp(x)(7)
+about future desired states.
+Let the Variational Free Energy functionalF[q]be defined as
+F[q]≜E q(yxθu)
+
+log
+posterior
+z }| {
+q(yxθu)
+p(yxθu)| {z }
+generative
+model
+ˆp(x)|{z}
+preference
+prior
+˜p(u)˜p(x)˜p(yx)| {z }
+epistemic priors
+
+,(8)
+where the generative model in the denominator is augmented by both a pref-
+erence priorˆp(·)and epistemic priors˜p(·).
+Let the epistemic priors be defined as
+˜p(u) = exp(H[q(x|u)])(9a)
+˜p(x) = exp(−H[q(y|x)])(9b)
+˜p(yx) = exp(D[q(θ|yx), q(θ|x)]).(9c)
+Then,F[q]decomposes as
+F[q] =E q(u)
+
+G(u)
+
+| {z }
+expected policy
+costs
++E q(yxθu)
+
+log q(yxθu)
+p(yxθu)
+
+| {z }
+complexity
+.(10)
+whereG(u)is the expected free energy as defined in(3). In(9),H[q] =
+Eq[−logq]is the entropy functional, andD[q, p] =E q[logq−logp]is the
+Kullback-Leibler divergence (see Appendix B).
+Proof.The proof of (10) is given in Appendix A.
+A key consequence of (10) is that minimizingF[q]leads to reducing the
+expected policy costsEq(u)[G(u)], while also balancing this with the drive to
+reduce complexity, which are the costs associated with changing beliefs.
+As shown in Appendix A, if one wishes to enforce normalization of the
+prior distributions, the epistemic prior˜p(u)in (9a) can alternatively be cho-
+sen as
+˜p(u) =σ(H[q(x|u)])≜ exp(H[q(x|u)])P
+u′ exp(H[q(x|u′)]),(11)
+whereσdenotes the softmax function applied to the entropyH[q(x|u)].
+Similar constructions apply to the priors˜p(x)and˜p(xy). In that case, the
+variational free energyF[q]is shifted by a constant that does not affect the
+location of its minimum, and thus does not influence the outcome of the
+optimization process.
+8
+5 Discussion
+5.1 Optimal Planning by Variational Inference
+Starting from (16c) (see proof in Appendix A), we can compute the optimal
+policy posterior through
+F[q] =E q(u)
+
+log q(u)
+p(u) +G(u) +E q(yxθ|u)
+
+log q(yxθ|u)
+p(yxθ|u)
+
+| {z }
+=C(u)(complexity)
+
+=E q(u)
+
+log q(u)
+exp
+ 
+−P(u)−G(u)−C(u)
+
+
+,(12)
+whereP(u) =−logp(u)denotes the policy prior expressed as a cost func-
+tion. Equation (12) is a Kullback-Leibler divergence that is minimized for
+q∗(u) = arg min
+q
+F[q]
+=σ
+ 
+−P(u)−G(u)−C(u)
+
+,(13)
+where
+σ(a)k = exp(ak)P
+k′ exp(ak′ ) (14)
+is a normalized exponential function.
+Equation (13) is not new. A comparable formula for the optimal policy
+can be found in Equation 2.1 of Friston et al. [2021]. A main contribution of
+this paper is to demonstrate that the (previously established) optimal policy,
+given by (13), can be obtained through standard variational minimization of
+an appropriately defined free energy functionalF[q].
+5.2 Interpretation of the Epistemic Priors
+The epistemic prior˜p(u) = exp(H[q(x|u)]), introduced in (9a), imposes a
+bias toward selecting policies that maximize the entropy over future states
+x. This reflects an information-seeking preference, as high entropy states
+indicate that the agent is maintaining flexibility—keeping future states open
+for adaptation. Additionally, the epistemic prior˜p(x) = exp(−H[q(y|x)])
+in (9b), favors policies that reduce the uncertainty over future states by
+selecting observations that are informative about them. Together,˜p(u)and
+˜p(x)induce a bias toward ambiguity-minimizing behavior. Similarly, the
+priors˜p(u)and˜p(y, x)jointly shape a preference for policies that maximize
+novelty.
+9
+5.3 On the Complexity TermC(u)
+In (13),P(u)andG(u)reflect past and future information about the policy
+posteriorq(u), respectively. The complexity termC(u)represents the dis-
+crepancy (expressed as a KL divergence) between the (inferred) variational
+posteriorq(yxθ|u)and the (ideal) Bayesian posteriorp(yxθ|u).
+IsC(u)simply an unavoidable cost lacking benefits since, in contrast to
+P(u)andG(u), it does not provide information regarding effective policies?
+Not quite. Inference ofqmust be executed on a specific platform in a partic-
+ular context that provides access to a certain set of computational resources.
+For example, the resources available for tracking a specific car in traffic may
+differ depending on the overall complexity of the traffic situation. The pres-
+ence of bounded computational resources can be regarded as a constraint on
+the inference process.
+Typical inference constraints include mean-field assumptions onq, as well
+as assumptions about the posterior form (e.g.,q(u)must be Gaussian, even
+ifp(u)is not). Latency assumptions also apply; for instance,q(u)may need
+to be executed within 5 milliseconds, regardless of the state of the inference
+process.
+While these inference constraints are not incorporated into the objective
+functionF[q]as seen in (8), the termC(u)can be understood as a drive
+to minimize the unavoidable effects of these inference constraints. In other
+words, due to the complexity termC(u)in (13), active inference agents that
+minimize (8) are Bayes-optimal planners for a given set of constraints. We
+refer the reader to Şenöz et al. [2021]for a discussion on how to express
+inference constraints explicitly in the objective function.
+5.4 PAI in a Synthetic Active Inference Agent
+We discuss here how the inference process within an active inference agent
+may proceed. Consider the generative model for a dynamical system given
+by
+TY
+k=1
+p(yk|xk)p(xk|xk−1, uk)(15)
+which is represented by the white nodes in the factor graph shown in Fig.1.
+We assume that both the initial and desired final states of this system are
+constrained by priorsˆp(x0|x+)andˆp(x T |x+), respectively. These priors are
+generated by a higher-level statex+, and are visualized as orange (initial)
+and blue (target) nodes in Fig.1.
+At time stepk= 0, the agent’s task is to infer a sequence of future
+actionsu 1:T such that the expected posteriorq(xT |y1:T )over the final state
+closely matches the target distributionˆp(xT |x+). Inference proceeds entirely
+via spontaneous ("reactive") message passing in the factor graph, without
+external orchestration.
+10
+𝑝̂𝑥!𝑥"#)
+𝑥"#
+𝑥!𝑢$ 𝑥%&$ 𝑥% 𝑥'&$ 𝑥'𝑢% 𝑢%#$ 𝑢'
+𝑦$ 𝑦%𝑝𝑦$𝑥$) 𝑝𝑥%#$𝑥%,𝑢%#$) == ==
+𝑝((𝑢%#$) 𝑝((𝑢')
+𝑝((𝑥')𝑝((𝑥%#$)𝑡
+𝑥"#
+𝑝̂𝑥'𝑥"#)
+Figure 1: The state of a (layer in an) active inference agent during the
+inference process. See section 5.4 for details.
+Fig. 1 illustrates the state of this process at time stept, following the
+execution of actionsu1:t and the observation of outcomesy1:t. The green and
+red terminal nodes representing future actions and future states correspond
+to epistemic priors. At timet, the system’s future rollout comprises the
+generative model terminated by both epistemic and target priors.
+As time progresses, inference within this future model remains active:
+green and red epistemic priors are progressively replaced by posterior factors
+(depicted as small black boxes), each replacement introducing new opportu-
+nities for free energy minimization through message passing. Consequently,
+beliefs over the remaining policyu t+1:T continue to evolve as the system
+integrates new information.
+This inference mechanism can, in principle, be executed entirely auto-
+matically using a reactive message passing toolbox such asRxInfer[Bagaev
+et al., 2023]. We intend to describe simulations of this process in forthcoming
+publications.
+5.5 Toward Scalable Synthetic Active Inference
+The results presented in this paper may also pave the way for scalable and
+energy-efficient active inference agents. In particular, we consider how the
+main theorem could be extended to support message computation at the
+level of individual nodes within a factor graph. This discussion outlines a
+promising direction for future research.
+In De Vries [2023], we proposed that the implementation of synthetic ac-
+tive inference agents should follow the procedure outlined in Algorithm 1. In
+essence, the inference process should not rely on any hand-crafted algorithms
+beyond the instruction to react whenever an opportunity arises to minimize
+(variational) free energy—provided the agent’s energy budget permits. This
+process is to be implemented via reactive message passing in a factor graph,
+11
+enabling a fully autonomous and distributed inference mechanism.
+Algorithm 1Idealized Implementation of an Active Inference Agent
+1:Specify initial modelp(y, x, θ, u)andpriorsˆp(x)
+2:whiletruedo▷Deployment loop
+3:React to any free energy minimization opportunity
+4:end while
+Figure 2: Pseudo-code for realizing a synthetic active inference agent. See
+section 5.5 for details.
+A key phrase here is “react to any opportunity,” which underscores that
+the agent (or at a finer level of abstraction, any node in the factor graph)
+should only compute anything when there is an actionable opportunity to
+minimize free energy. If we interpret the decision to compute (and send) a
+variational message versus not computing (and remaining silent) as an action
+choice, then the EFE of these alternatives can serve as a decision criterion.
+A message should only be computed and sent if the EFE associated with
+doing so is lower than the EFE of abstaining. The EFE Theorem opens
+the door to evaluating the EFE of action choices via standard variational
+free energy minimization within an appropriately extended generative model.
+Thus, we foresee an energy-efficient and fully autonomous active inference
+process, driven solely by localized variational free energy minimization. In
+this framework, hand-crafted planning algorithms based on ad hoc pruning
+in a tree search process are replaced by an autonomously operating Bayes-
+optimalreactiveinferenceprocess. AtoolboxlikeRxInferwould, inprinciple,
+be capable of automating this process Bagaev et al. [2023].
+5.6 Limitations
+Thisworkalsoraisesseveralopenquestions. While, intheory, itispossibleto
+rank policy alternatives by EFE through VFE minimization on a generative
+model equipped with customized epistemic priors, the current results remain
+conceptual: implementation details are lacking, and validation through sim-
+ulations has yet to be performed. To simplify the mathematical exposition,
+we omitted time indices from the variables; however, incorporating time ex-
+plicitly, as would be required in a full dynamical system specification, may
+introduce additional complexity that warrants further elaboration.
+Moreover, although the epistemic priors in (9) are given in closed-form
+expressions, their practical implementation and online updating procedures
+are not straightforward. In a factor graph framework, for example, mes-
+sage passing through nodes representing these epistemic priors would likely
+require pre-computation or approximation strategies.
+12
+In summary, we view the contributions presented in this paper as a con-
+ceptual foundation for a line of research aimed at realizing PAI within active
+inference agents.
+6 Conclusions
+We have presented a principled formulation of planning under uncertainty
+by casting Expected Free Energy minimization as a problem of variational
+inference. Our central result shows that EFE-based policy optimization nat-
+urally emerges from minimizing a variational free energy functional defined
+over a generative model augmented with preference and epistemic priors.
+This formulation restores theoretical alignment with the Free Energy Princi-
+ple, resolving previous challenges where planning and inference were treated
+as conceptually distinct operations.
+By treating all inference, including policy selection, as message pass-
+ing in a factor graph, our framework supports scalable, interruptible, and
+fully distributed planning. This perspective not only strengthens the the-
+oretical foundation of active inference but also opens the door to practical
+implementations using reactive message-passing toolkits. These results pave
+the way for the design of synthetic active inference agents that are fully
+self-organizing and capable of performing Bayes-optimal planning without
+relying on handcrafted algorithms.
+References
+Hagai Attias. Planning by probabilistic inference. InAdvances in Neural
+Information Processing Systems, volume 16, 2003.
+Dmitry Bagaev and Bert de Vries. Reactive Message Passing for Scal-
+able Bayesian Inference.Scientific Programming, 2023:e6601690, May
+2023. ISSN 1058-9244. doi: 10.1155/2023/6601690. URLhttps:
+//www.hindawi.com/journals/sp/2023/6601690/. Publisher: Hindawi.
+Dmitry Bagaev, Albert Podusenko, and Bert De Vries. RxInfer: A Julia
+package for reactive real-time Bayesian inference.Journal of Open Source
+Software, 8(84):5161, April 2023. ISSN 2475-9066. doi: 10.21105/joss.
+05161. URLhttps://joss.theoj.org/papers/10.21105/joss.05161.
+Dimitri Bertsekas.Dynamic Programming and Optimal Control, volume 2,
+4th edition. Athena Scientific, 2012.
+Bert De Vries. Toward Design of Synthetic Active Inference Agents by
+Mere Mortals.CoRR, abs/2307.14145, 2023. doi: 10.48550/ARXIV.2307.
+14145. URLhttps://doi.org/10.48550/arXiv.2307.14145. arXiv:
+2307.14145.
+13
+Karl Friston. The free-energy principle: a unified brain theory?Nature
+Reviews Neuroscience, 11(2):127–138, 2010.
+Karl Friston, Thomas FitzGerald, Francesco Rigoli, Philipp Schwartenbeck,
+and Giovanni Pezzulo. Active inference and epistemic value.Cognitive
+Neuroscience, 6(4):187–214, 2015.
+Karl Friston, Lancelot Da Costa, Danijar Hafner, Casper Hesp, and Thomas
+Parr. Sophisticated Inference.Neural Computation, 33(3):713–763, March
+2021. ISSN 0899-7667. doi: 10.1162/neco_a_01351. URLhttps://doi.
+org/10.1162/neco_a_01351.
+Karl Friston, Lancelot Da Costa, Dalton A. R. Sakthivadivel, Conor Heins,
+Grigorios A. Pavliotis, Maxwell Ramstead, and Thomas Parr. Path in-
+tegrals, particular kinds, and strange things.Physics of Life Reviews,
+47:35–62, December 2023. ISSN 1571-0645. doi: 10.1016/j.plrev.2023.
+08.016. URLhttps://www.sciencedirect.com/science/article/pii/
+S1571064523001094.
+H.J. Kappen, V. Gómez, and M. Opper. Optimal control as a graphical
+model inference problem.Machine Learning, 87(2):159–182, 2012. doi:
+10.1007/s10994-011-5252-8.
+Dennis V. Lindley. Bayesian statistics and the design of experiments.The
+Annals of Mathematical Statistics, 27(2):568–578, 1956. doi: 10.1214/
+aoms/1177728069. URLhttps://projecteuclid.org/euclid.aoms/
+1177728069.
+Miguel Lázaro-Gredilla, Li Yang Ku, Kevin P. Murphy, and
+Dileep George. What type of inference is planning? InAd-
+vances in Neural Information Processing Systems, 2024. URL
+https://proceedings.neurips.cc/paper_files/paper/2024/hash/
+d39e3ae9a11b79691709a7a6e06a63d9-Abstract-Conference.html.
+Francesco A. N. Palmieri, Krishna R. Pattipati, Giovanni Di Gennaro, Gio-
+vanni Fioretti, Francesco Verolla, and Amedeo Buonanno. A Unifying
+View of Estimation and Control Using Belief Propagation With Applica-
+tion to Path Planning.IEEE Access, 10:15193–15216, 2022. ISSN 2169-
+3536. doi: 10.1109/ACCESS.2022.3148127.
+Thomas Parr, Giovanni Pezzulo, and Karl Friston.Active Inference: The
+Free Energy Principle in Mind, Brain, and Behavior. MIT Press, 2022.
+Aswin Paul, Takuya Isomura, and Adeel Razi. On predictive planning
+and counterfactual learning in active inference.Entropy, 26(6), 2024.
+ISSN 1099-4300. doi: 10.3390/e26060484. URLhttps://www.mdpi.com/
+1099-4300/26/6/484.
+14
+Konrad Rawlik, Marc Toussaint, and Sethu Vijayakumar. Stochastic optimal
+control as approximate inference: A new perspective.Proceedings of the
+International Conference on Machine Learning (ICML), 2013.
+Alec Solway and Matthew M Botvinick. Optimal behavioral hierarchy.PLoS
+Computational Biology, 8(10):e1002774, 2012.
+Richard S Sutton and Andrew G Barto.Reinforcement Learning: An Intro-
+duction, 2nd edition. MIT Press, Cambridge, MA, 2018.
+Emanuel Todorov. Linearly-solvable markov decision problems.Advances in
+neural information processing systems, 19:1369–1376, 2006.
+Marc Toussaint. Robot trajectory optimization using approximate inference.
+InProceedings of the 26th Annual International Conference on Machine
+Learning, pages 1049–1056. ACM, 2009.
+Thijs van de Laar, Magnus Koudahl, and Bert de Vries. Realizing Synthetic
+Active Inference Agents, Part II: Variational Message Updates.Neural
+Computation, pages 1–38, September 2024. ISSN 0899-7667. doi: 10.
+1162/neco_a_01713. URLhttps://doi.org/10.1162/neco_a_01713.
+İsmail Şenöz, Thijs van de Laar, Dmitry Bagaev, and Bert de Vries. Vari-
+ational Message Passing and Local Constraint Manipulation in Factor
+Graphs.Entropy (Basel, Switzerland), 23(7):807, June 2021. ISSN 1099-
+4300. doi: 10.3390/e23070807.
+A Proof of the Main Theorem
+Proof of Theorem 1.
+F[q] =E q(yxθu)
+
+log q(yxθu)
+p(yxθu)ˆp(x)˜p(u)˜p(x)˜p(yx)
+
+(16a)
+=E q(u)
+
+log q(u)
+p(u) +E q(yxθ|u)
+
+log q(yxθ|u)
+p(yxθ|u)ˆp(x)˜p(u)˜p(x)˜p(yx)
+
+| {z }
+B(u)
+
+(16b)
+=E q(u)
+
+log q(u)
+p(u) +G(u) +E q(yxθ|u)
+
+log q(yxθ|u)
+p(yxθ|u)
+
+| {z }
+B(u)if (9) holds
+
+(16c)
+=E q(u)
+
+G(u)
+
++E q(yxθu)
+
+log q(yxθu)
+p(yxθu)
+
+if (9) holds (16d)
+15
+Intheabovederivation, westillneedtoprovethetransitionforB(u)from
+(16b) to (16c), which we address next. In the following, all expectations are
+with respect toq(yxθ|u)unless otherwise indicated.
+Lemma 1(Proof of equivalenceB(u)in (16b) and (16c)).
+B(u) =E
+
+log
+posterior
+z }| {
+q(yxθ|u)
+p(yxθ|u)| {z }
+predictive
+ˆp(x)|{z}
+utility
+˜p(u)˜p(x)˜p(yx)| {z }
+epistemic priors
+
+(17a)
+=E
+
+log
+ q(x|u)
+ˆp(x)| {z }
+risk
+· 1
+q(y|x)| {z }
+ambiguity
+· q(θ|x)
+q(θ|yx)| {z }
+−novelty
+
+| {z }
+G(u)=Expected Free Energy
++(17b)
++E
+
+log
+ ˆp(x)q(y|x)q(θ|yx)
+q(x|u)q(θ|x)| {z }
+inverse factors fromG(u)
+· q(yxθ|u)
+p(yxθ|u)ˆp(x)˜p(u)˜p(x)˜p(yx)| {z }
+factors from(17a)
+
+=G(u) +E
+
+log q(yxθ|u)
+p(yxθ|u)
+
+| {z }
+=C(u)
++E
+
+log q(y|x)q(θ|yx)
+q(x|u)q(θ|x)˜p(u)˜p(x)˜p(yx)
+
+| {z }
+choose epistemic priors to let this vanish
+(17c)
+=G(u) +C(u)+(17d)
++E
+
+log 1
+q(x|u)˜p(u)
+
++E
+
+log q(y|x)
+˜p(x)
+
++E
+
+log q(θ|yx)
+q(θ|x)˜p(yx)
+
+=G(u) +C(u)+(17e)
++
+X
+yθ
+q(yθ|x)
+
+−
+X
+x
+q(x|u) logq(x|u)
+| {z }
+=H[q(x|u)]
+−
+X
+x
+q(x|u) log ˜p(u)
+| {z }
+=0if˜p(u)=exp(H[q(x|u)])
+
+(17f)
++
+X
+x
+q(x|u)
+X
+y
+q(y|x) logq(y|x)
+| {z }
+=−H[q(y|x)]
+−
+X
+y
+q(y|x) log ˜p(x)
+| {z }
+=0if˜p(x)=exp(−H[q(y|x)])
+
++
+X
+yx
+q(yx|u)
+X
+θ
+q(θ|yx) log q(θ|yx)
+q(θ|x)
+| {z }
+D[q(θ|yx),q(θ|x)]
+−
+X
+θ
+q(θ|yx) log ˜p(yx)
+| {z }
+=0if˜p(yx)=exp(D[q(θ|yx),q(θ|x)])
+
+=G(u) +E q(yxθ|u)
+
+log q(yxθ|u)
+p(yxθ|u)
+
+if(9)holds.(17g)
+16
+The term in brackets in 17f works out as follows:
+−
+X
+x
+q(x|u) logq(x|u)−
+X
+x
+q(x|u) log ˜p(u)(18a)
+=H[q(x|u)]−log ˜p(u)(18b)
+=
+(
+0if˜p(u) = exp(H[q(x|u)])
+const if˜p(u) =σ(H[q(x|u)]) (18c)
+where const= log (Σu′ exp(H[q(x|u ′)])and
+σ(H[q(x|u)])≜ exp(H[q(x|u)])
+Σu′ exp(H[q(x|u ′)] (19)
+is the (normalized) softmax function. Similar derivations apply to the other
+epistemic priors in (9).
+In the context of variational inference with variational free energyF[q]as
+in (8), the normalization of˜p(u)is inconsequential, as the additive constant
+does not affect the location of the minimum ofF[q]. As long as˜p(u)∝
+exp(H[q(x|u)]), the results of VFE minimization will be the same.
+B The Entropy and Kullback-Leibler Divergence
+In (9a), theentropyof the conditional distributionq(x|u)is defined as
+H[q(x|u)] =−
+X
+x
+q(x|u) logq(x|u).(20)
+Note thatH[q(x|u)]is a function ofuand thereforeσ(H[q(x|u)])can serve as
+a probability distribution overu.H[q(x|u)]is not the same as theconditional
+entropyH ′[q(x|u)], which is a scalar, defined as
+H′[q(x|u)]| {z }
+conditional
+entropy
+≜−
+X
+xu
+q(xu) logq(x|u) =E q(u) [H[q(x|u)]].(21)
+For two given distributionsq(θ|yx)andq(θ|x), the Kullback-Leibler di-
+vergence is defined as
+D[q(θ|yx), q(θ|x)]≜
+X
+θ
+q(θ|yx) log q(θ|yx)
+q(θ|x)
+=
+X
+θ
+q(θ|yx) log q(yθ|x)
+q(y|x)q(θ|x) ,(22)
+which is a function ofyandx. Note that (22) is not the same as, but is
+close to themutual informationbetweenyandθ, givenx, which is a scalar
+17
+value defined as
+I[y, θ|x]≜
+X
+yxθ
+q(yxθ) log q(yθ|x)
+q(y|x)q(θ|x)
+=
+X
+yx
+q(yx)D[q(θ|yx), q(θ|x)]
+=E q(yx) [D[q(θ|yx), q(θ|x)]].(23)
+Note the similarity between (21) and (23).
+18

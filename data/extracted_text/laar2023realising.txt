@@ -1,0 +1,1801 @@
+Realising Synthetic Active Inference Agents,
+Part II: Variational Message Updates
+Thijs van de Laar1, Magnus Koudahl1,2, and Bert de Vries1,3
+1Department of Electrical Engineering, Eindhoven University of
+Technology, Eindhoven, The Netherlands
+2VERSES AI Research Lab, Los Angeles, California, 90016, USA
+3GN Hearing Benelux BV , Eindhoven, The Netherlands
+September 27, 2024
+Abstract
+The Free Energy Principle (FEP) describes (biological) agents as minimising a
+variational Free Energy (FE) with respect to a generative model of their environ-
+ment. Active Inference (AIF) is a corollary of the FEP that describes how agents
+explore and exploit their environment by minimising an expected FE objective. In
+two related papers, we describe a scalable, epistemic approach to synthetic AIF, by
+message passing on free-form Forney-style Factor Graphs (FFGs). A companion pa-
+per (part I) introduces a Constrained FFG (CFFG) notation that visually represents
+(generalised) FE objectives for AIF. The current paper (part II) derives message
+passing algorithms that minimise (generalised) FE objectives on a CFFG by varia-
+tional calculus. A comparison between simulated Bethe and generalised FE agents
+illustrates how the message passing approach to synthetic AIF induces epistemic
+behaviour on a T-maze navigation task. Extension of the T-maze simulation to 1)
+learning goal statistics, and 2) a multi-agent bargaining setting, illustrate how this
+approach encourages reuse of nodes and updates in alternative settings. With a full
+message passing account of synthetic AIF agents, it becomes possible to derive and
+reuse message updates across models and move closer to industrial applications of
+synthetic AIF.
+Keywords: Active Inference, Free Energy Principle, Variational Message Passing,
+Variational Optimisation
+This is the author’s final version of the manuscript, as accepted for publication in
+MIT Neural Computation.
+1
+arXiv:2306.02733v3  [stat.ML]  26 Sep 2024
+1 Introduction
+The Free Energy Principle (FEP) postulates that the behaviour of biological agents can
+be modelled as minimising a Variational Free Energy (VFE) (Friston et al., 2006). Active
+Inference (AIF) is a corollary of the FEP that describes how agents propose effective
+actions by minimising an Expected Free Energy (EFE) objective that internalises a
+Generative Model (GM) of the agent’s environment and a prior belief about desired
+outcomes (Friston et al., 2009, 2015).
+Early works describe AIF as a continuous-time process in terms of coupled differen-
+tial equations (Friston et al., 2010; Kiebel et al., 2009). Later discrete-time formulations
+allowed for explicit models of future (desired) outcomes, and describe AIF in terms
+of variational inference in the context of a partially observable Markov decision pro-
+cess (Da Costa et al., 2020; Friston et al., 2013). Simulated discrete-time agents then
+engage in information-seeking behaviour and automatically trade off exploratory and
+exploitative modes (Friston et al., 2015). However, these methods do not readily scale
+to free-form models.
+Variational objectives for discrete-time AIF can be minimised by message passing
+on a Forney-style Factor Graph (FFG) representation of the GM. Several authors have
+attempted to scale AIF under this message passing framework (van de Laar and de Vries,
+2019; de Vries and Friston, 2017). However, agents based on these approaches lack
+crucial epistemic characteristics (Schw¨obel et al., 2018; van de Laar et al., 2022).
+In two related papers, we describe a message passing approach to scalable, synthetic
+AIF agents through Lagrangian optimisation. In part I, we identify a hiatus in the
+AIF problem specification language (Koudahl et al., 2023). Specifically, we recognise
+that optimisation constraints (S ¸en¨oz et al., 2021) are not included in the present-day
+FFG notation, which may lead to ambiguous problem descriptions. Part I introduces a
+Constrained FFG (CFFG) notation for constraint specification on FFGs, and illustrates
+how free energy objectives, including the Generalised Free Energy (GFE) (Parr and
+Friston, 2019), relate to specific constraints and message passing schedules.
+In part II, which is the current paper, we use the CFFG notation as introduced
+in part I to define locally constrained variational objectives, and derive variational
+message updates for GFE-based control using variational calculus. The resulting
+control algorithms then induce epistemic behaviour in synthetic AIF agents. We reason
+purely from an engineering point-of-view and do not concern ourselves with biological
+plausibility.
+In this paper, our contributions are four-fold:
+• We use variational calculus to derive general message update expressions for
+GFE-based control in synthetic AIF agents;
+• We derive specialised messages for a discrete-variable model that is often used
+for AIF control in practice;
+• We implement these messages in a reactive programming framework and simulate
+a perception-action cycle on the T-maze navigation task;
+• We illustrate how the message passing approach to synthetic AIF enables free-
+form modelling of AIF agents by extending the T-maze simulation to 1) learn
+2
+goal statistics, and 2) a multi-agent setting.
+With a full message passing account and reactive implementation of GFE optimisa-
+tion, it becomes possible to derive and reuse custom message updates across models and
+get a step closer to realising scalable synthetic AIF agents for industrial applications.
+In Sec. 2 we review variational Bayes as a constrained optimisation problem that can
+be solved by message passing on a Constrained FFG (CFFG). In Sec. 3 we review AIF
+and formulate perception, learning and control as message passing on a CFFG. In Sec. 4,
+we focus on the constraint definition around a submodel of two facing nodes and derive
+stationary solutions and messages for GFE-based control. In Sec. 5 we apply these
+general results to a specific discrete-variable goal-observation submodel that is often
+used in AIF practice. We then work towards implementation of the derived messages in
+a simulated setting. The T-maze task is described in Sec. 6 and simulated in a reactive
+programming framework in Sec. 7. We finish with a summary of related work in Sec. 8,
+and our conclusions in Sec. 9.
+2 Review of Variational Message Passing
+In this section we briefly review Variational Message Passing (VMP) as a distributed
+approach to minimising Variational Free Energy (VFE) objectives. We start by reviewing
+variational Bayes and then review a visual representation of constrained VFE objectives
+on a Constrained Forney-style Factor Graph (CFFG).
+2.1 Variational Bayes
+Given a probabilistic model and some observed data, Bayesian inference concerns the
+computation of posterior distributions over variables of interest. Because Bayesian
+inference is intractable in general, the Bayesian inference problem is often converted
+to a constrained variational optimisation problem. The optimisation objective for the
+so-called variational Bayes approach is an information-theoretic quantity known as the
+Variational Free Energy (VFE),
+F[q] =Eq
+
+log q(s)
+f(s)
+
+,
+comprised of a probabilistic model f over some generic variables s and a variational
+distribution q. As a notational convention, we write a collection of variables in cursive
+bold script. An overview of notational conventions is available in Table 1. The VFE is
+optimised under a set of constraints Q, as
+q∗ = arg min
+q∈Q
+F[q] .
+The VFE conveniently imposes an upper bound on the Bayesian surprise (i.e.,
+the negative logarithm of model evidence Z). Minimisation then renders the VFE a
+close approximation to the surprise, while the variational distribution becomes a close
+3
+Symbol Explanation
+si Generic variable with index i
+s Collection of variables
+s\j Collection excluding sj
+s Sequence of past variables
+s Sequence of future variables
+s Vector
+S Matrix
+s Expectation of a vector variable
+z, w State variables
+x Observation variable
+θ, ϕ Parameters
+f Factor function (possibly unnormalised)
+p Probability distribution
+q Variational distribution
+Q Constraint set
+G Forney-style factor (sub)graph
+V Nodes
+E Edges
+F Variational free energy
+G Generalised free energy
+H Entropy
+U Average energy
+L Lagrangian
+λ, ψ Lagrange multipliers
+µ Message
+Table 1: Overview of notational conventions.
+approximation to the (intractable) exact posterior p. Then at the minimum,
+F[q∗] =−log Z| {z }
+surprise
++ KL[q∗∥p]| {z }
+posterior
+divergence
+,
+with KL the Kullback-Leibler divergence.
+2.2 Forney-Style Factor Graphs
+A Forney-style Factor Graph (FFG) G = (V, E) can be used to graphically represent a
+factorised function, with nodes V and edges E. Given a factorised model,
+f(s) =
+Y
+a∈V
+fa(sa) ,
+4
+Acronym Explanation
+FEP Free Energy Principle
+VFE Variational Free Energy
+AIF Active Inference
+EFE Expected Free Energy
+GM Generative Model
+FFG Forney-style Factor Graph
+GFE Generalised Free Energy
+CFFG Constrained FFG
+VMP Variational Message Passing
+BFE Bethe Free Energy
+SSM State-Space Model
+Table 2: Overview of acronyms.
+edges in the corresponding FFG represent variables and nodes represent (probabilistic)
+relationships between variables (Forney, 2001). As an example, consider the model
+f(s) =fa(s1, s3)fb(s1, s2, s4)fc(s2, s5)fd(s5) ,
+for which the FFG is depicted in Fig. 1 (left).
+Note that edges in an FFG connect to at most two nodes. Therefore, equality factors
+are used to effectively duplicate variables for use in more than two factors. Technically,
+the equality factor f=(si, sj, sk) = δ(si − sj) δ(si − sk) constrains variables on
+connected edges to be equal through (Dirac or Kronecker) delta functions.
+2.3 Bethe Lagrangian Optimisation
+We can now use the factorisation of the model to induce a Bethe factorisation on the
+variational distribution
+q(s) ≜
+Y
+a∈V
+qa(sa)
+Y
+i∈E
+qi(si)1−di ,
+with di the degree of edge i.
+Substituting the Bethe factorisation in the VFE, the resulting Bethe Free Energy
+(BFE) then factorises into node- and edge-local contributions. As is common in proba-
+bilistic notation, we assume that factors in the model and variational distribution are
+indexed by their argument variables (where context allows). The BFE then factorises
+into node- and edge-local contributions, as
+F[q] ≜
+X
+a∈V
+local free energy F[qa]
+z }| {
+Eq(sa)
+
+log q(sa)
+f(sa)
+
+−
+X
+i∈E
+local entropy H[qi]
+z }| {
+−Eq(si)[log q(si)](1 − di) .
+Using Lagrange multipliers, we can convert the optimisation problem onQ to a free-
+form optimisation problem of a Lagrangian, where Lagrange multipliers enforce local
+5
+(e.g. normalisation and marginalisation) constraints. The fully localised optimisation
+objective then becomes
+L[q] ≜
+X
+a∈V
+F[qa] −
+X
+i∈E
+(1 − di)H[qi] + norm[q] + marg[q] , (1)
+with normalisation and marginalisation constraints,
+norm[q] =
+X
+a∈V
+ψa
+Z
+q(sa) dsa − 1
+
++
+X
+i∈E
+ψi
+Z
+q(si) dsi − 1
+
+, (2a)
+marg[q] =
+X
+a∈V
+X
+i∈E(a)
+Z
+λia(si)
+
+q(si) −
+Z
+q(sa) dsa\i
+
+dsi . (2b)
+The Lagrangian is optimised for
+q∗(s) = arg min
+q
+L[q] ,
+over the individual terms in the variational distribution factorisation.
+The belief propagation algorithm (Pearl, 1982) has been formulated in terms of
+Bethe Lagrangian optimisation by message passing on factor graphs (Yedidia et al.,
+2001). Additional factorisation of the variational distribution induces structured and
+mean-field Variational Message Passing (VMP) algorithms (Dauwels, 2007). A compre-
+hensive overview of constraint manipulation and resulting message passing algorithms
+is available in (S ¸en¨oz et al., 2021).
+2.4 Constrained Forney-Style Factor Graphs
+An FFG alone does not unambiguously define a constrained VFE objective, and a full
+expression for a localised Lagrangian alongside an FFG (1) can become quite verbose.
+A visual representation may help interpret and disambiguate variational objectives
+and constraints. The Constrained FFG (CFFG) notation is introduced in detail by our
+companion paper (Koudahl et al., 2023).
+In brief, a CFFG (Fig. 1, middle) annotates an FFG (Fig. 1, left) with beads and
+bridges that impose additional constraints on the BFE Lagrangian of (1) (e.g., (struc-
+tured) factorisations of the variational distribution and data constraints). The CFFG
+notation then emphasises constraints that deviate from the “standard” BFE constraints.
+Annotations on the nodes relate to the node-local free energies, and annotations on
+edges relate to edge-local entropies (1). Beads on a node indicate a factorisation of the
+corresponding node-local variational distribution. Bridges that connect edges through
+nodes indicate a structured variational factor, where the connected edge-variables form
+a joint distribution. A solid bead with inscribed delta on an edge indicates a data
+constraint.
+As an example, consider the CFFG of Fig. 1 (middle), which corresponds to the
+Lagrangian of (1), where annotations impose additional constraints as follows.
+The beads at node c indicate a full local factorisation over the variables on connected
+edges,
+qc(s2, s5) ≜ qc(s2)qc(s5) .
+6
+fa fb fc
+fd
+s1 s2
+s3 s4 s5
+fa fb fc
+fd
+s1 s2
+s3 δ s4 s5
+fa fb fc
+fd
+s1 s2
+s3 δ s4 s5
+1
+→
+2
+→
+3
+←
+4
+←
+5 ↓ 6↑
+Figure 1: Example Forney-style factor graph (FFG) (left), constrained FFG (CFFG)
+(middle), and CFFG with indicated messages (right). The solid square indicates a
+clamped variable, and the solid circle a data constraint. Sum-product and variational
+messages are indicated by white and dark message circles respectively.
+The bead and bridge at node b indicate a structured factorisation where s1 and s2 belong
+to a joint factor,
+qb(s1, s2, s4) ≜ qb(s1, s2)qb(s4) .
+For node a, the missing bead at edge 3 indicates that s3 is not part of the node-local free
+energy. Together with the clamp on s3, this defines the node-local free energy
+F[qa] ≜ Eqa(s1)
+
+log qa(s1)
+fa(s1, s3 = ˆs3)
+
+.
+Finally, the data constraint at edge 4 connects with node b, and enforces
+qb(s4) ≜ δ(s4 − ˆs4) .
+The resulting message passing schedule for the CFFG example is indicated in Fig. 1
+(right). White circles indicate messages that are computed by sum-product updates
+(Loeliger, 2004) and dark circles indicate variational message updates (Dauwels, 2007).
+3 Review of Active Inference by Variational Message
+Passing
+In this section we work towards a message passing formulation of synthetic AIF. We
+start by reviewing AIF and the CFFG representation for a GFE objective for control.
+Further details on variational objectives for AIF and epistemic considerations can be
+found in (Koudahl et al., 2023).
+3.1 Active Inference
+AIF defines an agent and an environment that are separated by a Markov blanket
+(Kirchhoff et al., 2018). In general, at each time step, the agent sends an action to the
+environment. In turn, the environment responds with an outcome that is observed by the
+agent. The goal of the agent is to manipulate the environment to elicit desired outcomes.
+7
+A Generative Model (GM) defines a joint probability distribution that represents
+the agent’s beliefs about how interventions in the environment lead to observable
+outcomes. In order to propose effective interventions, the agent must perform the tasks
+of perception, learning and control. AIF performs these tasks by (approximate) Bayesian
+inference on the GM, by inferring states, parameters and controls, respectively.
+3.2 Generative Model Definition
+We assume that an agent operates in a dynamical environment, and define a sequence
+of state variables z = (z0, z1, . . . , zT ) that model the time-dependent latent state
+of the environment. We also assume that the agent may influence the environment,
+as modelled by controls u = (u1, . . . , uT ), which indirectly affect observations x =
+(x1, . . . , xT ). Finally, we define model parametersθ. We assume that parameters evolve
+at a slower temporal scale than the states, and can therefore be effectively considered
+time-independent.
+The GM then defines a distribution p(x, z, θ, u) that represents the agent’s belief
+about how controls affect states and observations under some parameters. A first-order
+Markov assumption then imposes a conditional independence between states (Koller
+and Friedman, 2009). The GM then factorises as a State-Space Model (SSM),
+p(x, z, θ, u) =p(z0)| {z }
+state
+prior
+p(θ)|{z}
+parameter
+prior
+TY
+k=1
+p(xk|zk, θ)| {z }
+observation
+model
+p(zk|zk−1, uk)| {z }
+transition
+model
+p(uk)| {z }
+control
+prior
+, (3)
+where we assumed a parameterised observation model. The SSM of (3) can be graphi-
+cally represented by the FFG of Fig. 2.
+. . . = . . .
+=. . . . . .
+zk−1
+uk
+zk
+θ
+xk
+Figure 2: A single slice of the Forney-style factor graph representation of the generative
+model of (3). State and parameter priors not drawn.
+8
+... = ...
+=... ...
+zk−1
+→
+uk↓
+zk
+←
+θ
+→
+←
+δ xk
+k<t
+1 ↑
+2
+→
+3↑
+4
+→
+5
+→
+6
+←
+7
+←
+8 ↓
+9↓
+10
+←
+... = ...
+=... ...
+zk−1
+→
+uk↓
+zk
+←
+θ
+→
+←
+k≥t
+xk1 ↑
+2
+→
+3↑
+4
+→
+5
+→
+6
+←
+7
+←
+8 ↓
+9↓
+10
+←
+Figure 3: Constrained Forney-style factor graph representations for variational objectives
+on models for past (left) and future states (right). The dashed box indicates a composite
+structure for the goal-observation submodel.
+3.3 Message Passing
+In this section we formulate synthetic AIF as a message passing procedure on a model
+of past and future states. Inference on a model of past states then relates to perception
+and learning, while inference on a model of future states relates to control.
+3.3.1 Model of Past States
+With t the present time, we denote sequences of past variables x = x<t, z = z<t
+(including z0), and u = u<t. A model of past states can then be constructed from (3),
+as
+p(x, z, θ|u) =p(θ)p(z0)
+t−1Y
+k=1
+p(xk|zk, θ)p(zk|zk−1, uk) .
+Instead of presenting the VFE objective and constraints in formulas, we draw the
+CFFG for past states in Fig. 3 (left). The indicated message passing schedule defines a
+forward and backward pass on the CFFG. The forward pass, comprised of messages
+1 – 5 , represents inference for perception where (hierarchical) states are estimated
+by a filtering procedure. The combined forward-backward pass represents inference for
+learning, where all past information is incorporated to infer a posterior over parameters
+by a smoothing procedure. These posteriors can then be used as (empirical) priors in
+the model of future states.
+9
+3.3.2 Model of Future States
+AIF for control infers a posterior belief over policies from a free energy objective that is
+defined with respect to a model of future states. We define sequences of future (including
+present) variables x = x≥t, z = z≥t−1 (including zt−1), and u = u≥t. Because future
+outcomes are by definition unobserved, we include goal priors on the future observation
+variables. From the GM of (3), we construct the model of future states, as
+f(x, z, θ, u) =p(zt−1)p(θ)
+TY
+k=t
+p(xk|zk, θ)p(zk|zk−1, uk)p(uk) ˜p(xk)| {z }
+goal
+prior
+,
+with T a lookahead time horizon. The (empirical) state and parameter prior follow from
+message passing for perception and learning, respectively. Note that the model of future
+states is unnormalised as a result of simultaneous constraints on x by the observation
+models and the goal priors.
+We then define a VFE objective for control, as
+F[q] ≜ Eq(x,z,θ,u)
+
+log q(x, z, θ, u)
+f(x, z, θ, u)
+
+= Eq(u)
+
+log q(u)
+p(u) + Eq(x,z,θ|u)
+
+log q(x, z, θ|u)
+f(x, z, θ|u)
+
+| {z }
+F[q;u]
+
+,
+which (under normalisation) is minimised by
+q∗(u) = p(u) σ(−F(u))P
+u p(u) σ(−F(u)) ,
+with σ a softmax function and
+F(u) = min
+q∈Q
+F[q; u] ,
+the optimal VFE value conditioned on the policy u. This solution thus constructs a
+posterior over a selection of policies by evaluating their respective free energies. In
+the current paper we choose a uniform policy prior and simply select the policy with
+highest posterior probability. Alternative strategies introduce an attention parameter
+that can also be optimised under the variational scheme (Friston et al., 2015), and where
+the policy is sampled from the posterior. In this alternative scheme, the current policy
+selection strategy then corresponds with a fixed, large value for the attention parameter.
+The conditioning of the variational distribution on u is implied by the conditioning
+of the GM on u. Technically, the variational distribution is always conditioned on the
+values on which the underlying model is conditioned. Therefore we omit this explicit
+conditioning in the variational density.
+We now impose a factorisation constraint
+q(x, z, θ) ≜ q(z)q(θ)
+TY
+k=t
+q(xk) ,
+10
+and substitute only the expectation terms with their respective observation models
+q(xk) → p(xk|zk, θ) in exp. terms for all k ≥ t . (4)
+This so-called p-substitution is introduced by our companion paper (Koudahl et al.,
+2023), and transforms the VFE to a Generalised Free Energy (GFE) objective (Parr and
+Friston, 2019),
+G[q; u] =Ep(x|z,θ)q(z)q(θ)
+
+log q(x)q(z)q(θ)
+f(x, z, θ|u)
+
+. (5)
+For convenience, we write p(x|z, θ) = QT
+k=t p(xk|zk, θ) and q(x) = QT
+k=t q(xk).
+When we substitute a factor in the expectation term of the VFE (4) we write G instead
+of F for clarity.
+Minimisation of the GFE maximises a mutual information between future observa-
+tions and states (Parr and Friston, 2019). The agent is then inclined to choose policies
+that resolve information about expected observations, leading to epistemic behaviour.
+A mathematical exploration of epistemic properties in CFFGs is available in (Koudahl
+et al., 2023).
+In this paper we will view the p-substitution(4) as part of the optimisation constraints
+Q. We then denote the p-substitution by a square bead in the CFFG, as drawn in Fig. 3
+(right). As a convention, the square bead is drawn at the factor that is substituted
+(Koudahl et al., 2023).
+4 General GFE-Based Message Updates
+In the model for future states, the goal prior and observation model impose simultaneous
+constraints on the observation variable. In the corresponding CFFG, this configuration
+is modelled by two facing nodes. In this section we derive the general GFE-based
+message updates for a pair of facing nodes. We express the local optimisation problem
+as a Lagrangian. Using variational calculus we then derive local stationary solutions,
+from which we obtain general update expressions for GFE-based messages.
+4.1 Goal and Observation Model
+Here we define a generalised goal and observation model, which define simultaneous
+constraints on the observation variable x. The observation model p(x|z, θ) consists
+of states z and parameters θ. The goal prior extends to a goal model ˜p(x|w, ϕ), with
+states w and parameters ϕ, expanding the range of applicability.
+The CFFG of Fig. 4 draws the observation and goal model as two facing nodes.
+Crucially, from the perspective of the CFFG the role of these nodes in the bigger model
+is irrelevant, expanding the range of applicability beyond observation and goal models.
+Moreover, the facing nodes are contained by a composite structure that acts as a Markov
+blanket for communication with the remaining graph.
+11
+p
+˜p
+. . .z
+...θ
+x
+. . .
+w
+...ϕ
+2
+↑
+1↓
+Figure 4: CFFG of two facing nodes with indicated p-substitution and messages. Ellipses
+indicate an arbitrary number of adjacent edges (possibly zero), with beads indicating a
+joint variational distribution over the adjacent edges.
+The CFFG of Fig. 4 then defines the free energy objective,
+F[q] =Eq(x,z,θ,w,ϕ)
+
+log q(x, z, θ, w, ϕ)
+p(x|z, θ)˜p(x|w, ϕ)
+
+, (6)
+where beads impose the variational distribution factorisation
+q(x, z, θ, w, ϕ) ≜ q(x)q(z)q(θ)q(w)q(ϕ) , (7)
+and where the square bead substitutes
+q(x) → p(x|z, θ) , (8)
+in the expectation term.
+4.2 Local Lagrangian
+After application of constraints (7) and (8) to (6), we obtain the local GFE,
+G[q] =Ep(x|z,θ)q(z)q(θ)q(w)q(ϕ)
+
+log q(x)q(z)q(θ)q(w)q(ϕ)
+p(x|z, θ)˜p(x|w, ϕ)
+
+.
+To find local stationary solutions to this GFE, we introduce Lagrange multipliers that en-
+force the normalisation and marginalisation constraints inQ. The node-local Lagrangian
+then becomes
+L[q] =G[q] + norm[q] + marg[q] , (9)
+with si ∈ {x, z, θ, w, ϕ} a generic variable, under the normalisation and marginalisa-
+tion constraints imposed by (2).
+This Lagrangian is then optimised under a free-form variational density
+q∗ = arg min
+q
+L[q] ,
+for all individual factors in the variational distribution factorisation.
+12
+4.3 Local Stationary Solutions
+We are now prepared to derive the stationary points of the node-local Lagrangian(9).
+We start by considering the node-local Lagrangian as a functional of the variational
+factor qx.
+Lemma 1. Stationary points of L[q] as a functional of qx,
+L[qx] =G[qx] +ψx
+Z
+q(x) dx − 1
+
++ Cx , (10)
+where Cx collects all terms independent from qx, are given by
+q∗(x) =Eq(z)q(θ)[p(x|z, θ)] . (11)
+Proof. The proof is given by Appendix A.1.
+Next, we derive the stationary points of (9) as a functional of qz. Note that, by
+symmetry, a similar result applies to qθ.
+Lemma 2. Stationary points of L[q] as a functional of qz,
+L[qz] =G[qz] +ψz
+Z
+qz(z) dz − 1
+
++
+X
+i∈E(z)
+Z
+λip(zi)
+
+q(zi) −
+Z
+qz(z) dz\i
+
+dzi + Cz , (12)
+where Cz collects all terms independent from qz, are given by
+q∗(z) =
+˜f(z) Q
+zi∈z µip(zi)
+R ˜f(z) Q
+zi∈z µip(zi) dz
+, (13)
+with
+˜f(z) = exp
+ 
+Ep(x|z,θ)q(θ)
+"
+log p(x|z, θ) ˜f(x)
+q(x)
+#!
+(14a)
+˜f(x) = exp
+ 
+Eq(w)q(ϕ)[log ˜p(x|w, ϕ)]
+
+. (14b)
+Proof. The proof is given by Appendix A.2.
+Finally, we derive the stationary points of (9) with respect to qw. Again, by symme-
+try, a similar result follows for qϕ.
+13
+Lemma 3. Stationary points of L[q] as a functional of qw,
+L[qw] =G[qw] +ψw
+Z
+q(w) dw − 1
+
++
+X
+i∈E(w)
+Z
+λi˜p(wi)
+
+q(wi) −
+Z
+q(w) dw\i
+
+dwi + Cw , (15)
+where Cw collects all terms independent from qw, are given by
+q∗(w) =
+˜f(w) Q
+wi∈w µi˜p(wi)
+R ˜f(w) Q
+wi∈w µi˜p(wi) dw
+, (16)
+with
+˜f(w) = exp
+ 
+Eq(x)q(ϕ)[log ˜p(x|w, ϕ)]
+
+. (17)
+Proof. The proof is given by Appendix A.3.
+4.4 Message Updates
+In this section we show that the stationary solutions of Sec. 4.3 correspond to the fixed
+points of a fixed-point iteration scheme. We first derive the update rule for message
+µj•(wj), with wj ∈ w, where the bullet indicates the arbitrary (possibly no) connected
+node. We indicate messages of special interest by a circled number. The current message
+is indicated by 1 in Fig. 4. By symmetry, a similar result applies to ϕj ∈ ϕ.
+Theorem 1. Given the stationary points of the node-local Lagrangian L[q], the
+stationary message µj•(wj) corresponds to a fixed point of the iterations
+µ(n+1)
+j• (wj) =
+Z
+˜f(w)
+Y
+wi∈w
+wi̸=wj
+µ(n)
+i˜p (wi) dw\j , (18)
+with n an iteration index, and ˜f(w) given by (17).
+Proof. The proof is given by Appendix B.1.
+We now derive the update rule for messageµj•(zj), with zj ∈ z, indicated by 2
+in Fig. 4. We apply the same procedure as before. By symmetry, a similar result applies
+to θj ∈ θ.
+14
+Theorem 2. Given the stationary points of the node-local Lagrangian L[q], the
+stationary message µj•(zj) corresponds to a fixed point of the iterations
+µ(n+1)
+j• (zj) =
+Z
+˜f(z)
+Y
+zi∈z
+zi̸=zj
+µ(n)
+ip (zi) dz\j , (19)
+with n an iteration index, and ˜f(z) given by (14),
+Proof. The proof is given by Appendix B.2.
+4.5 Convergence Considerations
+While direct application of (19) works well in some cases, this message update may
+also yield algorithms for which the GFE actually diverges over iterations. This perhaps
+counter-intuitive effect then has major implications for the practical implementation of
+(19).
+This divergence issue relates to a subtlety about what is actually proven by our
+theorems. While our theorems prove that the stationary messages correspond to fixed-
+points of the node-local Lagrangian, the theorems do not guarantee that iterations of
+the fixed-point equations actually converge to said fixed-points. In order to improve
+convergence, we derive an alternative message update rule for message 2 below.
+Corollary 1. Given the stationary points of the node-local Lagrangian L[q], the
+stationary message µj•(zj) corresponds to
+µj•(zj) ∝
+R
+q(z; ν∗) dz\j
+µjp(zj) , (20)
+with ν∗ a solution to
+q(z; ν)
+!
+=
+˜f(z; ν) Q
+zi∈z µip(zi)
+R ˜f(z; ν) Q
+zi∈z µip(zi) dz
+, (21)
+where qz is parameterised by statistics ν, and where ˜f(z; ν) is given by (14), with
+q(x; ν) =Eq(z;ν)q(θ)[p(x|z, θ)] , (22)
+which is parameterised by ν through a recursive dependence on qz.
+Proof. The proof is given by Appendix B.3.
+The result of Corollary 1 offers an expression for the stationary belief as a function
+of parameters ν. Locally optimal parameters ν∗ can now be found through Newton’s
+method.
+15
+5 Application to a Discrete-Variable Model
+In this section we apply the general message update rules of Sec. 4.4 to a specific
+discrete-variable model that is often used in AIF practice. Using the general results we
+derive messages on this specific model.
+5.1 Goal-Observation Submodel
+As convention we use upright bold notation for vectors and matrices. We consider a
+discrete state z ∈ Zand observation variable x ∈ X. To conveniently model these
+variables with categorical distributions, we convert them to a one-hot representation,
+with x = eX (x) the standard unit vector on X with xi = 1at the index for x, and 0
+otherwise. (And similar for z). The notation Cat(x|ρ) =Q
+i ρxi
+i then represents the
+categorical distribution on x (one-hot) with probability vector ρ. We relate the state and
+observation variables by transition probability matrix A ∈ X × Z. The columns of A
+are normalised such that Az represents a probability vector.
+With notation in place, we define the observation model and goal prior for con-
+strained submodel,
+p(x|z, A) =Cat(x|Az)
+˜p(x|c) =Cat(x|c) ,
+as drawn in Fig. 5 (left).
+5.2 GFE-Based Message Updates
+The CFFG of Fig. 5 (left) defines the local GFE objective, with an incoming message
+µ D (z) =Cat(z|d). We denote by
+h(A) =−diag(AT log A) ,
+the vector of entropies of the columns of the conditional probability matrix A.
+As a notational convention, in this context we use an over-bar shorthand to denote
+an expectation, i.e., z = Eq(z)[z]. The table in Fig. 5 (right) summarises the resulting
+message updates and average energy, with
+ξ(A) =AT 
+log c − log
+ 
+Az
+
+− h(A)
+ρ = A
+T 
+log c − log
+ 
+Az
+
+− h(A) .
+The full derivations are available in Appendix C.
+Unfortunately, message 3 does not express a (scaled) standard distribution type
+as a function of A. Therefore we pass the log-message as a function directly and
+use importance sampling to evaluate expectations of q(A) (Akbayrak et al., 2021).
+Estimation of the observation matrix through importance sampling thus renders GFE
+optimisation a stochastic procedure. As a result, the GFE may fluctuate over iterations.
+For policy selection, we therefore average the GFE over iterations, after a short burn-in
+period (ten iterations in this case).
+16
+T
+Cat
+z
+A
+x
+c1 ↓
+2↑
+3
+←
+D↓
+µ1 (c) ∝Dir
+(
+c|Az + 1
+)
+µ2 (z) ∝Cat(z|σ(ρ))
+Solve: z
+!
+= σ(ρ(z) + logd)
+µ2 (z) ∝Cat(z|σ(log z∗ −log d))
+log µ3 (A) = zTξ(A)
+Ux = −zTρ
+Figure 5: Discrete-variable submodel with indicated constraints (left) and message
+updates (right), with σ a softmax function. Updates for message two indicate the direct
+and indirect computation respectively.
+The message updates for a data-constrained observation variable (Fig. 3, left) reduce
+to standard VMP updates, as derived by (van de Laar, 2019, App. A).
+6 Experimental Setting
+In this section we describe a T-maze task that serves as a classical setting for investigating
+epistemic behaviour. The setup closely follows the definitions in (Friston et al., 2015).
+6.1 T-Maze Layout
+The T-maze consists of four positions P = (O, C, L, R) as illustrated in Fig. 6. The
+agent starts at position O, with the objective to obtain a reward that is located either
+in arm L or arm R. The hidden reward location is represented by R = (R L, R R) for
+position L and R respectively. Visiting the cue position C reveals the reward location to
+the agent.
+O
+C
+L R
+Figure 6: Layout of the T-maze with starting position O, cue position C and possible
+reward arms L and R.
+The agent is allowed two moves (T = 2), and after each move the agent observes an
+17
+P R CL CR RW NR
+O R L 0.5 0.5 . .
+R R 0.5 0.5 . .
+L R L . . α 1 − α
+R R . . 1 − α α
+R R L . . 1 − α α
+R R . . α 1 − α
+C R L 1 . . .
+R R . 1 . .
+Table 3: Probabilities for outcomes ( O) as related to agent position ( P) and reward
+position (R).
+outcome O = (CL, CR, RW, NR) that indicates
+• CL: The reward is located in arm L;
+• CR: The reward is located in arm R;
+• RW : The reward is obtained;
+• NR: No reward is obtained.
+These outcomes stochastically relate to the agent position and reward location as listed
+in Table 3, with α the reward probability upon visiting the correct arm.
+To ensure that the agent observes reward no more than once, a move to either reward
+arm is followed by a mandatory move back to the starting position (irrespective of
+whether reward was obtained or not). An epistemic agent would first visit the cue
+position and then move to the indicated reward position.
+6.2 T-Maze Model Specification
+Here we define a GM for the T-maze environment. The observation variablesxk ∈ O×P
+represent the outcome at the agent’s position at time k (sixteen possible combinations).
+An observation matrix A then relates xk to a state zk ∈ P × R. The state variable
+represents the agent position at time k, combined with the hidden reward position (eight
+possible combinations).
+The control uk ∈ Prepresents the agent’s desired next position (four possibilities).
+The control then selects the transition matrix Buk .
+As before, the GM represents categorical variables by one-hot encoded vectors.
+We will simulate the T-maze forS consecutive trials. The goal-constrained model for
+simulation s then becomes
+fs(x, z, A|c, u) =p(z0)ps(A)
+TY
+k=1
+p(xk|zk, A)p(zk|zk−1, uk)˜p(xk|ck) , (23)
+where the (empirical) parameter prior is indexed by trial number s.
+18
+We specify the sub-models,
+p(z0) =Cat(z0|d)
+ps(A) =Dir(A|As−1)
+p(xk|zk, A) =Cat(xk|Azk)
+p(zk|zk−1, uk) =Cat(zk|Buk zk−1)
+˜p(xk|ck) =Cat(xk|ck) ,
+where the Dirichlet prior on the observation matrix assumes independent columns.
+For the state prior we endow the agent with knowledge about its initial position, but
+ignorance about the reward position
+d = (1, 0, 0, 0)T ⊗ (0.5, 0.5)T ,
+with ⊗ the Kronecker product. Since the goal of the agent is to obtain reward, we define
+the goal prior statistic
+ck = σ
+ 
+(0, 0, c,−c)T ⊗ (1, 1, 1, 1)T
+,
+with c the reward utility (identical for both times k).
+The prior for the transition matrix encodes the prior knowledge that position O does
+not offer any disambiguation, but the other positions might. Formally, A0 defines a
+block-diagonal matrix, with blocks
+A0,O =
+
+
+10 10
+10 10
+ϵ ϵ
+ϵ ϵ
+
+ A0,{L,R,C} =
+
+
+1 ϵ
+ϵ 1
+ϵ ϵ
+ϵ ϵ
+
+ ,
+such that
+A0 = A0,O ⊕ A0,L ⊕ A0,R ⊕ A0,C,
+with ⊕ a block-diagonal concatenation and ϵ = 0.1 a relatively small value, also on all
+off-block entries.
+Finally, the control-dependent transition matrices are defined as
+BO =
+
+
+1 1 1 1
+. . . .
+. . . .
+. . . .
+
+ ⊗ I2 BL =
+
+
+. 1 1 .
+1 . . 1
+. . . .
+. . . .
+
+ ⊗ I2
+BR =
+
+
+. 1 1 .
+. . . .
+1 . . 1
+. . . .
+
+ ⊗ I2 BC =
+
+
+. 1 1 .
+. . . .
+. . . .
+1 . . 1
+
+ ⊗ I2 ,
+with I2 the 2 × 2 identity matrix. The CFFG for the T-maze is shown in Fig. 7.
+19
+Cat T =
+T
+=
+Cat
+d z0
+Bu1
+z1
+δx1
+c1
+T
+T
+Cat
+Bu2
+z2
+x2
+c2
+Dir
+As−1 A
+Figure 7: Constrained Forney-style factor graph for the T-maze with time-dependent
+constraints at t = 2.
+6.3 Perception-Action Cycle
+The perception-action cycle for the T-maze setting in the current paper extends upon the
+formulation of (Parr and Friston, 2019), where past observations collapse the variational
+distribution for the observation model to a delta function. In the CFFG formulation, the
+perception-action cycle can be visualised as a process that modifies constraints Qt over
+time (Fig. 7).
+At the initial time t = 1 no observations are available, and we initialise the
+perception-action cycle with p-substitution constraints at all times ( Q1). As actions
+are executed and observations become available (1 < t < T), data-constraints replace
+the p-substitutions on the observation variables. When the time horizon is reached and
+all observations are available (t = T), inference corresponds with learning a posterior
+belief over parameters. The posterior qs(A) is then used as prior ps+1(A) for the
+next simulation trial. The perception-action cycle with time-dependent constraints thus
+unifies the tasks of perception, control and learning under a single GM and schedule,
+see also (van de Laar and de Vries, 2019; van de Laar et al., 2022).
+7 Simulations
+In this section we consider a simulation of the T-maze experimental setting (CFFG of
+Fig. 7) and two extensions thereupon. The initial T-maze simulation considers perception
+and learning from repeated trials, where we compare behaviour between a GFE and
+Bethe Free Energy (BFE) based agent. A first extension introduces a hyper prior on
+the goal statistics and learns a posterior over goals. A second extension considers
+a bargaining setting, where a primary agent (navigating the T-maze) may purchase
+20
+GFE BFE
+Figure 8: Generalised free energy over trials s as grouped by time t (top) with indicated
+win or loss (middle). A win indicates that a RW was observed on that trial (on either
+move). Bottom plots show learned statistics for the observation matrix AS − A0, as
+grouped per position.
+information from a secondary agent for a share of the reward probability.
+Simulations1 are performed with the reactive message passing toolbox RxInfer
+(Bagaev and de Vries, 2021).
+7.1 Perception and Learning
+For the initial simulation we set the reward probabilityα = 0.9 and reward utility c = 2,
+and execute the perception-action cycle for S = 100consecutive trials on the CFFG of
+Fig. 7. The resulting minimum policy GFE over trials, grouped by time, is plotted in
+Fig. 8 (top left). It can be seen that the GFE decreases overall, as the agent improves its
+model of the environment. With an improved model better actions can be proposed, and
+the agent learns to first seek the cue and then visit the indicated reward arm.
+1Source code for the simulations is available at https://github.com/biaslab/LAIF.
+21
+The middle plots indicate whether the agent has observed a RW during a trial (on
+either move) which we designate as a win. We consider the trial a loss if the agent
+has failed to observe a RW on both moves. The free energy plot shows several spikes
+during the learning phase (top left, t = 3). These spikes coincide with unexpected
+losses (Fig. 8, middle left). Namely, after some moves the agent has learned to exploit
+the cue position C. However, even when the agent visits the indicated reward arm, an
+(unexpected) NR observation may still occur with probability α − 1.
+After all trials have completed, we can inspect what the agent has learned. In Fig. 8
+(bottom left) we plot the reinforced statistics AS − A0, as grouped per agent position.
+Each sub-plot then indicates the learned interaction between outcome and reward
+position at the indicated agent position. The GFE-based agent has confidently learned
+that position C offers disambiguation about the reward context, and that positions L
+and R offer a context-related reward RW (and sometimes NR). This knowledge then
+enables the agent to confidently pursue epistemic policies.
+We compare the GFE-based agent with an agent that internalises an objective without
+substitution constraint. Specifically, in the CFFG of Fig. 7, the square that indicates a
+substitution constraint is replaced by a circle. This simple adjustment then reduces the
+GFE objective to a (structured) Bethe Free Energy (BFE) objective, which is known to
+lack epistemic qualities (Schw¨obel et al., 2018; van de Laar et al., 2022). We execute
+the same experimental protocol as before and plot the minimal free energies in Fig. 8
+(top right).
+The BFE-based reference agent fails to identify epistemic modes of behaviour. The
+specific choice of prior for the observation matrix prevents any extrinsic information
+(at least initially) from influencing policy selection. By lack of an epistemic drive, the
+BFE-based agent then sticks to policies that confirm its prior beliefs, without exploring
+possibilities to exploit available information in the T-maze environment (Fig. 8, bottom
+right).
+We evaluate the reliability of the GFE-based agent by simulating R = 100runs
+with S = 30trials each. A histogram of the number of wins per run is plotted in Fig. 9
+(left). This histogram suggests a bi-modal distribution with a large mass grouped to
+the right and a smaller mass in the middle. For reference, dashed curves indicate ideal
+performance for agents that already know A = ˆA (according to Table 3) from the start.
+For agents that must first learn A, deviations from ideal performance are expected. The
+smaller middle mass then indicates that GFE optimisation offers no silver bullet for
+simulating fully successful epistemic agents. Namely, for some choices of initialisation,
+the GFE-based agent may still become stuck in local optima.
+The win average per trial is plotted in Fig. 9 (right), which indicates that a GFE-based
+agent (on average) quickly learns to exploit the T-maze environment.
+7.2 Learning Goals
+To illustrate the modularity of the message passing approach to synthetic AIF, a first
+extension modifies the T-maze simulation to learn the goal parameters (instead of the
+observation model parameters). In this simulation we fix the observation matrix to the
+known configuration of Table 3. Formally, we setps(A) =δ(A− ˆA) and place a hyper
+prior on the goal parameters instead. The hyper prior extends the GM of (23) with a
+22
+Figure 9: Aggregate results for R = 100distinct runs with S = 30trials each. Figures
+show the number of wins per run (left) and the win average per trial (right). Dashed
+curves indicate ideal performance of an agent with known A for comparison.
+Figure 10: Learned values for the goal prior statisticsck,s −ck,0 for k = 1(top left) and
+k = 2(bottom left). Vertical axis labels indicate the (preferred) outcome per position.
+Generalised Free Energy (GFE) per policy is plotted on the right.
+factor
+ps(ck) =Dir(ck|ck,s−1) .
+We simulate S = 10trials, where the posteriors qs(ck) are used as (hyper) priors for the
+next trial ps+1(ck). The goal parameters are initialised with a preference for reward,
+ck,0 = (ϵ, ϵ,10, ϵ)T ⊗ (1, 1, 1, 1)T ,
+with ϵ a small value. The results for the reinforced statistics ck,s − ck,0 and GFEs for
+the policies over trials are plotted in Fig 10. Only the statistics that were reinforced by
+learning are plotted.
+The results in Fig. 10 illustrate how the agent consolidates the outcomes of epistemic
+policies in the goal statistics. For the goal at the first time step c1,s, the agent learns to
+prefer a visit to the cue position. For the second time step c2,s, the agent learns to prefer
+23
+a visit to the reward position. This results in a learned extrinsic preference for epistemic
+policies, as illustrated by the diverging policy GFEs on the right.
+7.3 The Price of Information
+To illustrate the scalability of our approach, a second extension modifies the T-maze
+simulation to a multi-agent bargaining setting, where a primary agent (the buyer) pur-
+chases its cue (indicating the reward position) from a secondary agent (the seller). The
+buyer navigates the T-maze and can only access the cue through the seller. Conversely,
+the seller can only access reward through the buyer. The currency of their exchange is
+the reward probability αs, set by the seller for each trial s. By visiting the cue position
+C, the buyer (primary agent) agrees to pay the seller (secondary agent) a share 1 − αs
+of the reward probability, leaving αs for the buyer. The price is determined by the seller
+from a set of L potential offers αs ∈ A. If the buyer (primary agent) chooses to avoid
+C (forfeiting the cue) then the seller receives nothing and the buyer receives the full
+share (αs = 1) if the reward is obtained.
+We extend the state variable zk of the buyer (navigating the T-maze) with a bargain
+state C = (CV, NC), indicating the respective acceptance and rejection of the seller’s
+offer. The buyer’s state then becomes zk ∈ C × P × R. The buyer then starts each
+simulation trial in an NC bargain state,
+˜d = (0, 1)T ⊗ d .
+We annotate the parameters of the buyer’s model by a tilde. The buyer’s observation
+matrix becomes offer-dependent and concatenates the known observation matrices (from
+Table 3) for the respective CV and NC states,
+˜A(αs) =
+h
+ˆA(αs) ˆA(1)
+i
+,
+where the latter term encodes full reward when the cue is forfeited. Transitions are
+duplicated for the bargain states (except for the cue position),
+˜B{O,L,R} = I2 ⊗ B{O,L,R} .
+The transition to the cue position ˜BC assumes a similar structure, but switches the
+bargain state from NC to CV, marking acceptance of the offer. The (fixed) goal
+statistics remain, ˜ck = ck. The CFFG for the buyer then follows the familiar Fig. 7,
+with the extended parameters and fixed observation matrix ps(A) =δ(A − ˜A(αs)).
+The seller’s CFFG is less conventional and illustrates the freedom of choice by
+virtue of the modular goal-observation submodel. We indicate variables in the seller’s
+model by a prime. A conditional probability matrix A′ then relates the offer αs to
+an outcome x′
+s ∈ C, indicating acceptance or rejection of the offer. We construct the
+generative model for the seller,
+f′
+s(x′
+s, A′, c′
+s|αs) =ps(A′)p(x′
+s|αs, A′)˜p(x′
+s|c′
+s)p(c′
+s|αs) ,
+24
+Dir T
+=
+Cat
+σ
+A′
+s−1 A′
+x′
+s
+αs
+c′
+s
+Figure 11: Constrained Forney-style factor graph for the seller.
+with sub-models
+ps(A′) =Dir
+ 
+A′|A′
+s−1
+
+p(x′
+s|αs, A′) =Cat
+ 
+x′
+s|A′αs
+
+˜p(x′
+s|c′
+s) =Cat(x′
+s|c′
+s)
+p(c′
+s|αs) =δ(c′
+s − σ((1 − αs)(c, −c)T)) .
+Here, the latter sub-model encodes an offer-dependent preference that rewards low-ball
+offers. The CFFG for the seller’s model is shown in Fig. 11. Parameters are initialised
+with A′
+0 a 2 × L matrix of (small) ϵ’s.
+We simulate a nested perception-action cycle, where on each trial the seller sends an
+action (offer) ˆαs to the primary agent, and where the buyer sends actions (moves) ˆut
+to the T-maze environment. Conversely, the T-Maze environment reports observations
+ˆxt to the buyer, which in turn report an observation ˆx′
+s to the seller. This setting thus
+defines two nested Markov blankets, where the seller can only interact with the T-maze
+through the buyer. Also note the difference in temporal scales; the buyer executes two
+actions (T = 2) for each action of the seller. At the end of each trial, the posterior for
+qs(A′) is set as the prior ps+1(A′) for the next trial.
+Results for S = 30trials, with c = 2and L = 5potential offer levels are plotted
+in Fig. 12. The figure plots the GFE of potential offers over trials, together with the
+offers made by the seller (circles) and rejected by the buyer (crossed circles). After
+some initial exploration, the seller settles on a strategy that consistently (with some
+exploration) makes the lowest offer that is still likely to be accepted.
+25
+Figure 12: Generalised free energy (grayscale, in bits) of potential offers by the seller,
+with executed offers indicated by white circles. Crosses mark offers that were rejected
+by the buyer.
+8 Related Work
+The Forney-style Factor Graph (FFG) notation was first introduced by (Forney, 2001).
+The work of (Loeliger, 2007) offers a comprehensive introduction to message passing
+on FFGs in the context of signal processing and estimation.
+The belief propagation algorithm was pioneered by (Pearl, 1982), and was further
+formalised in terms of variational optimisation by (Kschischang et al., 2001; Yedidia
+et al., 2001). Variational Message Passing (VMP) was introduced by (Winn and Bishop,
+2005) and formulated in the context of FFGs by (Dauwels, 2007). A more recent view on
+constrained free energy optimisation can be found in (Zhang et al., 2017). Furthermore,
+(S ¸en¨oz et al., 2021) offers a comprehensive overview of common constraints and
+resulting message passing updates on factor graphs.
+Towards a message passing formulation of Active Inference (AIF), (Parr and Friston,
+2019) proposed a Generalised Free Energy (GFE) objective, which incorporates prior
+beliefs on future outcomes as part of the Generative Model (GM). The current paper
+reformulates these ideas in a visual CFFG framework, which explicates the role of
+backward messages in GFE optimisation (see also our companion paper (Koudahl et al.,
+2023)). Inspired by (Winn and Bishop, 2005), prior work by (Champion et al., 2021)
+derives variational message passing updates for AIF by augmenting variational message
+updates with an Expected Free Energy (EFE) term. In contrast, the current paper takes
+a constrained optimisation approach, augmenting the variational objective itself, and
+deriving message update expressions by variational optimisation.
+Message passing formulations of AIF allow for modular extension to hierarchical
+structures. Temporal thickness in the context of message passing is explored by (de Vries
+and Friston, 2017), which formulates deep temporal AIF by message passing on an
+FFG representation of a hierarchical GM. Implications of message passing in deep
+temporal models on neural connectivity are further explored by (Friston et al., 2017).
+An operational framework and simulation environment for AIF by message passing on
+FFGs is described by (van de Laar and de Vries, 2019).
+Concerning epistemics and the exploration-exploitation trade-off, the pioneering
+work of (Friston et al., 2015) formally decomposes an EFE objective in constituent
+drivers for behaviour, and motivates epistemic value from the perspective of maximizing
+26
+information gain. A detailed view by (Koudahl et al., 2021) considers EFE minimisation
+in the context of linear Gaussian dynamical systems, and shows that AIF does not lead
+to purposeful explorative behaviour in this context.
+Unfortunately, as our companion paper argues, the EFE optimisation viewpoint
+does not readily extend to message passing on free-form models (Koudahl et al., 2023).
+Towards resolving this limitation, (Schw¨obel et al., 2018) formulated AIF as BFE opti-
+misation, but also notes that the BFE lacks the crucial ambiguity-reducing component
+of the EFE that induces exploration. An alternative objective, the free energy of the
+expected future, was introduced by (Millidge et al., 2020). This objective includes the
+ambiguity-reducing component of the EFE and can be interpreted as the divergence from
+a biased to a veridical GM. An alternative AIF objective was proposed by (van de Laar
+et al., 2022), which considers epistemic behaviour from a constrained BFE perspective.
+A biologically plausible view on message passing for AIF is described by (Parr
+et al., 2019), which combines the strengths of belief propagation and VMP to describe
+an alternative type of marginal message update.
+9 Conclusions
+This paper has taken a constraint-centric approach to synthetic Active Inference (AIF),
+and simulated a perception-action cycle through message passing derived from a single
+Generalised Free Energy (GFE) objective. Specifically, we have used a Constrained
+Forney-style Factor Graph (CFFG) visual representation to distinguish between the
+Generative Model (GM) and constraints on the Variational Free Energy (VFE).
+Through constraint visualisations we have shown how the free energy objectives for
+perception, control and learning for AIF can be unified under a single GM specification
+and schedule, with time-dependent constraints.
+The impact of our contributions lies with a modular and scalable formulation of
+synthetic AIF agents. Using variational calculus, we have derived general message
+update rules for GFE-based control. This allows for a modular approach to synthetic
+AIF, where custom message updates can be derived and reused across models (Cox
+et al., 2019). As an example we have derived GFE-based messages for a general
+configuration of two facing nodes, and applied these results to derive specific messages
+for a discrete-variable goal-observation submodel that is often used in AIF practice.
+The general update rules allow for deriving GFE-based messages around alternative
+sub-models, including continuous-variable models and possibly chance-constrained
+models (van de Laar et al., 2021). Additionally, the general message update results
+allow for a parametrised goal prior, which may me modelled by a secondary dynamical
+model (Sennesh et al., 2022).
+Crucially, the local updates include novel backward messages that have not been
+expressed in traditional formulations of AIF. These backward messages ensure the
+unified optimisation of the full GFE objective, without resorting to distinct schedules for
+state estimation and free energy evaluation. As limitations, we identified convergence
+issues in the message updates, which were addressed by an alternative update rule that
+can be solved by Newton’s method. However, this method may still converge to a
+sub-optimal local minimum or a limit cycle. Also, we resorted to importance sampling
+27
+to compute difficult expectations.
+With a CFFG representation and local message passing rules available, it becomes
+straightforward to mix and match constraints. We formulated an experimental pro-
+tocol that unifies the tasks for perception, control and learning under a single GM
+and schedule. We simulated the perception-action cycle by a reactive programming
+implementation (Bagaev and de Vries, 2021), where message updates dynamically react
+to time-dependent constraints as observations become available.
+The presented T-maze simulations illustrate how the message passing approach
+to synthetic AIF induces epistemic behaviour. Namely, where the GFE-based agent
+explores novel parameter settings and salient states, the reference Bethe Free Energy
+(BFE) based agent consistently fails to identify informative states in the environment.
+We discussed two extensions of the T-maze setting, one learning goal statistics and
+another simulating a bargaining simulation, where a seller agent shares information
+with a buyer agent in exchange for a share of the reward probability. These extensions
+illustrate how the message passing approach to synthetic AIF allows for reuse of nodes
+and messages in non-conventional models and multi-agent settings.
+In this paper we have adopted a purely engineering point-of-view, and we have not
+concerned ourselves with biological plausibility. Specifically, the derived message up-
+dates come with considerations about stability and non-standard expressions. Although
+we have engineered solutions to overcome these complications, it seems unlikely to us
+that the brain resorts to such strategies.
+Acknowledgments
+This research was made possible by funding from GN Hearing A/S. This work is part of
+the research programme Efficient Deep Learning with project number P16-25 project
+5, which is (partly) financed by the Netherlands Organisation for Scientific Research
+(NWO).
+We gratefully acknowledge stimulating discussions with the members of the BIASlab
+research group at the Eindhoven University of Technology, in particular Ismail Senoz,
+Bart van Erp and Dmitry Bagaev; and members of VERSES Research Lab, in particular
+Karl Friston, Chris Buckley, Conor Heins and Tim Verbelen. We also thank Mateus
+Joffily of the GATE-lab at le Centre National de la Recherche Scientifique for stimulating
+discussions.
+We thank the two anonymous reviewers for their valuable comments and suggestions.
+28
+Appendix
+A Proofs of Local Stationary Solutions in Section 4.3
+This section derives the stationary points of a local GFE constrained objective, as defined
+by Fig. 4.
+A.1 Proof of Lemma 1
+Proof. Writing out the terms in the Lagrangian and simplifying, we obtain
+L[qx] =Ep(x|z,θ)q(z)q(θ)[log q(x)] +ψx
+Z
+q(x) dx − 1
+
++ Cx .
+The functional derivative then becomes
+δL
+δqx
+= Eq(z)q(θ)[p(x|z, θ)]
+q(x) + ψx
+!
+= 0.
+Solving this equation for qx results in (11).
+A.2 Proof of Lemma 2
+Proof. Writing out the Lagrangian, we obtain
+L[qz] =Ep(x|z,θ)q(z)q(θ)q(w)q(ϕ)
+
+log q(x)
+p(x|z, θ)˜p(x|w, ϕ)
+
++ Eq(z)[log q(z)]
++ ψz
+Z
+q(z) dz − 1
+
++
+X
+i∈E(z)
+Z
+λip(zi)
+
+q(zi) −
+Z
+q(z) dz\i
+
+dzi + Cz .
+The functional derivative then becomes
+δL
+δqz
+= Ep(x|z,θ)q(θ)q(w)q(ϕ)
+
+log q(x)
+p(x|z, θ)˜p(x|w, ϕ)
+
++ logq(z) + 1 +ψz −
+X
+i∈E(z)
+λip(zi)
+= Ep(x|z,θ)q(θ)
+
+log q(x)
+p(x|z, θ) ˜f(x)
+
++ logq(z) −
+X
+i∈E(z)
+λip(zi) +Zz
+= −log ˜f(z) + logq(z) −
+X
+i∈E(z)
+λip(zi) +Zz ,
+where Zz absorbs all terms independent of z, and with ˜f(z) and ˜f(x) given by (14a)
+and (14b) respectively.
+Setting to zero and solving for qz, we obtain
+log q∗(z) = log˜f(z) +
+X
+i∈E(z)
+λip(zi) − Zz .
+Exponentiating on both sides, identifying µip(zi) = expλip(zi), and normalizing then
+results in (13).
+29
+A.3 Proof of Lemma 3
+Proof. Writing out the Lagrangian, we obtain
+L[qw] =Ep(x|z,θ)q(z)q(θ)q(w)q(ϕ)
+
+log q(x)
+p(x|z, θ)˜p(x|w, ϕ)
+
++ Eq(z)[log q(z)]
++ ψw
+Z
+q(w) dw − 1
+
++
+X
+i∈E(w)
+Z
+λi˜p(wi)
+
+q(wi) −
+Z
+q(w) dw\i
+
+dwi + Cw .
+The functional derivative then becomes
+δL
+δqw
+= Ep(x|z,θ)q(z)q(θ)q(ϕ)
+
+log q(x)
+p(x|z, θ)˜p(x|w, ϕ)
+
++ logq(w) + 1 +ψw −
+X
+i∈E(w)
+λi˜p(wi)
+= −Ep(x|z,θ)q(z)q(θ)q(ϕ)[log ˜p(x|w, ϕ)] + logq(w) −
+X
+i∈E(w)
+λi˜p(wi) +Zw
+= −Eq(x)q(ϕ)[log ˜p(x|w, ϕ)] + logq(w) −
+X
+i∈E(w)
+λi˜p(wi) +Zw
+= −log ˜f(w) + logq(w) −
+X
+i∈E(w)
+λi˜p(wi) +Zw
+where Zw absorbs all terms independent of w, the second-to-last step uses the result of
+(11), and where ˜f(w) is given by (17).
+Setting to zero and solving for qw, we obtain
+log q∗(w) = log˜f(w) +
+X
+i∈E(w)
+λi˜p(wi) − Zw .
+Exponentiating on both sides, identifying µi˜p(wi) = expλi˜p(wi), and normalizing
+results in (16).
+B Proofs of Message Update Expressions in Section 4.4
+B.1 Proof of Theorem 1
+Proof. Firstly, Lemma 3 provides us with the stationary solutions toL[q] as a functional
+of qw. Secondly, the stationary solution of L[q] as a functional of the edge-local
+variational distribution qj(wj), defined as
+L[qj] =H[qj] +ψj
+Z
+q(wj) dzj − 1
+
++
+X
+a∈V(j)
+Z
+λja(wj)
+
+q(wj) −
+Z
+q(w) dw\j
+
+dwj + Cj ,
+30
+where Cj absorbs all terms independent of qj, directly follows from (S ¸en¨oz et al., 2021,
+Lemma 2), as
+q∗(wj) = µj˜p(wj)µj•(wj)R
+µj˜p(wj)µj•(wj) dwj
+.
+We then apply the marginalisation constraint on the edge- and node-local variational
+distributions
+q∗(wj) =
+Z
+q∗(w) dw\j .
+Substituting the stationary solutions we can directly apply ( S ¸en¨oz et al., 2021, Theo-
+rem 2). It then follows that fixed points of (18) correspond to stationary solutions of
+L[q].
+The notation µ 1 (wj) = µ(n+1)
+j• (wj) then conveniently represents the recursive
+message update schedule.
+B.2 Proof of Theorem 2
+Proof. We follow the same procedure as before. Firstly, Lemma 2 provides us with
+the stationary solutions of L[q] as a functional of zj. Secondly, the Lagrangian as a
+functional of qj(zj) is then constructed as
+L[qj] =H[qj] +ψj
+Z
+q(zj) dzj − 1
+
++
+X
+a∈V(j)
+Z
+λja(zj)
+
+q(zj) −
+Z
+q(z) dz\j
+
+dzj + Cj ,
+where Cj absorbs all terms independent of qj. The stationary solution again follows
+from (S ¸en¨oz et al., 2021, Lemma 2),
+q∗(zj) = µjp(zj)µj•(zj)R
+µjp(zj)µj•(zj) dzj
+.
+From the marginalisation constraint
+q∗(zj) =
+Z
+q∗(z) dz\j ,
+we can again directly apply (S ¸en¨oz et al., 2021, Theorem 2), from which it follows that
+fixed points of (19) correspond to stationary solutions of L[q].
+In the schedule, the fixed-point iteration is then represented byµ 2 (zj) =µ(n+1)
+j• (zj).
+B.3 Proof of Corollary 1
+Proof. From the marginalisation constraint we obtain (20). We then parameterise qz
+with statistics ν and substitute (13), (14) and (11) to obtain a recursive dependence on
+ν.
+31
+C Derivations of Message Updates in Figure 5
+Here we derive the message updates for the discrete-variable submodel of Fig. 5. To
+streamline the derivations of we first derive some intermediate results.
+C.1 Intermediate Results
+First we express the log-observation model,
+log p(x|z, A) = logCat(x|Az)
+=
+X
+j
+X
+k
+xj log (Ajk) zk
+= xT log(A)z ,
+where the final logarithm is taken element-wise.
+Then, from (11),
+log q(x) = log
+ 
+Eq(z)q(A)[p(x|z, θ)]
+
+= log
+ 
+Eq(z)q(A)[Cat(x|Az)]
+
+≈ log Cat
+ 
+x|Az
+
+= xT log
+ 
+Az
+
+,
+Where we used a tentative decision approximation to compute the expectations with
+respect to q(A)
+!
+= δ(A − A).
+Next, from (14),
+log ˜f(x) =Eq(c)[log ˜p(x|c)]
+= Eq(c)[log Cat(x|c)]
+= Eq(c)
+
+xT log c
+
+= xTlog c .
+Combining these results, from (14),
+log ˜f(z) =Ep(x|z,A)q(A)
+"
+log p(x|z, A) ˜f(x)
+q(x)
+#
+= Ep(x|z,A)q(A)
+
+xT log(A)z + xTlog c − xT log
+ 
+Az
+
+= Eq(A)
+
+(Az)T log(A)z + (Az)Tlog c − (Az)T log
+ 
+Az
+
+= Eq(A)
+h
+zT diag(AT log A) + (Az)Tlog c − (Az)T log
+ 
+Az
+i
+= Eq(A)
+
+−zTh(A) + (Az)Tlog c − (Az)T log
+ 
+Az
+
+= −zTh(A) + (Az)Tlog c − (Az)T log
+ 
+Az
+
+= zTρ ,
+32
+with
+ρ = A
+T 
+log c − log
+ 
+Az
+
+− h(A) , (24)
+and
+h(A) =−diag(AT log A) ,
+the entropies of the columns of matrix A.
+With these results we can derive the local GFE and messages.
+C.2 Average Energy
+Ux[q] =Ep(x|z,A)q(z)q(A)q(c)
+
+log q(x)
+p(x|z, A)˜p(x|c)
+
+= −Ep(x|z,A)q(z)q(A)
+"
+log p(x|z, A) ˜f(x)
+q(x)
+#
+= −Eq(z)
+h
+log ˜f(z)
+i
+= −zTρ ,
+with ρ given by (24).
+C.3 Message 1
+We apply the result of Theorem 1 and express the downward message,
+log µ 1 (c) = log˜f(c)
+= Eq(x)[log ˜p(x|c)]
+= Eq(x)
+
+xT log c
+
+= (Az)T log c .
+Exponentiation on both sides then yields
+µ 1 (c) ∝ Dir
+ 
+c|Az + 1
+
+.
+C.4 Direct Result for Message 2
+Here we apply the result of Theorem 2 to directly compute the backward message for the
+state. As explained before, this update may lead to diverging FE for some algorithms.
+log µ 2 (z) = log˜f(z)
+= zTρ ,
+with ρ given by (24). Exponentiation on both sides then yields
+µ 2 (z) ∝ Cat(z|σ(ρ)) ,
+with σ the softmax function.
+33
+C.5 Indirect Result for Message 2
+Here we apply the result of Corollary 1. We set the statistic ν = z, assume message D
+(proportionally) Categorical, and use (21) to express
+log q(z; z) = log˜f(z; z) + logµ D (z) +Cz
+= zTρ(z) +zT log d + Cz ,
+with ρ(z) given by (24), where the circular dependence on z has been made explicit.
+Exponentiating on both sides and normalizing, we obtain
+q(z; z) =Cat(z|z) , with
+z = σ(ρ(z) + logd) , (25)
+and σ the softmax function.
+We then approach this equation as a root-finding problem, and use Newton’s method
+to find an z∗ that solves for (25). We can then compute the backward message through
+(20), as
+µ 2 (z) ∝ q(z; z∗)/µ D (z)
+= Cat(z|z∗) /Cat(z|d)
+∝ Cat(z|σ(log z∗ − log d)) .
+C.6 Direct Result for Message 3
+Here we apply the result of Theorem 2 and use the symmetry between z and A to
+directly compute the backward message for the state, as
+log µ 3 (A) =Ep(x|z,A)q(z)
+"
+log p(x|z, A) ˜f(x)
+q(x)
+#
+= Ep(x|z,A)q(z)
+
+xT log(A)z + xTlog c − xT log
+ 
+Az
+
+= Eq(z)
+
+(Az)T log(A)z + (Az)Tlog c − (Az)T log
+ 
+Az
+
+= Eq(z)
+h
+zT diag(AT log A) + (Az)Tlog c − (Az)T log
+ 
+Az
+i
+= Eq(z)
+
+−zTh(A) + (Az)Tlog c − (Az)T log
+ 
+Az
+
+= zTξ(A) ,
+with
+ξ(A) =AT 
+log c − log
+ 
+Az
+
+− h(A) . (26)
+34
+References
+Akbayrak, S., Bocharov, I., and de Vries, B. (2021). Extended Variational Message
+Passing for Automated Approximate Bayesian Inference. Entropy, 23(7):815.
+Bagaev, D. and de Vries, B. (2021). Reactive Message Passing for Scalable Bayesian
+Inference. arXiv:2112.13251 [cs]. arXiv: 2112.13251.
+Champion, T., Grze ´s, M., and Bowman, H. (2021). Realising Active Inference in
+Variational Message Passing: the Outcome-blind Certainty Seeker.arXiv:2104.11798
+[cs]. arXiv: 2104.11798.
+Cox, M., van de Laar, T., and de Vries, B. (2019). A factor graph approach to auto-
+mated design of Bayesian signal processing algorithms. International Journal of
+Approximate Reasoning, 104:185–204.
+Da Costa, L., Parr, T., Sajid, N., Veselic, S., Neacsu, V ., and Friston, K. (2020). Active
+inference on discrete state-spaces: a synthesis. arXiv:2001.07203 [q-bio]. arXiv:
+2001.07203.
+Dauwels, J. (2007). On Variational Message Passing on Factor Graphs. In IEEE
+International Symposium on Information Theory, pages 2546–2550, Nice, France.
+de Vries, B. and Friston, K. J. (2017). A Factor Graph Description of Deep Temporal
+Active Inference. Frontiers in Computational Neuroscience, 11.
+Forney, G. (2001). Codes on graphs: normal realizations. IEEE Transactions on
+Information Theory, 47(2):520–548.
+Friston, K., Kilner, J., and Harrison, L. (2006). A free energy principle for the brain.
+Journal of Physiology, Paris, 100(1-3):70–87.
+Friston, K., Rigoli, F., Ognibene, D., Mathys, C., Fitzgerald, T., and Pezzulo, G. (2015).
+Active inference and epistemic value. Cognitive Neuroscience, 6(4):187–214.
+Friston, K., Schwartenbeck, P., Fitzgerald, T., Moutoussis, M., Behrens, T., and Dolan,
+R. J. (2013). The anatomy of choice: active inference and agency.Frontiers in Human
+Neuroscience, 7:598.
+Friston, K. J., Daunizeau, J., and Kiebel, S. J. (2009). Reinforcement Learning or Active
+Inference? PLoS ONE, 4(7):e6421.
+Friston, K. J., Daunizeau, J., Kilner, J., and Kiebel, S. J. (2010). Action and behavior: a
+free-energy formulation. Biological cybernetics, 102(3):227–260.
+Friston, K. J., Parr, T., and de Vries, B. (2017). The graphical brain: belief propagation
+and active inference. Network Neuroscience, pages 1–78.
+Kiebel, S. J., Daunizeau, J., and Friston, K. J. (2009). Perception and Hierarchical
+Dynamics. Frontiers in Neuroinformatics, 3.
+35
+Kirchhoff, M., Parr, T., Palacios, E., Friston, K., and Kiverstein, J. (2018). The Markov
+blankets of life: autonomy, active inference and the free energy principle. Journal of
+The Royal Society Interface, 15(138):20170792.
+Koller, D. and Friedman, N. (2009). Probabilistic graphical models: principles and
+techniques. MIT press.
+Koudahl, M., van de Laar, T., and De Vries, B. (2023). Realising Synthetic Active
+Inference Agents, Part I: Epistemic Objectives and Graphical Specification Language.
+arXiv preprint arXiv:2306.08014.
+Koudahl, M. T., Kouw, W. M., and de Vries, B. (2021). On Epistemics in Expected Free
+Energy for Linear Gaussian State Space Models. Entropy, 23(12):1565. Publisher:
+MDPI.
+Kschischang, F. R., Frey, B. J., and Loeliger, H.-A. (2001). Factor graphs and the
+sum-product algorithm. IEEE Transactions on information theory, 47(2):498–519.
+Loeliger, H.-A. (2004). An introduction to factor graphs. Signal Processing Magazine,
+IEEE, 21(1):28–41.
+Loeliger, H.-A. (2007). Factor Graphs and Message Passing Algorithms – Part 1:
+Introduction. http://www.crm.sns.it/media/course/1524/Loeliger A.pdf, last accessed
+on 3-4-2019.
+Millidge, B., Tschantz, A., and Buckley, C. L. (2020). Whence the Expected Free
+Energy? arXiv preprint arXiv:2004.08128.
+Parr, T. and Friston, K. J. (2019). Generalised free energy and active inference. Biologi-
+cal cybernetics, 113(5):495–513. Publisher: Springer.
+Parr, T., Markovic, D., Kiebel, S. J., and Friston, K. J. (2019). Neuronal message passing
+using Mean-field, Bethe, and Marginal approximations. Scientific Reports, 9(1):1889.
+Pearl, J. (1982). Reverend Bayes on Inference Engines: A Distributed Hierarchical
+Approach. In Proceedings of the Second AAAI Conference on Artificial Intelligence,
+AAAI’82, pages 133–136, Pittsburgh, Pennsylvania. AAAI Press.
+Schw¨obel, S., Kiebel, S., and Markovi´c, D. (2018). Active Inference, Belief Propagation,
+and the Bethe Approximation. Neural Computation, 30(9):2530–2567.
+Sennesh, E., Theriault, J., van de Meent, J.-W., Barrett, L. F., and Quigley, K. (2022).
+Deriving time-averaged active inference from control principles. arXiv:2208.10601
+[cs, eess, q-bio, stat].
+S ¸en¨oz, ˙I., van de Laar, T., Bagaev, D., and de Vries, B. (2021). Variational Message
+Passing and Local Constraint Manipulation in Factor Graphs. Entropy, 23(7):807.
+Publisher: Multidisciplinary Digital Publishing Institute.
+van de Laar, T. (2019). Automated Design of Bayesian Signal Processing Algorithms.
+PhD thesis, Eindhoven University of Technology, Eindhoven, The Netherlands.
+36
+van de Laar, T. and de Vries, B. (2019). Simulating Active Inference Processes by
+Message Passing. Frontiers in Robotics and AI, 6:20.
+van de Laar, T., Koudahl, M., van Erp, B., and de Vries, B. (2022). Active Inference
+and Epistemic Value in Graphical Models. Frontiers in Robotics and AI, 9.
+van de Laar, T., S ¸en¨oz, I., ¨Ozc ¸elikkale, A., and Wymeersch, H. (2021). Chance-
+Constrained Active Inference. arXiv preprint arXiv:2102.08792.
+Winn, J. and Bishop, C. M. (2005). Variational Message Passing. Journal of Machine
+Learning Research, 6(23):661–694.
+Yedidia, J. S., Freeman, W. T., and Weiss, Y . (2001). Understanding Belief Propagation
+and its Generalizations.
+Zhang, D., Wang, W., Fettweis, G., and Gao, X. (2017). Unifying Message Passing
+Algorithms Under the Framework of Constrained Bethe Free Energy Minimization.
+arXiv:1703.10932 [cs, math]. arXiv: 1703.10932.
+37

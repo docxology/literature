@@ -1,0 +1,1458 @@
+Inference of Affordances and Active Motor Control in
+Simulated Agents
+Fedor Scholz
+Neuro-Cognitive Modeling Group
+University of Tübingen
+Tübingen, Germany
+fedor.scholz@uni-tuebingen.de
+Christian Gumbsch
+Autonomous Learning Group
+Max Planck Institute for Intelligent Systems
+& Neuro-Cognitive Modeling Group
+University of Tübingen
+Tübingen, Germany
+christian.gumbsch@tuebingen.mpg.de
+Sebastian Otte
+Neuro-Cognitive Modeling Group
+University of Tübingen
+Tübingen, Germany
+sebastian.otte@uni-tuebingen.de
+Martin V . Butz
+Neuro-Cognitive Modeling Group
+University of Tübingen
+Tübingen, Germany
+martin.butz@uni-tuebingen.de
+Abstract
+Flexible, goal-directed behavior is a fundamental aspect of human life. Based on
+the free energy minimization principle, the theory of active inference formalizes
+the generation of such behavior from a computational neuroscience perspective.
+Based on the theory, we introduce an output-probabilistic, temporally predictive,
+modular artiﬁcial neural network architecture, which processes sensorimotor infor-
+mation, infers behavior-relevant aspects of its world, and invokes highly ﬂexible,
+goal-directed behavior. We show that our architecture, which is trained end-to-end
+to minimize an approximation of free energy, develops latent states that can be
+interpreted as affordance maps. That is, the emerging latent states signal which
+actions lead to which effects dependent on the local context. In combination with
+active inference, we show that ﬂexible, goal-directed behavior can be invoked,
+incorporating the emerging affordance maps. As a result, our simulated agent ﬂexi-
+bly steers through continuous spaces, avoids collisions with obstacles, and prefers
+pathways that lead to the goal with high certainty. Additionally, we show that the
+learned agent is highly suitable for zero-shot generalization across environments:
+After training the agent in a handful of ﬁxed environments with obstacles and other
+terrains affecting its behavior, it performs similarly well in procedurally generated
+environments containing different amounts of obstacles and terrains of various
+sizes at different locations.
+1 Introduction
+We, as humans, direct our actions towards goals. But how do we select goals and how do we reach
+them? In this work we will focus on a more speciﬁc version of the latter question: Given a goal and
+some information about the environment, how can suitable actions be inferred that ultimately lead to
+the goal with high certainty?
+The free energy principle proposed in Friston [2005] serves as a good starting point for an answer.
+It is sometimes regarded as a “uniﬁed theory of the brain” [Friston, 2010], because it attempts to
+explain a variety of brain processes such as perception, learning, and goal-directed action selection,
+arXiv:2202.11532v3  [cs.AI]  2 Aug 2022
+based on a single objective: to minimize free energy. Free energy constitutes an upper bound on
+surprise, which results from interactions with the environment. When actions are selected in this
+way, we also refer to it as active inference. Active inference basically states that agents infer suitable
+actions by minimizing expected free energy, leading to goal-directed planning.
+One limitation of active inference-based planning is computational complexity: Optimal active
+inference requires an agent to predict the free energy for all possible action sequences potentially
+far into the future. This soon becomes computationally intractable, which is why so far mostly
+simple, discrete environments with small state and action spaces have been investigated [Friston
+et al., 2015]. How do biological agents, such as humans, deal with this computational explosion
+when planning behavior in our complex, dynamic world? It appears that humans, and other animals,
+have developed a variety of inductive biases that facilitate processing high-dimensional sensorimotor
+information in familiar situations [Butz, 2008, Butz et al., 2021]. Affordances [Gibson, 1986], for
+example, encode object- and situation-speciﬁc action possibilities. By equipping an active inference
+agent with the tendency to infer affordances, then, inference-based planning could ﬁrst focus on
+afforded environmental interactions, signiﬁcantly alleviating the computational load when considering
+interaction options.
+In this work, we model these conjectures by means of an output-probabilistic, temporally predictive
+artiﬁcial neural network architecture. The architecture is designed to focus on local environmental
+properties, from which it predicts action-dependent interaction consequences via latent state en-
+codings. We show that, through this processing pipeline, affordance maps emerge, which encode
+behavior-relevant properties of the environment. These affordance maps can then be employed during
+goal-directed planning. Given spatially local visual information, the resulting latent affordance
+codes constrain the considered environmental interactions. As a result, planning via active inference
+becomes more effective and enables, for example, the avoidance of uncertainty while moving towards
+a given goal location. We furthermore show that the architecture exhibits zero-shot learning abilities
+[Eppe et al., 2022], directly solving related environments and tasks within.
+2 Foundations
+This section introduces the theoretical foundations of our work. We ﬁrst specify our problem setting
+and notation. We then introduce the free energy principle and show how we can perform active
+inference-based goal-directed planning with two different algorithms. Subsequently, we combine the
+theory of affordances with the idea of cognitive maps and arrive at the concept of affordance maps.
+We propose that the incorporation of affordance maps can facilitate goal-directed planning via active
+inference.
+2.1 Problem formulation and notation
+We consider problems in which an agent interacts with its environment by performing actions a and
+in turn receiving sensory states s. The sensory states might reveal only parts of the environmental
+states ϑ, which therefore are not directly observable, i.e., we are facing a partially observable Markov
+decision process 1. In every time step t, an agent selects and performs an action at, and receives a
+sensory state (often called observation) of the next time step st+1.
+Model-based planning, such as active inference, requires a model of the world to simulate actions
+and their consequences. We use a transition model tM that predicts the unfolding motor-activity-
+dependent sensory dynamics while an agent interacts with its environment. In order to deal with
+partial observability, the transition model can be equipped with its own internal hidden stateht. Its
+purpose is to encode the state of the environment, including potentially non-observable parts. Given a
+current sensory state st, an internal hidden state ht, and an action at, the transition model computes
+an estimate of the sensory state ˜ st+1 in the next time step and a corresponding new hidden state ht+1:
+(˜ st+1,ht+1) = tM(st,ht,at) (1)
+1In Markov decision processes, usually the environment additionally returns a reward in each time step, which
+is to be maximized by the agent. Here, we do not deﬁne a reward function but instead plan in a model-predictive,
+goal-directed manner.
+2
+action
+selection
+env
+ tMϑ h
+s ˜ s
+a
+agent
+Figure 1: Depiction of a (partially observable) Markov decision process. An agent interacts with its
+environment by sending actions a and receiving consequent sensory states s. Partial observability
+here implies that the sensory state s does not encode the whole environmental state ϑ. Rather, certain
+aspects remain hidden for the agent and must be inferred from the sensory state. To deal with this, our
+agent utilizes a transition model tM with its own internal hidden state h. It predicts sensory states ˜ s,
+which aid the action selection algorithm to produce appropriate actions. In order to stay in tune with
+the environment and to predict multiple time steps into the future, the transition model also receives
+observed and predicted sensory states (dashed arrows).
+See Figure 1 for a depiction of how environment, agent, transition model, and action selection relate
+to each other.
+2.2 Towards free energy-based planning
+The free energy principle starts formalizing life itself, very generally, as having an interior and
+exterior, separated by some boundary [Friston, 2013]. For life to maintain homeostasis, this boundary,
+protecting the interior, needs to be maintained. It follows that living things need to be in speciﬁc states
+because only a small number of all possible states ensure homeostasis. The free energy principle
+formalizes this maintenance of homeostatic states by means of minimizing entropy. But how can
+entropy be computed? One possibility is given by the presence of an internal, generative model
+mof the world. In this case, we can regard entropy as the expected surprise about encountered
+sensory states given the model [Friston, 2010]. In other words: Living things must minimize expected
+surprise.
+This implies that all living things act as if they strive to maintain a model of their environment over
+time in some way or another. Surprise, however, is not directly accessible for a living thing. In order
+to compute the surprise corresponding to some sensory input s, it is necessary to integrate over all
+possible environmental states ϑthat could have led to that input [Friston, 2009]. We can see this in
+the formal deﬁnition of surprise for a sensory state s [Friston et al., 2010]:
+−log p(s |m) = −log
+∫
+ϑ
+p(s,ϑ |m) dϑ (2)
+where mis the model or the living thing itself, and ϑare all environmental states, including states
+that are not fully observable for the living thing. The consideration of all these states is infeasible.
+Thus, according to the free energy principle, living things minimize free energy, which is deﬁned as
+follows [Friston et al., 2010]:
+FE(s,h) = Eq(ϑ|h)[−log p(s,ϑ |m)]  
+energy
+−Eq(ϑ|h)[−log q(ϑ|h)]  
+entropy
+(3)
+where Edenotes expected value and qis an approximate posterior over the external hidden state ϑ
+given internal hidden state h. Since here all parameters are accessible, this quantity is computable.
+Rewriting it shows that free energy can be decomposed into a surprise and a divergence term:
+FE(s,h) = −log p(s |m)  
+surprise
++ D[q(ϑ|h) ||p(ϑ|s,m)]  
+divergence
+(4)
+3
+where Ddenotes the Kullback-Leibler divergence. Since the divergence cannot be less than zero,
+free energy is an upper bound on surprise, our original quantity of interest.
+Given a generative model of the world, surprise corresponds to an unexpected, inaccurate prediction
+of sensory information. In order to minimize free energy, an agent equipped with a generative world
+model thus has two ways to minimize the discrepancy between predicted and actually encountered
+sensory information: (i) The internal world model can be adjusted to better resemble the world. In
+the short term, this relates to perception, while in the long term, this corresponds to learning. (ii) The
+agent can manipulate the world via its actions, such that the world better ﬁts its internal model. In
+this case, an agent chooses actions that minimize expected free energy in the future, pursuing active
+inference.
+2.2.1 Active inference
+When the free energy principle is employed as a process theory for action selection, it is called
+active inference. The name comes from the fact that the brain actively samples the world to perform
+inference: It infers actions (also called control states) that minimize expected free energy (EFE), that
+is, an upper bound on surprise in anticipated future states. This is closely related to the principle
+of planning as inference in the machine learning and control theory communities [Botvinick and
+Toussaint, 2012, Lenz et al., 2015]. According to Friston et al. [2015], a policy πis evaluated at time
+step tby projecting it into the future and evaluating the EFE at some time step τ >t. Including the
+internal hidden states ht, EFE can be formalized as
+EFE(π,t,τ ) = D[Ep(hτ|ht,π)[p(sτ |hτ)] ||p(sτ |m(τ))]  
+predicted divergence from desired states
++ β·Ep(hτ|ht,π)[H[p(sτ |hτ)]]  
+predicted uncertainty
+, (5)
+where tis the current time step, τ >tis a future time step, and βis a new hyperparameter that we
+introduce. This formula equates EFE with a sum of two components. The ﬁrst part is the Kullback-
+Leibler divergence, which estimates how far the predicted sensory states deviate from desired ones.
+The second part is the entropy of the predicted sensory states, which quantiﬁes uncertainty. We
+introduce βto weigh these components. It enables us to tune the trade-off between choosing actions
+that minimize uncertainty and actions that minimize divergence from desired states. To calculate the
+EFE for a whole sequence of T future time steps, we take the mean of the EFE over this sequence:
+EFE(π,t) = 1
+T
+t+T∑
+τ=t+1
+EFE(π,t,τ ) (6)
+Based on this formula, policies can be evaluated and the policy with the least EFE can be chosen:
+πt = argmin
+π
+EFE(π,t) (7)
+Intuitively speaking, active inference-based planning agents choose actions that lead to desired
+sensory states with high certainty.
+2.2.2 Planning via active inference
+On the computational level, active inference tells us to minimize EFE to perform goal-directed
+planning. Thus, it provides an objective to optimize actions. However, it does not specify how to
+optimize the actions on an algorithmic level. We thus detail two planning algorithms that can be
+employed for this kind of action selection. In both algorithms, we limit ourselves to a ﬁnite prediction
+horizon T with ﬁxed policy lengths. In order to evaluate policies, both algorithms employ a transition
+model tM and “imagine” the execution of a policy:
+(˜ sτ+1,hτ+1) =
+{tM(st,ht,at), if τ = t
+tM(˜ sτ,hτ,aτ), if t<τ <t + T (8)
+For active inference-based planning, we can compute the EFE for the predicted sequence and optimize
+the actions using one of the planning algorithms. After a ﬁxed number of optimization cycles, both
+algorithms return a sequence of actions. The ﬁrst action can then be executed in the environment.
+4
+Gradient-based active inference Action inference [Otte et al., 2017, Butz et al., 2019] is a gradient-
+based optimization algorithm for model-predictive control. Therefore, it requires the transition model
+tM to be differentiable. The algorithm maintains a policy π, which, in each optimization cycle, is fed
+into the transition model. Afterwards, we use backpropagation through time to backpropagate the
+EFE onto the policy. We obtain the gradient by taking the derivative of the EFE with respect to an
+action aτ from the policy. After multiple optimization cycles, the algorithm returns the ﬁrst action of
+the optimized policy.
+Evolutionary-based active inference The cross-entropy method (CEM, Rubinstein, 1999) is an
+evolutionary optimization algorithm. CEM maintains the parameters of a probability distribution
+and minimizes the cross-entropy between this distribution and a distribution that minimizes the
+given objective. It does so by sampling candidates, evaluating them according to EFE, and using
+the best performing candidates to estimate the parameters of its probability distribution for the next
+optimization cycle. Recently, CEM has been used as a zero−order optimization technique for
+model-based control and reinforcement learning (RL) [Chua et al., 2018, Hafner et al., 2019a, Pinneri
+et al., 2020]. In such a model-predictive control setting, CEM maintains a sequence of probability
+distributions and candidates correspond to policies. After multiple optimization cycles, the algorithm
+returns the ﬁrst action of the best sampled policy.
+2.3 Behavior-oriented predictive encodings
+In theory, given a sufﬁciently accurate model, active inference enables an agent to plan goal-directed
+behavior regardless of the complexity of the problem. In practice, however, considering all possible
+actions and consequences thereof quickly becomes computationally intractable. To counteract this
+problem, it appears that humans and other animal have developed a variety of inductive learning
+biases to focus the planning process by means of behavior-oriented, internal representations. Here,
+we focus on biases that lead to the development of affordances, cognitive maps, and, in combination,
+affordance maps.
+2.3.1 Affordances
+Gibson [1986] deﬁnes affordances as what the environment offers an animal: Depending on the
+current environmental context, affordances are possible interactions. As a result, affordances funda-
+mentally determine how animals behave depending on their environment. They constitute behavioral
+options from which the animal can select suitable ones in order to fulﬁl its current goal. To give an
+example, imagine a ﬂat surface at the height of a human’s knees. Given the structure underneath
+is sufﬁciently sturdy, it is possible to sit on the surface in a way that requires relatively little effort.
+Therefore, such a surface is sit-upon-able: It offers a human the possibility to sit on it in an effortless
+way.
+In this work, we use a more general deﬁnition of affordances. We deﬁne an affordance as anything
+in the environment that locally inﬂuences the effects of the agent’s actions. These deﬁnitions differ
+with respect to the set of possible actions. Gibson’s deﬁnition entails that certain actions are possible
+only in certain environmental contexts: For example sitting down is only possible in the presence of
+a chair. In this work, we assume that every action is possible everywhere in the environment, but
+that the effects differ depending on the environmental context: Sitting down is also possible in the
+absence of a chair, but the effect is certainly different.
+The theory of affordances explicitly states that to (visually) perceive the environment is to perceive
+what it affords. Animals do not see the world as it is and derive their behavioral options from their
+perspective. Rather, Gibson proposes that affordances are perceived directly, assigning distinct
+meanings to different parts of the environment. From an ecological perspective, it appears that vision
+may have evolved for exactly this purpose [Gibson, 1986]: to convey what behaviors are possible in
+the current situation. First, however, an animal needs to learn the relationship between visual stimuli
+and their meaning for behavior. This is non-trivial: Similar visual stimuli can mean different things,
+or the other way round. Furthermore, visual input is rich such that the animal needs to effectively
+focus on the behavior-relevant information.
+5
+2.3.2 Cognitive maps
+The concept of cognitive maps was introduced in Tolman [1948]. Tolman showed that after exploring
+a given maze, rats were able to navigate towards a food source regardless of their starting position.
+He concluded that the rats acquired a mental representation of the maze: a cognitive map. Place cells
+in the hippocampus seem to be a promising candidate for the neural correlate of this concept [O’keefe
+and Nadel, 1978]. These cells tend to ﬁre when the animal is at associated locations. Visual input
+acts as stimuli, but also the olfactory and vestibular senses play a role. Together, place cells constitute
+a cognitive map, which the animal appears to use for orientation, reﬂection, and planning [Diba and
+Buzsaki, 2007, Pfeiffer and Foster, 2013].
+2.3.3 Affordance maps
+Cognitive maps are well-suited for ﬂexible navigation and goal-directed planning. However, to
+improve the efﬁciency of the planning mechanisms, it will be useful to encode behavior-relevant
+aspects, such as the aforementioned affordances, within the cognitive map. Accordingly, we combine
+the theory of affordances with cognitive maps, leading to affordance maps. Their function is to map
+spatial locations onto affordance codes. Like cognitive maps, their encoding depends on visual cues.
+In contrast to cognitive maps’ traditional focus on map-building, though, affordance maps signal
+distinct behavioral options at particular environmental locations. As an example, consider a hallway
+corner situation with corridors to your right and behind you. An affordance map would encode
+successful navigation options for turning to the right or turning around. Regarding affordances for
+spatial navigation speciﬁcally, Bonner and Epstein showed that these are automatically encoded by
+the human visual system independent of the current task and propose a location in the brain where a
+neural correlate could be situated [Bonner and Epstein, 2017].
+2.4 Related neural network models
+Ha and Schmidhuber [2018] used a world model to facilitate planning via RL. Their overall archi-
+tecture consists of a vision model which compresses visual information, a memory module, and
+a controller model, which predicts actions given a history of the compressed visual information.
+Their vision model is given by a variational autoencoder, which is trained in an unsupervised manner
+to reconstruct its input. Therefore, and in contrast to ours, their vision model is not trained to
+extract meaningful, behavior-oriented information. This is why we would not regard the emerging
+compressed codes as affordance codes.
+Affordance maps were used before in Qi et al. [2020] to aid planning. The authors put an agent into
+an environment (VizDoom) with hazardous regions that were to be avoided. The agent moved around
+in its environment and collected experiences of harm or no harm, which were backprojected onto the
+pixels of the input to the agent’s visual system, thereby performing image segmentation. The authors
+then trained a convolutional neural network (CNN) on the resulting data of which the output was
+utilized by the A* algorithm for planning. In contrast to ours, their architecture was not trained in
+an end-to-end fashion, meaning that the resulting affordance codes were not optimized to suit their
+transition model.
+3 Model
+We now detail the proposed architecture, which learns a transition model of the environment with
+spatial affordance encodings. The architecture predicts a probability density function over changes
+in sensory states given the current sensory state and action as well as potentially an internal hidden
+state. This action-dependent transition model of the environment thus enables active inference-based
+planning. We ﬁrst specify the architecture, then detail the model learning mechanism, and ﬁnally turn
+to active inference.
+3.1 Affordance-conditioned inference
+Our model adheres to the general notion introduced above (cf. Equation 1). Our model consists
+of three main components: a transition model tM, a vision model vM, and a look-up map ωof the
+environment. The model with its different components is illustrated in Figure 2
+6
+pt
+ Map ω vt
+ Vision
+model vM
+ct
+Transition
+model tM
+∆pt
+at µ∆˜ pt+1
+σ∆˜ pt+1
+Free
+energy
+µ∆ˆ pt+1
+σ∆ˆ pt+1
++
+Figure 2: Affordance map architecture: Based on the current position pt, the architecture performs a
+look-up in an environmental map ω. The vision model vM receives the resulting visual information
+vt and produces a contextual code ct. The transition model tM utilizes this context ct, the last
+change in the position ∆pt, an action at, and its internal hidden state ht to predict a probability
+distribution over the next change in position. During training, the loss between predicted and actual
+change in position is backpropagated onto tM (red arrows) and further onto vM (orange arrows)
+to train both models end-to-end. During planning, the map look-up is performed using position
+predictions. For gradient-based active inference, EFE is backpropagated onto the action code at
+(red and green arrows). For planning with the cross-entropy method, at is modiﬁed directly via
+evolutionary optimization.
+Our system learns a transition model tM of its environment. It receives a current sensory state st and
+action at and predicts a consequent sensory state˜ st+1. If the environment is only partially observable,
+the transition model can furthermore receive an internal hidden state ht and predict a consequent
+ht+1. Focusing on motion control tasks, we encode the sensory state by a two-dimensional positional
+encoding pt, where the transition model continues to predict changes in positions ∆˜ pt+1 given
+the last positional change ∆pt, potentially hidden state ht, and current action at. To enable the
+model to consider the properties of different regions in an environment during goal-directed planning,
+though, we introduce an additional contextual input ct, which is able to modify the transition model’s
+predictions (cf. Butz et al. 2019, for a related approach without map-speciﬁcity). In each time step,
+the transition model tM thus additionally receives a context encoding vector ct, which should encode
+the locally behavior-relevant characteristics of the environment.
+This context code is produced by the vision model vM, which receives a visual representation vt
+of the agent’s current surroundings in the form of a small pixel image. The vision model is thus
+designed to generate vector embeddings that accurately modify the transition model’s predictions
+context-dependently.
+The prediction of the transition model can thus be formalized as follows:
+(∆˜ pt+1,ht+1) = tM(ct = vM(vt),∆pt,ht,at) (9)
+The visual information vt can be understood as a local view of the environment surrounding the
+agent. Thus, vt depends on the agent’s locationpt. To enable the model to predict vt for various
+agent positions, for example, for "imagined" trajectories while planning, the system is equipped with
+a look-up map ωto translate positions pt into local views of the environment vt. We augment the
+model with the ability to probe particular map locations, translate the location into a local image,
+and extract behavior-relevant information from the image. Intuitively speaking, this is as if the
+network can put its focus of attention to any location on the map and consider the context-dependent
+behavioral consequences at the considered location. As a result, the system is able to consider
+behavioral consequences dependent on probed environmental locations. In future work, the learning
+of completely internal maps may be investigated further.
+The consequence of this model design is that the context code ct will tend to encode local, behavior-
+inﬂuencing aspects of the environment, that is, affordances. The context is therefore a compressed
+version of the environment’s behaviorally-relevant characteristics at the corresponding position.
+Therefore, the incorporation of the affordance codes can be expected to improve both the accuracy of
+7
+action-dependent predictions and active inference-based planning. This connection between active
+inference and affordances can further be described as follows [Friston et al., 2012]: The desired
+sensory state encoded as a prior lets the agent expect to reach the target. If the agent then is in front
+of an obstacle e.g., different affordances compete with each other, which is in line with the affordance
+competition hypothesis [Cisek, 2007]: ﬂy around or crash into the obstacle. Since ﬂying around
+the obstacle best explains the sensory input in light of the prior, the action corresponding to this
+affordance is chosen by the agent.
+3.2 Uncertainty estimation
+The free energy principle is inherently probabilistic and therefore active inference requires our
+architecture to produce probability density functions over sensory states. We implement this in terms
+of a transition model tM that does not predict a point estimate of the change in sensory state in the
+next time step, but rather the parameters of a probability distribution over this quantity. We choose
+the multivariate normal distribution with diagonal covariance matrix (i.e., covariances are set to0).
+The output of the transition model is then given by a mean vector µ∆˜ pt+1 and a vector of standard
+deviations σ∆˜ pt+1 . We thus replace ∆˜ pt+1 with θ∆˜ pt+1 := (µ∆˜ pt+1 ,σ∆˜ pt+1 ).
+3.3 Training
+We train both components of our architecture jointly in an end-to-end, self-supervised fashion to
+perform one-step ahead predictions on a pregenerated data set via backpropagation through time.
+The gradient ﬂow during training is depicted in Figure 2. Inputs consist of the sensor-action tuples
+described above. The only induced target is given by the change in position in the next time step
+∆pt+1. This target signal is compared to the output of the transition model tM by the negative
+log-likelihood (NLL)2, which approximates free energy assuming no uncertainty in our point estimate
+h of environmental state ϑ(see Equation 1). Due to end-to-end backpropagation, the vision model
+vM is trained to output compact, transition model-conditioning representations of the visual input.
+While we use the NLL as the objective during training here, we make use of the expected free energy
+during goal-directed control. In future work one could utilize full-blown FE also during training
+in a probabilistic architecture. However, there is a close relationship between NLL and FE due to
+the Kullback-Leibler divergence: In Appendix F, we show that minimizing NLL is equivalent to
+minimizing the Kullback-Leibler divergence up to a constant factor and a constant. Thus, through
+NLL-based learning we can approximate learning through FE minimization.
+3.4 Goal-directed control
+We perform goal-directed control via gradient- and evolutionary-based active inference as described
+in Section 2.2.1. Usually, in order to predict multiple time steps into the future given a policy, the
+transition model tM receives its own output as input. Since our architecture predicts the parameters of
+a normal distribution, we use the predicted mean as input in the next prediction time step. The model
+incorporates visual information v from locations corresponding to the predicted means. Therefore,
+the model does not blindly imagine a path but simultaneously “looks” at, or focuses on, predicted
+positions, incorporating the inferred affordance code c into the transition model’s predictions.
+In order to compare the predicted path to the given target and to look up the visual information, we
+need absolute locations. We thus take the cumulative sum and add the current absolute position.
+To compute EFE along a predicted path we also need to consider the standard deviations at every
+point. For that, we ﬁrst convert standard deviations to variances, compute the cumulative sum, and
+convert back to standard deviations. We then can compute the EFE between the resulting sequence of
+probability distributions over predicted absolute positions and the given target according to Equation 5.
+To do so, we encode the target with a multivariate normal distribution as well, setting the mean to the
+target location and the standard deviation to a ﬁxed value. We can thus optimize the policy via the
+gradient- or evolutionary-based EFE minimization method introduced in Section 2.2.2 above3.
+2See Appendix D for a description of how to compute gradients when the objective is given by the NLL in a
+multivariate normal distribution.
+3Appendix B summarizes the particular adjustments we applied to these algorithms.
+8
+−1 0 10.0
+0.5
+1.0
+1.5
+2.0 Environment
+Figure 3: The simulation environment we use in our experiments. It resembles a conﬁned space
+in which a vehicle (green) can move around by adjusting its throttles (blue). Its goal is to navigate
+towards the target (red). Depending on the experiment, obstacles or different terrains (black) are
+present, which affect the vehicle’s sensorimotor dynamics.
+4 Experiments and results
+To evaluate the abilities of our neural affordance map architecture, we ﬁrst introduce the environmental
+simulator and specify our evaluation procedure in general. The individual experimental results then
+evaluate the system’s planning abilities to avoid obstacles and regional uncertainty as well as to
+generalize to unseen environments. With respect to the affordance codes c, we show emerging
+affordance maps and examine disentanglement.
+4.1 Environment
+The environment used in our experiments is a physics-based simulation of a circular, vehicle-like
+agent with radius 0.06 in a 2-dimensional space with an arbitrary size of 3 ×2 units. It is conﬁned
+by borders, which prevent the vehicle from leaving the area. The vehicle is able to ﬂy around in the
+environment by adjusting its 4 throttles, which are attached between the vertical and horizontal axes
+in a diagonal fashion. They take values between 0 and 1 resembling actions and enable the vehicle
+to reach a maximum velocity of approximately 0.23 units per time step within the environment.
+Therefore, at least 13 time steps are required for the vehicle to ﬂy from the very left to the very
+right. Due to its mass, the vehicle undergoes inertia and per default, it is not affected by gravity. See
+Figure 3 for a depiction of the environment and an agent. It is implemented as an OpenAI Gym
+[Brockman et al., 2016].
+The environment can contain obstacles, which block the way. Friction values are larger when the
+vehicle touches obstacles or borders. Furthermore, the environment can comprise different terrains,
+which locally change the sensorimotor dynamics. Force ﬁelds pull the agent up- or downwards. If
+the vehicle is inside a fog terrain, the environment returns a position that is corrupted by Gaussian
+noise. Two values from a standard normal distribution are sampled and added to each coordinate.
+This implies a standard deviation of approximately 1.414 on the difference between positions from
+two consecutive time steps within fog. 4
+The environment outputs absolute positions, the change in the positions and allows probing of the
+map at arbitrary positions. Therefore, and apart from the noisy positions in fog terrains and the map
+having a lower resolution than the environment itself, the environment used in our experiments is
+fully observable. This makes the incorporation of the internal hidden state h in the transition model
+tM obsolete. In the future we plan to test our architecture on environments which are only partially
+observable.
+4Since
+√
+12 + 12 =
+√
+2 ≈1.414.
+9
+4.2 Model and agent
+The vision model vM is given by a CNN, which produces the context activations c. We always
+evaluate contexts of sizes 0,1, 3, 5, and 8. Since the environment in our experiments is almost
+fully observable, we drop the internal hidden state h and use a multilayer perceptron (MLP) as our
+transition model tM. It consists of a fully connected layer followed by two parallel fully connected
+layers for the means and standard deviations, respectively. For each setting, we train 25 versions of
+the same architecture with different initial weights on a pregenerated data set and report aggregated
+results. See Appendix A for more details on the model and training hyperparameters, how the visual
+input v is constructed, how the data set is generated, and the training procedure.
+Active inference performance is evaluated after performing 100 goal-directed control runs per setting
+for 200 time steps. For each trained architecture instance, we consider 4 distinct start and target
+positions corresponding to each corner of the environment. The start position is chosen randomly
+with a uniform distribution over a 0.2 ×0.2 units square with a distance of 0.1 units to the borders.
+The target position is chosen in the same way in the diagonally opposite corner. We consider the
+agent to have reached the target when its distance to the target falls below0.1 units. The prediction
+horizon always has a length of 20. For active inference based planning (Equation 5), the target is
+provided to the system as a Gaussian distribution with standard deviation0.1. We reduce the standard
+deviation of the target distribution to 0.01 once the agent comes closer than 0.5 units. The two
+different standard deviations can be seen as corresponding to, for example, smelling and seeing the
+target, respectively. See Appendix B for more details on the hyperparameters. All hyperparameters
+were optimized empirically or with Hyperopt [Bergstra et al., 2013] via Tune [Liaw et al., 2018].
+In order to get an idea about the nature of the emerging affordance codesc, we plot affordance maps by
+generating position-dependent context activations via the vision model vM for each possible location
+in the environment. That is, in the affordance maps shown below, the x- and y-axes correspond to
+locations in the environment while the color of each dot represents the context activation at that
+position. For this, we performed a principal component analysis (PCA) on the resulting context
+activations in order to reduce the dimensionality to 3 and then interpreted the results as RGB values.
+4.3 Experiment I: Obstacle avoidance
+The ﬁrst of our experiments examines our architecture’s ability to avoid obstacles during active
+inference through the use of affordance codes. As a baseline experiment, we consider context size 0,
+disabling information ﬂow from the vision model vM to the transition model tM. With context sizes
+larger than 0 , however, the transition model can be informed about obstacles and borders via the
+context.
+We train the architecture on the environment depicted in Figure 3, where black areas resemble
+obstacles. One-hot encoded visual information v has one channel only for the obstacles and borders.
+We perform goal-directed control on the same environment we train on.
+Figure 4 shows the results. Context codes of increasing dimensionality lead to smaller validation losses
+(Figure 4A), indicating their utility in improving the transition model’s accuracy. The affordance map
+(Figure 4B) shows that obstacles are encoded differently from the rest of the environment. Areas
+where free ﬂight if possible are encoded with a context code that corresponds to olive green. In
+contrast, areas where it is only possible to ﬂy upwards, to the left, or downwards e.g. are encoded with
+a context code that corresponds to the color orange. Light green, on the other hand, represents areas
+where only movement to the left is blocked. The affordance map reveals that different sides of the
+obstacles are encoded similarly to the corresponding sides of the environment’s boundary. Moreover,
+we ﬁnd gradients in the colors when moving away from borders or obstacles, indicating that the
+context codes not only encode directions but also distances to impassable areas. This conﬁrms that the
+emerging context codes constitute behavior-relevant encodings of the visually perceived environment.
+We evaluate goal-directed planning in terms of prediction error (Figure 4C) and mean distance to the
+target (Figure 4D). For evolutionary-based active inference, we ﬁnd improvement in both metrics with
+increasing context sizes. For gradient-based active inference, we ﬁnd improvement in the prediction
+error but deterioration of the mean distance to the target with increasing context sizes. Gradient-based
+outperforms evolutionary-based active inference with context size 0. With larger context sizes,
+evolutionary-based active inference performs better. Figure 5 shows two example trajectories for
+context sizes 0 and 8. A context size of 8 allows the agent to incorporate local information about the
+10
+environment, resulting in past and planned trajectories that bend around obstacles. With context size
+0, however, it can be seen that the agent ﬂew against one obstacle and plans its trajectory through
+another one.
+0 10 20 30 40 50
+Epoch
+−10.0
+−9.5
+−9.0
+−8.5
+−8.0
+NLL
+(A) Validation loss
+Context size
+0
+1
+3
+5
+8
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.50.0
+0.5
+1.0
+1.5
+2.0 (B) Aﬀordance map
+0 1 3 5 8
+Context size
+−12
+−10
+−8
+NLL
+(C) Prediction error
+Optimizer
+EB
+GB
+0 1 3 5 8
+Context size
+0.4
+0.6
+0.8
+1.0
+1.2
+Distance
+(D) Mean distance to target
+Optimizer
+EB
+GB
+Figure 4: Results for Experiment I – Obstacle avoidance (Subsection 4.3). For each setting, the results
+are aggregated over 25 differently initialized models which each performed 4 goal-directed control
+runs for 200 time steps. The box plots show the medians (horizontal bars), quartiles (boxes), and
+minima and maxima (whiskers). Data points outside of the range deﬁned by extending the quartiles
+by 1.5 times the interquartile range in both directions are ignored. EB is short for evolutionary- and
+GB for gradient-based active inference. (A) Validation loss during training. It is the negative log-
+likelihood of the actual change in position in the transition model’s predicted probability distribution.
+Shaded areas represent standard deviations. (B) Exemplary affordance map for context size 8. To
+generate this map, we probed the environmental map at every sensible location, applied the vision
+model to each output, performed dimensionality reduction to 3 via PCA, and interpreted the results
+as RGB values. (C) Prediction error during goal-directed control. It is the negative log-likelihood of
+the actual change in position in the transition model’s predicted probability distribution. (D) Mean
+distance to the target during goal-directed control.
+4.4 Experiment II: Generalization
+In this experiment we examine how well our architecture is able to generalize to similar environments.
+In Experiment I (Subsection 4.3), we trained on a single environment. Once the architecture is
+trained, we expect that our system should be able to successfully perform goal-directed control in
+other environments as well, given we provide the corresponding visual input. The local view onto
+the map essentially allows us to change position and size of obstacles without expecting signiﬁcant
+deterioration in performance.
+We reuse the trained models from Experiment 4.3, and apply them for goal-directed control on two
+additional environments (see Figure 6). We only consider evolutionary-based active inference.
+Figure 7 shows the results. Prediction error and mean distance to target (Figure 7C and D) indicate
+improvement with increasing context size. Furthermore, we ﬁnd slightly worse performance in the
+11
+−1 0 10.0
+0.5
+1.0
+1.5
+2.0 Example trajectory context size 0
+−1 0 10.0
+0.5
+1.0
+1.5
+2.0 Example trajectory context size 8
+Figure 5: Example trajectories from Experiment I – Obstacle avoidance (Subsection 4.3 with
+evolutionary-based active inference. The agent (green) ﬂies towards the target (red) with obstacles
+(grey) it its way. The black line behind the agent shows its past trajectory and the line in front its
+planned trajectory. Circles in front of the agent show the predicted uncertainty in the sensory states.
+With context size 0, the agent cannot incorporate information about the environment and therefore
+plans thorugh and ﬂies against the obstacles. With context size 8, the agent can successfully plan its
+way around and therefore avoid obstacles.
+−1 0 10.0
+0.5
+1.0
+1.5
+2.0 Environment 2 obstacles
+−1 0 10.0
+0.5
+1.0
+1.5
+2.0 Environment 12 obstacles
+Figure 6: Additional environments used during goal-directed control in Experiment II – Generalization
+(Subsection 4.4). Black areas represent obstacles.
+environment with 2 obstacles, while slightly better performance is achieved in the environment with
+12 obstacles. We believe this is mainly due to the fact that the environment with2 obstacles blocks
+the direct path much more severely. Thus, overall these results indicate that (i) the system generalized
+well to similar environments and (ii) incorporating context codes is beneﬁcial for performance
+optimization.
+4.5 Experiment III: Behavioral-relevance of affordance codes
+Affordances should only encode visual information if it is relevant to the behavior of an agent. Is our
+architecture able to ignore visual information for creating its affordance maps, if this information
+has no effect on the agent’s behavior? Furthermore, affordances should encode different visual
+information with the same behavioral meaning similarly. To investigate our architecture in this regard,
+we perform an experiment similar to Experiment I (Subsection 4.3), but with two additional channels
+in the cognitive map. The ﬁrst channel encodes the borders and upper obstacles, the second channel
+encodes the lower obstacles, and the third channel encodes meaningless information, which does not
+affect the behavior of the agent. Figure 8 shows the corresponding environment. We compare the
+results from this “hard condition” to the results of Experiment I (Subsection 4.3), to which we refer
+as the “easy condition”. We only consider evolutionary-based active inference.
+12
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.50.0
+0.5
+1.0
+1.5
+2.0 (A) Aﬀordance map 2 obstacles
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.50.0
+0.5
+1.0
+1.5
+2.0 (B) Aﬀordance map 12 obstacles
+0 1 3 5 8
+Context size
+−12
+−10
+−8
+NLL
+(C) Prediction error
+Environment
+2 obstacles
+Original
+12 obstacles
+0 1 3 5 8
+Context size
+0.5
+1.0
+1.5
+Distance
+(D) Mean distance to target
+Environment
+2 obstacles
+Original
+12 obstacles
+Figure 7: Results from Experiment II – Generalization (Subsection 4.4). For each setting, the
+results are aggregated over 25 differently initialized models which each performed 4 goal-directed
+control runs for 200 time steps. The box plots show the medians (horizontal bars), quartiles (boxes),
+and minima and maxima (whiskers). Data points outside of the range deﬁned by extending the
+quartiles by 1.5 times the interquartile range in both directions are ignored. "Original" refers to the
+environment from Experiment I (Subsection 4.3. (A) Exemplary affordance map for context size 8
+from environment with 2 obstacles. To generate this map, we probed the environmental map at every
+sensible location, applied the vision model to each output, performed dimensionality reduction to
+3 via PCA, and interpreted the results as RGB values. (B) Exemplary affordance map for context
+size 8 from environment with 12 obstacles. (C) Prediction error during goal-directed control on all
+three environments. It is the negative log-likelihood of the actual change in position in the transition
+model’s predicted probability distribution. (D) Mean distance to the target during goal-directed
+control on all three environments.
+Figure 9 shows the results. We do not ﬁnd a signiﬁcant difference between the two conditions. The
+developing affordance map (Figure 9B) is qualitatively similar to the one obtained from Experiment I
+(Subsection 4.3): neither do signiﬁcant visual differences between the encodings of the different
+obstacles remain, nor traces of the meaningless information. Appendix C exemplarily shows how this
+affordance map develops over the course of training. Finally, also performance in terms of prediction
+error and mean distance to the target stays similar to Experiment I when analyzing goal-directed
+control (Figure 9C and D).
+4.6 Experiment IV: Uncertainty avoidance
+Active inference considers uncertainty during goal-directed control. In this experiment, we examine
+the architecture’s ability to avoid regions of uncertainty during planning. We consider a run a success
+if the agent reached the target and was at no point inside a fog terrain. As mentioned above, we
+introduce an additional hyperparameter β, which scales the inﬂuence of the entropy term on the free
+energy (see Equation 5). Here, we set βto 10 to foster avoidance of uncertainty. We only consider
+evolutionary-based active inference.
+13
+−1 0 10.0
+0.5
+1.0
+1.5
+2.0 Environment
+Figure 8: One of the environments (hard condition) used in Experiment III – Behavioral-relevance of
+affordance codes (Subsection 4.5). Black and grey circles represent obstacles. They look differently
+to the agent but have the same inﬂuence on behavior (i.e. path blockage). Green circles are as well
+seen by the agent but represent open area and therefore mean the same as the white background
+behaviorally.
+We train the architecture on the environment depicted in Figure 3, this time black areas indicate fog
+terrains instead of obstacles. The cognitive map consists of two channels: one channel for fog terrains
+and one channel for the borders.
+Figure 10 shows the results. We ﬁnd that the context encoding clearly improves the validation loss
+(Figure 10A). The affordance map (Figure 10B) shows that free areas, borders, and fog are encoded
+differently. The prediction error (Figure 10C) improves when context is computed, while the ratio of
+successful runs (Figure 10D) stays relatively close to 1.
+4.7 Experiment V: Disentanglement
+In our ﬁnal experiment, we examined the architecture’s ability to combine previously learned
+affordance codes. We trained each architecture instance on four different environments. The
+environments are constructed as shown in Figure 3, black areas resembling obstacles in the ﬁrst, fog
+terrains in the second, force ﬁelds pointing upwards in the third, and force ﬁelds pointing downwards
+in the fourth environment. Accordingly, the cognitive map consists of four channels—one channel
+for each of the aforementioned properties. We evaluate the architecture on procedurally generated
+environments. In each environment, a randomly chosen amount between 6 and 10 obstacles, fog
+terrains, force ﬁelds pointing downwards, and force ﬁelds pointing upwards with randomly chosen
+radii between 0.1 and 0.5 are placed at random locations in the environment. All obstacles and fog
+terrains have a minimum distance of 0.15 units from each other, ensuring that the agent is able to ﬂy
+between them—thus prohibiting dead ends. Furthermore, all properties have a minimum distance
+of 0.15 to each border, again to avoid dead ends. Patches of size 0.4 ×0.4 units are left free in the
+corners such that start and target positions are not affected. We generate environments with two
+different conditions. In the ﬁrst condition (easy), force ﬁelds are handled similarly to obstacles and
+fog terrains in the way that they have a minimum distance of 0.15 units to all other obstacles, terrains,
+and force ﬁelds. This means that properties do not overlap. In the second condition (hard), force
+ﬁelds can overlap with each other, obstacles, and fog terrains. We only consider evolutionary-based
+active inference. In addition to the context sizes from before, we also evaluate the architecture for
+context sizes 16 and 32.
+Figure 11 shows the results. Larger context sizes lead to smaller validation losses (Figure 11A).
+The affordance map computed on an environment containing all properties (Figure 11B) shows that
+the network has learned to encode the distinct areas indeed with distinct encodings. The encoding
+also incorporates boundary directions, thus encoding the properties relative to the free space from
+which the agent may enter the area (see, for example, the borders of the environment). As expected,
+the agent always performs better in the easy condition (Figure 11C and D). In both conditions,
+performance improves with increasing context size.
+14
+0 10 20 30 40 50
+Epoch
+−10.0
+−9.5
+−9.0
+−8.5
+−8.0
+NLL
+(A) Validation loss
+Condition
+Easy
+Hard
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.50.0
+0.5
+1.0
+1.5
+2.0 (B) Aﬀordance map hard condition
+0 1 3 5 8
+Context size
+−12
+−10
+−8
+NLL
+(C) Prediction error
+Condition
+Easy
+Hard
+0 1 3 5 8
+Context size
+0.4
+0.6
+0.8
+1.0
+1.2
+Distance
+(D) Mean distance to target
+Condition
+Easy
+Hard
+Figure 9: Results from Experiment III – Behavioral-relevance of affordance codes (Subsection 4.5).
+For each setting, the results are aggregated over 25 differently initialized models which each per-
+formed 4 goal-directed control runs for 200 time steps. The box plots show the medians (horizontal
+bars), quartiles (boxes), and minima and maxima (whiskers). Data points outside of the range deﬁned
+by extending the quartiles by 1.5 times the interquartile range in both directions are ignored. "Easy"
+refers to the environment from Experiment I, "hard" refers to the condition with upper and lower
+obstacles encoded differently and additional meaningless information. (A) Validation loss during
+training. It is the negative log-likelihood of the actual change in position in the transition model’s
+predicted probability distribution. Shaded areas represent standard deviations. (B) Exemplary affor-
+dance map for context size 8 from environment with 2 obstacles. To generate this map, we probed
+the environmental map at every sensible location, applied the vision model to each output, performed
+dimensionality reduction to 3 via PCA, and interpreted the results as RGB values. (C) Prediction
+error during goal-directed control. It is the negative log-likelihood of the actual change in position
+in the transition model’s predicted probability distribution. (D) Mean distance to the target during
+goal-directed control.
+5 Discussion
+In this paper, we have connected active inference with the theory of affordances in order to guide the
+search for suitable behavioral policies via active inference in recurrent neural networks. The resulting
+architecture is able to perform goal-directed planning while considering the properties of the agent’s
+local environment. This chapter provides a summary of our architecture’s abilities, compares it to
+related work, and eventually presents possible future work directions.
+5.1 Conclusion
+Experiment I (Subsection 4.3) showed that our proposed architecture facilitates goal-directed planning
+via active inference. Both the validation loss as well as performance during goal-directed control
+revealed an advantage of incorporating affordance information, i.e. using a context size larger
+than 0. The affordance maps conﬁrmed that the architecture is able to infer relationships between
+15
+0 10 20 30 40 50
+Epoch
+−8
+−6
+−4
+−2
+NLL
+(A) Validation loss
+Context size
+0
+1
+3
+5
+8
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.50.0
+0.5
+1.0
+1.5
+2.0 (B) Aﬀordance map
+0 1 3 5 8
+Context size
+−14
+−12
+−10
+−8
+−6
+NLL
+(C) Prediction error
+0 1 3 5 8
+Context size
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Ratio
+(D) Ratio of successful runs
+Figure 10: Results from Experiment IV – Uncertainty avoidance (Subsection 4.6). For each setting,
+the results are aggregated over 25 differently initialized models which each performed 4 goal-directed
+control runs for 200 time steps. The box plot shows the medians (horizontal bars), quartiles (boxes),
+and minima and maxima (whiskers). Data points outside of the range deﬁned by extending the
+quartiles by 1.5 times the interquartile range in both directions are ignored. The bar plots show the
+means, where black lines represent the standard deviations. (A) Validation loss during training. It
+is the negative log-likelihood of the actual change in position in the transition model’s predicted
+probability distribution. Shaded areas represent standard deviations. (B) Exemplary affordance map
+for context size 8. To generate this map, we probed the environmental map at every sensible location,
+applied the vision model to each output, performed dimensionality reduction to 3 via PCA, and
+interpreted the results as RGB values. (C) Prediction error during goal-directed control. It is the
+negative log-likelihood of the actual change in position in the transition model’s predicted probability
+distribution. (D) Ratio of successful runs. A run was successful if the agent was closer to the target
+than 0.1 units in at least one time step and did not touch fog in any time step.
+environmental features and their meaning for the agent’s behavior: Depending on the direction of and
+the distance to the next obstacle, different codes emerged. We assume that context size larger than 1
+allows an easier encoding of the direction of and distance to the obstacles in relation to the agent.
+Evolutionary-based active inference outperforms gradient-based active if a context is used. This is due
+to the fact that gradient-based active inference relies on the gradients being backpropagated through
+the predicted sequence of sensory states. These gradients cannot be backpropagated through the
+context codes, since these depend on the visual information which the model acquires via a look-up in
+the environmental map. Therefore, vital information is missing during gradient-based active inference
+in order to optimize the policy accordingly. Experiment II (Subsection 4.4) showed that once the
+relationship between environmental features and their meaning was learned, this knowledge can
+be generalized to other environments with similar, but differently sized and positioned obstacles
+of different amounts. Experiment III (Subsection 4.5) showed that our architecture is able to map
+properties of the environment that are encoded differently visually but have the same inﬂuence on
+behavior onto the same affordance codes. This matches our general deﬁnition of affordances, namely
+an affordance encoding locally behavior-modifying properties of the environment. In the future, we
+16
+0 100 200 300 400 500
+Epoch
+−12
+−10
+−8
+−6
+NLL
+(A) Validation loss
+Context size
+0
+1
+3
+5
+8
+16
+32
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.50.0
+0.5
+1.0
+1.5
+2.0 (B) Aﬀordance map
+0 1 3 5 8 16 32
+Context size
+−18
+−16
+−14
+−12
+−10
+−8
+NLL
+(C) Prediction error
+Condition
+Easy
+Hard
+0 1 3 5 8 16 32
+Context size
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Ratio
+(D) Ratio of successful runs
+Condition
+Easy
+Hard
+Figure 11: Results from Experiment V – Disentanglement (Subsection 4.7). For each setting, the
+results are aggregated over 25 differently initialized models which each performed 4 goal-directed
+control runs for 200 time steps. The box plot shows the medians (horizontal bars), quartiles (boxes),
+and minima and maxima (whiskers). Data points outside of the range deﬁned by extending the
+quartiles by 1.5 times the interquartile range in both directions are ignored. The bar plot shows the
+means, where black lines represent the standard deviations. "Easy" refers to the condition where
+obstacles and terrains do not overlap, "Hard" refers to the condition where, force ﬁelds can overlap
+with each other, obstacles, and fog terrains. (A) Validation loss during training. It is the negative log-
+likelihood of the actual change in position in the transition model’s predicted probability distribution.
+Shaded areas represent standard deviations. (B) Exemplary affordance map for context size 8. This
+environment contains all four proporties (obstacle in the upper left, for terrains in the upper right,
+force ﬁeld pointing downwards in the lower left, and force ﬁeld poiting upwards in the lower right). It
+was not used during goal-directed control. To generate this map, we probed the environmental map at
+every sensible location, applied the vision model to each output, performed dimensionality reduction
+to 3 via PCA, and interpreted the results as RGB values. (C) Prediction error during goal-directed
+control. It is the negative log-likelihood of the actual change in position in the transition model’s
+predicted probability distribution. (D) Ratio of successful runs. A run was successful if the agent was
+closer to the target than 0.1 units in at least one time step and did not touch fog in any time step.
+plan to evaluate our architecture in environments where the connection to task-relevancy is more
+concrete. An example would be a key that needs to be picked up by the agent in order for a door
+to be encoded as passable. Experiment IV (Subsection 4.6) showed that our architecture is able
+to avoid regions of uncertainty (fog terrains) during planning via active inference. Experiment V
+(Subsection 4.7) emphasized our architecture’s generalization abilities, but also showed that the
+learned affordances are not disentangled. If properties of the environment do not overlap and with
+sufﬁciently large context size, the agent can successfully reach the target without touching regions of
+uncertainty nearly all the time. This is less so if properties do overlap. We propose that an additional
+regularization that may foster a disentanglement or factorization of the learned affordances could lead
+to a fully successful generalization to arbitrary combinations of previously encountered properties.
+17
+Our notion of affordances admittedly slightly differs from the original deﬁnition in Gibson [1986].
+In this work, we assume that every action is possible everywhere, but that only the effects differ
+depending on the environmental context. This was certainly the case in the environment we used
+in our experiments. We think that this is also often the case in the real world—particularly when
+actions are considered on the lowest level only, i.e. muscle movements. When increasing behavioral
+abstraction, though, this might not necessarily be the case any longer. For example, the high-level,
+composite action of driving a nail into a wall clearly is not possible in every environmental context. In
+the future, we want to investigate how our architecture can be expanded to ﬂexibly and hierarchically
+process event-like structures [Zacks et al., 2007, Butz et al., 2021, Zacks and Tversky, 2001, Eppe
+et al., 2022]. In order to foster these event structures, inductive biases as in Butz et al. [2019] and
+Gumbsch et al. [2021] might be necessary, which assume that most of the time agents are within
+ongoing events and that event boundaries characterize transitions between events. Such event models
+may thus set the general context. The proposed vision model may then be conditioned on this context
+to enable accurate, event-conditioned action-effect predictions. As a result, the event-conditioned
+model would learn to encode when the action result that is associated with a particular event-speciﬁc
+affordance can be accomplished.
+We treat the context size in our experiments as a hyperparameter, which needs to be set by the
+experimenter. Our results show that when the context size is too small, the system is unable to
+learn all environmental inﬂuences on action effects. Larger context sizes, on the other hand, tend to
+decrease prediction error. Improvement does not only depend on the context size, though, but also
+on the computational capacity of the vision and transition models. What context size is necessary
+for a certain number of possible environmental interactions remains an open question for future
+research. One possible direction here is to let the model adapt the context size on demand. In this
+case, the computational capacity of the vision and transition models need to be adapted as well, which
+poses a challenge. Furthermore, the transition model may infer, if equipped with recurrences to deal
+with partial observability, information that would otherwise be immediately available via the vision
+module. This leads to a competition during learning, which needs to be studied further.
+Even though our architecture was successful in solving the presented tasks, it clearly has some
+limitations. First, our model computes affordance codes directly from visual information. Since it
+is not able to memorize which affordances are where, it constantly needs to perform look-ups in
+the environmental map. Second, our proposed architecture solves the considered tasks in a greedy
+manner. During planning, we compare the predicted sensory states to a ﬁxed desired sensory state
+over the predicted trajectory. Our model therefore prefers actions that lead closer to the target only
+within the prediction horizon. This can be problematic if we consider e.g. tool use. Imagine an
+environment with keys and doors. Here, it might be necessary to temporarily steer away from the
+target in order to pick up a key and eventually get closer to the target after unlocking and passing
+through the door. Without further modiﬁcations, our agent would not make such a detour deliberately.
+In the future work section below, we make suggestions on how these limitations may be overcome.
+Reinforcement learning (RL) [Sutton and Barto, 2018] is another popular approach for solving
+POMDPs. Therefore, in future work, it would be interesting to see how an RL agent performs in
+comparison to our agent. A central aspect of our architecture is the look-up in the environmental
+which makes the emergence of affordance maps possible. While certainly possible, it is not straight-
+forward how this would be implemented in a classical RL agent. Classical RL agents do not predict
+positional changes which are necessary for the look-up. Furthermore, it was shown that RL agents
+struggle with ofﬂine learning [Levine et al., 2020] and generalization to similar environments [Cobbe
+et al., 2019].
+5.2 Future work
+In this work, we trained our architecture on previously collected data and only afterwards performed
+goal-directed control. Alternatively, one could perform goal-directed control from the very beginning
+and train the architecture on inferred actions and the corresponding encountered observations in a self-
+supervised learning manner. This should increase performance since the distribution of the training
+data for the transition model then more closely matches the distribution of the data encountered
+during control. In this case, the exploration-exploitation dilemma needs to be resolved: How should
+the agent decide whether it should exploit previously acquired knowledge to reach its goal or instead
+explore the environment to gain further knowledge that can be exploited in later trials? The active
+18
+inference mechanism [Friston et al., 2015] generally provides a solution to this problem, although
+optimal parameter tuning remains challenging [Tani, 2017].
+Future work could also examine to what extent it is possible to fully memorize affordances akin to
+a cognitive map. A straightforward approach would be to train a multi-layer perceptron that maps
+absolute positions onto affordance codes, in which case translational invariance is lost. Alternatively,
+a recurrent neural network that receives actions could predict affordances in future time steps
+conditioned upon previously encountered affordances. Additionally, the transition model could be
+split into an encoder, which maps sensory states onto internal hidden states, and a transition model,
+which maps internal hidden states and actions onto next internal hidden states. The introduction of an
+observation model that translates internal hidden states back into sensory states would then enable
+the whole planning process to take place in hidden state space akin to PlaNet [Hafner et al., 2019a]
+and Dreamer [Hafner et al., 2019b].
+Funding
+This research was supported by the German Research Foundation (DFG) within Priority-Program
+SPP 2134 - project “Development of the agentive self” (BU 1335/11-1, EL 253/8-1), the research
+unit 2718 on “Modal and Amodal Cognition: Functions and Interactions/acute.ts1/acute.ts1(BU 1335/12-1), and the
+Machine Learning Cluster of Excellence funded by the Deutsche Forschungsgemeinschaft (DFG,
+German Research Foundation) under Germany’s Excellence Strategy – EXC number 2064/1 – Project
+number 390727645. Finally, additional support came from the Open Access Publishing Fund of the
+University of Tübingen.
+Acknowledgements
+The authors thank the International Max Planck Research School for Intelligent Systems (IMPRS-IS)
+for supporting Fedor Scholz and Christian Gumbsch.
+References
+Karl Friston. A theory of cortical responses. Philosophical transactions of the Royal Society B:
+Biological sciences, 360(1456):815–836, 2005. Publisher: The Royal Society London.
+Karl Friston. The free-energy principle: a uniﬁed brain theory? Nature reviews neuroscience, 11(2):
+127–138, 2010. Publisher: Nature publishing group.
+Karl Friston, Francesco Rigoli, Dimitri Ognibene, Christoph Mathys, Thomas FitzGerald, and
+Giovanni Pezzulo. Active inference and epistemic value. Cognitive Neuroscience, 6:187–214,
+2015. doi: 10.1080/17588928.2015.1020053.
+Martin V . Butz. How and why the brain lays the foundations for a conscious self. Constructivist
+Foundations, 4(1):1–42, 2008.
+Martin V . Butz, Asya Achimova, David Bilkey, and Alistair Knott. Event-predictive cognition: A
+root for conceptual human thought. Topics in Cognitive Science, 13:10–24, 2021. doi: 10.1111/
+tops.12522.
+James Jerome Gibson. The ecological approach to visual perception, volume 1. Psychology Press
+New York, 1986.
+Manfred Eppe, Christian Gumbsch, Matthias Kerzel, Phuong D. H. Nguyen, Martin V . Butz, and Ste-
+fan Wermter. Intelligent problem-solving as integrated hierarchical reinforcement learning. Nature
+Machine Intelligence, 4(1):11–20, 2022. ISSN 2522-5839. doi: 10.1038/s42256-021-00433-9.
+Karl Friston. Life as we know it. Journal of The Royal Society Interface , 10(86), 2013. doi:
+10.1098/rsif.2013.0475.
+19
+Karl Friston. The free-energy principle: a rough guide to the brain? Trends in Cognitive Sciences,
+13:293–301, 7 2009. doi: 10.1016/j.tics.2009.04.005. URL http://dx.doi.org/10.1016/j.
+tics.2009.04.005.
+Karl J. Friston, Jean Daunizeau, James Kilner, and Stefan J. Kiebel. Action and behavior: a free-
+energy formulation. Biological Cybernetics, 102(3):227–260, March 2010. ISSN 1432-0770. doi:
+10.1007/s00422-010-0364-z. URL https://doi.org/10.1007/s00422-010-0364-z .
+Matthew Botvinick and Marc Toussaint. Planning as inference. Trends in Cognitive Sciences, 16(10):
+485 – 488, 2012. ISSN 1364-6613. doi: 10.1016/j.tics.2012.08.006.
+Ian Lenz, Ross Knepper, and Ashutosh Saxena. Deepmpc: Learning deep latent features for model
+predictive control. Robotics: Science and Systems, 2015. doi: DOI:10.15607/RSS.2015.XI.012.
+Sebastian Otte, Theresa Schmitt, Karl Friston, and Martin V . Butz. Inferring adaptive goal-directed
+behavior within recurrent neural networks. In Alessandra Lintas, Stefano Rovetta, Paul F.M.J.
+Verschure, and Alessandro E.P. Villa, editors,Artiﬁcial Neural Networks and Machine Learning
+– ICANN 2017, volume 10613, pages 227–235. Springer International Publishing, Cham, 2017.
+ISBN 978-3-319-68599-1 978-3-319-68600-4. doi: 10.1007/978-3-319-68600-4\_27. URL http:
+//link.springer.com/10.1007/978-3-319-68600-4_27 . Series Title: Lecture Notes in
+Computer Science.
+Martin V . Butz, David Bilkey, Dania Humaidan, Alistair Knott, and Sebastian Otte. Learning,
+planning, and control in a monolithic neural event inference architecture. arXiv:1809.07412 [cs],
+May 2019. URL http://arxiv.org/abs/1809.07412. arXiv: 1809.07412.
+Reuven Rubinstein. The cross-entropy method for combinatorial and continuous optimization.
+Methodology and computing in applied probability, 1(2):127–190, 1999.
+Kurtland Chua, Roberto Calandra, Rowan McAllister, and Sergey Levine. Deep reinforcement
+learning in a handful of trials using probabilistic dynamics models. In S. Bengio, H. Wallach,
+H. Larochelle, K. Grauman, N. Cesa-Bianchi, and R. Garnett, editors, Advances in Neural Informa-
+tion Processing Systems, volume 31. Curran Associates, Inc., 2018. URLhttps://proceedings.
+neurips.cc/paper/2018/file/3de568f8597b94bda53149c7d7f5958c-Paper.pdf.
+Danijar Hafner, Timothy Lillicrap, Ian Fischer, Ruben Villegas, David Ha, Honglak Lee, and James
+Davidson. Learning latent dynamics for planning from pixels. In Kamalika Chaudhuri and Ruslan
+Salakhutdinov, editors, Proceedings of the 36th International Conference on Machine Learning,
+volume 97 of Proceedings of Machine Learning Research, pages 2555–2565. PMLR, 09–15 Jun
+2019a. URL https://proceedings.mlr.press/v97/hafner19a.html.
+Cristina Pinneri, Shambhuraj Sawant, Sebastian Blaes, Jan Achterhold, Joerg Stueckler, Michal
+Rolinek, and Georg Martius. Sample-efﬁcient cross-entropy method for real-time planning. arXiv
+preprint arXiv:2008.06389, Aug 2020. URL http://arxiv.org/abs/2008.06389v1.
+Edward C Tolman. Cognitive maps in rats and men. Psychological review, 55(4):189, 1948.
+John O’keefe and Lynn Nadel.The hippocampus as a cognitive map. Oxford: Clarendon Press, 1978.
+Kamran Diba and Gyorgy Buzsaki. Forward and reverse hippocampal place-cell sequences during
+ripples. Nature neuroscience, 10(10):1241–1242, 2007. ISSN 1097-6256. doi: 10.1038/nn1961.
+Brad E. Pfeiffer and David J. Foster. Hippocampal place-cell sequences depict future paths to
+remembered goals. Nature, 497(7447):74–79, 2013. doi: 10.1038/nature12112.
+Michael F Bonner and Russell A Epstein. Coding of navigational affordances in the human visual
+system. Proceedings of the National Academy of Sciences, 114(18):4793–4798, 2017.
+David Ha and Jürgen Schmidhuber. World models. arXiv preprint arXiv:1803.10122, Mar 2018. doi:
+10.5281/zenodo.1207631. URL http://arxiv.org/abs/1803.10122v4.
+William Qi, Ravi Teja Mullapudi, Saurabh Gupta, and Deva Ramanan. Learning to move
+with affordance maps. arXiv preprint arXiv:2001.02364 , ICLR 2020, 2020. URL https:
+//openreview.net/forum?id=BJgMFxrYPB.
+20
+Karl J Friston, Tamara Shiner, Thomas FitzGerald, Joseph M Galea, Rick Adams, Harriet Brown, Ray-
+mond J Dolan, Rosalyn Moran, Klaas Enno Stephan, and Sven Bestmann. Dopamine, affordance
+and active inference. PLoS computational biology, 8(1):e1002327, 2012.
+Paul Cisek. Cortical mechanisms of action selection: the affordance competition hypothesis. Philo-
+sophical Transactions of the Royal Society B: Biological Sciences, 362(1485):1585–1599, 2007.
+Greg Brockman, Vicki Cheung, Ludwig Pettersson, Jonas Schneider, John Schulman, Jie Tang, and
+Wojciech Zaremba. Openai gym. arXiv preprint arXiv:1606.01540, 2016.
+James Bergstra, Daniel Yamins, and David Cox. Making a science of model search: Hyperparameter
+optimization in hundreds of dimensions for vision architectures. In Sanjoy Dasgupta and David
+McAllester, editors, Proceedings of the 30th International Conference on Machine Learning ,
+volume 28 of Proceedings of Machine Learning Research, pages 115–123, Atlanta, Georgia, USA,
+17–19 Jun 2013. PMLR. URL https://proceedings.mlr.press/v28/bergstra13.html.
+Richard Liaw, Eric Liang, Robert Nishihara, Philipp Moritz, Joseph E Gonzalez, and Ion Stoica. Tune:
+A research platform for distributed model selection and training. arXiv preprint arXiv:1807.05118,
+2018.
+Jeffrey M. Zacks, Nicole K. Speer, Khena M. Swallow, Todd S. Braver, and Jeremy R. Reynolds.
+Event perception: A mind-brain perspective. Psychological Bulletin, 133:273–293, 3 2007. doi:
+10.1037/0033-2909.133.2.273. URL http://dx.doi.org/10.1037/0033-2909.133.2.273.
+Jeffrey M Zacks and Barbara Tversky. Event structure in perception and conception. Psychological
+bulletin, 127(1):3, 2001.
+Christian Gumbsch, Martin V . Butz, and Georg Martius. Sparsely changing latent states for prediction
+and planning in partially observable domains. In M. Ranzato, A. Beygelzimer, Y . Dauphin, P.S.
+Liang, and J. Wortman Vaughan, editors, Advances in Neural Information Processing Systems,
+volume 34, pages 17518–17531. Curran Associates, Inc., 2021. URL https://proceedings.
+neurips.cc/paper/2021/file/927b028cfa24b23a09ff20c1a7f9b398-Paper.pdf.
+Richard S Sutton and Andrew G Barto. Reinforcement learning: An introduction. MIT press, 2018.
+Sergey Levine, Aviral Kumar, George Tucker, and Justin Fu. Ofﬂine reinforcement learning: Tutorial,
+review, and perspectives on open problems. arXiv preprint arXiv:2005.01643, 2020.
+Karl Cobbe, Oleg Klimov, Chris Hesse, Taehoon Kim, and John Schulman. Quantifying generalization
+in reinforcement learning. In Kamalika Chaudhuri and Ruslan Salakhutdinov, editors, Proceedings
+of the 36th International Conference on Machine Learning, volume 97 of Proceedings of Machine
+Learning Research, pages 1282–1289. PMLR, 09–15 Jun 2019. URL https://proceedings.
+mlr.press/v97/cobbe19a.html.
+Jun Tani. Dialogue: Exploring robotic minds by predictive coding principle. IEEE CDS Newsletter:
+Cognitive and Developmental Systems, 14(1):4–13, 2017.
+Danijar Hafner, Timothy Lillicrap, Jimmy Ba, and Mohammad Norouzi. Dream to control: Learning
+behaviors by latent imagination. arXiv preprint arXiv:1912.01603 , Dec 2019b. URL http:
+//arxiv.org/abs/1912.01603v3.
+Diederik P. Kingma and Jimmy Ba. Adam: A method for stochastic optimization. arXiv preprint
+arXiv:1412.6980, 2014.
+Razvan Pascanu, Tomas Mikolov, and Yoshua Bengio. On the difﬁculty of training recurrent neural
+networks. In International conference on machine learning, pages 1310–1318. PMLR, 2013.
+Steven J Nowlan and Geoffrey E Hinton. Simplifying neural networks by
+soft weight sharing. In The Mathematics of Generalization , pages 373–
+394. CRC Press, 2018. doi: 10.1201/9780429492525-13. URL https:
+//www.taylorfrancis.com/chapters/edit/10.1201/9780429492525-13/
+simplifying-neural-networks-soft-weight-sharing-steven-nowlan-geoffrey-hinton .
+21
+Pieter-Tjerk De Boer, Dirk P Kroese, Shie Mannor, and Reuven Y Rubinstein. A tutorial on the
+cross-entropy method. Annals of operations research, 134(1):19–67, 2005.
+Tingwu Wang and Jimmy Ba. Exploring model-based planning with policy networks. arXiv preprint
+arXiv:1906.08649, 2019.
+Appendix
+A Model and training hyperparameters and details
+Unless noted otherwise, we use the hyperparameters speciﬁed in this section. Visual input v consists
+of 11 ×11 pixels with the number of channels depending on the experiment. We obtain it by
+rasterization of a 0.5 ×0.5 square of the environment, centering and excluding the agent. Due to the
+maximum velocity of 0.23 units per time step, the agent’s next position is always within it’s visual
+ﬁeld. Each channel corresponds to a property (obstacle, fog terrain, force ﬁeld up and down) of the
+environment. The presence of a property is encoded with 1s, while the rest of the tensor is set to 0.
+The vision model vM is given by a CNN. It consists of a convolutional layer, a max pooling layer, and
+another convolutional layer followed by a fully connected layer. The convolutional layers have kernel
+size 3 ×3 with stride 1, no padding, 4 channels if dim(c) <32, and 8 channels if dim(c) = 32. The
+max pooling layer has a receptive ﬁeld size of 3 ×3 with stride 2. The fully connected layer has size
+8 if dim(c) <5, 16 if 5 <dim(c) ≤16, and 32 if dim(c) = 32. We use the tanh activation function
+in all layers. The vision model has
+564 + dim(i) ·36 + dim(c) ·9, if dim(c) <5
+964 + dim(i) ·36 + dim(c) ·17, if 5 <dim(c) ≤16
+4312 + dim(i) ·72, if dim(c) = 32
+parameters in total, where dim(i) denotes the number of channels of the input. We use Adam
+[Kingma and Ba, 2014] as our optimizer with learning rate 0.00075, β-values (0.9,0.999), and
+ϵ = 1e−4. In Experiment V , we use a 10th of the learning rate. We perform gradient clipping
+[Pascanu et al., 2013] and set the maximum norm to 2.
+The transition model tM is given by a MLP. The ﬁrst fully connected layer has hidden size 32
+with biases turned off. It is followed by the tanh activation function. The ﬁrst of the two parallel
+fully connected layers predicts mean vectors with the linear activation function. A second parallel
+fully connected layer predicts vectors of standard deviations via the exponential activation function,
+providing non-negative values and therefore ensuring valid standard deviations. From a probabilistic
+point of view, under the assumption that the values before the activation function are uniformly
+distributed, these mappings implement an uninformative prior in a Bayesian framework [Nowlan and
+Hinton, 2018]. The changes in position are scaled up by a constant factor of 4 before feeding them
+into tM, such that it receives inputs which approximately cover the interval between −1 and 1. The
+transition model has
+324 + dim(c) ·32
+parameters in total. We use Adam [Kingma and Ba, 2014] as our optimizer with learning rate 0.008,
+β-values (0.9,0.999), and ϵ = 1e−4. In Experiment V , we use a 10th of the learning rate. We
+perform gradient clipping [Pascanu et al., 2013] and set the maximum norm to 1.2.
+We generate training data by sending randomly generated actions to the environment. Actions were
+generated in a way that ensures good coverage of the whole environment. For each environment
+used in our experiments, we gather 200 sequences of sensor-action-tuples. We use 160 sequences
+for training and 40 for validation. Each sequence has a length of 300 time steps. We train both
+components jointly end-to-end with batch size 10 for 50 epochs in Experiments I-IV and for 500
+epochs in Experiment V . We backpropagate the error through time every50 time steps and reset the
+hidden states every 7 batches. This way we train the model to avoid exploding hidden states also
+during goal-directed control.
+22
+B Details on planning algorithms
+When planning with gradient-based active inference, we apply the following adjustments to improve
+performance. Firstly, if an optimization cycle increases EFE, we perform early stopping and use the
+policy from the cycle before. Secondly, we decrease the learning rate exponentially over the policy
+from the future to the present. This leads to more stable paths since actions which lie in the later
+future are adapted more than actions to be executed in the nearer future. More precisely, given a
+mean learning rate αand decay γ, we set the learning rate for action at+τ to:
+αat+τ = α· γP−τ
+∑P
+τ γP−τ
+See Appendix E for a description of how to compute gradients when the objective is given by the FE
+between two multivariate normal distributions. After each update, we clamp the policy to be in the
+correct value range. Finally, after optimization, we shift the policy while copying the last element.
+We use stochastic gradient descent with learning rate 0.005, set the exponential learning rate decay to
+γ = 0.9, and perform 50 optimization cycles. If a policy update leads to worse performance, we stop
+the optimization and use the policy from before.
+During evolutionary-based planning, we use normal distributions to model actions. In order to
+improve performance, we apply the following modiﬁcations. We use a momentum term on the means
+and covariances [De Boer et al., 2005]. After a single optimization iteration, we keep a ﬁxed number
+Kof the elites for the next iteration [Pinneri et al., 2020]. After optimization, we do not discard the
+means but shift them [Wang and Ba, 2019, Chua et al., 2018] while copying the last action in order to
+not start from scratch in the next optimization. We reset the variances, however, to avoid local minima.
+Analogously, we shift the elites that we keep [Pinneri et al., 2020]. We use the ﬁrst action from the
+best sampled policy as the optimization result [Pinneri et al., 2020]. Instead of clipping sampled
+actions, we perform rejection sampling and sample until we have an action within the allowed value
+range. We generate 50 trajectory candidates, use 5 elites for parameters estimation, keep K = 2
+elites for the next optimization cycle, use an initial covariance of 0.5, and a momentum of 0.1.
+C Affordance maps from experiment III after different amounts of epochs
+Here, we show affordance maps from Experiment III (Subsection 4.5) after different amounts of
+epochs. In Figure 12 we see that with increasing amounts of training epochs, the upper and lower
+obstacles get encoded more similarly, the additional meaningless information gets more ﬁltered
+out, and the affordance maps get more distinctive regarding the encoding of different behavioral
+possibilities.
+D Derivative of negative log-likelihood in a normal distribution
+In this section we derive the negative log-likelihood in a multivariate normal distribution with respect
+to the distribution’s parameters.
+The likelihood in a multivariate normal distribution is given by its probability density function:
+L= p(x |µ,Σ)
+= N(x |µ,Σ)
+= 1√
+(2π)k|Σ|
+·e−1
+2 (x−µ)TΣ−1(x−µ)
+(10)
+This leads to the following log-likelihood:
+LL= log 1−log
+√
+(2π)k|Σ|− 1
+2(x −µ)TΣ−1(x −µ)
+= −1
+2(k·log(2π) + log|Σ|+ (x −µ)TΣ−1(x −µ))
+(11)
+Now, we take the derivative of the log-likelihood function with respect to the parameters of our
+probability distribution. The resulting quantity is also referred to as the score. We start by calculating
+23
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.50.0
+0.5
+1.0
+1.5
+2.0 (A) Aﬀordance map after 1 epochs
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.50.0
+0.5
+1.0
+1.5
+2.0 (B) Aﬀordance map after 2 epochs
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.50.0
+0.5
+1.0
+1.5
+2.0 (C) Aﬀordance map after 5 epochs
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.50.0
+0.5
+1.0
+1.5
+2.0 (D) Aﬀordance map after 10 epochs
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.50.0
+0.5
+1.0
+1.5
+2.0 (E) Aﬀordance map after 30 epochs
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.50.0
+0.5
+1.0
+1.5
+2.0 (F) Aﬀordance map after 100 epochs
+Figure 12: Exemplary affordance maps from Experiment III (Subsection 4.5) for context size 8 after
+different amounts of epochs. To generate these maps, we probed the environmental map at every
+sensible location, applied the vision model to each output, performed dimensionality reduction to 3
+via PCA, and interpreted the results as RGB values.
+the derivative with respect to the mean µ:
+∂LL
+∂µ = ∂
+∂µ −1
+2(k·log(2π) + log|Σ|+ (x −µ)TΣ−1(x −µ))
+= −1
+2(∂(x −µ)TΣ−1(x −µ)
+∂µ )
+= Σ−1(x −µ)
+(12)
+24
+Next, we calculate the derivative with respect to the covariance matrix Σ. We assume Σ to be
+symmetric:
+∂LL
+∂Σ = ∂
+∂Σ −1
+2(k·log(2π) + log|Σ|+ (x −µ)TΣ−1(x −µ))
+= −1
+2(∂log |Σ|
+∂Σ + ∂(x −µ)TΣ−1(x −µ)
+∂Σ )
+= −1
+2(Σ−1 −Σ−1(x −µ)(x −µ)TΣ−1)
+(13)
+We are now able to calculate the derivatives of the log-likehood function of a multivariate normal
+distribution. In this work, we applied two simpliﬁcations: First, we used the special case of a bivariate
+normal distribution. Second, we assume all covariances to be 0, leading to a diagonal covariance
+matrix. With these assumptions, the multivariate normal distribution factors into two univariate
+normal distributions. We replace the covariance matrix Σ with a vector of variances σ2 and end up
+with the following score:
+∂LL
+∂µi
+= xi −µi
+σ2
+i
+∂LL
+∂σ2
+i
+= 1
+2σ2
+i
+( 1
+σ2
+i
+(xi −µi)2 −1)
+(14)
+E Derivative of free energy between normal distributions
+In this section we derive the expected free energy as used in this work between two multivariate
+normal distributions with respect to the parameters of one of the distributions. We ﬁrst take the
+derivative of the entropy and subsequently of the divergence term.
+The entropy of a multivariate normal distribution is given by:
+H[p(x|µ,Σ)] = 1
+2 log |2πeΣ|
+= 1
+2(log(2πe)k + log|Σ|)
+(15)
+Now we take the derivative with respect to the meanµ:
+∂
+∂µH[p(x |µ,Σ)] = ∂
+∂µ
+1
+2(log(2πe)k + log|Σ|)
+= 0
+(16)
+Next, we take the derivative with respect to the covariance matrix Σ (assuming Σ to be symmetric):
+∂
+∂ΣH[p(x |µ,Σ)] = ∂
+∂Σ
+1
+2(log(2πe)k + log|Σ|)
+= 1
+2
+∂log |Σ|
+∂Σ
+= 1
+2Σ−1
+(17)
+We are now able to calculate the derivative of the entropy of a multivariate normal distribution.
+Following the simpliﬁcations from above (Section D), we again replace the covariance matrix Σ with
+a vector of variances σ2 and end up with the following gradients:
+∂H[p(x |µ,σ)]
+∂µi
+= 0
+∂H[p(x |µ,σ)]
+∂σ2
+i
+= 1
+2σ−2
+i
+(18)
+25
+The Kullback-Leibler divergence between to multivariate normal distributions is given by:
+D[p(x0 |µ0,Σ0) ||p(x1 |µ1,Σ1)] =1
+2(tr(Σ−1
+1 Σ0)
++ (µ1 −µ0)TΣ−1
+1 (µ1 −µ0)
+−k−log |Σ1|
+|Σ0|)
+(19)
+We ﬁrst take the derivative with respect to the mean of the ﬁrst distribution µ0:
+∂
+∂µ0
+D[p(x0 |µ0,Σ0) ||p(x1 |µ1,Σ1)] = ∂
+∂µ0
+1
+2(µ1 −µ0)TΣ−1
+1 (µ1 −µ0)
+= −Σ−1
+1 (µ1 −µ0)
+(20)
+Now we take the derivative with respect to the covariance matrix of the ﬁrst distributionΣ0 (assuming
+Σ0 and Σ1 to be symmetric):
+∂
+∂Σ0
+D[p(x0 |µ0,Σ0) ||p(x1 |µ1,Σ1)] = ∂
+∂Σ0
+1
+2(tr(Σ−1
+1 Σ0) + log |Σ1|
+|Σ0|)
+= 1
+2(Σ−1
+1 −Σ−1
+0 )
+(21)
+We are now able to calculate the gradients of the Kullback-Leibler divergence between two multivari-
+ate normal distributions. Following the simpliﬁcations from above, we again replace the covariance
+matrices Σ0 and Σ1 with vectors of variances σ2
+0 and σ2
+1 and end up with the following gradients:
+∂D[p(x0 |µ0,Σ0) ||p(x1 |µ1,Σ1)]
+∂µ0,i
+= −σ−2
+1,i(µ1,i −µ0,i)
+∂D[p(x0 |µ0,Σ0) ||p(x1 |µ1,Σ1)]
+∂σ2
+0,i
+= 1
+2(σ−2
+1,i −σ−2
+0,i)
+(22)
+F Relationship between negative log-likelihood and Kullback-Leibler
+divergence
+In this work, we trained our architecture with the negative log-likelihood as the loss but performed
+goal-directed control via EFE minimization which includes the Kullback-Leibler divergence. Here,
+we show the relationship between the negative log-likelihood and the Kullback-Leibler divergence in
+general.
+The Kullback-Leibler divergence between two probability distributions pand qis deﬁned as
+D[p(x) ||q(x)] = Ex∼p(x)
+[
+log p(x)
+q(x)
+]
+= Ex∼p(x)[log p(x) −log q(x)]
+= Ex∼p(x)[log p(x)] −Ex∼p(x)[log q(x)]
+(23)
+where Edenotes the expected value. Let us now assume that P describes the distribution of some
+data we want to approximate with q. The left term does not depend on qand therefore is constant. If
+we now take N samples from the real distribution with limN→∞we end up with
+−Ex∼p(x)[log q(x)] = −1
+N
+N∑
+i
+log q(x) (24)
+which, up to a constant factor, is the deﬁnition of the negative log-likelihood.
+We conclude that minimizing negative log-likelihood is equivalent to minimizing the Kullback-Leibler
+divergence.
+26

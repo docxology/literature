@@ -1,0 +1,798 @@
+Being curious about the answers to questions: novelty search with learned
+attention
+Nicholas Guttenberg1,2, Martin Biehl1, Nathaniel Virgo2, Ryota Kanai1
+1 Araya Inc, Tokyo, Japan 2 Earth-life Science Institute, Tokyo, Japan
+Abstract
+We investigate the use of attentional neural network layers
+in order to learn a ‘behavior characterization’ which can be
+used to drive novelty search and curiosity-based policies. The
+space is structured towards answering a particular distribu-
+tion of questions, which are used in a supervised way to train
+the attentional neural network. We ﬁnd that in a 2d explo-
+ration task, the structure of the space successfully encodes
+local sensory-motor contingencies such that even a greedy lo-
+cal ‘do the most novel action’ policy with no reinforcement
+learning or evolution can explore the space quickly. We also
+apply this to a high/low number guessing game task, and ﬁnd
+that guessing according to the learned attention proﬁle per-
+forms active inference and can discover the correct number
+more quickly than an exact but passive approach.
+Introduction
+There are now a number of approaches designed to drive ex-
+ploration of unseen spaces. Intrinsically motivated curiosity
+algorithms drive reinforcement learning agents and agents
+which learn models alike into low-likelihood states (Ostro-
+vski et al., 2017; Achiam and Sastry, 2017), hard-to-predict
+states (Pathak et al., 2017), or just directly try to maximize
+the information gained by the agent about its world (Fris-
+ton et al., 2015; Houthooft et al., 2016; de Abril and Kanai,
+2018). In developmental robotics, goal babbling (Baranes
+and Oudeyer, 2013) drives an agent to map out its ego-
+motion space before committing to any particular reward.
+Similarly, there are methods in machine learning which use
+diversity-based metrics to learn sets of skills (Guttenberg
+et al., 2017; Eysenbach et al., 2018).
+These methods share the aspect that they require sign-
+ﬁcant learning of the environmental dynamics, long-term
+planning, and other aspects of the world. At the other end
+of the spectrum, there are a number of heuristic approaches
+which can be successfully curious starting from scratch.
+Umbrella sampling methods (Torrie and Valleau, 1977) in
+computational chemistry work by simply driving simula-
+tions away from frequently visited states by modifying the
+energy, while non-equilibrium versions achieve similar re-
+sults by resampling trajectories that head towards rare areas
+of the space (Dickson and Dinner, 2010). In evolutionary
+algorithms, the general concept of quality diversity (Pugh
+et al., 2016) and more speciﬁcally novelty search (Lehman
+and Stanley, 2011) has been used in a similar way, explicitly
+modifying the ﬁtness of solutions with respect to how differ-
+ent they are from other attempted solutions. Novelty search
+has also been applied to modify reward functions used in
+reinforcement learning (Conti et al., 2017).
+In the speciﬁc case of novelty search, there is a balance
+between the pure heuristic of exploring rare states and the
+learned approaches which in some sense try to collapse ab-
+stractly equivalent but microscopically different states into
+the same representation. In novelty search, this takes the
+form of the behavior characterization — the way in which
+distinct agent behaviors or outcomes are embedded into a
+Euclidean space in order to assess their novelty. While
+much of the work uses hand-crafted behavior characteriza-
+tions based on some knowledge of the relevant degrees of
+freedom of the task at hand, there has been work in formulat-
+ing general characterizations which work across many tasks
+(Doncieux and Mouret, 2013), and in learning the charac-
+terizations with respect to speciﬁc criteria for the quality of
+exploration (Meyerson et al., 2016).
+In this paper, we consider a correspondence between re-
+cent ideas about attention in deep learning and the novelty
+search algorithm, both of which have embedding spaces at
+their core. In attentional neural networks (Vaswani et al.,
+2017), the network takes as an input a collection of memo-
+ries, and then learns to perform a lookup on that collection of
+memories in order to extract information that is relevant to-
+wards answering a particular question. The attentional net-
+work achieves this by ﬁrst embedding both the memories
+and the ‘query’ (which encodes information specifying the
+question) into a shared space where location in the space is
+informative about relevancy, and then uses pairwise compar-
+ison between the query and memories to determine which
+particular information from the memories to use. This is
+quite similar to how behavior characterization learns an em-
+bedding space that captures novelty. However, in the case
+of novelty, what is being represented is the potential to be
+arXiv:1806.00201v1  [cs.AI]  1 Jun 2018
+relevant for any question rather than a speciﬁc one. Because
+of this, novelty search makes use of distance from the dis-
+tribution of existing experiences rather than proximity to a
+speciﬁc query. If we use a distance metric for pairwise com-
+parison in the attentional networks, the learned space should
+equally well be able to evaluate novelty, and as such we can
+bridge the two methods.
+Attentional Networks
+Traditional neural networks are composed of a series of ma-
+trix multiplications and nonlinearities, where the matrices
+correspond to parameters learned via gradient descent:
+⃗ y= f(Mnf(Mn−1f(...f(M1⃗ x+ ⃗b1)...)+⃗bn−1)+ ⃗bn) (1)
+In this case, it is easy to compute the gradient of the pa-
+rameter matrices (or ‘weights’)M with respect to some error
+function using only a backpropagated error signal that does
+not depend on the rest of the network. The recent avail-
+ability of automatic differentiation has enabled rapid exper-
+imentation in a wide variety of alternate structures: extend-
+ing to general higher-dimensional tensors, replacing matri-
+ces with convolution operations, using branching and merg-
+ing patterns, factorizing the matrix multiplications, so-called
+‘highway’ or ‘residual’ network structures which sequen-
+tially perturbatively modify the network’s hidden state, and
+various forms of regularization.
+A common pattern among this zoo of different network
+architectures is that as information from a particular input
+ﬂows through the network, the relationship between the in-
+put and the intended output becomes potentially more and
+more complex, but also becomes more difﬁcult to learn via
+gradient descent. The reason for this is that each time the
+input is multiplied by a parameter matrix in series, the vari-
+ous gradients are scaled by the eigenvalues of that matrix —
+meaning that for very deep paths, the gradients tend to either
+diverge to inﬁnity or converge to zero. Techniques such as
+orthogonal initialization (Saxe et al., 2013) help relax these
+constraints, allowing modern networks to take advantage of
+the nonlinearity offered by deep stacks, but in cases where
+information is unnecessarily propagated through many sub-
+sequent layers it can still pose difﬁculties in terms of training
+times. As such, there are trade-offs involved in simultane-
+ously achieving a wide receptive ﬁeld (in that the network
+can integrate large amounts of evidence towards some pre-
+diction or inference) while maintaining pathways through
+the network for information to ﬂow which are not any longer
+than necessary.
+This consideration makes random access memory an at-
+tractive model for network design. If the network could
+simply choose which information it needed to look at for
+each stage of the computation without needing to propagate
+that information through a large number of intervening vari-
+ables, then one could minimize the amount of unnecessary
+scattering happening between the input and output. There
+is a general class of methods which implement this sort of
+random access via having each potential input be matched
+against a ‘query’ generated by the current stage in the com-
+putation, such that the information brought into the network
+at that stage is a weighted sum across the inputs — these are
+generally referred to as attention mechanisms. Such atten-
+tion mechanisms have the property that the minimum path
+length to create a receptive ﬁeld covering the entire input
+dataset is constant, irrespective of the dataset size (Vaswani
+et al., 2017).
+The general structure of these networks has each potential
+input (where each input is a vector ⃗ xi) generate a key vector
+⃗ki summarizing the information it contains via linear trans-
+formation, while the current computational state ⃗ zgenerates
+one or more query vectors ⃗ qin the same space again via
+linear transformation. The saliency of an input wi is deter-
+mined by comparing these key and query vectors — often,
+via the exponential of the dot product of the vector. Then,
+the overall saliency pattern is normalized to sum to one:
+wi = exp(⃗ki ·⃗ q)∑
+j exp(⃗kj ·⃗ q)
+(2)
+where ⃗ki = Mk⃗ xi and ⃗ q= Mq⃗ z. The input to the network
+from this attentional lookup is then the weighted sum over
+the inputs:
+⃗X =
+∑
+i
+wi⃗ xi (3)
+This formulation is fully differentiable, but can at the
+same time learn to attend to only a small subset of the total
+input. An interesting consequence of learning to solve prob-
+lems using this type of attention model is that the saliency
+pattern wweights inputs according to their relevance to the
+current computation, and so can be directly inspected or
+used for interpretation of how the network is solving a par-
+ticular task.
+In this paper, we exploit that property of w to evaluate
+how relevant potential inputs to a network would be, and in
+turn use that pattern of projected relevance in order to direct
+the actions of an agent to search for relevant information in
+its environment. By making use of a variation in which the
+comparison between key and query is based not on a dot
+product, but rather on the distance between the vectors in a
+Euclidean space, we can bridge attentional neural networks
+with existing research done on behavior characterizations in
+novelty search.
+Method
+If we wished to make an agent that could answer any one
+of a set of questions which might be posed to it (similar to
+ideas of multi-task behavior characterizations in Meyerson
+et al. (2016)), we could ask an agent to ﬁll its memory with
+Question
+Memory
+State, Action
+Outcome
+Net
+Eq
+Net
+Es
+Net
+Eo
+w
+Prediction
+kNN
+Net
+P
+General Schematic
+State, Proposal
+Figure 1: General schematic of an inference network which
+also learns a behavior characterization and can evaluate the
+saliency of a given proposed action to objectives such as
+novelty search or question-motivated curiosity. The dashed
+lines represent optional information ﬂows that can be added
+without disrupting the ability to correctly embed action pro-
+posals.
+a set of points that is likely to contain a good match from
+any random query to which it might be exposed. This is
+then heuristically satisﬁed by ﬁnding new points to add to
+memory which are furthest from the set of existing points —
+the same criteria which drives the novelty search algorithm.
+In this case however, the behavior characterization can be
+naturally learned directly from the set of questions the agent
+is trained to answer.
+In novelty search, the weighting function used is essen-
+tially a nearest neighbor look-up in the embedding space:
+1/k if a point is one of the k-nearest neighbors, and 0 oth-
+erwise. In order to use this as part of a neural network, it
+is convenient to modify it into a differentiable form so that
+we can learn the embedding via backpropagation. To this
+end, we can consider an extension in the form of a ‘soft
+kNN’ similar to the trick used in (Pritzel et al., 2017; Jain
+and Lindsey, 2018) by proposing a weighting between the
+embeddings of the agent’s memory of past experiences ⃗ xi
+which is used to generate a key vector⃗ki and value vector⃗ vi
+via linear transformation and a query vector ⃗ q, given by:
+wi = exp(−α|⃗ki −⃗ q|)∑
+j exp(−α|⃗kj −⃗ q|)
+(4)
+where the output of this soft kNN module is:
+⃗ y=
+∑
+i
+wi⃗ vi (5)
+In order to tie this to inference on a particular question,
+we consider the general type of network structure shown
+in Fig. 1. Here, we have some kind of representation of
+the question and relevant context (current sensor state, etc),
+which we transform into the query vector ⃗ qby way of an
+embedding network Eq. This transformation can optionally
+make use of information in the agent’s memory (the dashed
+line) by way of an attentional mechanism. We also have a
+memory of past sensor states (s), actions (a), and outcomes
+(o) (which could be subsequent sensor states, a different set
+of sensors, etc). We use a network Es to embed the states
+and actions into a set of key vectors {⃗k}representing the
+agent’s memory of past states and actions (but not what hap-
+pened next, e.g. the outcomes). We also separately embed
+the outcomes into a set of corresponding value vectors {⃗ v}
+(which can optionally be fused with other memory informa-
+tion, or even be fused with information about the question)
+using a network Eo.
+Weighting factors are calculated between ⃗ qand the set
+{⃗k}, and then are used to perform a weighted average over
+the outcome embeddings. These (optionally fused with the
+query) are then used as inputs to a prediction networkP, and
+the entire thing is trained end-to-end.
+The reason for this structure is that it isolates things which
+the agent already knows or can directly control (current sen-
+sor state and future action) from things which depend on en-
+vironmental factors (the outcome of taking an action). This
+means that if we propose some action˜afrom the current sen-
+sor state ˜swe can directly compute the address where that
+new generated memory will end up in the embedding space.
+That allows us to take as a behavioral policy things such as
+‘choose the action which generates the most novel memory’
+or ‘choose an action which will be most relevant towards a
+speciﬁed question’. This means that by setting up the net-
+work this way, we can obtain curiousity-driven policies that
+do not require reinforcement learning or evolutionary search
+by greedily taking the most novel local action. As a result,
+these policies can be used directly by an agent dropped into
+a new environment and adapted to the new environment in
+an online fashion.
+Position-based Exploration Task
+We consider an environment comprised of navigating con-
+nected 2D ﬂoorplans composed of overlapping randomly
+generated rectangles of movable area, in which an agent is
+navigating by picking a direction and moving in that direc-
+tion for a ﬁxed distance. Collisions result in the agent re-
+versing direction and continuing to travel for the remainder
+of its movement distance. The agent has two sensors: one
+which provides its current coordinates, and a second which
+indicates when it collides with an object or wall. For the in-
+ference question, we ask the agent to predict the probability
+that a given action will cause it to collide with a wall, mean-
+ing that the agent’s task is essentially to thoroughly map out
+the boundaries and collidable surfaces of its environment.
+The state is taken to be the current position, the action
+being the xand y components of the proposed direction of
+travel (normalized to a unit vector), and the observation o
+to be whether or not the agent collided with a wall. Since
+the input sensors are so simple, we don’t necessarily expect
+that much of a difference in the embedding space compared
+to a trivial behavior characterization where we just use ev-
+erything. However, this simple case does test one some-
+what non-trivial thing — namely, the agent does not have
+any prior knowledge about its sensor-motor coupling. That
+is to say, even if the agent could identify a nearby physi-
+cal location which it hasn’t been to before, that is not a pri-
+ori associated with the action which will actually take it to
+that location. As such, with this environment we are testing
+whether or not the agent can learn how to navigate to novel
+regions purely as a byproduct of learning to solve the par-
+ticular inference task of ﬁguring out if it will make contact
+with a wall.
+For this task, the question takes the form of a (s,a) pair
+(from this position, if you move in this direction, will you
+hit a wall?), so we use the same network for both Eq and
+Es. This network is composed of four hidden layers of size
+256 with rectiﬁed linear nonlinearities (ReLU), followed by
+a learned linear projection into a 24dembedding space. The
+network Eo takes as input the full(s,a,o ) triplets and passes
+them through four hidden layers of size256 with ReLU non-
+linearities, followed by linear projection into a 128dspace.
+The soft kNN layer combines these ( α = 20), and ﬁnally
+the prediction network P passes that result through four
+more hidden layers (size 256, ReLU activations), with a ﬁ-
+nal single-unit layer with sigmoid activation to output the
+predicted probability that the agent will collide with a wall.
+The network is trained using the logistic loss L =
+−ylog(p) −(1 −y) log(1−p) on 1000 trajectories from
+different, randomly generated ﬂoorplans, where each trajec-
+tory is 1000 steps long and is generated by taking random
+actions. During training, batches are composed by randomly
+selecting 50 of these trajectories and choosing a random start
+point, such that the agent remembers the previous 300 steps
+before the start point and must predict the collisions over
+the next 100 steps. The agent is trained on 15000 of these
+batches using the Adam optimizer (Kingma and Ba, 2014)
+with an initial learning rate of 4 ×10−4 that is reduced by a
+factor of 0.9 whenever the test loss does not decrease for 10
+iterations. All of the networks are implemented and trained
+using PyTorch (Paszke et al., 2017). All code for the ex-
+periments in this paper is provided athttps://github.
+com/arayabrain/QuestionDrivenNovelty.
+In order to ‘behave curiously’, we seed the agent with
+50 steps of random actions to have an initial memory, and
+then for each subsequent step we propose 50 random ac-
+tions ˜aand choose the action which maps to a point in the
+embedding space z′which is furthest from its nearest point
+in memory. An example ﬂoorplan and trajectory over 300
+subsequent steps is shown in Fig. 2a. The background of
+this ﬁgure corresponds to a visualization of the model’s as-
+sessments of the novelty at different locations, generated
+by creating a grid of points over the possible (x,y) coor-
+dinates within the ﬂoorplan, proposing actions taken from
+each of those points, and taking the distance associated with
+the most ‘novel’ action at each point. This shows that, pre-
+dictably, the model considers points where it has never been
+to be novel compared to points which it has already visited.
+When we compare this to the direction of the most novel
+0.25 0.50 0.75
+0.2
+0.4
+0.6
+0.8
+a)
+0.25 0.50 0.75
+0.2
+0.4
+0.6
+0.8
+b)
+0.25 0.50 0.75
+0.2
+0.4
+0.6
+0.8
+0.25 0.50 0.75
+0.2
+0.4
+0.6
+0.8
+Figure 2: a) Example ﬂoorplan and 300 steps of trajectory
+for the curious agent. The background color corresponds
+to the agent’s current evaluation of novelty by position at
+the end of the trajectory, with yellow corresponding to high
+novelty and blue corresponding to low novelty. b) Vector
+ﬁeld showing the action at each location which the agent
+would ﬁnd most novel.
+action from each point (Fig. 2b), we ﬁnd good agreement
+between the proposed actions and the direction of the local
+spatial gradient of the novelty — meaning that the agent has
+apparently correctly learned the sensor-motor contingencies
+in order to navigate the space. At the same time (due to lack
+of feedback between the contents of memory and the embed-
+dings), the novel actions are only locally informative, but do
+not correctly take into account long-range planning of paths
+through the space to reach high-novelty regions.
+Given that the agent seems to be able to pursue high nov-
+elty regions, does the learned behavior characterization pro-
+vide reasonable direction as to efﬁcient exploration? We
+compare the rates at which a random action policy, the un-
+trained network, and the trained network explore the space
+by dividing the domain into a 16 ×16 grid and measuring
+over 15 random (unseen) ﬂoorplans the average number of
+grid cells explored as a function of time. This is shown in
+Fig. 3. The trained network policy explores signiﬁcantly
+faster than the random walk, roughly reaching the same level
+of exploration after 1900 steps as the random action policy
+obtains in 5000 steps.
+When we ask the network to follow a novelty search pol-
+icy, we are in essence asking it to take actions which can
+help it answer questions for which it does not yet have good
+supporting data. If we have a particular question in mind,
+0 1000 2000 3000 4000 5000
+Step
+0
+20
+40
+60
+80
+100
+120Cells explored Random
+Untrained
+Trained
+Figure 3: Exploration of new grid cells by the random ac-
+tion policy, the untrained network policy, and the trained net-
+work policy. These are curves are averaged over 15 newly
+generated random ﬂoorplans.
+0.25 0.50 0.75
+0.2
+0.4
+0.6
+0.8
+0.25 0.50 0.75
+0.2
+0.4
+0.6
+0.8
+0.25 0.50 0.75
+0.2
+0.4
+0.6
+0.8
+0.25 0.50 0.75
+0.2
+0.4
+0.6
+0.8
+Figure 4: Plot of the saliency of different positions towards
+speciﬁc questions (will a collision occur in this direction
+from this point?), and the corresponding greedy saliency-
+maximizing policy.
+such as whether there would be a wall at a particular point
+in space, we can directly visualize the actions and positions
+which the network would consider informative towards an-
+swering that question. We do this by projecting the question
+into the embedding space, and then visualizing the attention
+given to a virtual grid of state/action pairs. Visualizations
+of this are shown in Fig. 4. The saliency associated with a
+spatially localized query falls off on the order of one or two
+of the agent’s steps. This means that while a single question
+can be used to locally guide the agent, it does not provide
+globally consistent navigational cues if the agent is currently
+far away from the region in which the question could be an-
+swered, though it could still be used as a reward signal for
+reinforcement learning or evolutionary search.
+Guessing game
+We now turn to a more abstract system, to take speciﬁc ad-
+vantage of the fact that the embedding space for the agent is
+organized to help the agent be curious about speciﬁc ques-
+tions rather than necessarily curious in general. For this, we
+look at a game in which the agent must guess a number be-
+tween 1 and 256, and is told whether their guess is high,
+low, or correct. This game constitutes an active inference
+task, where the early questions should be arranged in a bi-
+nary search in order to provide the evidence that the agent
+will need in order to infer the correct number rapidly. An
+agent which guesses randomly and then renders a prediction
+at the end will signiﬁcantly underperform compared to bi-
+nary search, as will even an agent which guesses uniformly
+from the current possible set of values.
+The network for this task is set up so that the internal
+process of paying attention to its own memory has a simi-
+lar form to the guessing game structure. The network starts
+from a learned initial state vector, and has to update that state
+vector through a succession of three attentive lookups into its
+memory, indexed by the guess but not the outcome. As such,
+the network sort of plays a version of the guessing game in-
+ternally in order to ﬁgure out its predictions and next guess,
+and the saliency proﬁles from those attentive lookups end
+up being good proxies for where the network would beneﬁt
+from receiving more information.
+Speciﬁcally, guesses are thermometer-encoded (Fiete and
+Seung, 2007) (with each guess gbeing a 256d vector whose
+ﬁrst g entries are set to one and the rest zero) and passed
+through three 128 neuron hidden layers with ReLU activa-
+tions — this constitutes the (s,a) embedding network Es.
+One-hot encoded outcomes (high, low, equal) are stacked
+with the encoded guesses, passed through a single 128 neu-
+ron hidden layer + ReLU, and then the outcomes cross-
+reference eachother using two attentive blocks constructed
+along the lines of the Transformer architecture (Vaswani
+et al., 2017) — that is to say, using dot product atten-
+tion as described in 2 rather than Euclidean distance, com-
+bined with additional normalization and linear transforma-
+1 1 0 0 0 0 1 1 0 0 0 0
+Thermometer-Encoded 
+Guess
+Guess + Outcome
+3 layer dense net
+(128 neurons)
+Memory X (Mx) Memory Y (My)
+Initial hidden state
+(learned, 128d vector)
+Query (Q)
+Mx
+My
+Q
+Attention
+Attention
+Attention
+Attention
+Attention
+Predictor Network
+0
+0.2 -0.4 0.1 0.7 -0.3 0.5
+Saliency Saliency Saliency
+Dense Layer
+SoftMax
+Figure 5: Architecture of the guessing game network, us-
+ing attention blocks as deﬁned in Eq. 6 and Eq. 7. Virtual
+queries for currently unexplored guesses are added to Mx,
+and saliency from the attentional layers is averaged in order
+to determine the most potentially informative guess to make
+next.
+tion steps. Each block has the form:
+z∗≡Normalize(zin + Attn(zin,zin)) (6)
+zout ≡Normalize(z∗+ M2ReLU(M1z∗+⃗b1) +⃗b2) (7)
+where Attn(x,y) is an attentional lookup into the matrix
+of observations x for each element of the matrix of queries
+y; M1, M2 are weight matrices with the same geometry asz,
+and ⃗b1 and ⃗b2 are biases (which are broadcast over the rows
+of z). The function Normalize (x) is the layer normalization
+(Ba et al., 2016) operation which subtracts the mean over
+features (columns of x) and divides by the standard devia-
+tion:
+Normalize(x)ij =
+xij −1
+N
+∑
+j xij
+√
+1
+N
+∑
+j x2
+ij −( 1
+N
+∑
+j xij)2
+(8)
+Finally, the query encoder Eq takes as input a learned ini-
+tial query vector, which then drives three successive atten-
+tional blocks of the above form (with the last block replacing
+its input rather than adding to the input, in order to make sure
+all of the information used to generate the prediction comes
+from memory). The embedding spaces are all 8d spaces, but
+different ones from (s,a), o, and qin each case. We look at
+the pattern of saliencies of these three passes from a trained
+network in Fig. 6. Finally, the output of the third attentional
+block is passed through two 128 neuron hidden layers with
+ReLU activations followed by a softmax activation over256
+0 100 200
+Number (Guess)
+0.00
+0.02
+0.04
+0.06
+0.08
+0.10
+0.12
+0.14Saliency
+Initial
+1st Attention
+2nd Attention
+3rd Attention
+Prediction
+0 100 200
+Number (Guess)
+Guess 6
+1st Attention
+2nd Attention
+3rd Attention
+Prediction
+0 100 200
+Number (Guess)
+Guess 12
+1st Attention
+2nd Attention
+3rd Attention
+Prediction
+Figure 6: Saliency patterns from the trained guessing game
+network. The vertical dashed line shows the correct num-
+ber, and the curves show the three query attention patterns
+after different numbers of guesses. Also visualized is the
+predicted probability distribution from the network.
+values in order to render the probability distribution of the
+network’s guess.
+In order to encourage the agent to place saliency in future
+guesses that will be informative, we give the agent access
+to its future memories during training (but not during test).
+What this means is that the agent starts from a state that
+knows all about the game up to some move t, but then is
+issuing a query into a memory embedding space that during
+training contains information from t+ 1and later moves,
+which the agent can access only if it manages to correctly
+predict where that information is going to be in its memory
+space. As a result, when we actually use this policy for play-
+out, the agent’s lookups will correspond to places where it
+would like there to be future information — which we can
+then make use of in order to choose the agent’s guess. As
+such, here we are not strictly doing novelty search where we
+simply look to maximize the variety of the agent’s knowl-
+edge, but rather we’re focusing on the particular question
+the agent is trying to answer. The network is trained for 150
+epochs on 2 ×105 random games (e.g. where the guesses
+derive from a uniform random policy) of length 30, using
+the Adam optimizer with learning rate 1 ×10−4.
+Following training, we examine a guessing policy driven
+by the network’s predictions as to the most likely num-
+ber, and a guessing policy driven by the point of maximum
+saliency of the third attentional lookup. We ﬁnd that just
+guessing according to the saliency pattern alone can imple-
+ment an active inference strategy which outperforms the best
+case ‘passive inference’ strategy, of guessing according to
+the distribution of numbers which are still possible given
+the evidence up to this point. These results are shown in
+Fig. 7. However, the prediction-based strategy signiﬁcantly
+underperforms what should theoretically be possible. We
+have tried a few variant architectures (one using an LSTM to
+pre-process the guesses so far before the attentional lookup,
+and another simply reducing all hidden layer sizes to 32),
+and it seems that the prediction performance is a result of
+underﬁtting. Asking the model to use only three memory
+lookups in order to summarize up to 20 guesses seems to
+1 2 3 4 5 6 7 8 9 1011121314151617181920
+Guess #
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0Win rate
+ Saliency
+Prediction
+Binary Search
+Passive Inference
+Figure 7: Success rate by move number of different algo-
+rithms in playing the guessing game. A binary search gives
+the optimal result, shown in green. Passive inference (red
+curve) in this case corresponds to randomly guessing ac-
+cording to the remaining possible values, and corresponds to
+the best one can do without some particular strategy for in-
+formation gain. The saliency proﬁle from the network (blue)
+outperforms this up to guess 10, showing that the network’s
+saliency successfully performs active inference.
+be fairly difﬁcult, but at the same time that difﬁculty causes
+the network to make good use of the saliency patterns. The
+LSTM-based architecture performed better at prediction, but
+its saliency proﬁle was signiﬁcantly less useful and did not
+outperform passive inference, while decreasing the hidden
+layer size damaged both the prediction and saliency perfor-
+mance.
+Conclusions
+We examined the possibility of using inference tasks to
+shape the embedding spaces used by novelty search to dif-
+ferentiate between new and old action policies, using two
+example systems. In each case, we ﬁnd evidence that by ask-
+ing a network to use attentional mechanisms to collect infor-
+mation relevant to its inference task (which can be learned
+in a differentiable, end-to-end fashion), the sense of ‘nov-
+elty’ or ‘saliency’ in the learned space can actually capture
+some local sensory-motor contigencies and be used to derive
+a ‘greedily curious’ action policy without the need for any
+direct reinforcement learning or evolution. These greedy
+policies do not execute any long-range planning, and as such
+they cannot always escape uninteresting regions, but can still
+provide a boost in the rate of exploration of an agent com-
+pared to random policy sampling. Therefore, even when the
+greedy policies are not sufﬁcient on their own to obtain the
+desired or interesting behaviors, it may be beneﬁcial to use
+it at the start, and then transition over to policies learned
+via reinforcement or evolution using the learned embedding
+space to modify the reward function in the standard novelty
+search sense.
+When the ‘question’ underlying the agent’s curiosity is
+speciﬁc in nature, it is possible to use these embedding
+spaces not to only evaluate the novelty of action policies
+or outcomes, but also to direct that in a question-dependent
+way. This means that it is possible to construct an agent
+which, rather than just being ‘curious’, is ‘curious about’
+— that is to say, that its curiosity is directly tied to its un-
+derstanding of what is needed to know or answer a speciﬁc
+question. This suggests an interesting interpretation of in-
+trinsic curiosity as a compatible concept to empowerment
+(Klyubin et al., 2005b,a). That is to say, empowerment as an
+intrinsic motivation maximizes an agent’s ability to achieve
+a diversity of discernable outcomes in the future without
+knowledge of which speciﬁc outcome may correspond to
+high reward for the agent. Similarly, curiosity independent
+of speciﬁc goals (e.g. ‘intrinsic’ curiosity) could be seen as
+the maximization of the agent’s ability to answer any ran-
+dom question (out of a distribution of potential questions)
+without prior knowledge of what that question is going to
+be.
+References
+Achiam, J. and Sastry, S. (2017). Surprise-based intrinsic mo-
+tivation for deep reinforcement learning. arXiv preprint
+arXiv:1703.01732.
+Ba, J. L., Kiros, J. R., and Hinton, G. E. (2016). Layer normaliza-
+tion. arXiv preprint arXiv:1607.06450.
+Baranes, A. and Oudeyer, P.-Y . (2013). Active learning of in-
+verse models with intrinsically motivated goal exploration in
+robots. Robotics and Autonomous Systems, 61(1):49–73.
+Conti, E., Madhavan, V ., Such, F. P., Lehman, J., Stanley, K. O.,
+and Clune, J. (2017). Improving exploration in evolution
+strategies for deep reinforcement learning via a population
+of novelty-seeking agents. arXiv preprint arXiv:1712.06560.
+de Abril, I. M. and Kanai, R. (2018). Curiosity-driven reinforce-
+ment learning with homeostatic regulation. arXiv preprint
+arXiv:1801.07440.
+Dickson, A. and Dinner, A. R. (2010). Enhanced sampling of
+nonequilibrium steady states. Annual review of physical
+chemistry, 61:441–459.
+Doncieux, S. and Mouret, J.-B. (2013). Behavioral diversity with
+multiple behavioral distances. In Evolutionary Computation
+(CEC), 2013 IEEE Congress on, pages 1427–1434. IEEE.
+Eysenbach, B., Gupta, A., Ibarz, J., and Levine, S. (2018). Diver-
+sity is all you need: Learning skills without a reward function.
+arXiv preprint arXiv:1802.06070.
+Fiete, I. R. and Seung, H. S. (2007). Neural network models of
+birdsong production, learning, and coding. New Encyclope-
+dia of Neuroscience. Eds. L. Squire, T. Albright, F . Bloom, F .
+Gage, and N. Spitzer. Elsevier.
+Friston, K., Rigoli, F., Ognibene, D., Mathys, C., Fitzgerald, T.,
+and Pezzulo, G. (2015). Active inference and epistemic value.
+Cognitive neuroscience, 6(4):187–214.
+Guttenberg, N., Biehl, M., and Kanai, R. (2017). Learning
+body-affordances to simplify action spaces. arXiv preprint
+arXiv:1708.04391.
+Houthooft, R., Chen, X., Duan, Y ., Schulman, J., De Turck, F., and
+Abbeel, P. (2016). Vime: Variational information maximizing
+exploration. In Advances in Neural Information Processing
+Systems, pages 1109–1117.
+Jain, M. S. and Lindsey, J. (2018). Semiparametric reinforcement
+learning.
+Kingma, D. and Ba, J. (2014). Adam: A method for stochastic
+optimization. arXiv preprint arXiv:1412.6980.
+Klyubin, A. S., Polani, D., and Nehaniv, C. L. (2005a). All else
+being equal be empowered. In European Conference on Arti-
+ﬁcial Life, pages 744–753. Springer.
+Klyubin, A. S., Polani, D., and Nehaniv, C. L. (2005b). Empower-
+ment: A universal agent-centric measure of control. In Evo-
+lutionary Computation, 2005. The 2005 IEEE Congress on ,
+volume 1, pages 128–135. IEEE.
+Lehman, J. and Stanley, K. O. (2011). Abandoning objectives:
+Evolution through the search for novelty alone. Evolution-
+ary Computation, 19(2):189–223. PMID: 20868264.
+Meyerson, E., Lehman, J., and Miikkulainen, R. (2016). Learning
+behavior characterizations for novelty search. In Proceed-
+ings of the Genetic and Evolutionary Computation Confer-
+ence 2016, pages 149–156. ACM.
+Ostrovski, G., Bellemare, M. G., Oord, A. v. d., and Munos, R.
+(2017). Count-based exploration with neural density models.
+arXiv preprint arXiv:1703.01310.
+Paszke, A., Gross, S., Chintala, S., Chanan, G., Yang, E., DeVito,
+Z., Lin, Z., Desmaison, A., Antiga, L., and Lerer, A. (2017).
+Automatic differentiation in pytorch.
+Pathak, D., Agrawal, P., Efros, A. A., and Darrell, T. (2017).
+Curiosity-driven exploration by self-supervised prediction. In
+International Conference on Machine Learning (ICML), vol-
+ume 2017.
+Pritzel, A., Uria, B., Srinivasan, S., Puigdomenech, A., Vinyals, O.,
+Hassabis, D., Wierstra, D., and Blundell, C. (2017). Neural
+episodic control. arXiv preprint arXiv:1703.01988.
+Pugh, J. K., Soros, L. B., and Stanley, K. O. (2016). Quality diver-
+sity: A new frontier for evolutionary computation. Frontiers
+in Robotics and AI, 3:40.
+Saxe, A. M., McClelland, J. L., and Ganguli, S. (2013). Exact
+solutions to the nonlinear dynamics of learning in deep linear
+neural networks. arXiv preprint arXiv:1312.6120.
+Torrie, G. M. and Valleau, J. P. (1977). Nonphysical sampling dis-
+tributions in monte carlo free-energy estimation: Umbrella
+sampling. Journal of Computational Physics, 23(2):187–199.
+Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L.,
+Gomez, A. N., Kaiser, Ł., and Polosukhin, I. (2017). At-
+tention is all you need. In Advances in Neural Information
+Processing Systems, pages 6000–6010.

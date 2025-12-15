@@ -1,0 +1,698 @@
+Active Inference Meeting Energy-Efficient
+Control of Parallel and Identical Machines⋆
+Yavar Taheri Yeganeh1, Mohsen Jafari2, and Andrea Matta1
+1 1. Politecnico di Milano, Milan, Italy
+{yavar.taheri, andrea.matta}@polimi.it
+2 2. Rutgers University, Piscataway, USA
+jafari@soe.rutgers.edu
+Abstract. We investigate the application of active inference in devel-
+oping energy-efficient control agents for manufacturing systems. Active
+inference, rooted in neuroscience, provides a unified probabilistic frame-
+work integrating perception, learning, and action, with inherent uncer-
+tainty quantification elements. Our study explores deep active inference,
+an emerging field that combines deep learning with the active inference
+decision-making framework. Leveraging a deep active inference agent,
+we focus on controlling parallel and identical machine workstations to
+enhance energy efficiency. We address challenges posed by the problem’s
+stochastic nature and delayed policy response by introducing tailored
+enhancements to existing agent architectures. Specifically, we introduce
+multi-step transition and hybrid horizon methods to mitigate the need
+for complex planning. Our experimental results demonstrate the effec-
+tiveness of these enhancements and highlight the potential of the active
+inference-based approach.
+Keywords: Active Inference· Probabilistic Deep Learning· Reinforce-
+ment Learning· Energy-Efficient Control· Manufacturing Systems
+1 Introduction
+Active inference (AIF), an emerging field inspired by the principles of biological
+brains, offers a promising alternative for decision-making models. It unifies per-
+ception, learning, and decision-making under the free energy principle (FEP),
+which formulates neuronal inference and learning under uncertainty [8]. Accord-
+ingly, the brain is modeled through levels of (variational) Bayesian inference [29],
+minimizing prediction errors by leveraging a generative model of the world while
+considering uncertainties. This framework enables the development of agents
+that can calibrate their models and make decisions without complete knowl-
+edge of system dynamics. Significant progress has been made in applying active
+inference across various domains, including robotics, autonomous driving, and
+healthcare [31,36,15], showcasing its ability to handle complex decision-making
+⋆ Accepted at the 10th International Conference on Machine Learning, Optimization,
+and Data Science.
+arXiv:2406.09322v2  [cs.LG]  13 Nov 2024
+2 Y. Taheri Yeganeh et al.
+tasks in dynamic environments. Recently, the manufacturing industry’s focus
+on energy efficiency has intensified due to its significant contribution to global
+energy consumption. Addressing energy efficiency at the machine level has be-
+come critical, with energy-efficient scheduling (EES) and energy-efficient control
+(EEC) strategies emerging as key approaches to reducing environmental impact
+[21]. While traditional EEC methods often necessitate complete system knowl-
+edge, reinforcement learning (RL) has shown potential in optimizing manufac-
+turing processes without prior system knowledge [23,22]. However, RL agents
+may struggle to rapidly adjust their policies to changing conditions.
+This research aims to build upon advancements in active inference-based
+decision-making [7,6] and apply it to EEC in manufacturing systems, demon-
+strating its potential and advancing the understanding of active inference in
+complex environments. The existing active inference agents often rely on exten-
+sive search algorithms during planning and make decisions based on immediate
+next predictions [7], which pose challenges in the context of the EEC problem.
+By employing deep active inference as the decision-making algorithm, we in-
+troduce tailored enhancements, such as multi-step transition and hybrid horizon
+methods, to address the challenges posed by the problem’s stochastic nature and
+delayed policy response. Our experimental results highlight the effectiveness of
+these enhancements and underscore the potential of the active inference-based
+approach. The remainder of the paper is organized as follows: we begin by con-
+cisely introducing the EEC problem and the manufacturing system under study.
+We then present an overview of the formalization of active inference, describe
+the agent, evaluate its performance, and discuss future directions.
+2 Application Overview
+Active inference has proven effective in various applications commonly associ-
+ated with decision-making processes in biological agents, such as humans and
+animals. These applications primarily involve visual sensory output as obser-
+vations. For instance, Fountas et al. (2020) [7] tested their agent on tasks like
+Dynamic dSprites[14] andAnimal-AI[4], which can be performed by biological
+agents simply. Additionally, applications in robotics [20,5] (e.g., manipulation
+[36]) align with tasks that human agents can typically perform naturally. This
+effectiveness stems from active inference being a theory of decision-making for
+biological agents [29]. However, certain applications, such as the control of indus-
+trial systems, can present complex challenges. While the decision-making pro-
+cesses and existing applications mentioned above may not be straightforward,
+human agents may struggle to devise effective policies for these more intricate
+problems.
+EEC in Manufacturing SystemsEEC is gaining prominence in both aca-
+demic and industrial circles within manufacturing systems. It offers substantial
+energy savings across three key control levels: component, machine, and produc-
+tion system. At its core, EEC involves managing the power consumption state
+AIF Meeting EEC 3
+of objects based on environmental conditions. Objects are kept fully operational
+when their functions are needed and transitioned to low power states when not
+in use, though this poses challenges due to the unpredictable nature of demands
+and the penalties incurred during state transitions. These penalties include both
+time wasted during transition, when the object adds no value, and the energy
+consumed during the transition process. A comprehensive and recent literature
+review on this topic can be found in [33].
+System Description We follow the task outlined by Loffredo et al. (2023)
+[23], which focuses on a stand-alone manufacturing workstation that can be
+extended to more complex multi-stage production lines [21]. Accordingly, the
+systemunderstudyhasanupstreambuffer B withfiniteholdingcapacityserving
+multiple identical parallel machines, as depicted in Fig. 1. It is subject to the
+stochastic arrival of parts, while machines can transition between various states:
+working (idle or busy), standby, startup, and failed. Power consumption varies
+by state: standby (wsb), failed (wf ), startup (wsu), idle (wid), and busy (wb),
+where wb > wsu > wid > wsb ≈ wf ≈ 0. The key characteristic of this system is
+Fig.1: Layout of parallel and identical machines in the workstation [23].
+that all processes are stochastic, modeled as Poisson processes [19]. This pertains
+to the arrival rate (λ) to bufferB, machine processing times (µ), startup times
+(δ), time between failures (ψ), and time to repair (ξ), all with expected values,
+independentandstationary.Machinesworkonasingleparttypefollowingafirst-
+come-first-served rule and cannot be switched off during processing or startup.
+Machinesbecomestarved(i.e.,enteranidlestate)iftheyarereadytoprocessbut
+B is empty, and they cannot be blocked as there is an infinite downstream buffer.
+Effective EEC aims to manage power variations efficiently to minimize energy
+consumption without compromising productivity. Therefore, the primary task
+is to dynamically decide the number of machines to keep working orswitch off
+based on the emergent stochastic patterns, ensuring optimal trade-offs between
+energy savings and system throughput.
+3 Deep Active Inference Agent
+Active inference is a unifying theory that integrates inference, perception, and
+action by emphasizing the dependence of observations on actions [27]. To effec-
+4 Y. Taheri Yeganeh et al.
+tively manage observations toward preferred states, the optimization of actions
+plays a crucial role [27]. This concept was originally proposed as a framework for
+understanding how organisms actively control and navigate their environment
+by iteratively updating their beliefs and actions based on sensory evidence [29].
+The FEP [10,26] is at the core of active inference, paving the way for creating
+a mathematical model, and there are even experimental evidences supporting it
+[16]. We modify the proposed agent by Fountas et al. (2020) [7], which exhibited
+notable capabilities and performance when compared against three benchmark
+model-free RL algorithms in two image applications.
+3.1 Active Inference Formalism
+Active inference agents employ an integrated probabilistic framework consisting
+of an internal generative model [6] coupled with inference mechanisms to rep-
+resent and interact with the world. Similar to RL the agent interacts with the
+environment, but using three random variables representing observation, latent
+state, and action (i.e., (ot, st, at) at time t). The framework assumes a Par-
+tially Observable Markov Decision Process (POMDP) [17,6,30]. The generative
+model of the agent, parameterized withθ, is defined over these variables (i.e.,
+Pθ(o1:t, s1:t, a1:t−1)) [7]. Generally, the agent acts to reducesurprise, which can
+be quantified by−log Pθ(ot). Specifically, there are two steps for the agent while
+interacting with the world [29,7] as follows:
+1) The agent calibrates its generative model through fitting predictions and
+improve its representation of the world. This is done by minimizing Variational
+Free Energy (VFE), which is similar tosurprise of predictions in connection
+with the actual observations [7,35,30], as follows:
+θ∗ = arg min
+θ
+ 
+EQϕ(st,at) [log Qϕ(st, at) − log Pθ(ot, st, at)]
+
+. (1)
+This objective function is commonly known as the negative evidence lower bound
+(ELBO) [1], which is the upper bound for −log Pθ(ot). It is also used as a
+foundation for training variational autoencoders [18].
+2) The agent makes decisions (i.e., chooses actions) in active inference based
+on the accumulated negative Expected Free Energy (EFE orG):
+P(π) =σ(−G(π)) =σ
+ 
+−
+X
+τ>t
+G(π, τ)
+!
+, (2)
+where σ(·) represents the Softmax function, and π (i.e., policy) denotes the
+sequence of actions. The EFE encompasses minimizingsurprise regarding pre-
+ferredobservations 3,exploringuncertainty,andreducinguncertaintyaboutmodel
+parameters [7]. The EFE forτ ≥ t can be formulated as follows [37]:
+G(π, τ) =EP(στ |sτ ,θ)EQϕ(sτ ,θ|π) [log Qϕ(sτ , θ|π) − log P(oτ , sτ , θ|π)] . (3)
+3 In EFE, thesurprise of predictions is measured with respect to the preference, while
+in VFE, it is measured with respect to the actual observation used to calibrate the
+model.
+AIF Meeting EEC 5
+Fountas et al., (2020) [7] provided a derivation [37] for calculating the EFE in
+Eq. 3 at each time step:
+G(π, τ) =−E ˜Q [log P(oτ |π)] (4a)
++ E ˜Q [log Q(sτ |π) − log P(sτ |oτ , π)] (4b)
++ E ˜Q [log Q(θ|sτ , π) − log P(θ|sτ , oτ , π)] . (4c)
+They expanded the formalism, leading to a tractable estimate for EFE that is
+both interpretable and calculable [7]:
+G(π, τ) =−EQ(θ|π)Q(sτ |θ,π)Q(oτ |sτ ,θ,π) [log P(oτ |π)] (5a)
++ EQ(θ|π)
+
+EQ(oτ |θ,π)H(sτ |oτ , π) − H(sτ |π)
+
+(5b)
++ EQ(θ|π)Q(sτ |θ,π)H(oτ |sτ , θ, π) − EQ(sτ |π)H(oτ |sτ , π) . (5c)
+This paved the way for establishing a unified formalism for computing decisions
+in Eq. 2. Accordingly, actions are connected to perception, which is achieved
+through Bayesian inference, based on the EFE in Eq. 5.
+Through this formalism that leads to calculating the EFE (i.e., Eq. 5), we
+can interpret the contribution of each element [7]:The first term (i.e., Eq.
+5a) is analogous to reward in RL as it is thesurprise4 of the prediction consid-
+ering preferred observation.The second term(i.e., Eq. 5b) represents state
+uncertainty, which is mutual information between the agent’s beliefs about state
+before and after prediction. This term also shows a motivation to explore areas
+of the environment that resolve state uncertainty [7].The third term (i.e.,
+Eq. 5c) represents uncertainty about model parameters considering new obser-
+vations. This term is also referred active learning, novelty, or curiosity [7]. In
+fact, model parameters (i.e.,θ), particularly contribute to making predictions,
+including generation of the next states.
+Observation
+CalibrationDecision
+Agent
+Environment
+Observation
+Model ↔VFEEFE
+Inference & Prediction
+Fig.2: The illustration depicts two views of the active inference framework: gen-
+eral steps on the left and active inference elements on the right.
+4 Here, instead of maximizing cumulative rewards, the focus is on minimizing the
+surprise, which quantifies the extent of deviation (i.e., misalignment) between the
+prediction and the preferred observation.
+6 Y. Taheri Yeganeh et al.
+In summary, the framework (as depicted in Fig. 2) is realized through a
+mathematicalformalisminthefollowingmanner.Theobservationisfedasinput,
+which propagates through the model to create perception (i.e., beliefs), which
+include generating future states. It is to facilitate the calculation of EFE (in
+Eq. 5) integrated into the planner derived from policy (in Eq. 2) to act on the
+environment. After obtaining the next observation the VFE (in Eq. 1) can be
+calculated, which calibrate (i.e., learning) the model based on the matching the
+new observation with the prediction. In fact, every time the framework goes
+through the loop the model is optimized based on the VFE form the previous
+loop, then the optimized model is used to for the rest.
+3.2 Architecture
+An agent within the active inference framework needs different modules, which
+are entangled within the framework. Amortization [18,25,12] is introduced into
+the formalism (in Sec. 3.1) to scale-up the realization [7]. The formalism is in-
+herently probabilistic and parameterized with with two sets,θ = {θs, θo} rep-
+resenting generative andϕ = {ϕs} recognition elements [7]. Using the following
+parameterized modules the formalism (in Sec. 3.1) can be calculated:Encoder
+(i.e., Qϕs(st)), an amortized inference of the hidden state (i.e., an inference net-
+work [24] providing a mapping between the observation,˜ot, and a distribution for
+its corresponding hidden state).Transition(i.e., Pθs(st+1|˜st, ˜at)), which gener-
+ates a distribution for the next hidden state based on both a sampled action and
+the current hidden state.Decoder (i.e., Pθo(ot+1|˜st+1)) generates a distribution
+for prediction based on the sampled hidden state.
+Neural networks can facilitate the realization of these modules by repre-
+senting a mapping between a sample and the respective distribution. In fact,
+parameters of a pre-selcted (e.g., Gaussian) distribution can be approximated.
+Here, we model the state space specifically with a multivariate Gaussian distri-
+bution, assuming no covariance (i.e., diagonal Gaussian). Using the VFE (i.e.,
+Eq. 1), all the three networks can be trained in an end to end fashion. Aside
+from action and the transition, which can even be considered integrated within
+the state space, the structure bears a resemblance to a variational autoencoder
+[18]. It is noteworthy that training for the both include optimizing ELBO, as
+specified in Eq. 1.
+Utilizingthementionedarchitecture(alsodepictedinFig.3),theagentwould
+be able to calculate the EFE in Eq. 5 for a given policy (i.e.,π), which is a se-
+quence of actions. Thus, we can calculate the probabilities for selecting actions
+through Eq. 2. In order to make better decisions, the agent can plan ahead by
+simulating future trajectories using the architecture mentioned above. However,
+as the policy space grows exponentially into the future, it is infeasible to evaluate
+all possible scenarios. Fountas et al. (2020) [7] introduced two approaches to alle-
+viate the obstacle. 1) They used the standard Monte-Carlo Tree Search (MCTS)
+[3,38], a tree-based search algorithm, which selectively explore promising trajec-
+tories in a restricted manner. 2) They introduced another recognition module
+AIF Meeting EEC 7
+[32,25,41], parameterized with ϕa as follows: Habit (i.e., Qϕa(at)), an amor-
+tized inference of actions (i.e., an inference network [24] providing a mapping
+between a sampled hidden state,˜st, and normalized, throughSoftmax function,
+probabilities for the actions). Habit is also realized through a neural network,
+Encoder Transition Decoder
+˜ot ˜ot+1
+˜ot Pθs(st+1|˜st, ˜at) Pθo(ot+1|˜st+1)Qϕs(st)
+˜at , ∆t
+Fig.3: The agent’s architecture and generative framework resemble that of a
+VAE. The line on top represents the agent simulating the future and making a
+prediction, while on the bottom, the agent receives a new observation after∆t
+of taking an action,˜at .
+which approximates the posterior distribution over actions (i.e.,P(at|st)) using
+the priorP(at) that is obtained from the MCTS [7]. This network is trained to
+reproduce the last action sampled form the planner, given the last state. This is
+similar to the fast and habitual decision-making in biological agents [42].
+Fountas et al. (2020) [7] followed the standard four steps of MCTS [38,40],
+which let them to restrictand prioritize the trajectories that should be evaluated.
+Iterativly a weighted tree that has memory updates the visited states. During
+each loop, a path from the existing tree (towards a leaf node) is selected (i.e.,
+selection) based on the following upper bound confidence:
+U(st, at) = ˜G(st, at) +cexplore · Qϕa(at|st) · 1
+1 +N(at, st) . (6)
+Where ˜G(st, at) represents the algorithm’s current estimation for the EFE, while
+N(at, st) denotes the number of times a node (i.e., a state and action pair) in the
+tree has been visited during the tenure, along with an exploration hyperparam-
+eter, cexplore. Then, starting from the leaf and for every possible action (i.e.,ex-
+pansion), the EFE is calculated for a fixed number of future steps (i.e.,simula-
+tion).Thisvalueisfinallyaddedtoallnodesalongthepathtocalculatetheaver-
+8 Y. Taheri Yeganeh et al.
+age of˜G(st, at) (i.e.,backpropagation). After all, Actions are sampled from the
+probabilities created byP(at) = N(at,st)P
+j N(at,j,st) (where P(at) = P
+π:a1=at
+P(π)),
+which is proportional to the number of times a node is visited. The planning
+process continues until a maximum number of loops (i.e., a hyperparameter) is
+reached, or a condition, i.e., maxP(at) − meanP(at) > Tdec, is met, indicating
+that the planning is finished. Fountas et al. (2020) [7] further employedQϕa(at)
+(i.e., habit) to modulate the state space, motivated by incorporating uncertainty.
+The divergence between the policy obtained from the planner (i.e., MCTS) and
+the habit (i.e.,Dt = DKL [Qϕa(at) ||P(at)]) can serve as a loss function for the
+habit. This divergence also represents a type of uncertainty in the state space,
+preventing the habit from being identical to the policy [9,2]. Therefore, they used
+Dt in a logistic function as follows:
+ωt = α
+1 + e−
+b−Dt−1
+c
++ d . (7)
+The monotonically decreasing pattern establishes a reciprocal connection be-
+tween Dt−1 and ωt, i.e., the state precision, using hyperparameters{α, b, c, d}.
+Altogether, the transition (i.e.,Pθs(st|st−1, at−1)) is modeled with the distribu-
+tion N(µ, σ2/ωt) [7]. This precision is analogous toβ in β-VAE [14], effectively
+promoting disentanglement of the state space by the encoder [7].
+To facilitate the computations and effectively estimating different elements
+within the framework, Fountas et al. (2020) [7] used several levels of Monte-Carlo
+simulations (i.e., sampling based estimations). In addition to MCTS, all terms
+in the EFE (Eq. 5), including the use of MC dropout [11] for model parameters
+(i.e., 5c), are estimated in this manner [7].
+3.3 Enhancements
+We explore various aspects to design the agent and leverage the formalism and
+existing architecture outlined by Fountas et al. (2020) [7] as a foundation. First,
+we examine how features and requirements related to the problem under study
+can influence the agent. Subsequently, we propose solutions to address these
+issues, introducing a coherent agent design.
+Exploring the ApplicationThe simulation of the system described in Section
+2, is designed to replicate features of an industrial system. It utilizes Poisson pro-
+cesses [19] (i.e., exponential distributions) for machine state transitions and part
+arrivals [23]. Theevent-driven steps employed by Loffredo et al. (2023) [23,22]
+trigger decisions after a system state transition rather than at fixed intervals,
+proving effective for controlling working machines. This problem can be viewed
+as either continuous-time stochastic control or a discrete-time Markov Chain
+process [34]. Continuous-time modeling requires making time intervals visible
+to the agent for both machines and subsequent observations, whereas discrete-
+time modeling allows the agent to learn dynamics by observing transitions to
+AIF Meeting EEC 9
+create probabilities for different transitions. There is a variable time interval be-
+tween subsequent observations (i.e.,∆t as depicted in Fig. 3). This variability
+requires synchronizing the transition for prediction (i.e.,Pθo(ot+1|˜st+1)) with
+the next observation (i.e., ˜ot+1) in the continuous-time model. Incorporating
+continuous-time facilitates neural network function approximation for longer∆t
+during planning. However, using continuous-time can further complicate the pre-
+diction structure since residence times for machine states exist in observation.
+Here, we utilize discrete-timeevent-driven steps that simplify this process com-
+pared to the continuous-time approach.
+The stochastic nature, along with the integral and continuous form of the
+reward functions for the system under study [23,22], implies that the effects
+of decisions may not be immediately observable, aligning with POMDPs. The
+system has a delay in responding to the policy (i.e., delayed policy response),
+which we refer to aslong/delayed impact horizon, particularly with respect to
+reward.ThisisanimportantdistinctionfromenvironmentsevaluatedbyFountas
+et al. (2020) [7]. The agent proposed by them focuses on planning based on
+immediate next predictions. The problem at hand is continuous with no terminal
+state, and the span over which reward functions are integrated may encompass
+a few thousand steps. This complicates planning and highlights the need for less
+computational cost.
+ExperienceReplay Thegenerativemodelencompassesthecoreofactiveinfer-
+ence[10,29,7]andpredictivecoding[27].Therefore,theperformanceofanyactive
+inference-based agent heavily relies on its accuracy. To improve model training,
+we introduce experience replay [28] using a memory that stores (ot, at, ot+1)
+at different steps. During training, we sample a batch of experiences from the
+memory and ensure the latest experience is also included. However, for all the
+batched experiences, we utilizeωt based on the latest experience.
+Hybrid Horizon To address the limitations arising from the short horizon of
+the EFE, which relies on immediate next predictions, we propose augmenting
+the planner with an auxiliary term to account for longer horizons. Q-learning [43]
+and its enhanced variant, deep Q-learning [28], can serve as model-free planners
+with longer horizons, leveraging rewards to update the Q-value for a state-action
+pair. The Q-value represents the expected return, considering long-term conse-
+quences even in one-step lookahead [39]. Mnih et al. (2015) [28] demonstrated
+the effectiveness of DQN in learning relatively long-term strategies in certain
+games. Loffredo et al. (2023) [23] demonstrated that deep Q-learning can achieve
+near-optimal performance for the systems under study. Accordingly, we modify
+Qϕa(at) to represent amortized inference of actions, mapping observations˜ot (or
+sampled predictions) to normalized action probabilities using aSoftmax function
+and training it with deep Q-learning updates based on rewards from experience
+replay. We introduce a hyperparameterγ to balance the contributions of long
+and short horizons. Thus, we arrive at a new formulation for the planner to
+10 Y. Taheri Yeganeh et al.
+incorporate longer horizons:
+P(at) =γ · Qϕa(at) + (1− γ) · σ (−G(π)) . (8)
+The resulting combination achieves a controlled balance between the EFE for
+the short horizon terms, which incorporates uncertainties, and the long horizon
+term. We further utilize the newQϕa(at) to modulate the agent’s state uncer-
+tainty based on Eq. 7. In fact,Dt (i.e., DKL [Qϕa(at) ||P(at)]) represents the
+discrepancy between the long horizon and the combined policy, reflecting a form
+of knowledge gap for the agent.
+Multi-Step Transition and PlanningGiven the stochastic nature andlong
+impact horizonof the system under study, a one-step transition (as depicted in
+Fig. 3) may not result in significant changes in observation and state, leading
+to indistinguishable EFE terms. Therefore, the model should learn transitions
+beyond one step and predict further into the future to distinguish the impact
+of different policies. We modify the transition module to allow multiple steps,
+controlled by a hyperparameter (e.g.,s = 90), enabling multi-step transitions
+given the policy (i.e., sequence of actions). Representing the sequence of actions
+in a policy as a one-hot vector can be high-dimensional, so we utilize integer
+encodings as an approximation. This is feasible since the actions (or number of
+machines) are less categorical and can be considered rather continuous in this
+case.Duringplanning,weutilizerepeatedactionsinthetransitionforeachaction
+and calculate the EFE accordingly. This method assesses the impact of actions
+over a short period, using repeated action simulations. This approximation helps
+to distinguish different actions over a horizon based on the EFE. Thus, even a
+single multi-step transition can serve as a simple and computationally efficient
+planner. For deeper simulations, it can be combined with MCTS of repeated
+transitions. Alternatively, it can be combined with a less expensive planner that
+starts with repeated transitions for each action, followed by simulating until a
+specific depth using the following policy:
+˜P(π, aτ ) = (1− cexplore) · Qϕa(aτ ) +cexplore · σ (−log P(oτ |π)) , (9)
+to calculate the EFE of the final state or trajectory. After several loops, the
+accumulated EFE for each action can be used in Eq. 8.
+4 Results
+To demonstrate the potential of our methodology, we concentrate our experi-
+mentsoncontrollingarealindustrialworkstationcomprisingsixparallel-identical
+machines with an upstream capacity of 10, as outlined in [23]. All the stochastic
+processes characterizing the workstation follow Poisson distributions, and thus
+are exponentially distributed with different expected values. We first introduce
+the preference function, then describe the setup and training, and finally present
+the numerical performance of our agent5.
+5 Thesourcecodeisavailableathttps://github.com/YavarYeganeh/AIF_Meeting_EEC.
+AIF Meeting EEC 11
+4.1 Preference Function
+Active inference involves an agent acting to achieve its preferred observation,
+similar to the concept of a setpoint in control theory [9,27]. Consequently, the
+agent possesses an internal function to quantify the proximity of the prediction
+to the preferred state. This function is important for the agent’s performance.
+While it correlates with the reward function in reinforcement learning, it is based
+on a different philosophy: a control setpoint rather than the cumulative reward
+in the MDP framework of reinforcement learning [39]. Instead of the reward
+function used by Loffredo et al. (2023) [22], we propose a different preference
+function for the multi-objective optimization of the system under study. This
+function aligns with the concept of along/delayed impact horizonsystem for our
+agent to control, accounting for the average performance of the system over a
+fixed time span (ts6, e.g., 8 hours) leading up to the observation at (t). It includes
+terms for production, energy consumption, and a combined term as follows:
+Rproduction = Tcurrent
+Tmax
+Renergy = 1− Eavg
+Emax
+(10a)
+R = ϕ · Rproduction + (1− ϕ) · Renergy , (10b)
+where ϕ is the weighting coefficient balancing production and energy consump-
+tion. ϕ is set close to 1 (0.97 in our implementation) to ensure that the agent
+does not significantly reduce production.Tcurrent = NP (t)−NP (t−ts)
+ts
+represents
+the throughput within the pastts period, where NP (t) is the number of parts
+producedwithinthisperiod. Tmax isthemaximumachievablethroughput,occur-
+ring under theALL ON policy [22].Eavg = C(t)−C(t−ts)
+ts
+represents the average
+energy consumption over the pastts period, whereC(t) is the total energy con-
+sumption within this period.Emax is the maximum theoretical consumption rate
+of the system, pertaining to all machines operating in their busy state.
+4.2 Agent Setup and Training
+We adhere to the MC sampling methodology for calculating EFE, as well as
+most agent configurations, as outlined by Fountas et al. (2020) [7]. Notably,
+we employ Bernoulli and Gaussian distributions to model prediction and state
+distributions, respectively. We introduced a modification by utilizing activation
+functions for the encoder and transition networks. The output of these two net-
+works generates means and variances representing Gaussian distributions for the
+state. We applied theTangent Hyperbolicfunction for the means and theSig-
+moid function, multiplied by a factor,λs, between 1 and 2, for the variances.
+This enforces further regularization and stability for the state space to prevent
+unbounded values, which need to be fitted into a normal distribution. In contrast
+to [7], which does not use activations for the state, our implementation includes
+6 In our implementation, we use the closest recorded timestamp from the system,
+respecting the fixed time span.
+12 Y. Taheri Yeganeh et al.
+these activations, as we found them essential for learning effective policies to
+achieve high rewards.
+Our agent’s observation comprises buffer levels and machine states, all one-
+hot encoded. Similarly, we incorporate the three reward terms in Eq. 10, predict-
+ing only their means without pre-defining a distribution. The agent’s preference
+(i.e., P(oτ |π)) corresponds to the prediction of the combined reward term for
+the system, which the agent seeks to maximize. Given the composition of binary
+and continuous components of the observation, the loss of the VAE’s recon-
+struction is equally scaled aggregation of binary cross-entropy and mean square
+error. Additionally, due to the one-hot structure of the observation, we sample
+the predictions, excluding the reward terms, which are treated as means, to be
+fed into the decoder during the calculation of EFE. As we validate the perfor-
+mance of a control system for an industrial application, we use a single system
+during each training epoch, with an experience replay size of 200. These systems
+are initialized with a random policy for one day of simulation, after removing
+the profile from one day of warm-up simulation using theALL ON policy. We
+trained our agents on-policy, following a similar approach to the algorithm pro-
+posed by Fountas et al. (2020) [7], but with adjustments to accommodate the
+modifications we made, including multi-step transition, experience replay, and a
+hybrid planner.
+4.3 Agent Performance
+To assess the efficacy of our agents, we tested their performance several times
+during different training epochs, each on independent systems initialized with a
+random agent after warm-up, similar to those used for training. We simulated the
+interaction between the agent and the system, which was randomly controlled at
+the beginning, for one day of simulation time. The combined reward term (in Eq.
+10) at the end of the test simulation was extracted as the performance measure,
+with a time span ofts (i.e., 8 hours in this case). Our agent, similar to [7], has
+a large set of hyperparameters, which proved to be sensitive, especially those
+related to the state space of the model. We considered both 1-step transitions
+and multi-step transitions, taking repeated actions during planning for each
+of the possible actions (i.e., determining how many machines to keepON) to
+then calculate their EFE. Fig. 4 presents the comparison for a single set of
+hyperparameters, particularlyλs = 1, excepts, across differentγ. It shows the
+suitability of the multi-step transition and simple repeated planner as well as
+hybrid horizon.
+Since the state should fit the normal distribution,λs = 1 for variance will
+target areas of the input domain of theSigmoid function that are saturated
+and have smaller gradients. To address this, we increasedλs to 1.5, where the
+Sigmoid function has larger gradients. This results in higher rewards even for
+very small γ (i.e., 0.05), as presented in Fig. 5. This performance is primarily
+coming from the second term of the EFE (i.e., Eq. 5b), which serves as an
+intrinsic reward[30], as demonstrated in Fig. 5C. The other two terms are less
+distinguishable for different actions on average. This suggests that the agent
+AIF Meeting EEC 13
+0.05 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 0.95
+0.65
+0.70
+0.75
+0.80
+0.85
+0.90
+0.95Reward
+1-Step Transition
+90-Step Transition
+Fig.4: Comparison of test rewards during training of agents with 90-step tran-
+sition against 1-step transition, whenλs = 1.
+0 5 10 15 20 25 30
+Learning Iterations (×103)
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0A : Reward
+0 5 10 15 20 25 30
+Learning Iterations (×103)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0B :  P(An)
+0 5 10 15 20 25 30
+Learning Iterations (×103)
+1300
+1280
+1260
+1240
+1220
+1200
+1180
+1160
+C : EFE Term 2
+A0
+A1
+A2
+A3
+A4
+A5
+A6
+Fig.5: The test performance of the agent with 90-step transition and repeated
+actions for planning, whenλs = 1.5 and γ = 0.05, replicated with 10 different
+random seeds.A: Average reward.B: Average planner distribution for different
+actions. C: Average EFE’s term 2 for different actions.
+differentiates between various actions in its state space to achieve high rewards.
+In fact, thelong impact horizonand stochasticity, as well as our approximations
+in transition and planning, hinder the predictive power of the agent, but it
+managed to infer the impact of different actions in its state space. It is also worth
+noting that our agent quickly converges to high rewards but may experience
+instability and loss of control if training continues for (a long time), due to
+a catastrophic increase in the loss, particularly the reconstruction term of the
+generative model. This necessitates early stopping mechanisms for training and
+the introduction of regularization elements [13] (e.g., dropout and normalization)
+to prevent or mitigate the issue.
+14 Y. Taheri Yeganeh et al.
+5 Conclusion and Future Work
+The results demonstrate the effectiveness of our proposed modifications for the
+active-inference-inspired agent. Notably, a single multi-transition lookahead with
+repeated actions, coupled with a hybrid horizon, achieves high rewards without
+relying on extensive planning algorithms like MCTS. This is important given
+the application’s need for deep lookaheads into the future, while stochasticity
+presents a challenge. Unlike RL, which generally depends on high-quality reward
+signals that can be expensive to collect and difficult to design, AIF operates
+directly on observations. This reduces the need for well-engineered and expensive
+reward structures while enabling more flexible and adaptive decision-making.
+Overall, the potential of our methodology for addressing the EEC problem and
+similar scenarios characterized by delayed policy response and high stochasticity
+is evident.
+Improving the methodology could involve enhancing the generative model,
+the core of active inference, especially by introducing recurrent transitions or
+enhancing predictive capabilities. The integration of diffusion-based generative
+models instead of VAEs [15] is also a promising direction. The framework and
+formalism of active inference agents show promise for non-stationary scenarios,
+where model-free agents may struggle to adapt swiftly. Future research will fo-
+cus on improving the agent, extending experimental validation, and tailoring
+the methodology for non-stationary scenarios, leveraging the strengths of active
+inference to develop more robust and efficient decision-making algorithms.
+Acknowledgments
+The work presented in this paper was supported by HiCONNECTS, which has
+received funding from the Key Digital Technologies Joint Undertaking under
+grant agreement No. 101097296.
+References
+1. Blei, D.M., Kucukelbir, A., McAuliffe, J.D.: Variational inference: A review for
+statisticians. Journal of the American statistical Association112(518), 859–877
+(2017)
+2. Byers, A., Serences, J.T.: Exploring the relationship between perceptual learning
+and top-down attentional control. Vision research74, 30–39 (2012)
+3. Coulom, R.: Efficient selectivity and backup operators in monte-carlo tree search.
+In: International conference on computers and games. pp. 72–83. Springer (2006)
+4. Crosby, M., Beyret, B., Halina, M.: The animal-ai olympics. Nature Machine In-
+telligence 1(5), 257–257 (2019)
+5. Da Costa, L., Lanillos, P., Sajid, N., Friston, K., Khan, S.: How active inference
+could help revolutionise robotics. Entropy24(3), 361 (2022)
+6. Da Costa, L., Sajid, N., Parr, T., Friston, K., Smith, R.: Reward maximization
+through discrete active inference. Neural Computation35(5), 807–852 (2023)
+AIF Meeting EEC 15
+7. Fountas, Z., Sajid, N., Mediano, P.A.M., Friston, K.J.: Deep active inference agents
+using monte-carlo methods. ArXivabs/2006.04176 (2020)
+8. Friston, K.: The free-energy principle: a unified brain theory? Nature reviews neu-
+roscience 11(2), 127–138 (2010)
+9. Friston, K., FitzGerald, T., Rigoli, F., Schwartenbeck, P., Pezzulo, G.: Active in-
+ference: a process theory. Neural computation29(1), 1–49 (2017)
+10. Friston, K., Rigoli, F., Ognibene, D., Mathys, C., Fitzgerald, T., Pezzulo, G.:
+Action and behavior: A free-energy formulation. Biological Cybernetics102(3),
+227–260 (2010)
+11. Gal, Y., Ghahramani, Z.: Dropout as a bayesian approximation: Representing
+model uncertainty in deep learning. In: international conference on machine learn-
+ing. pp. 1050–1059. PMLR (2016)
+12. Gershman, S., Goodman, N.: Amortized inference in probabilistic reasoning. In:
+Proceedings of the annual meeting of the cognitive science society. vol. 36 (2014)
+13. Goodfellow, I., Bengio, Y., Courville, A.: Deep learning. MIT press (2016)
+14. Higgins, I., Matthey, L., Pal, A., Burgess, C., Glorot, X., Botvinick, M., Mohamed,
+S., Lerchner, A.: beta-vae: Learning basic visual concepts with a constrained vari-
+ational framework. In: International conference on learning representations (2016)
+15. Huang, Y., Li, Y., Matta, A., Jafari, M.: Navigating autonomous vehicle on un-
+marked roads with diffusion-based motion prediction and active inference. arXiv
+preprint arXiv:2406.00211 (2024)
+16. Isomura, T., Kotani, K., Jimbo, Y., Friston, K.J.: Experimental validation of the
+free-energy principle with in vitro neural networks. Nature Communications14(1),
+4547 (2023)
+17. Kaelbling, L.P., Littman, M.L., Cassandra, A.R.: Planning and acting in partially
+observable stochastic domains. Artificial intelligence101(1-2), 99–134 (1998)
+18. Kingma, D.P., Welling, M.: Auto-encoding variational bayes. arXiv preprint
+arXiv:1312.6114 (2013)
+19. Kingman, J.F.C.: Poisson processes, vol. 3. Clarendon Press (1992)
+20. Lanillos, P., Meo, C., Pezzato, C., Meera, A.A., Baioumy, M., Ohata, W., Tschantz,
+A., Millidge, B., Wisse, M., Buckley, C.L., et al.: Active inference in robotics and
+artificial agents: Survey and challenges. arXiv preprint arXiv:2112.01871 (2021)
+21. Loffredo, A., Frigerio, N., Lanzarone, E., Matta, A.: Energy-efficient control in
+multi-stage production lines with parallel machine workstations and production
+constraints. IISE Transactions56(1), 69–83 (2024)
+22. Loffredo, A., May, M.C., Matta, A., Lanza, G.: Reinforcement learning for sustain-
+ability enhancement of production lines. Journal of Intelligent Manufacturing pp.
+1–17 (2023)
+23. Loffredo, A., May, M.C., Schäfer, L., Matta, A., Lanza, G.: Reinforcement learning
+for energy-efficient control of parallel and identical machines. CIRP Journal of
+Manufacturing Science and Technology44, 91–103 (2023)
+24. Margossian, C.C., Blei, D.M.: Amortized variational inference: When and why?
+arXiv preprint arXiv:2307.11018 (2023)
+25. Marino, J., Yue, Y., Mandt, S.: Iterative amortized inference. In: International
+Conference on Machine Learning. pp. 3403–3412. PMLR (2018)
+26. Millidge, B.: Applications of the free energy principle to machine learning and
+neuroscience. arXiv preprint arXiv:2107.00140 (2021)
+27. Millidge, B., Salvatori, T., Song, Y., Bogacz, R., Lukasiewicz, T.: Predictive cod-
+ing: towards a future of deep learning beyond backpropagation? arXiv preprint
+arXiv:2202.09467 (2022)
+16 Y. Taheri Yeganeh et al.
+28. Mnih, V., Kavukcuoglu, K., Silver, D., Rusu, A.A., Veness, J., Bellemare, M.G.,
+Graves, A., Riedmiller, M., Fidjeland, A.K., Ostrovski, G., et al.: Human-level
+control through deep reinforcement learning. nature518(7540), 529–533 (2015)
+29. Parr, T., Pezzulo, G., Friston, K.J.: Active inference: the free energy principle in
+mind, brain, and behavior. MIT Press (2022)
+30. Paul, A., Sajid, N., Da Costa, L., Razi, A.: On efficient computation in active
+inference. arXiv preprint arXiv:2307.00504 (2023)
+31. Pezzato, C., Corbato, C.H., Bonhof, S., Wisse, M.: Active inference and behavior
+trees for reactive action planning and execution in robotics. IEEE Transactions on
+Robotics 39(2), 1050–1069 (2023)
+32. Piché, A., Thomas, V., Ibrahim, C., Bengio, Y., Pal, C.: Probabilistic planning
+with sequential monte carlo methods. In: International Conference on Learning
+Representations (2018)
+33. Renna, P., Materi, S.: A literature review of energy efficiency and sustainability in
+manufacturing systems. Applied Sciences11(16), 7366 (2021)
+34. Ross, S.M.: Introduction to probability models. Academic press (2014)
+35. Sajid, N., Faccio, F., Da Costa, L., Parr, T., Schmidhuber, J., Friston, K.: Bayesian
+brains and the rényi divergence. Neural Computation34(4), 829–855 (2022)
+36. Schneider, T., Belousov, B., Chalvatzaki, G., Romeres, D., Jha, D.K., Peters, J.:
+Activeexplorationforroboticmanipulation.In:2022IEEE/RSJInternationalCon-
+ference on Intelligent Robots and Systems (IROS). pp. 9355–9362. IEEE (2022)
+37. Schwartenbeck, P., Passecker, J., Hauser, T.U., FitzGerald, T.H., Kronbichler,
+M., Friston, K.J.: Computational mechanisms of curiosity and goal-directed ex-
+ploration. elife8, e41703 (2019)
+38. Silver, D., Schrittwieser, J., Simonyan, K., Antonoglou, I., Huang, A., Guez, A.,
+Hubert, T., Baker, L., Lai, M., Bolton, A., et al.: Mastering the game of go without
+human knowledge. nature550(7676), 354–359 (2017)
+39. Sutton, R.S., Barto, A.G.: Reinforcement learning: An introduction. MIT press
+(2018)
+40. Świechowski,M.,Godlewski,K.,Sawicki,B.,Mańdziuk,J.:Montecarlotreesearch:
+A review of recent modifications and applications. Artificial Intelligence Review
+56(3), 2497–2562 (2023)
+41. Tschantz, A., Millidge, B., Seth, A.K., Buckley, C.L.: Control as hybrid inference.
+arXiv preprint arXiv:2007.05838 (2020)
+42. Van Der Meer, M., Kurth-Nelson, Z., Redish, A.D.: Information processing in
+decision-making systems. The Neuroscientist18(4), 342–359 (2012)
+43. Watkins, C.J., Dayan, P.: Q-learning. Machine learning8, 279–292 (1992)

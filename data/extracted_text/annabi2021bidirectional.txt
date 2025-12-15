@@ -1,0 +1,1400 @@
+Bidirectional Interaction between Visual and Motor Generative Models using
+Predictive Coding and Active Inference
+Louis Annabi∗, Alexandre Pitti, Mathias Quoy
+ETIS UMR 8051, CY University, ENSEA, CNRS
+Abstract
+In this work, we build upon the Active Inference (AIF) and Predictive Coding (PC) frameworks to propose
+a neural architecture comprising a generative model for sensory prediction, and a distinct generative model
+for motor trajectories. We highlight how sequences of sensory predictions can act as rails guiding learning,
+control and online adaptation of motor trajectories. We furthermore inquire the eﬀects of bidirectional
+interactions between the motor and the visual modules. The architecture is tested on the control of a
+simulated robotic arm learning to reproduce handwritten letters.
+Keywords: visuo-motor control, predictive coding, active inference, developmental robotics, embodiment
+1. Introduction
+In this work, we tackle the problem of mo-
+tor sequence learning for an embodied agent. A
+wide range of approaches have been proposed
+to model sequential data, using various types of
+neural architectures (Recurrent Neural Networks
+(RNNs), Long Short-Term Memories (LSTMs)
+[1], Restricted Boltzmann Machines (RBMs) [2])
+and various learning strategies (backpropaga-
+tion through time (BPTT), Real-Time Recurrent
+Learning (RTRL) [3], Reservoir Computing (RC)
+[4, 5]).
+In an embodied simulation, the agent continu-
+ously performs motor commands, or actions, that
+inﬂuence its environment, and continuously per-
+ceives information about the state of its environ-
+ment through sensory observations. Given a data
+set of motor trajectories, one could train a genera-
+tive model using the methods cited above to learn
+a repertoire of motor trajectories. However, con-
+sidering the constraint of embodiment, we cannot
+⋆This work was funded by the CY Cergy-Paris University
+Foundation (Facebook grant) and partially by Labex MME-
+DII, France (ANR11-LBX-0023-01).
+∗Corresponding author.
+Email addresses: louis.annabi@ensea.fr (Louis
+Annabi), alexandre.pitti@ensea.fr (Alexandre Pitti),
+mathias.quoy@ensea.fr (Mathias Quoy)
+assume the availability of supervision in the agent’s
+motor space. Instead, supervision can be available
+in the shape of desired sensory observations, for in-
+stance provided by a teaching agent. In the case
+of handwriting, these desired sensory observations
+are visual observations of the target letters. In re-
+inforcement learning, the preference for certain sen-
+sory states is modeled by assigning rewards to the
+desired states, and the agent learns a behavioral
+policy maximizing its expected return (sum of re-
+wards) over time. Alternatively, Active Inference
+(AIF) [6, 7], derived from the Free Energy Princi-
+ple (FEP) [8, 9], proposes to see acting as a way
+of minimizing surprise, by choosing to perform ac-
+tions that will produce sensory observations that
+are probable under the agent’s generative model. In
+other words, to perform actions leading to desired
+sensory states, the agent must learn a generative
+model naturally inclined towards predicting the de-
+sired sensory states, and perform the actions that
+fulﬁll these predictions.
+In our work, we propose to learn a generative
+model of the trajectories in the sensory space, that
+we exploit in order to guide the generation of motor
+trajectories using AIF. We present a neural network
+architecture based on two distinct RNNs generat-
+ing sequences in the sensory and motor spaces. We
+apply our approach to the problem of learning joint
+anglemotortrajectoriesforhandwritingwithasim-
+April 20, 2021
+arXiv:2104.09163v1  [cs.AI]  19 Apr 2021
+ulated 3 DoF articulated arm. Target trajectories
+are provided in the visual space, as sequences of 2D
+pen positions, and the agent has to learn a reper-
+toire of corresponding motor trajectories.
+Our complete model incorporates diﬀerent com-
+ponents that can be trained in subsequent stages.
+First, AIF requires a forward model, that is, a
+model of how the agent’s actions aﬀect its obser-
+vations. Such models can be learned in early devel-
+opmental stages via a random interaction with the
+environment, also called motor babbling. This ap-
+proach has been widely used to learn the relations
+between motor commands and sensory observations
+without any external supervision (e.g. [10, 11]).
+Second, AIF requires a generative model for tra-
+jectories in the visual space. This model can be
+learned from the supervision provided by the target
+trajectories. In this work we propose to implement
+this generative model with an RNN design in line
+with the FEP and Predictive Coding (PC) [12, 13],
+inspired from [14, 15]. Finally, our architecture will
+make use of these two subsystems to train a sec-
+ond generative model in the motor space using AIF,
+which we implement using another instance of the
+PC inspired RNN model.
+Several works advocate for the relevance of ran-
+domly connected RNNs as a computational model
+forcorticalnetworks[16–18]. Inparticular, [18]sug-
+gests RC as a candidate approach to generate move-
+ments as neural trajectories in the motor cortex.
+However, the authors propose to train these corti-
+cal networks through a supervised learning scheme,
+which would need target values in the motor space.
+Instead, our approach relates to the internal
+model theory, suggesting that eﬀerent copies of mo-
+tor commands in the brain are provided as inputs
+to an internal forward model predicting the sen-
+sory outcomes of performed actions [19]. The in-
+teresting feature brought by AIF is that, in con-
+trast with control theory where the heavy lifting is
+done by the inverse models, the reciprocal top-down
+and bottom-up information passing scheme allows
+to infer proper actions using an error signal between
+sensory predictions and predicted outcomes of ac-
+tions. These types of internal models are thought
+to be encoded in the intraparietal sulcus and supe-
+rior parietal lobule regions of the posterior parietal
+cortex, for reaching and grasping movements [20],
+as well as drawing and handwriting [21].
+On a higher level of abstraction, motor cognition
+(planning, decision making) involves other brain
+structures such as the cerebellum and the prefrontal
+cortex, for the prediction of outcomes [22–24], and
+the basal ganglia, for the selection of action poli-
+cies [18, 24]. In [7], AIF is proposed as a candidate
+model for goal-directed behaviour relating to the
+brain structures cited above.
+While our work does not aim at providing a com-
+putational model of brain functions, the theories
+emerging from research in computational neuro-
+sciences still serve as an inspiration to build func-
+tional models to be integrated on robotic platforms.
+The contribution brought by this work is two-fold.
+First, we show how AIF makes it possible to learn
+a repertoire of motor trajectories without requir-
+ing supervision in the motor space, inverse model
+learning, or BPTT. Second, we show that the dy-
+namic interactions between the sensory and motor
+generative models, implemented with PC, provide
+relevant properties for motor control : robustness
+to external perturbations, adaptation to variations
+of size or orientation of the target trajectory, inter-
+mittent control according to a precision threshold.
+We will ﬁrst present related works in the ﬁelds of
+RNNs and models for handwriting. Then, we will
+describe our architecture, before reporting and an-
+alyzing the results obtained in several experimental
+setups.
+2. Related work
+2.1. Recurrent Neural Networks
+Recurrent neural networks (RNNs) form a cate-
+gory of models that can be used for sequence gener-
+ationandrecognitiontasks. AnRNNcanbeseenas
+a dynamical system inﬂuenced by inputs. At each
+time step, it updates its state based on its past state
+and its current input. Additionally, the RNN can
+include a readout layer, decoding the RNN state
+sequence into an output sequence. There exist sev-
+eral approaches to train RNNs. The input weights,
+recurrent weights, and output weights of RNNs can
+be learned through backpropagation through time.
+However, it has been proved that this optimization
+method can give rise to exponentially decaying or
+exploding gradients [25], thus making the learning
+either slow or unstable. Several solutions have been
+proposed to address this issue, such as hessian free
+optimization [26, 27], or gating mechanisms for cap-
+turing long-term dependencies [1, 28]. Additionally,
+the BPTT algorithm is arguably impossible to be
+implemented in the brain, the main reason being
+the non-locality of the information used for gradi-
+ent computations.
+April 20, 2021
+(a)
+ (b)
+ (c)
+ (d)
+Figure 1: Diﬀerent related approaches to learn motor trajectories. Synaptic weights are represented by marks on the arrows.
+Variables for which target values are provided are contained in bold squares.a: Supervised learning of a generative model for
+motor trajectories. b: Learning of a generative model for sensorimotor trajectories with supervision in the sensory space.c:
+Learning of separate generative models for motor trajectories and sensory predictions.d: Connection between our experimental
+setup and the model displayed inc. m = (θ0,θ1,θ2) and o = (x,y).
+Other approaches to RNN training providing
+more biologically plausible mechanisms for learn-
+ing have been researched. Completely avoiding the
+problem of learning recurrent weights is a family
+of approaches that emerged in parallel from the
+ﬁelds of computational neurosciences [29] and ma-
+chine learning [30] and has been labeled later as
+Reservoir Computing (RC) [5]. By carefully initial-
+izing the recurrent weights of the RNN, RC meth-
+ods completely put aside the problem of learning
+these parameters. The recurrent connections are
+set in order for the RNN to exhibit rich non-linear
+andsometimesself-sustaineddynamics, thatarede-
+coded by a learned readout layer. RC has been
+used for generation tasks [31] and recognition tasks
+[32]. [33] provides an experimental comparison of
+RC and BPTT approaches for diﬀerent sequential
+tasks.
+Finally, learning methods inspired from the Pre-
+dictive Coding (PC) theory have been proposed as
+an alternative for backpropagation [34, 35]. PC
+[12, 13] is a theory of brain function in which the
+brain is constantly and hierarchically generating
+top-down predictions about its sensory states, and
+updating its internal states based on a bottom-up
+error signal originating from the sensory level. This
+view is to some extent supported by neurophysio-
+logicaldata[36], andalignsnicelywiththeBayesian
+brain hypothesis assuming that the brain imple-
+ments a form of Bayesian inference [37, 38].
+In neural implementations of PC, the genera-
+tive model is intertwined with error neurons that
+propagate the information in a bottom-up manner
+through the hierarchy. An online estimation of the
+error at each level of the generative model makes
+it possible to learn the model parameters, and in-
+fer the hidden states, using only local update rules.
+Following this approach, [14] proposed a recurrent
+neural network architecture that yields state of the
+art performance on the bouncing MNIST task. In
+[15], the authors propose a PC architecture where
+the generative model incorporates hidden causes
+in addition to hidden states. Contrary to hidden
+states that are embedded with dynamics, hidden
+causes are static variables in the generative model.
+These variables also diﬀer from model parameters
+since they can be dynamically updated through on-
+line inference (using the bottom-up error circuitry).
+Their model conditions the dynamics of the hidden
+states using these hidden causes. They show that
+their approach allows synthetic birds to recognize
+and categorize bird songs, using a generative model
+based on a cascade of Lorenz attractors.
+2.2. Handwriting
+Handwriting and drawing require fundamental
+cognitive abilities involving visual and motor skills,
+that make it possible to translate abstract represen-
+tations into visuomotor trajectories. Many compu-
+tational models for handwriting and drawing sim-
+ply consider this problem as that of generating se-
+quences of pen positions. This category of imple-
+mentations is represented in ﬁgure 1a and can use
+April 20, 2021
+the diﬀerent approaches for RNN training cited be-
+fore. [28, 39] propose LSTMs with mixture density
+outputs trained with BPTT, [18] exposes a neu-
+rocomputational model for the selection of motor
+sequences implemented with RC, and [40] uses a
+computational model based on PC and Bayesian
+inference.
+However, in an embodied simulation, it is un-
+clear how direct supervision in the motor space
+could occur. Instead, in the proposed task, super-
+vision takes place in the sensory space, and mo-
+tor sequences are generated in order to reproduce
+target sequences of visual observations. Address-
+ing this challenge are the approaches presented in
+[10, 11]. In these works, the authors avoid the dif-
+ﬁcult problem of inverse model learning by train-
+ing an RNN to jointly generate sensory and motor
+trajectories, as represented in ﬁgure 1b. Their gen-
+erative model is ﬁrst trained on random pairs of
+motor commands and visual observations obtained
+with motor babbling. Later, they infer an initial
+RNN state that properly predicts a target visual
+trajectory. This initial RNN state is used to pre-
+dict and perform the motor trajectory. Finally, the
+model weights are tuned on the performed trajec-
+tories to maintain the coherence between predicted
+visual observations and motor commands. The re-
+lation between motor and visual trajectories is here
+embedded within the generative model, but is only
+accurate on the learned trajectories, that can be
+referred to as "habituated trajectories".
+Another way to approach this constraint is to
+take inspiration from the FEP and AIF [6, 7]. The
+starting point of the FEP is that agents maintain
+homeostasiswiththeirenvironments, whichismade
+possiblebyminimizingsurprisethroughbothaction
+andperception. Freeenergyintervenesasanupper-
+bound on surprise, that can be computed and thus
+optimized more eﬃciently. FEP applied to action
+casts motor control and decision making into the
+same process of surprise minimization. The agent is
+endowedwithagenerativemodelpredictingsensory
+observations that can be naturally biased towards
+desired observations. Minimizing surprise through
+actioncorrespondstotheinferenceofanactionthat
+will cause sensory states probable under this gener-
+ative model.
+This framework has gained popularity and there
+are many implementations of AIF in the littera-
+ture. [6] shows how AIF can reproduce behavioral
+policies obtained using reinforcement learning and
+dynamic programming methods. In [41], the au-
+thors implement AIF to perform reaching with a
+7-DoF simulated arm. [42] proposes a robotic im-
+plementation of AIF on an iCub robot performing
+reaching and active head object tracking. See [43]
+for a recent and more complete review about mod-
+els implementing AIF.
+In previous works, we applied the FEP to the
+control of long range neural synchrony in recur-
+rent spiking networks [44]. The proposed model
+was able to generate very long and precise spatio-
+temporal sequences, using a random search algo-
+rithm to optimize free energy. In [45], we pro-
+posed a self-supervised algorithm in line with AIF
+to learn repertoires of motor primitives for a sim-
+ulated robotic arm. Free energy minimization was
+used to regress adequate initial hidden states of the
+RNN generating motor trajectories. In comparison,
+the work we present here allows for an online con-
+trol throughout the whole motor trajectory.
+Our approach stands out by including a second
+separate generative model for motor trajectories, as
+represented in ﬁgure 1c. Contrary to direct imple-
+mentations of active inference, it uses the gradient
+descent on surprise only as a mechanism to update
+its prior belief on the motor command. This ap-
+proach makes it possible to simulate a bidirectional
+interaction between action and perception genera-
+tive models. This is consistent with studies from
+developmental psychology suggesting that reading
+training improves handwriting skills [46], and re-
+versely, that handwriting training improves letter
+recognition scores [47].
+3. Methods
+In this section we present our model for motor
+trajectories learning. We ﬁrst describe the overall
+structure, before detailing each individual compo-
+nent.
+3.1. Architecture
+Our embodied agent perceives information from
+its environment via visual observations that we de-
+note ot, and can inﬂuence the state of the envi-
+ronment st via motor commands, denotedmt. We
+separate motor and visual pathways into two dis-
+tinct dynamical systems interacting with each other
+only via a control mechanism minimizing predic-
+tion error on the visual level. Figure 1c displays
+an overview of our computational model for motor
+sequence learning.
+April 20, 2021
+Figure 2: Recurrent neural network model used to model the sequence generation in the sensory and motor spaces. Predictions
+are denoted x and target values are denotedx∗. The middle layer corresponds to the hidden state of the generative model,
+denoted h. The upper layer corresponds to the hidden causes of the generative model, denotedc. Dashed arrows represent the
+bottom-up pathway for online inference of hidden states and hidden causes. The variablesϵand ϵ′correspond to the prediction
+errors at the diﬀerent layers of the generative model. They are used to infer an a posteriori estimate of the hidden states
+(denoted h∗) and hidden causes variables.
+In early stage of its development, we assume that
+our agent acquires a suitable forward model of its
+environment, denotedf, predicting its visual obser-
+vation based on its motor command and the previ-
+ous state of the environment: ot = f(st−1,mt).
+Since our work do not focus on the learning of such
+a model, we omitted the dependency according to
+st−1 to simplify the graph in ﬁgure 1c.
+Our agent’s training is composed of the following
+stages :
+• Learning of a visual generative model, predict-
+ing trajectories in the visual space.
+• Learning of a motor generative model accord-
+ing to the visual generative model and forward
+model.
+3.2. Predictive coding recurrent neural network
+Figure 2 represents the RNN model we use for
+the prediction and learning of the trajectories in the
+visual and motor space. This RNN implementation
+combines several ideas from [14, 15, 48].
+Taking inspiration from [15], we make a distinc-
+tion between hidden statesh and hidden causesc
+in our generative model. The hidden state is a dy-
+namic variable, in our case corresponding to the
+internal state of an RNN. The hidden causes is a
+static variable that can inﬂuence the dynamics of
+the hidden state variable. To model this inﬂuence,
+we use a gain-ﬁeld network (e.g. [49]) implemented
+as a three-way weight tensorWrec for the recurrent
+connections in the RNN. We interpret this tensor
+as a basis of size p of recurrent weights matrices
+of shape (n ×n). Here, n and p stand respec-
+tively for the dimensions of the hidden state and
+hiddencauses. Multiplyingthistensorwiththehid-
+den causes vector can thus be seen as computing a
+recurrent weight matrix from this basis using the
+hidden causes as coordinates. It ensues that diﬀer-
+ent hidden causes will provide diﬀerent hidden state
+dynamics.
+To avoid scaling issues when dealing with three-
+way tensors, [48] proposes to factor it into three ma-
+trices, such that for alli,j,k , Wijk
+rec = ∑
+l<dWil
+p ·
+Wjl
+f ·Wkl
+c . The model can scale better to large hid-
+den state and hidden causes dimensions with this
+factorization, since the dimensiondcan be adjusted
+to control the number of model parameters. In our
+experiments, we will always used= n/2. The three
+matrices Wp, Wf and Wc respectively model the
+interaction of the past hidden state, future hidden
+state, and hidden causes with the factor dimension.
+Building upon the RNN model proposed by [14],
+our model is able to learn to generate supervised
+trajectories using only local learning rules, and thus
+not requiring backpropagation of gradients through
+time. Contrary to purely top-down generative mod-
+els, only capable ofprediction, our model is also ca-
+pable of performinginference. This is achieved by
+taking inspiration from the PC theory: the RNN
+April 20, 2021
+is augmented with error neurons, denotedϵ and ϵ′,
+measuring the shift between the predicted and the
+target values at each layer. These error neurons are
+mapped onto their upper layer via feedback con-
+nections, to update either the hidden stateh or the
+hiddencauses c oftheRNN,thusperformingaform
+of Bayesian inference by updating beliefs based on
+new evidence.
+The following equations describe all the compu-
+tations occurring for one time step in the RNN, in
+the top-down pathway, forprediction:
+ht = (1 −1
+τ)h∗
+t−1 + 1
+τWf
+·((Wc
+⊺ ·ct−1)(Wp
+⊺ ·tanh(h∗
+t−1)))
+(1)
+xt = Wout ·tanh(ht) (2)
+And in the bottom-up pathway, forinference:
+ϵt = xt −x∗
+t (3)
+h∗
+t = ht −αhWout
+⊺ ·ϵt (4)
+ϵ′
+t = ht −h∗
+t (5)
+ct = ct−1 −αcWc
+·((Wf
+⊺ ·ϵ′
+t)(Wp
+⊺ ·tanh(h∗
+t−1))) (6)
+We introduced a time constantτ inﬂuencing the
+pace of the hidden state dynamics, as well as pa-
+rameters αh and αc, controlling for the weight of
+the incoming bottom-up information in the a pos-
+teriori estimation of the hidden states and hidden
+causes. We can discuss the choice of reusing the
+weights of the top-down pathway in the bottom-up
+pathway. Other approaches consider using random
+feedback weights [50, 51], or new sets of weights
+that can be learned [14]. Reusing the top-down
+weights provides a simple solution as the equations
+4 and 6 correspond to gradient descent updates on
+the hidden states and hidden causes. Compared to
+random weights, it led in our experiments to better
+accuracy during online inference, and faster conver-
+gence during learning (results not shown).
+Learning is performed in this RNN using only
+local online gradient descent rules. The output
+weightsWout are updated in order to minimize the
+prediction error on the visual level, and the recur-
+rent weightsWp, Wf and Wc are updated in or-
+der to minimize the error between the prior hidden
+state h and the posterior hidden stateh∗.
+∆Wout = −λoutϵt ·tanh(ht)⊺ (7)
+∆Wp = −λptanh(h∗
+t−1)
+·((Wc ·ct−1)(Wf ·ϵ′
+t))⊺ (8)
+∆Wf = −λfϵ′
+t
+·((Wc ·ct−1)(Wp ·tanh(h∗
+t−1)))⊺ (9)
+∆Wc = −λcct−1
+·((Wf ·ϵ′
+t)(Wp ·tanh(h∗
+t−1)))⊺ (10)
+Where λout, λp, λf, λc are the learning rates for
+the diﬀerent weight matrices of our model. The
+model we present here is generic, and our complete
+architecture features two parallel instances of this
+model, for the prediction of visual observations and
+the generation of motor commands, where the out-
+put variables are respectively denoted byov and m
+instead ofx.
+3.3. Active inference control
+As explained before, we do not have direct super-
+vision for the generation of motor sequences. In-
+stead, we will control at each time step the out-
+put value mt of our RNN using active inference,
+which will provide us with a corrected motor com-
+mand m∗
+t. Active inference frames motor con-
+trol as a minimization of prediction error (or sur-
+prise). Here, the prediction error is the distance be-
+tween the observation predicted by the visual RNN,
+and the observation predicted through the forward
+model f introduced earlier, as represented in ﬁgure
+1c. To be able to infer which action might cause
+this error to decrease, we use the forward model
+that maps actions to predicted observations. The
+corrected motor commandm∗
+t is thus computed as
+a gradient descent update onmt :
+m∗
+t = mt −αm∇mt ∥om
+t −ov
+t ∥2
+2 (11)
+= mt −αm∇mt ∥f(mt) −ov
+t ∥2
+2 (12)
+Where om
+t denotes the observation predicted
+from the motor pathway, andov
+t denotes the ob-
+servation predicted from the visual pathway.
+4. Experiments
+In this section, we perform several experiments
+to validate our approach. We start by testing the
+RNN model presented in section 3.2 on the task
+of modeling 2D handwriting trajectories, and high-
+light the features of this model that could be inter-
+esting for motor control. Second, we validate the
+April 20, 2021
+Figure 3: Predicted sequences of 2D positions at the end of training for the three given classesa (left), b (middle) andc (right).
+Each predicted position is represented as a Gaussian centered on it. The heatmaps represent the sum of these Gaussians for
+each trajectory.
+whole model by demonstrating that our architec-
+tureisabletolearntogeneraterobustmotortrajec-
+tories for handwriting. We compare our model’s en-
+coding capacity to the algorithm presented in [10].
+We experiment with diﬀerent situations that high-
+light the interest of the online interaction of the two
+modalities modeled in our architecture.
+4.1. Predictive coding RNN
+In this subsection, we experiment with isolated
+instances of the RNN model presented in section
+3.2. We ﬁrst explore the properties of this model
+used for the prediction and inference of visual tra-
+jectories. Then, we investigate the relevance of this
+model for the generation of motor trajectories.
+4.1.1. Visual prediction of handwritten trajectories
+We ﬁrst report the results obtained for the pre-
+diction of trajectories corresponding to handwrit-
+ten letters. The model is trained using 2D trajec-
+tories from the Character Trajectories Data Set of
+the UCI Machine Learning Repository [52] as tar-
+get observationso∗. We use up to 16 classes from
+the data set, each class corresponding to a diﬀerent
+letter of the alphabet. We take 20 trajectories from
+each class to form the training set, and 20 other
+trajectories to form the testing set. All trajectories
+are rescaled to last 60 time steps.
+We used for this experiment a hidden statehv of
+dimension 50, and hidden causescv of dimensionp,
+where pis the number of trajectory classes to learn
+(between 1 and 16 depending on the experiment).
+Intuitively, we would expect the hidden causes vari-
+able to correspond to a certain representation of
+the predicted trajectories. In our supervised learn-
+ing setup, we enforced the hidden causes value for
+each trajectory as the one-hot vector corresponding
+to the trajectory label (i.e. a vector of dimensionp
+ﬁlled with 0 except for a 1 on the index correspond-
+ing to the trajectory label). This was made possi-
+ble by initializing the hidden causes to this value
+at the beginning of each trajectory, and cancelling
+the hidden causes update by setting the value ofαc
+in equation 6 to 0. The initial hidden state is sam-
+pled randomly from a normal distribution and is
+shared for all trajectories. We trained our RNN on
+three letter categories, corresponding to the labels
+a, b, and c. When used for prediction, the back-
+ward propagation of prediction error is cancelled
+out by setting to 0 the values ofαh and αc. The
+predicted trajectory is completely conditioned by
+the initial hidden state and hidden causes. Figure
+3 displays the predicted trajectories as heatmaps,
+for each possible initial hidden causes a, b, or c.
+After training, the RNN is able to properly predict
+the trajectory without any supervision.
+Contrary to classical RNN models, the proposed
+architecture can performinference as well aspre-
+diction. When used forinference, the hidden states
+and hidden causes are updated by the backward
+propagation of prediction error based on given vi-
+sual observationso∗. After each update, we enforce
+thehiddencausestoencodeamultinomialprobabil-
+ity distribution on the trajectory classes by clipping
+the values between[0,1] and normalizing the vector
+to sum to 1. The initial hidden causes are chosen
+to encode a uniform discrete distribution over the
+possible classes by setting their values to1
+p.
+Figure 4 displays the process ofinference of the
+category of a given trajectory, after training. The
+target trajectories belong to the testing set, and
+April 20, 2021
+(a) Target trajectory provided
+(black) and trajectories pre-
+dicted by the RNN after 1, 3 and
+5 presentations of the target.
+(b) Evolution of the hidden
+causes neuron activations for
+the 4 categories, according to
+the number of presentations of
+the target trajectory.
+(c) Target trajectory provided
+(black) and trajectories pre-
+dicted by the RNN after 1, 3 and
+5 presentations of the target.
+(d) Evolution of the hidden
+causes neuron activations for
+the 4 categories, according to
+the number of presentations of
+the target trajectory.
+Figure 4: Inference of trajectory labels given targets. The inference process is demonstrated with the evolution of the predicted
+trajectories (a, c) and the evolution of the hidden causes (b, d) during 5 presentation of the target trajectory.
+(a) Controlled RNN trajectories, labels
+correspond to the learning rate valueαh
+used in equation 4, weighting the inﬂu-
+ence on the bottom-up signal on state
+update. The dashed line represents the
+natural RNN trajectory.
+(b) Evolution of the natural RNN trajec-
+tories throughout learning, labels corre-
+spond to training iterations. The dashed
+line represents the natural RNN trajec-
+tory before training. These trajectories
+were obtained withαh = 0.025.
+(c) Eﬀect of a perturbation onto the tra-
+jectory, after training, with or without
+control. The perturbation is applied at
+time step 20, and represented as a red
+segment. Thecontrolledtrajectoryisob-
+tained withαh = 0.2.
+Figure 5: Results for motor control in the simpliﬁed setup. The "plus" shaped marker represents the target position used by
+the active inference controller. All trajectories start with the same RNN hidden state and hidden causes.
+represent the lettersa and b. By repetitively pre-
+senting the target visual trajectory to the network,
+the hidden causes variable converges towards the
+one-hot vector corresponding to the proper class.
+This experiment shows that our RNN model can
+learn to predict visual trajectories given associated
+labels, but also infer labels given the associated vi-
+sual trajectories. It can thus be used for both gen-
+eration and classiﬁcation.
+4.1.2. Sandbox experiment for motor control
+Now that we have demonstrated the relevance of
+our model for the visual prediction and perceptual
+inference of handwritten trajectories, we investigate
+its relevance for motor control.
+In this sandbox experiment, we highlight our
+model’s ability to perform online adaptation given
+a target. We start with a simpliﬁed situation, tem-
+porarily ignoring the constraints put forward in the
+introduction, and suppose that direct supervision
+in the "motor" space is available. For visualization
+purposes, we suppose that the motor space is a 2D
+euclidean space, and that the target is constant.
+First, the motor RNN weights are initialized
+randomly. The RNN exhibits natural (i.e. un-
+controlled, without feedback) trajectories as repre-
+sented in dashed lines in ﬁgure 5a and 5b. The
+target motor command m∗ is represented by the
+"plus" shaped marker. Figure 5a shows that the
+bottom-up prediction error signal is able to adjust
+the trajectories towards the target, modulated by
+the coeﬃcient αh introduced in equation 4. This
+April 20, 2021
+Figure 6: Generated motor trajectories and predicted visual sequences of 2D positions at the end of training for the three given
+classes a (left), b (middle) andc (right). Results obtained withn= 50 and p= 3.
+online adaptation is an interesting feature for mo-
+tor generative models, as it could allow it to resist
+to noise or perturbations. In comparison to the
+previous experiment where online update of hidden
+states of the generative model was seen as a per-
+ceptual inference process, we draw here a parallel
+with motor control.
+Figure 5b displays the evolution of the natural
+trajectories the RNN exhibits throughout learning.
+At the end of learning, the natural RNN trajectory
+seems to be attracted towards the neighbourhood
+of the target position. Figure 5c shows the eﬀect of
+a perturbation applied onto the RNN hidden state
+during the generation of a trajectory, after learning.
+In the controlled case, the trajectory still converges
+towards the target position.
+These ﬁrst results show that our RNN generative
+model can learn and control simple trajectories in
+a 2D space.
+4.2. Experiments on the complete architecture
+In this subsection, we experiment with the com-
+plete architecture presented in ﬁgure 1c. This ar-
+chitecture is composed of two RNN models for the
+generation of the motor commands and visual pre-
+dictions, and a forward modelf translating motor
+commands m into expected resulting visual obser-
+vations om.
+Figure 1d represents our experimental setup for
+this experiment. Our agent evolves in an environ-
+mentwithwhichitcaninteractthroughsensorsand
+actuators. Since we focus here on motor skill learn-
+ing, we simpliﬁed the visual space of our agent by
+already decoding the position of the agent’s end-
+eﬀector from its visual input. In other words, the
+agent directly receives as visual input the position
+of its end-eﬀector in Cartesian coordinates. The
+agent acts on the 2D environment by moving the 3
+degreesoffreedomsimulatedarm. Theextremityof
+the ﬁrst joint (the shoulder) is ﬁxed on the position
+(-6, 6). The three joints are of respective lengths 6,
+4 and 2. We don’t cover here the learning of the for-
+wardmodel, andsupposethattheagenthaslearned
+through motor babbling how its actions inﬂuence
+its observations. In our experiments, the forward
+model is replaced by the real physical model out-
+putting end-eﬀector positions in Cartesian coordi-
+nates according to joint orientations. Our architec-
+ture’s training is thus composed of two stages:
+1. Supervised learning of visual handwritten tra-
+jectories : The RNN predicting trajectories in
+the visual space (2 dimensions) is trained as
+already showed in section 4.1.1.
+2. Training of the motor RNN : The RNN gener-
+ating trajectories in the motor space (3 dimen-
+sions) is trained using the method described
+in section 3.3, using the trajectories predicted
+by the visual RNN as indirect supervision to
+perform AIF.
+4.2.1. Motor generation of handwritten trajectories
+We now focus on the training of the motor RNN,
+using the learned visual prediction RNN. The vi-
+sual prediction RNN generates a trajectory of ob-
+servations that the motor RNN tries to replicate.
+We train the motor RNN according to the method
+detailed in section 3.3. The motor RNN hidden
+state and hidden causes are initialized following
+the same procedure as the visual prediction RNN:
+hidden states are initialized randomly and shared
+across the diﬀerent classes of trajectories. The ini-
+tial hidden causes are one-hot vectors of dimension
+April 20, 2021
+p (where p is the number of classes) encoding the
+trajectory label. Figure 6 displays learned motor
+trajectories along with the corresponding predicted
+visual trajectories. These results were obtained
+with a hidden state dimension ofn = 50 for both
+RNNs and withp= 3 classes, after 40000 iterations
+on the training set. Training is arguably long with
+regard to the diﬃculty of the proposed task. We
+suppose that this is due to the PC learning mech-
+anism, that can only approximate backpropagation
+properly if we let enough time for the inference of
+each variable in the computation graph to converge
+[35].
+4.2.2. Model capacity
+Figure 7: Comparison of the reconstruction error according
+to the number of trajectory classes for three models : our
+model withn= 50 and two instances of the MTRNN model
+proposed in [10] with n = 50 and n = 100. The curves
+display the average reconstruction error on the testing data
+set. Areas in transparency indicate conﬁdence intervals.
+Before analyzing other behaviours of the pro-
+posed model, we validate it by comparing its per-
+formance with two benchmark models.
+First, we compare our performance with the
+method presented in [10], proposed on a similar
+task. This method uses a Multiple Timescales RNN
+(MTRNN) [53] model for the joint generation of vi-
+sual and motor trajectories as represented in ﬁgure
+1b. The model is ﬁrst trained using visuomotor tra-
+jectories obtained through motor babbling. Then,
+optimization of the initial MTRNN hidden state
+is performed for each target visual trajectory us-
+ing BPTT. Finally, the MTRNN weights are tuned
+to ensure coherence between the visual and motor
+outputs. The detailed algorithm is presented in ap-
+pendix A.
+Second, we compare our model with a simple ar-
+chitecture composed of an RNN generating motor
+trajectories and a forward model (equivalent to the
+one present in our model) translating this motor
+output into visual trajectories. Indeed, we could
+argue that using the forward model we introduced,
+one could simply backpropagate gradients originat-
+ing from an error signal in the visual space to learn
+motor trajectories. We train such a model, that
+we label RNN+FM, using BPTT, and compare its
+performance with our model.
+Performances of the three models are evaluated
+according to their precision on the motor trajec-
+tory reconstruction, and their capacity to encode a
+large number of trajectories. Precision is measured
+with the average reconstruction error on the test-
+ing data set. Figure 7 displays the evolution of this
+error measure for our model, two instances of the
+MTRNN model, and the RNN+FM model of the
+comparison model.
+If we extract the motor RNN model from the ar-
+chitecture, and compare it with a MTRNN model
+with the same hidden state dimension, both models
+haveacomparablenumberofparameters. However,
+we could argue that thesame MTRNN can generate
+trajectories in both visual and motor space, while
+our motor RNN only generates trajectories in the
+motor space. For fair comparison, we might want
+to include into the parameter count the parame-
+ters of the visual RNN in our architecture. For this
+reason, we extend the comparison with a MTRNN
+model with a state dimension of n = 100 , with
+twice as many parameters as our two RNNs com-
+bined. Finally, note that our approach, contrary to
+the MTRNN model, assumes that a perfect forward
+model is available to perform AIF.
+Still, theresultsdisplayedinﬁgure7tendtoshow
+that our architecture can compete with other algo-
+rithms for motor trajectory learning with indirect
+supervision.
+4.2.3. Intermittent control
+One of our model’s feature not discussed previ-
+ously is the possibility to switch oﬀ the feedback
+pathway when prediction error is under a certain
+threshold. We experimented with this idea by vary-
+ing such a threshold and observing when the feed-
+back pathway would switch on and oﬀ. Figure 8
+displays results that were obtained with a hidden
+state dimension ofn= 50 with p= 3 classes, after
+training of the motor RNN.
+April 20, 2021
+Figure 8: Trajectories generated by the motor RNN, with a state dimension of 50, displayed into the visual space. The black
+dashed line represents the visual trajectory predicted by the visual RNN. The trajectories generated by the motor RNN are
+represented as successions of trajectory segments, diﬀerentiated by their color. Each new trajectory segment corresponds to an
+activation of the active inference controller, and is represented by a plus shaped marker. The diﬀerent ﬁgures correspond to
+diﬀerent activation threshold values for the controller, from left to right:3.10−4,1.10−3,3.10−3,1.10−2,3.10−2.
+Forthelowestthresholdvalue, thefeedbackpath-
+way is almost always active and the motor trajec-
+tories are controlled to accurately match the pre-
+dicted visual trajectories. For the highest thresh-
+old value, the feedback pathway never activates and
+the trajectory performed correspond to the natural
+trajectory of the motor RNN. This mechanism is
+interesting as it could be used to control the trade-
+oﬀ between precision and smoothness of the gener-
+ated trajectories in situations where the visual tar-
+get trajectory isn’t smooth.
+4.2.4. Perturbation robustness
+As previously showed in section 4.1.2, the mo-
+tor RNN should be able to dynamically adapt to
+perturbations. In this experiment, we consider ap-
+plying external perturbations of variable amplitude
+onto the motor output of our model. Perturbations
+sampled from a multivariate normal distribution of
+varianceσ2
+pI3 are added to the motor output of the
+generative model for all timestepst >10. Figure
+9 displays examples of obtained trajectories with
+or without control, and the evolution of the aver-
+age prediction error with regard to the perturbation
+amplitude σ2
+p.
+These results demonstrate that our model gener-
+ates motor trajectories robust to external perturba-
+tions.
+4.2.5. Adaptation to rescaling and rotation
+In this experiment, we consider the situation
+where a transformation is applied on the predicted
+visual trajectory. Changes of scales and rotations
+are transformations that can be applied easily on
+the visual output. However, generating the mo-
+tor commands performing these transformed visual
+trajectories is less trivial. We experiment here ap-
+plying changes of scales and orientations to the vi-
+sual prediction while controlling the motor trajec-
+tory using the prediction error feedback. Results
+of those experiments for diﬀerent scales and orien-
+tations are displayed respectively in ﬁgures 10 and
+11.
+Figure 10c displays the evolution of the error be-
+tween the motor trajectories and the rescaled test
+trajectories, with and without control. We ﬁrst no-
+April 20, 2021
+(a) Motor trajectory corresponding to
+the letter a with and without control
+for σ2
+p = 0.6.
+(b) Motor trajectory corresponding
+to the letterb with and without con-
+trol forσ2
+p = 0.6.
+(c) Average prediction error according to the perturbation
+amplitude σ2
+p. Prediction errors are measured as average
+distances with regard to corresponding test trajectories of
+the same label.
+Figure 9: Perturbation robustness experiment. At the 10th time step, we apply a random perturbation, represented in red, on
+the motor output. Our model uses the visual prediction as a guide to correct the perturbed motor trajectory.
+(a) Motor trajectory corresponding to
+the letter a with and without control
+for a scaling factor of0.6.
+(b) Motor trajectory corresponding
+to the letterb with and without con-
+trol for a scaling factor of0.6.
+(c) Average prediction error according to the scaling fac-
+tor applied on the visual prediction. Prediction errors
+are measured as average distances with regard to corre-
+sponding rescaled test trajectories of the same label.
+Figure 10: Adaptation to scaling experiment. We apply a change of scale on the visual prediction. Our model dynamically
+adapts the motor trajectory to fulﬁll best the visual prediction.
+tice that overall, reducing the scale seems to induce
+lesser prediction errors than increasing the scale.
+This is because the prediction error is computed
+as a path integral of point to point distances, thus
+sensible to the scale of the trajectories. Second,
+we notice that the improvement brought by the
+online control is less eﬀective when increasing the
+scale. This is due to the fact that the motor RNN
+was trained to exhibit trajectories of limited ampli-
+tudes. Inference of the hidden state of the RNN is
+not suﬃcient to properly control the trajectory.
+Figure 11c displays the evolution of the error be-
+tween the motor trajectories and the rotated test
+trajectories, with and without control. We notice
+that the architecture manages to adapt better to
+rotations in the counterclockwise direction. This
+could be due to the fact that performing these tra-
+jectories requires smaller modiﬁcations on the nat-
+ural motor trajectory because of the arm conﬁgu-
+ration.
+4.2.6. Impairments of the visual prediction RNN
+In all the previous experiments of this section,
+we have considered only one feedback pathway be-
+tween the two possible feedback loops in our archi-
+tecture, represented in ﬁgure 13. Whether it was to
+learn motor trajectories, for intermittent control, to
+adapt to perturbations on the motor output, or to
+adapt to transformations on the visual prediction,
+we only used the visual to motor feedback pathways
+(ﬁgure 13a). Since the motor RNN was trained us-
+ing the visual prediction RNN, using the motor pre-
+April 20, 2021
+(a) Motor trajectory corresponding to
+the letter a with and without control
+for a rotation of angleπ/4.
+(b) Motor trajectory corresponding
+to the letterb with and without con-
+trol for a rotation of angleπ/4.
+(c) Average prediction error according to the angle of
+the rotation applied to the visual prediction. Prediction
+errors are measured as average distances with regard to
+corresponding rotated test trajectories of the same label.
+Figure 11: Adaptation to rotation experiment. We apply a rotation on the visual prediction. Our model dynamically adapts
+the motor trajectory to fulﬁll best the visual prediction.
+(a) Predicted visual trajectory corre-
+sponding to the lettera with and with-
+out correction forσ2
+i = 0.1.
+(b) Predicted visual trajectory corre-
+sponding to the letterb with and with-
+out correction forσ2
+i = 0.1.
+(c) Average prediction error according to the impairment
+amplitude σ2
+i . Prediction errors are measured as average
+distances with regard to corresponding test trajectories
+of the same label.
+Figure 12: Impairments experiment. The visual RNN is impaired by applying a multiplicative noise of varying amplitude onto
+its parameters. Our model uses the motor prediction as a guide to correct the visual trajectory.
+dictions om to control for the visual predictionsov
+would only result in less precise visual predictions.
+However, the symmetry of the interaction be-
+tween the two modalities can still be exploited in
+situations where the visual prediction RNN per-
+forms worse than the motor RNN. To create such
+situations, we impaired the visual prediction RNN
+by applying a multiplicative noiseN(1,σ2
+i) to the
+model’s parametersWout, Wp, Wf , Wc. We ar-
+gue that this situation can arise naturally if we con-
+sider the lifelong learning of an agent. The impair-
+ment we simulated here could correspond to the
+forgetting of the visual prediction RNN, that could
+be due to training on a diﬀerent task.
+Similarly to the previous experiments, we display
+inﬁgure12examplesofpredictedvisualtrajectories
+with or without correction from the motor RNN,
+and the evolution of the average prediction error
+with regard to the impairment amplitudeσ2
+i. These
+results demonstrate that knowledge in our architec-
+ture can be transferred in both directions.
+We have only considered the collaborative sit-
+uation where the two RNN models had the same
+prior belief about the trajectory being written, i.e.
+the same initial hidden causes in our architecture.
+We could also conceive the situation where both
+systems compete to convince the other of its own
+belief. In this hypothesised situation, not exper-
+imented in this article, both feedback pathways
+would be used at the same time.
+April 20, 2021
+(a) Visual to motor feed-
+backpathway. Generatedmo-
+tor trajectories are controlled
+based on the visual predic-
+tion.
+(b) Motor to visual feed-
+back pathway. Predicted vi-
+sual trajectories are corrected
+based on the motor predic-
+tion.
+Figure 13: Prediction error feedback pathways.
+5. Discussion
+We have shown how an architecture can learn
+motor trajectories from an indirect supervision in
+the visual space. The adaptive behaviour result-
+ing from the addition of prediction error bottom-
+up pathways, and the bidirectional interactions be-
+tween the vision prediction RNN and the motor
+RNN, give our model the ability to dynamically
+control motor trajectories according to visual pre-
+dictions. We have evaluated our model in dif-
+ferent experimental setups highlighting interesting
+features such as intermittent control, robustness to
+perturbation, and adaptation to scaling and rota-
+tion.
+These properties are reminiscent of the behaviors
+sought by the line of research on Dynamical Move-
+ment Primitives (DMP) [54], aiming at modeling
+attractor behaviors for autonomous nonlinear dy-
+namical systems. The essence of the approach is to
+deﬁne a simple dynamical system, and tune it so
+that it exhibits prescribed attractor dynamics by
+means of a learnable forcing term. The online con-
+trol performed by the prediction error minimization
+process in our model gives rise to similar attractor
+behaviors when confronted with external perturba-
+tions.
+The clear separation between the sensory path
+and the motor path could allow our agent to learn
+motor trajectories with diﬀerent forward models
+(for instance right hand and left hand), based on a
+unique representation of the trajectory in the visual
+space. This can also be useful in case of modiﬁca-
+tions of the robot’s limbs, for instance by removing
+(amputation) or adding a joint (use of a tool).
+The bidirectionality of the proposed architecture
+can also allow a knowledge transfer from the motor
+system to the visual system. A notable limitation
+is that we had to manually set the diﬀerent learn-
+ing rate coeﬃcients αv
+h, αm
+h , αv
+c and αh
+c to direct
+the inﬂuence of the two networks onto each other.
+A possible solution could be the estimation of the
+variance of each random variable in the generative
+models to account for diﬀerent levels of certainty
+of priors. The inﬂuence between the two networks
+would then naturally be directed from the system
+with the highest certainty to the one with the low-
+est. This property, called precision weighting, can
+naturally result from the modelisation of hidden
+states as random variables distribution as proposed
+in the free energy formulation of PC [15].
+Another important limitation of this work is the
+assumption that a perfect forward model is avail-
+able. The natural solution to this limitation would
+be to include the forward model learning into our
+architecture. Interestingly, theforwardmodelcould
+also incorporate hidden causes variables that could
+be inferred dynamically, allowing for fast adapta-
+tions to modiﬁcations of the forward model such as
+limb amputation or tool use. Adaptation to vari-
+ability of body layouts have been investigated pre-
+viously in [49, 55].
+The proposed model learns motor trajectories ac-
+cording to corresponding trajectories in its sensory
+space. In future work, we could imagine using the
+same approach to learn motor trajectories in more
+complexenvironments, forinstancemanipulationof
+objects with a robotic arm using visual feedback,
+or navigation in an environment with ﬁrst-person
+view.
+Future work could also investigate more deeply
+into the behavior of the RNN model proposed in
+section 3.2. We have shown that the modelisation
+of hidden causes gives our model the ability to dy-
+namically perform inference of a representation of
+the provided trajectories, making it a system capa-
+ble of performing both generation and classiﬁcation
+of sequences. In particular, the fact that diﬀerent
+hidden causes generate diﬀerent hidden state dy-
+namics could allow this model to generate a large
+variety of target trajectories, compared to standard
+RNNs with ﬁxed dynamics. Preliminary work in
+this direction tends to show that this model could
+exhibit interesting dynamics known as chaotic itin-
+erancy [56, 57].
+April 20, 2021
+References
+[1] S. Hochreiter and J. Schmidhuber, “Long short-term
+memory,”Neural Computation, vol. 9, no. 8, pp. 1735–
+1780, 1997.
+[2] I. Sutskever, G. E. Hinton, and G. W. Taylor, “The
+recurrent temporal restricted boltzmann machine,” in
+Advances in Neural Information Processing Systems,
+vol. 21, pp. 1601–1608, 2009.
+[3] R. J. Williams and D. Zipser, “Experimental analysis of
+the real-time recurrent learning algorithm,”Connection
+Science, vol. 1, no. 1, pp. 87–111, 1989.
+[4] D. Verstraeten, B. Schrauwen, M. D’Haene, and
+D. Stroobandt, “An experimental uniﬁcation of reser-
+voir computing methods,” Neural Network, vol. 20,
+pp. 391–403, 2007.
+[5] M. Lukoševičius and H. Jaeger, “Reservoir computing
+approaches to recurrent neural network training,”Com-
+puter Science Review, vol. 3, no. 3, pp. 127 – 149, 2009.
+[6] K. Friston, J. Daunizeau, and S. Kiebel, “Reinforcement
+learning or active inference?,”PLoS ONE, vol. 4, no. 7,
+p. e6421, 2009.
+[7] K. Friston, T. FitzGerald, F. Rigoli, P. Schwarten-
+beck, J. O’Doherty, and G. Pezzulo, “Active inference
+and learning,”Neuroscience & Biobehavioral Reviews,
+vol. 68, pp. 862–879, 2016.
+[8] K. Friston and J. Kilner, “A free energy principle for
+the brain,”J. Physiol. Paris, vol. 100, pp. 70–87, 2006.
+[9] C. L. Buckley, C. S. Kim, S. McGregor, and A. K. Seth,
+“The free energy principle for action and perception: A
+mathematical review,” Journal of Mathematical Psy-
+chology, vol. 81, pp. 55 – 79, 2017.
+[10] K. Mochizuki, S. Nishide, H. G. Okuno, and T. Ogata,
+“Developmental human-robot imitation learning of
+drawing with a neuro dynamical system,” in2013 IEEE
+International Conference on Systems, Man, and Cyber-
+netics, pp. 2336–2341, 2013.
+[11] K. Sasaki and T. Ogata, “Adaptive drawing behavior by
+visuomotor learning using recurrent neural networks,”
+IEEE Transactions on Cognitive and Developmental
+Systems, vol. 11, no. 1, pp. 119–128, 2019.
+[12] R. Rao and D. Ballard, “Predictive coding in the vi-
+sual cortex a functional interpretation of some extra-
+classical receptive-ﬁeld eﬀects,” Nat Neurosci, vol. 2,
+pp. 79–87, 1999.
+[13] A. Clark, “Whatever next? predictive brains, situated
+agents, and the future of cognitive science,”Behavioral
+and Brain Sciences, vol. 36, no. 3, p. 181–204, 2013.
+[14] A. Ororbia, A. Mali, C. L. Giles, and D. Kifer, “Con-
+tinual learning of recurrent neural networks by locally
+aligning distributed representations,” IEEE Trans-
+actions on Neural Networks and Learning Systems,
+vol. 31, no. 10, pp. 4267–4278, 2020.
+[15] K. Friston and S. Kiebel, “Predictive coding under
+the free-energy principle,” Philosophical Transactions
+of the Royal Society of London. Series B, Biological
+Sciences, vol. 364, pp. 1211–21, 2009.
+[16] W. Wang, S. S. Chan, D. A. Heldman, and D. W.
+Moran, “Motor cortical representation of hand trans-
+lation and rotation during reaching,”Journal of Neu-
+roscience, vol. 30, no. 3, pp. 958–962, 2010.
+[17] G. M. Hoerzer, R. Legenstein, and W. Maass, “Emer-
+gence of Complex Computational Structures From
+Chaotic Neural Networks Through Reward-Modulated
+Hebbian Learning,”Cerebral Cortex, vol. 24, pp. 677–
+690, 11 2012.
+[18] F. Mannella and G. Baldassarre, “Selection of cortical
+dynamics for motor behaviour by the basal ganglia,”
+Biol. Cybern., vol. 109, p. 575–595, Dec. 2015.
+[19] R. Shadmehr, M. A. Smith, and J. W. Krakauer, “Error
+correction, sensory prediction, and adaptation in motor
+control,”Annual Review of Neuroscience, vol. 33, no. 1,
+pp. 89–108, 2010. PMID: 20367317.
+[20] S. H. Creem-Regehr, “Sensory-motor and cognitive
+functions of the human posterior parietal cortex in-
+volved in manual actions,” Neurobiology of Learning
+and Memory, vol. 91, no. 2, pp. 166 – 171, 2009. Special
+Issue: Parietal Cortex.
+[21] S.Planton, M.Longcamp, P.Péran, J.-F.Démonet, and
+M. Jucla, “How specialized are writing-speciﬁc brain
+regions? an fmri study of writing, drawing and oral
+spelling,”Cortex, vol. 88, pp. 66 – 80, 2017.
+[22] G. Pezzulo and P. Cisek, “Navigating the aﬀordance
+landscape: Feedback control as a process model of be-
+havior and cognition,” Trends in Cognitive Sciences,
+vol. 20, no. 6, pp. 414 – 424, 2016.
+[23] H. Mushiake, N. Saito, K. Sakamoto, Y. Itoyama, and
+J. Tanji, “Activity in the lateral prefrontal cortex re-
+ﬂects multiple steps of future events in action plans,”
+Neuron, vol. 50, no. 4, pp. 631 – 641, 2006.
+[24] M. Botvinick and J. An, “Goal-directed decision mak-
+ing in prefrontal cortex: A computational framework,”
+Advances in neural information processing systems,
+vol. 21, p. 169—176, 2009.
+[25] R. Pascanu, T. Mikolov, and Y. Bengio, “Under-
+standing the exploding gradient problem,” CoRR,
+vol. abs/1211.5063, 2012.
+[26] J. Martens, “Deep learning via hessian-free optimiza-
+tion,” inICML, 2010.
+[27] J. Martens and I. Sutskever, “Learning recurrent neural
+networks with hessian-free optimization,” inProceed-
+ings of the 28th international conference on machine
+learning (ICML-11), pp. 1033–1040, 2011.
+[28] A. Graves, “Generating sequences with recurrent neural
+networks,”CoRR, vol. abs/1308.0850, 2013.
+[29] W. Maass, T. Natschläger, and H. Markram, “Real-
+time computing without stable states: A new frame-
+work for neural computation based on perturbations,”
+Neural Computation, vol. 14, no. 11, pp. 2531–2560,
+2002.
+[30] H. Jaeger, “The “echo state” approach to analysing and
+training recurrent neural networks,”GMD-Report 148,
+German National Research Institute for Computer Sci-
+ence, 01 2001.
+[31] R. Laje and D. Buonomano, “Robust timing and motor
+patterns by taming chaos in recurrent neural networks,”
+Nature Neuroscience, vol. 16, no. 7, pp. 925–935, 2013.
+[32] F. Triefenbach, A. Jalalvand, B. Schrauwen, and J.-P.
+Martens, “Phoneme recognition with large hierarchical
+reservoirs,” inAdvances in Neural Information Process-
+ing Systems(J. Laﬀerty, C. Williams, J. Shawe-Taylor,
+R. Zemel, and A. Culotta, eds.), vol. 23, p. 9, Neural
+Information Processing System Foundation, 2010.
+[33] P. Vlachas, J. Pathak, B. Hunt, T. Sapsis, M. Girvan,
+E. Ott, and P. Koumoutsakos, “Backpropagation algo-
+rithms and reservoir computing in recurrent neural net-
+works for the forecasting of complex spatiotemporal dy-
+namics,”Neural Networks, vol. 126, pp. 191 – 217, 2020.
+[34] J. C. R. Whittington and R. Bogacz, “An approxima-
+April 20, 2021
+tion of the error backpropagation algorithm in a predic-
+tive coding network with local hebbian synaptic plastic-
+ity,”Neural Computation, vol. 29, no. 5, pp. 1229–1262,
+2017. PMID: 28333583.
+[35] B. Millidge, A. Tschantz, and C. L. Buckley, “Predictive
+coding approximates backprop along arbitrary compu-
+tation graphs,” 2020.
+[36] K. S. Walsh, D. P. McGovern, A. Clark, and R. G.
+O’Connell, “Evaluating the neurophysiological evidence
+for predictive processing as a model of perception,”An-
+nals of the New York Academy of Sciences, vol. 1464,
+no. 1, pp. 242–268, 2020.
+[37] P. Dayan, G. E. Hinton, R. M. Neal, and R. S. Zemel,
+“The helmholtz machine,”Neural Computation, vol. 7,
+no. 5, pp. 889–904, 1995.
+[38] D. C. Knill and A. Pouget, “The bayesian brain: the
+role of uncertainty in neural coding and computation,”
+Trends in Neurosciences, vol. 27, no. 12, pp. 712 – 719,
+2004.
+[39] D. Ha and D. Eck, “A neural representation of sketch
+drawings,”CoRR, vol. abs/1704.03477, 2017.
+[40] A. Philippsen and Y. Nagai, “A predictive coding ac-
+count for cognition in human children and chimpanzees:
+A case study of drawing,”IEEE Transactions on Cog-
+nitive and Developmental Systems, pp. 1–1, 2020.
+[41] L. Pio-Lopez, A. Nizard, K. Friston, and G. Pezzulo,
+“Activeinferenceandrobotcontrol: acasestudy,” Jour-
+nal of The Royal Society Interface, vol. 13, no. 122,
+p. 20160616, 2016.
+[42] G. Oliver, P. Lanillos, and G. Cheng, “Active infer-
+ence body perception and action for humanoid robots,”
+CoRR, vol. abs/1906.03022, 2019.
+[43] A. Ciria, G. Schillaci, G. Pezzulo, V. V. Hafner, and
+B. Lara, “Predictive processing in cognitive robotics: a
+review,” 2021.
+[44] A. Pitti, P. Gaussier, and M. Quoy, “Iterative free-
+energy optimization for recurrent neural networks (in-
+ferno),”PLOS ONE, vol. 12, pp. 1–33, 03 2017.
+[45] L. Annabi, A. Pitti, and M. Quoy, “Autonomous learn-
+ing and chaining of motor primitives using the free en-
+ergy principle,” in2020 International Joint Conference
+on Neural Networks (IJCNN), pp. 1–8, 2020.
+[46] A. Vinter and E. Chartrel, “Eﬀects of diﬀerent types of
+learning on handwriting movements in young children,”
+Learning and Instruction, vol. 20, no. 6, pp. 476 – 486,
+2010.
+[47] M. Longcamp, M.-T. Zerbato-Poudou, and J.-L. Ve-
+lay, “The inﬂuence of writing practice on letter recogni-
+tion in preschool children: A comparison between hand-
+writing and typing,”Acta Psychologica, vol. 119, no. 1,
+pp. 67 – 79, 2005.
+[48] G. W. Taylor and G. E. Hinton, “Factored conditional
+restricted boltzmann machines for modeling motion
+style,” inProceedings of the 26th Annual International
+Conference on Machine Learning, ICML ’09, (New
+York, NY, USA), p. 1025–1032, Association for Com-
+puting Machinery, 2009.
+[49] J. Abrossimoﬀ, A. Pitti, and P. Gaussier, “Visual learn-
+ing for reaching and body-schema with gain-ﬁeld net-
+works,” in 2018 Joint IEEE 8th International Con-
+ference on Development and Learning and Epigenetic
+Robotics (ICDL-EpiRob), pp. 197–203, 2018.
+[50] T. P. Lillicrap, D. Cownden, D. B. Tweed, and C. J.
+Akerman, “Random synaptic feedback weights support
+error backpropagation for deep learning,”Nature com-
+munications, vol. 7, p. 13276, November 2016.
+[51] A. Nøkland, “Direct feedback alignment provides learn-
+ing in deep neural networks,” inAdvances in Neural
+Information Processing Systems(D. Lee, M. Sugiyama,
+U. Luxburg, I. Guyon, and R. Garnett, eds.), vol. 29,
+pp. 1037–1045, Curran Associates, Inc., 2016.
+[52] D. Dua and C. Graﬀ, “Uci machine learning repository,”
+[http://archive.ics.uci.edu/ml]. Irvine, CA: University
+of California, School of Information and Computer Sci-
+ence, 2019.
+[53] Y. Yamashita and J. Tani, “Emergence of functional
+hierarchy in a multiple timescale neural network model:
+A humanoid robot experiment,”PLOS Computational
+Biology, vol. 4, pp. 1–18, 11 2008.
+[54] A. J. Ijspeert, J. Nakanishi, H. Hoﬀmann, P. Pastor,
+andS.Schaal, “Dynamicalmovementprimitives: Learn-
+ing attractor models for motor behaviors,”Neural Com-
+putation, vol. 25, no. 2, pp. 328–373, 2013. PMID:
+23148415.
+[55] R. Braud, A. Pitti, and P. Gaussier, “A modular dy-
+namic sensorimotor model for aﬀordances learning, se-
+quences planning, and tool-use,”IEEE Transactions on
+Cognitive and Developmental Systems, vol. 10, no. 1,
+pp. 72–87, 2018.
+[56] I. Tsuda, “Chaotic itinerancy and its roles in cogni-
+tive neurodynamics,”Current Opinion in Neurobiology,
+vol. 31, pp. 67 – 71, 2015. SI: Brain rhythms and dy-
+namic coordination.
+[57] K. Inoue, K. Nakajima, and Y. Kuniyoshi, “Design-
+ing spontaneous behavioral switching via chaotic itin-
+erancy,” 2020.
+April 20, 2021
+Appendices
+A. MTRNN training procedure
+The training procedure for the MTRNN described in [10] comprises two phases: a motor babbling phase
+and an imitation learning phase. The motor babbling phase allows for a proper initialization of the MTRNN
+weights using sensorimotor trajectories collected with random interactions with the environment. The
+imitation learning phase trains the model in order to generate desired trajectories with a supervision in the
+sensory (here visual) space. Here is how we implemented these two phases:
+Algorithm 1:Motor babbling phase
+Initialize the MTRNN ;
+for 0 ≤i<I 1 do
+Generate a motor trajectory with a random initial hidden stateh0;
+Perform the motor trajectory(mt)0≤t<T;
+Collect the corresponding visual trajectory(ot)0≤t<T;
+Train the MTRNN using the visual trajectory as target and the same initial hidden stateh0;
+end
+Algorithm 2:Imitation learning phase
+for 0 ≤i<I 2 do
+for 0 ≤k<p do
+Infer through BPTT the initial hidden stateh0 of the MTRNN generating the target visual
+trajectory (o∗
+t,k)0≤t<T;
+Generate the motor trajectory with the obtained initial hidden stateh0;
+Perform the motor trajectory(mt)0≤t<T;
+Collect the corresponding visual trajectory(ot)0≤t<T;
+Train the MTRNN using the visual trajectory as target and the same initial hidden stateh0;
+end
+end
+In these algorithms,I1 and I2 respectively denote the number of training iterations in the babbling phase
+and in the imitation phase, andpdenotes the number of visual trajectories in the training data set that we
+learn to reproduce. In our experiments, we variedp, and usedI1 = 3000 and I2 = 2000.
+Note that in the MTRNN model, there are actually several hidden states corresponding to the diﬀerent
+timescales of the model. In our experiments, we used a model with two timescalesτf = 5 (fast) andτs = 10
+(slow), with hidden state dimensions ofnf = ns = n/2, wheren is the total hidden state dimension.
+B. Repository
+The code for the implementation and training of our model is made available in the following repository:
+https://github.com/sino7/bidirectional-interaction-between-visual-and-motor-generative-models.
+C. Examples of generated trajectories
+In this appendix, we display more examples of trajectories obtained in our experiments with perturbations
+on the motor output, transformations of the visual predictions, and impairments on the visual RNN.
+April 20, 2021
+Figure 14: Examples of trajectories obtained in the perturbation experiment, for diﬀerent perturbation amplitudes σ2
+p ∈
+{0.0,0.2,0.4,0.6,0.8,1.0}. Blue lines represent the uncontrolled motor trajectories displayed in the visual space. Green lines
+represent the predicted visual trajectories. Gray lines represent the corrected motor trajectories displayed in the visual space.
+These trajectories were obtained with an RNN hidden state dimension of 50 after training.
+Figure 15: Examples of trajectories obtained in the scaling experiment, for diﬀerent scales s ∈
+{0.2,0.4,0.6,0.8,1.0,1.2,1.4,1.6,1.8,2.0}. Blue lines represent the uncontrolled motor trajectories displayed in the vi-
+sual space. Green lines represent the rescaled visual trajectories. Gray lines represent the corrected motor trajectories
+displayed in the visual space. These trajectories were obtained with an RNN hidden state dimension of 50 after training.
+April 20, 2021
+Figure 16: Examples of trajectories obtained in the rotation experiment, for diﬀerent rotation angles θ ∈
+{−π/4,−π/6,−π/12,0,π/12,π/6,π/4}. Blue lines represent the uncontrolled motor trajectories displayed in the visual space.
+Green lines represent the rotated visual trajectories. Gray lines represent the corrected motor trajectories displayed in the
+visual space. These trajectories were obtained with an RNN hidden state dimension of 50 after training.
+Figure 17: Examples of trajectories obtained in the visual impairment experiment, for diﬀerent impairment amplitudesσ2
+i ∈
+{0.0,0.02,0.04,0.06,0.08,0.1}. Bluelinesrepresenttheuncontrolledmotortrajectoriesdisplayedinthevisualspace. Greenlines
+represent the visual trajectories predicted by the impaired visual RNN. Gray lines represent the corrected visual trajectories.
+These trajectories were obtained with an RNN hidden state dimension of 50 after training.
+April 20, 2021

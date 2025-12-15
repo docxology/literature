@@ -1,0 +1,601 @@
+ALGO: Object-Grounded Visual Commonsense Reasoning for Open-World
+Egocentric Action Recognition
+Sanjoy Kundu
+Auburn University
+Auburn, Alabama, USA
+szk0266@auburn.edu
+Shubham Trehan
+Auburn University
+Auburn, Alabama, USA
+szt0113@auburn.edu
+Sathyanarayanan N Aakur
+Auburn University
+Auburn, Alabama, USA
+san0028@auburn.edu
+Abstract
+Learning to infer labels in an open world, i.e., in an
+environment where the target “labels” are unknown, is an
+important characteristic for achieving autonomy. Founda-
+tion models pre-trained on enormous amounts of data have
+shown remarkable generalization skills through prompting,
+particularly in zero-shot inference. However, their perfor-
+mance is restricted to the correctness of the target label’s
+search space. In an open world, this target search space can
+be unknown or exceptionally large, which severely restricts
+the performance of such models. To tackle this challenging
+problem, we propose a neuro-symbolic framework called
+ALGO - A ction L earning with G rounded Object recogni-
+tion that uses symbolic knowledge stored in large-scale
+knowledge bases to infer activities in egocentric videos
+with limited supervision using two steps. First, we propose
+a neuro-symbolic prompting approach that uses object-
+centric vision-language models as a noisy oracle to ground
+objects in the video through evidence-based reasoning. Sec-
+ond, driven by prior commonsense knowledge, we discover
+plausible activities through an energy-based symbolic pat-
+tern theory framework and learn to ground knowledge-
+based action (verb) concepts in the video. Extensive exper-
+iments on four publicly available datasets (EPIC-Kitchens,
+GTEA Gaze, GTEA Gaze Plus) demonstrate its perfor-
+mance on open-world activity inference.
+1. Introduction
+Humans display a remarkable ability to recognize unseen
+concepts (actions, objects, etc.) by associating known
+concepts gained through prior experience and reasoning
+over their attributes. Key to this ability is the notion
+of “grounded” reasoning, where abstract concepts can be
+mapped to the perceived sensory signals to provide evidence
+to confirm or reject hypotheses. In this work, we aim to
+create a computational framework that tackles open-world
+egocentric activity understanding. We define an activity
+as a complex structure whose semantics are expressed by
+a combination of actions (verbs) and objects (nouns). To
+recognize an activity, one must be cognizant of the object
+label, action label, and the possibility of any combination
+since not all actions are plausible for an object. Supervised
+learning approaches [10, 19, 24, 28] have been the domi-
+nant approach to activity understanding but are trained in a
+“closed” world, where there is an implicit assumption about
+the target labels. The videos during inference will always
+belong to the label space seen during training. Zero-shot
+learning approaches [5, 18, 33, 34] relax this assumption
+by considering disjoint “seen” and “unseen” label spaces
+where all labels are not necessarily represented in the train-
+ing data. This setup is a known world, where the target la-
+bels are pre-defined and aware during training. In this work,
+we define an open world to be one where the target labels
+are unknown during both training and inference. The goal
+is to recognize elementary concepts and infer the activity.
+We propose to tackle this problem using a neuro-symbolic
+framework that leverages advances in multi-modal founda-
+tion models to ground concepts from symbolic knowledge
+bases, such as ConceptNet [26], in visual data. The over-
+all approach is shown in Figure 1. Using the energy-based
+pattern theory formalism [2, 4, 12] to represent symbolic
+knowledge, we ground objects (nouns) using CLIP [22] as
+a noisy oracle. Driven by prior knowledge, novel activities
+(verb+noun) are inferred, and the associated action (verb) is
+grounded in the video to learn visual-semantic associations
+for novel, unseen actions.
+The contributions of this work are three-fold: (i) We
+present a neuro-symbolic framework to leverage composi-
+tional properties of objects to prompt CLIP for evidence-
+based grounding. (ii) We propose object-driven activity
+discovery as a mechanism to reason over prior knowledge
+and provide action-object affinities to constrain the search
+space. (iii) We demonstrate that the inferred activities can
+be used to ground unseen actions (verbs) from symbolic
+knowledge in egocentric videos, which can generalize to
+arXiv:2406.05722v1  [cs.CV]  9 Jun 2024
+Gaze-driven ROI Selection
+Noisy Grounding Model
+(CLIP)
+Concept Search Space
+Objects
+biscuit, bowl, bread, broccoli, carrot, cereal, cheese, chocolate, coke,
+cup, Fanta, fork, fork box, honey, jam, ketchup, knife, pepper, burner,
+container, drawer, egg, freezer, fridge, microwave, milk, ...
+Actions
+close, cut, compress, crack, open, pour, put, read, take, turn, eat, cook,
+spread, slice, measure, wash, dip, store, roast, wipe, clean, ...
+Prior-driven
+Prompting
+Action-Object
+Affinity Prior
+Object-driven Concept
+Contextualization
+Commonsense
+Knowledgebase
+Evidence-Based
+Object Grounding
+Energy-based Pattern
+Theory Inference
+Action
+Search SpaceGrounded Object Search Space
+Temporal
+Smoothing 
+Update Action
+Prior
+Visual Semantic
+Action Grounding
+Object-Driven Activity
+DiscoveryTop-K Activity Interpretations
+CLIP Feature
+Pepper
+IsA
+Vegetable
+IsA
+Green Pepper
+IsA
+Jalapeno
+CLIP Feature
+Microwave
+IsA
+Appliance
+AtLocation
+Counter
+IsA
+Oven
+Green Pepper
+CLIP Feature
+IsA
+Vegetable
+IsAIsA
+Video Feature
+Jalapeno
+RelatedTo
+Take
+Pepper
+RelatedTo
+Food
+IsA IsA Microwave
+CLIP Feature
+AtLocation
+Counter
+IsA
+/
+IsA
+Video Feature
+Oven
+Open
+UsedFor
+HasProperty
+Door
+Appliance
+HasProperty
+Figure 1. Overall architecture of the proposed approach (ALGO) is illustrated here. Using a two-step process, we firstground the objects
+within a gaze-driven ROI using CLIP [22] as a noisy oracle before reasoning over the plausible activities performed in the video.
+unseen and unknown action spaces.
+Egocentric video analysis has been extensively ex-
+plored in computer vision literature, having applications in
+virtual reality [13] and human-machine interaction. While
+Supervised learning has been the dominant approach such
+as [27], [19], [29, 35], [23] along with some zero-shot
+learning approaches [24, 33], KGL [4] is one of the first
+works to address the problem of open-world understand-
+ing. They represent knowledge elements derived from
+ConceptNet [26], using pattern theory [2, 9, 12]. Their
+method depends on an object detector to link objects in
+a source domain before translating concepts to the target
+space via ConceptNet-based semantic connections. How-
+ever, this approach has drawbacks: (i) false alarms may
+arise if the initial object detector misses the object, resort-
+ing to the closest object instead, and (ii) it relies on Con-
+ceptNet for correspondences, potentially disregarding ob-
+jects with zero corresponding probabilities. The develop-
+ment of object-centric foundation models has enabled im-
+pressive capabilities in zero-shot object recognition in im-
+ages, as demonstrated by CLIP [22], DeCLIP [17], and
+ALIGN [14]. Recent works, such as EGO-VLP [18], Hier-
+VL [5], LA VILLA [34], and CoCa [31] have expanded the
+scope of multimodal foundation models to include egocen-
+tric videos and have achieved impressive performance in
+zero-shot generalization which requires substantial amounts
+of curated pre-training data to learn semantic associations
+among concepts. Neuro-symbolic models [4, 15, 21, 30]
+show promise in reducing the increasing dependency on
+data. We extend the idea of neuro-symbolic reasoning to
+address egocentric, open-world activity recognition.
+2. Proposed Framework: ALGO
+Problem Formulation.Our task is to recognize unknown
+activities in egocentric videos within an open-world setting.
+We aim to develop a framework that identifies elementary
+concepts, establishes semantic associations, and effectively
+combines these to interpret the observed activity. Activities
+are formed by combining concepts from two distinct sets:
+an object (nouns) (Gobj) and an action (verbs) (Gact) drawn
+from a predefined search space.
+Overview. Our proposed framework ALGO (Action
+Learning with Grounded Object recognition), as illustrated
+in Figure 1 tackles the problem of discovering novel ac-
+tions in an open world. It starts by hypothesizing the plausi-
+ble objects through evidence-based object grounding (Sec-
+tion 2.1) by exploring prior knowledge from a symbolic
+knowledge base. An energy-based inference mechanism
+(Section 2.2) then identifies the plausible actions on these
+objects. We leverage visual-semantic action grounding to
+discover activities without explicit supervision by employ-
+ing tools like CLIP [22] and ConceptNet [26], respectively.
+Knowledge Representation. We use Grenander’s pat-
+tern theory [12] to represent the knowledge, integrating
+neural and symbolic elements in a unified, energy-based
+representation. We refer the reader to Aakur et al. [2] and
+de Souza et al. [9] for a deeper exploration of knowledge
+representation in pattern theory.
+2.1. Evidence-based Object Grounding
+The first step to assess the plausibility of object concepts
+(generators {go
+1, go
+2, . . . go
+i } ∈Gobj) by grounding them in
+the input video Vi. Grounding gathers evidence to support
+or reject a concept’s presence. To enhance object recog-
+nition accuracy, we propose a neuro-symbolic mechanism
+that leverages compositional properties from ConceptNet to
+compute the likelihood of an object’s presence. This in-
+volves constructing an ego-graph for each object and using
+CLIP to evaluate the likelihood of ungrounded generators,
+using prior knowledge to assess the presence of grounded
+object generators.
+Given this set of ungrounded generators ( {¯go
+i }∀go
+i ∈
+Gobj), we then prompt CLIP to provide likelihoods for each
+ungrounded generator p(¯go
+i |It) to compute the evidence-
+based likelihood for each grounded object generator go
+i as
+defined by the probability p(go
+i |¯go
+i , It, KCS ) = p(go
+i |It) ∗P
+∀¯go
+i
+p(go
+i , ¯go
+i |Ego
+i ) ∗ p(¯go
+i )|It)
+
+2
+, where p(go
+i , ¯go
+i |Ego
+i )
+is the edge weight from the edge graph Ego
+i (sampled from
+a knowledge graph KCS ) that acts as a prior for each un-
+grounded evidence generator ¯go
+i , and p(¯go
+i )|It) is the like-
+lihood from CLIP for its presence in each frame It. To fo-
+cus on relevant objects, we use the human gaze to select
+a specific region for analysis, leveraging object-grounding
+insights.
+2.2. Object-driven Activity Discovery
+The next step focuses on identifying plausible activ-
+ities in the video by considering object affordances
+and the compatibility of action-object pairs using
+prior knowledge. The probability of an activity (de-
+fined by an action generator ga
+i and a grounded
+object generator go
+j) is given by p(ga
+i , go
+j|KCS ) =
+arg max∀E∈KCS
+P
+(¯gm,¯gn)∈E wk ∗ KCS (¯gm, ¯gn). where
+E is the collection of all paths between ga
+i and go
+j in a
+commonsense knowledge graph KCS , wi is a weight drawn
+from an exponential decay function based on the distance
+of the node ¯gn from ga
+i . After filtering for compositional
+properties, the path with the maximum weight is chosen
+with the optimal action-object affinity.
+Energy-based Activity Inference. To infer activities,
+we assign an energy term to each label using configurations
+composed of generators connected by affinity-based bonds.
+Each configuration includes a grounded object generator
+(go
+i ), its ungrounded evidence generators ( ¯go
+j ), an action
+generator ( ga
+k), and related ungrounded generators, struc-
+tured by a graph derived from ConceptNet. The energy of a
+configuration ci is expressed as:
+E(c) = ϕ(p(go
+i |¯go
+j , It, KCS )) + ϕ(p(ga
+k, go
+i |KCS ))
++ ϕ(p(ga
+k|It))
+(1)
+Hence, activity inference becomes an optimization over
+Equation 1 to find the configuration (or activity interpre-
+tation) with the least energy.
+2.3. Visual-Semantic Action Grounding
+In this step we aim to map inferred action verbs into a
+semantic embedding space provided by ConceptNet Num-
+berbatch, using a linear projection to translate visual fea-
+tures from the video to 300-dimensional semantic vectors
+(R1×300). This process involves training a mapping func-
+tion ψ(ga
+i , fV ), primarily using a mean squared error (MSE)
+loss, to ground actions recognized in the video within the
+broader semantic context of ConceptNet.
+Temporal Smoothing We implement temporal smooth-
+ing by first aggregating action predictions at the frame level.
+For each frame, we compute the top five actions based on
+their energy levels, then average these across the clip to sta-
+bilize the learning process. This aggregated data forms the
+basis for training the mapping functionψ(ga
+i , fV ), focusing
+on the most frequent and energetically consistent actions.
+Posterior-based Activity Refinement.The final step in-
+volves an iterative refinement process that updates the ac-
+tion concept priors based on predictions from the visual-
+semantic grounding mechanism (Section 2.3). We adjust
+the action priors in the energy computation (Equation 1), re-
+ranking activity interpretations to reflect clip-level dynam-
+ics better. The refinement cycle alternates between updating
+posterior probabilities and re-training the action grounding
+model until generalization error saturates.
+3. Experimental Evaluation
+Data. We evaluate the approach on GTEA Gaze [11],
+GTEA GazePlus [16], and EPIC-Kitchens-100 [7, 8]
+datasets, which contain egocentric, multi-subject videos of
+meal preparation activities. The GTEA Gaze dataset has 10
+verbs and 38 nouns (search space of 380 activities), while
+GTEA GazePlus has 15 verbs and 27 nouns (search space
+of 405), Charades-Ego has 33 verbs and 38 nouns (search
+space of 1254), and Epic-Kitchens has 97 verbs and 300
+nouns (search space of 29100).
+Baselines. We compare against both closed-world learn-
+ing and open-world setup (KGL) [4]. We also create a base-
+line called “KGL+CLIP” by augmenting KGL with CLIP-
+based grounding by including CLIP’s similarity score for
+establishing semantic correspondences. We compare with
+Approach Search VLM? GTEA Gaze GTEA GazePlus
+Space Object Action Activity Object Action Activity
+Two-Stream CNN [25] Closed ✗ 38.05 59.54 53.08 61.87 58.65 44.89
+IDT [28] Closed ✗ 45.07 75.55 40.41 53.45 66.74 51.26
+Action Decomposition [33] Closed ✗ 60.01 79.39 55.67 65.62 75.07 57.79
+Random Known ✗ 3.22 7.69 2.50 3.70 4.55 2.28
+Action Decomposition ZSL [33] Known ✗ 40.65 85.28 39.63 43.44 27.68 15.98
+ALGO ZSL (Ours) Known ✗ 49.47 74.74 27.34 47.67 29.31 16.68
+KGL [4] Open ✗ 5.12 8.04 4.91 14.78 6.73 10.87
+KGL+CLIP [4] Open ✗ 10.36 8.15 9.21 20.49 9.23 14.86
+ALGO (Ours) Open ✗ 13.07 17.05 15.05 26.23 11.44 18.84
+EgoVLP [18] Open ✓ 10.17 8.45 9.31 29.43 17.17 23.30
+LaViLa [34] Open ✓ 6.07 23.07 14.57 28.27 25.47 26.87
+ALGO+EgoVLP Open ✓ 8.61 4.64 6.63 20.48 20.48 20.48
+ALGO+LaViLa Open ✓ 17.50 26.60 22.05 30.74 27.00 28.87
+Table 1. Open-world activity recognition performance on the GTEA Gaze and GTEA Gaze Plus datasets. We compare approaches with
+a closed search space, those with a known search space, and those with a partially open one. Accuracy is reported for predicted objects,
+actions, and activities. VLM: Vision-Language Model pre-trained on egocentric video data. * indicates training on “seen” classes from the
+same dataset(s) and leave-one-action-out evaluation.
+Approach VLM? Action Object Activity
+Random ✗ 1.03 0.33 0.68
+KGL [4] ✗ 3.89 2.56 3.23
+KGL+CLIP [4] ✗ 5.32 4.67 4.99
+ALGO (Ours) ✗ 10.21 6.76 8.48
+EgoVLP [18] ✓ 10.77 19.51 15.14
+LaViLa [34] ✓ 11.16 23.25 17.21
+ALGO+LaViLa ✓ 12.54 22.84 17.69
+Table 2. Evaluation on the EPIC-Kitchens-100 dataset. VLM:
+Vision-Language pre-training on egocentric data. Accuracy for
+actions, objects, and activity are reported.
+supervised learning models as well as zero-shot versions of
+Action Decomposition and large vision-language models,
+such as EGO-VLP [18], HierVL [5], and LA VILA [34] in
+both zero-shot and open-world settings.
+3.1. Open World Activity Recognition
+Table 1 summarizes the evaluation results under the open-
+world inference setting. Top-1 prediction results are re-
+ported for all approaches. As can be seen, CLIP-based
+grounding significantly improves the performance of object
+recognition for KGL, as opposed to the originally proposed,
+prior-only correspondence function. However, our neuro-
+symbolic grounding mechanism (Section 2.1) improves it
+further, achieving an object recognition performance of
+13.07% on Gaze and 26.23% on Gaze Plus. Similarly,
+the posterior-based action refinement module (Section 2.3)
+helps achieve a top-1 action recognition performance of
+17.05% on Gaze and 11.44% on Gaze Plus, outperform-
+ing KGL ( 8.04% and 6.73%). Adding action priors from
+LaViLa (ϕ(p(ga
+k|It)) in Equation 1) allows us to improve
+the performance further, as indicated by ALGO+LaViLa.
+We also evaluate our approach on the Epic-Kitchens-100
+dataset, a larger-scale dataset with a significantly higher
+number of concepts (actions, verbs, and activities). Ta-
+ble 2 summarizes the results. We significantly outperform
+non-VLM models while offering competitive performance
+to the VLM-based models. We see that even without any
+video-based training data , we achieve an action accuracy
+of 10.21% and object accuracy of 6.76%, indicating that
+we can learn affordance-based relationships for discovering
+and grounding novel actions in egocentric data.
+4. Discussion, Limitations, and Future Work
+In this work, we proposed ALGO, a neuro-symbolic frame-
+work for open-world egocentric activity recognition that
+aims to learn novel action and activity classes without
+explicit supervision. While showing competitive perfor-
+mance, there are two key limitations: (i) it is restricted
+to ego-centric videos due to the need to navigate clutter
+by using human attention as a contextual cue for object
+grounding, and (ii) it requires a knowledge base such as
+ConceptNet to learn associations between actions and ob-
+jects. In the future, we aim to explore attention-based
+mechanisms [1, 20] to extend the framework to third-person
+videos and using abductive reasoning [3, 32] with neural
+knowledgebase completion models [6] to integrate visual
+commonsense into the reasoning.
+Acknowledgements. This research was supported in
+part by the US National Science Foundation grants IIS
+2348689, and IIS 2348690. We thank Dr. Anuj Srivastava
+(FSU) and Dr. Sudeep Sarkar (USF) for their thoughtful
+feedback during the discussion about the project’s problem
+formulation and experimental analysis phase.
+References
+[1] Sathyanarayanan Aakur and Sudeep Sarkar. Actor-centered
+representations for action localization in streaming videos.
+In Computer Vision–ECCV 2022: 17th European Confer-
+ence, Tel Aviv, Israel, October 23–27, 2022, Proceedings,
+Part XXXVIII, pages 70–87. Springer, 2022. 4
+[2] Sathyanarayanan Aakur, Fillipe de Souza, and Sudeep
+Sarkar. Generating open world descriptions of video using
+common sense knowledge in a pattern theory framework.
+Quarterly of Applied Mathematics, 77(2):323–356, 2019. 1,
+2, 3
+[3] Sathyanarayanan N Aakur and Sudeep Sarkar. Leveraging
+symbolic knowledge bases for commonsense natural lan-
+guage inference using pattern theory. IEEE Transactions on
+Pattern Analysis and Machine Intelligence, 2023. 4
+[4] Sathyanarayanan N Aakur, Sanjoy Kundu, and Nikhil Gunti.
+Knowledge guided learning: Open world egocentric action
+recognition with zero supervision. Pattern Recognition Let-
+ters, 156:38–45, 2022. 1, 2, 3, 4
+[5] Kumar Ashutosh, Rohit Girdhar, Lorenzo Torresani, and
+Kristen Grauman. Hiervl: Learning hierarchical video-
+language embeddings, 2023. 1, 2, 4
+[6] Antoine Bosselut, Hannah Rashkin, Maarten Sap, Chaitanya
+Malaviya, Asli Celikyilmaz, and Yejin Choi. Comet: Com-
+monsense transformers for automatic knowledge graph con-
+struction. In Proceedings of the 57th Annual Meeting of
+the Association for Computational Linguistics, pages 4762–
+4779, 2019. 4
+[7] Dima Damen, Hazel Doughty, Giovanni Maria Farinella,
+Sanja Fidler, Antonino Furnari, Evangelos Kazakos, Davide
+Moltisanti, Jonathan Munro, Toby Perrett, Will Price, and
+Michael Wray. The epic-kitchens dataset: Collection, chal-
+lenges and baselines. IEEE Transactions on Pattern Anal-
+ysis and Machine Intelligence (TPAMI), 43(11):4125–4141,
+2021. 3
+[8] Dima Damen, Hazel Doughty, Giovanni Maria Farinella,
+Antonino Furnari, Jian Ma, Evangelos Kazakos, Davide
+Moltisanti, Jonathan Munro, Toby Perrett, Will Price, and
+Michael Wray. Rescaling egocentric vision: Collection,
+pipeline and challenges for epic-kitchens-100. International
+Journal of Computer Vision (IJCV), 130:33–55, 2022. 3
+[9] Fillipe DM de Souza, Sudeep Sarkar, Anuj Srivastava, and
+Jingyong Su. Pattern theory for representation and inference
+of semantic structures in videos.Pattern Recognition Letters,
+72:41–51, 2016. 2, 3
+[10] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov,
+Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner,
+Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-
+vain Gelly, et al. An image is worth 16x16 words: Trans-
+formers for image recognition at scale. InInternational Con-
+ference on Learning Representations. 1
+[11] Alireza Fathi, Yin Li, and James M Rehg. Learning to rec-
+ognize daily actions using gaze. In European Conference on
+Computer Vision, pages 314–327. Springer, 2012. 3
+[12] Ulf Grenander. Elements of pattern theory. JHU Press, 1996.
+1, 2, 3
+[13] Shangchen Han, Beibei Liu, Randi Cabezas, Christopher D
+Twigg, Peizhao Zhang, Jeff Petkau, Tsz-Ho Yu, Chun-Jung
+Tai, Muzaffer Akbay, Zheng Wang, et al. Megatrack:
+monochrome egocentric articulated hand-tracking for virtual
+reality. ACM Transactions on Graphics (ToG), 39(4):87–1,
+2020. 2
+[14] Chao Jia, Yinfei Yang, Ye Xia, Yi-Ting Chen, Zarana Parekh,
+Hieu Pham, Quoc V . Le, Yunhsuan Sung, Zhen Li, and Tom
+Duerig. Scaling up visual and vision-language representation
+learning with noisy text supervision, 2021. 2
+[15] Jindong Jiang and Sungjin Ahn. Generative neurosymbolic
+machines. In Advances in Neural Information Processing
+Systems, pages 12572–12582. Curran Associates, Inc., 2020.
+2
+[16] Yin Li, Alireza Fathi, and James M Rehg. Learning to predict
+gaze in egocentric video. In Proceedings of the IEEE Inter-
+national Conference on Computer Vision, pages 3216–3223,
+2013. 3
+[17] Yangguang Li, Feng Liang, Lichen Zhao, Yufeng Cui, Wanli
+Ouyang, Jing Shao, Fengwei Yu, and Junjie Yan. Su-
+pervision exists everywhere: A data efficient contrastive
+language-image pre-training paradigm, 2022. 2
+[18] Kevin Qinghong Lin, Jinpeng Wang, Mattia Soldan, Michael
+Wray, Rui Yan, Eric Z XU, Difei Gao, Rong-Cheng Tu, Wen-
+zhe Zhao, Weijie Kong, et al. Egocentric video-language
+pretraining. Advances in Neural Information Processing Sys-
+tems, 35:7575–7586, 2022. 1, 2, 4
+[19] Minghuang Ma, Haoqi Fan, and Kris M Kitani. Going deeper
+into first-person activity recognition. In IEEE/CVF Confer-
+ence on Computer Vision and Pattern Recognition (CVPR) ,
+pages 1894–1903, 2016. 1, 2
+[20] Ramy Mounir, Ahmed Shahabaz, Roman Gula, J ¨orn
+Theuerkauf, and Sudeep Sarkar. Towards automated
+ethogramming: Cognitively-inspired event segmentation for
+streaming wildlife video monitoring. International Journal
+of Computer Vision, pages 1–31, 2023. 4
+[21] Maxwell Nye, Michael Tessler, Josh Tenenbaum, and Bren-
+den M Lake. Improving coherence and consistency in neural
+sequence models with dual-system, neuro-symbolic reason-
+ing. Advances in Neural Information Processing Systems ,
+34:25192–25204, 2021. 2
+[22] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya
+Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry,
+Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learn-
+ing transferable visual models from natural language super-
+vision. In International Conference on Machine Learning ,
+pages 8748–8763. PMLR, 2021. 1, 2, 3
+[23] Michael S. Ryoo, Brandon Rothrock, and Larry Matthies.
+Pooled motion features for first-person videos. In Proceed-
+ings of the IEEE conference on Computer Vision and Pattern
+Recognition (CVPR), 2015. 2
+[24] Gunnar A Sigurdsson, Abhinav Gupta, Cordelia Schmid, Ali
+Farhadi, and Karteek Alahari. Actor and observer: Joint
+modeling of first and third-person videos. In Proceedings of
+the IEEE conference on Computer Vision and Pattern Recog-
+nition, pages 7396–7404, 2018. 1, 2
+[25] Karen Simonyan and Andrew Zisserman. Two-stream con-
+volutional networks for action recognition in videos. Ad-
+vances in Neural Information Processing Systems, 27, 2014.
+4
+[26] Robyn Speer, Joshua Chin, and Catherine Havasi. Concept-
+net 5.5: An open multilingual graph of general knowledge.
+In Proceedings of the AAAI Conference on Artificial Intelli-
+gence, 2017. 1, 2, 3
+[27] Swathikiran Sudhakaran, Sergio Escalera, and Oswald Lanz.
+Lsta: Long short-term attention for egocentric action recog-
+nition. In Proceedings of the IEEE/CVF Conference on Com-
+puter Vision and Pattern Recognition (CVPR), 2019. 2
+[28] Heng Wang and Cordelia Schmid. Action recognition with
+improved trajectories. In IEEE/CVF International Confer-
+ence on Computer Vision (ICCV) , pages 3551–3558, 2013.
+1, 4
+[29] Xiaohan Wang, Linchao Zhu, Heng Wang, and Yi Yang. In-
+teractive prototype learning for egocentric action recogni-
+tion. In Proceedings of the IEEE/CVF International Confer-
+ence on Computer Vision (ICCV) , pages 8168–8177, 2021.
+2
+[30] Tailin Wu, Megan Tjandrasuwita, Zhengxuan Wu, Xuelin
+Yang, Kevin Liu, Rok Sosic, and Jure Leskovec. Zeroc: A
+neuro-symbolic model for zero-shot concept recognition and
+acquisition at inference time. In Advances in Neural Infor-
+mation Processing Systems, pages 9828–9840. Curran Asso-
+ciates, Inc., 2022. 2
+[31] Jiahui Yu, Zirui Wang, Vijay Vasudevan, Legg Yeung, Mo-
+jtaba Seyedhosseini, and Yonghui Wu. Coca: Contrastive
+captioners are image-text foundation models, 2022. 2
+[32] Rowan Zellers, Yonatan Bisk, Ali Farhadi, and Yejin Choi.
+From recognition to cognition: Visual commonsense reason-
+ing. In Proceedings of the IEEE/CVF Conference on Com-
+puter Vision and Pattern Recognition (CVPR), 2019. 4
+[33] Yun C Zhang, Yin Li, and James M Rehg. First-person action
+decomposition and zero-shot learning. In IEEE Winter Con-
+ference on Applications of Computer Vision (WACV), pages
+121–129, 2017. 1, 2, 4
+[34] Yue Zhao, Ishan Misra, Philipp Kr ¨ahenb¨uhl, and Rohit Gird-
+har. Learning video representations from large language
+models. In CVPR, 2023. 1, 2, 4
+[35] Yang Zhou, Bingbing Ni, Richang Hong, Xiaokang Yang,
+and Qi Tian. Cascaded interactional targeting network for
+egocentric video analysis. In Proceedings of the IEEE
+conference on Computer Vision and Pattern Recognition
+(CVPR), 2016. 2

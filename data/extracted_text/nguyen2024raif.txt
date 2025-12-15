@@ -1,0 +1,1078 @@
+R-AIF: S OLVING SPARSE -REWARD ROBOTIC TASKS FROM
+PIXELS WITH ACTIVE INFERENCE AND WORLD MODELS
+Viet Dung Nguyen
+Rochester Institute of Technology
+vn1747@rit.edu
+Zhizhuo Yang
+Rochester Institute of Technology
+zy8981@rit.edu
+Christopher L. Buckley
+VERSES AI Research Lab
+University of Sussex
+c.l.buckley@sussex.ac.uk
+Alexander Ororbia
+Rochester Institute of Technology
+ago@cs.rit.edu
+ABSTRACT
+Although research has produced promising results demonstrating the utility of active inference
+(AIF) in Markov decision processes (MDPs), there is relatively less work that builds AIF models
+in the context of environments and problems that take the form of partially observable Markov
+decision processes (POMDPs). In POMDP scenarios, the agent must infer the unobserved
+environmental state from raw sensory observations, e.g., pixels in an image. Additionally,
+less work exists in examining the most difficult form of POMDP-centered control: continuous
+action space POMDPs under sparse reward signals. In this work, we address issues facing the
+AIF modeling paradigm by introducing novel prior preference learning techniques and self-
+revision schedules to help the agent excel in sparse-reward, continuous action, goal-based
+robotic control POMDP environments. Empirically, we show that our agents offer improved
+performance over state-of-the-art models in terms of cumulative rewards, relative stability, and
+success rate. The code in support of this work can be found at https://github.com/NACLab/
+robust-active-inference.
+Keywords Active inference · Free energy principle · Generative world models · Contrastive
+learning · Partially observable Markov decision processes
+1 Introduction
+Reinforcement learning (RL) has notably been widely utilized in robotic systems to solve a variety of manipulation
+and control tasks [67, 35, 51] using model-free RL algorithms such as the soft actor critic [ 28, 29] or the deep
+Q-network [49]. Model-based RL, on the other hand, predicts the dynamics of a Markov decision process (MDP)
+and utilizes this learned generative model to plan a useful policy. From the ‘Dyna’ framework [76], model-based
+RL has evolved into powerful modern-day models, including latent dynamics models [6], imagination-augmented
+RL [65], or recurrent-based state dynamics models capable of playing Atari games [89]. Within this domain of
+research, there exists a sub-field – formally known as active inference – that develops models that align with
+underlying principles of model-based RL. Generally, an active inference agent maintains and adapts a best estimate
+of its world (generative world model). It further aims to take actions that lead to outcomes that are aligned with
+its ‘preferences’ while working to predict and minimize the degree of surprise it would potentially encounter in
+future engagements within its niche [61, 15]. However, current active inference research only tackles MDP robotics
+problems, with far less consideration for pixel-based POMDP tasks that elicit sparse reward signals; see Table 1.
+In this work, we make the following key contributions. 1) We propose a novel contrastive recurrent state prior
+preference (CRSPP) model, which allows the agent to learn its own preference over the world’s state(s) online.
+This online preference dynamically shapes the agent’s policy distribution, improving general performance. 2)
+We propose a new formulation of expected free energy and optimize it using the actor-critic method, improving
+the stability of the action planner compared to other active inference baselines. 3) We propose our robust active
+arXiv:2409.14216v1  [cs.RO]  21 Sep 2024
+Preprint
+Agent Model POMDP Sparse
+Reward
+Var.
+Goal
+Cont.
+Action
+Discrete
+Action
+[79, 78] ✗ ✔ ✗ ✔ ✗
+[52] ✗ ✔ ✗ ✔ ✗
+[30, 32, 34] ✔ ✗ a ✔ ✔ ✔
+[82] ✗ b ✗ ✗ ✗ ✔
+[14] ✔ ✗ ✗ ✗ ✔
+[47] ✗ ✗ ✗ ✗ ✔
+[83] ✔ ✗ ✗ ✗ ✔
+[8], [9] ✔ c ✔ ✗ ✗ ✔
+[45] ✔ ✔ d ✗ d ✔ ✔
+R-AIF (ours) ✔ ✔ ✔ ✔ ✔
+Table 1: Features (“var.” for “variable” and “cont.” for “continuous”) of different model-based reinforcement
+learning and deep active inference research efforts.
+a Dreamer is not specifically designed to work with sparse-reward problems, but was found in this work to be robust enough to
+score decently well.
+b This model was designed specifically for the Cartpole environment with a modified observation space. Furthermore, the image
+observation is stacked for four steps, making it a MDP-like problem [50].
+c This work forms a non-pixel-level POMDP by hiding the velocity state, only presenting the position of the mountain car as
+the observation (and does not work with raw sensory data).
+d Although this agent is designed for sparse rewards, providing the goal image is not practical for robot environments with
+varied goal states (as we study in this work).
+inference (R-AIF) agent with a self-revision mechanism, demonstrating its potential to improve over general RL
+methods, boosting the model convergence rate in sparse-reward tasks. Finally, 4) We provide empirical evidence
+that our R-AIF agent converges faster and is more stable than a state-of-the-art model-based reinforcement learning
+baseline (DreamerV3 [34]) and powerful active inference baselines: DAIVPG [47] and the agent in [82].
+2 Related Work
+Model-based reinforcement learning(MBRL) is a pivotal approach in reinforcement learning that centers around
+the ‘world model’, a concept that involves creating an internal model of the environment to guide the agent’s
+future actions. This approach is exemplified in works related to state space models [7], ‘embed to control’ [85],
+‘Plan2Explore’ [73], ‘dreaming’ [54], ‘PlaNet’ [31], ‘Dreamer’ [30], divergence minimization [33], and perceptual
+uncertainty [62, 74].
+Active inference(AIF) is a framework in cognitive science and neuroscience which centers around the notion of
+generative models which “understand” a “lived world” [61, 64] or (eco)niche. Importantly, AIF itself is in effect
+a corollary of the free energy principle, which posits that biological systems minimize a quantity known as free
+energy as they continuously work to preserve their existence (self-evidence) and interact with their environments
+effectively. Formally, AIF involves minimizing the quantity known as variational free energy which is formally
+defined as follows:
+F = EQ(s)[ln Q(s) − ln P(o, s)] (1)
+where Q(s) is the approximate posterior over statess and P(o, s) is the joint probability of statess and observations
+o. This framework extends to machine intelligence since it casts the perception and planning problem as a Bayesian
+inference problem where an agent updates its beliefs about the sensory inputs and selects actions that lead to the
+minimization of expected free energy (EFE):
+G(π) =EQ(s)[ln Q(s, θ|π) − ln Q(o, s, θ|π)] (2)
+where θ contains the model parameters, π is the planned action distribution, Q(s, θ|π) is the approximate posterior
+over state and model parameters given the agent’s actions, and Q(o, s, θ|π) is the approximate posterior over
+observation, state, and model parameters given the agent’s actions. The EFE is often broken down in two key
+terms: instrumental and epistemic. The instrumental term defines how future estimated states/observations align
+with the agent’s prior preference (interest) given its current action plan, whereas the epistemic term describes the
+surprise/uncertainty level associated with the estimated future states under a given planned policy. Generally, this
+AIF framing offers a principled basis for RL models that learn and act by reducing the mismatch between predicted
+and observed data. Deep active inference seeks to utilize the tools of deep learning, e.g,. deep neural networks and
+2
+Preprint
+Figure 1: Demonstration of different abstract trajectories with state (y-axis) through time (x-axis).Behavior
+cloning trajectory diverges from the training trajectory due to small mistakes made by the agent as well as
+environmental stochasticity (due to the i.i.d assumption applied to the environment). We instead want to estimate
+a “preferred” trajectory that closely matches the underlying data distribution. As a result, our R-AIF agent can
+“nudge” its trajectory toward its own prior preference. The dashed lines around the line R-AIF represents the
+epistemic signal of the agent that facilitates intelligent exploration within a safe range.
+backpropagation of errors, to make estimation/production of the core values inherent to EFE easier to simulate
+efficiently; see [46] for a review.
+3 Solving Sparse-Reward Pixel Robotic Tasks
+In order to tackle a robotic task with a continuous action space, varied goals, and sparse reward signals, we first
+re-formulate the construction of the AIF/MBRL agent’s generative world model [ 27, 18] in Section 3.1 (while
+Section 3.2 introduces our novel contrastive recurrent state prior preference model). We propose the robust active
+inference1 (R-AIF) agent in Section 3.3, which utilizes actor-critic methodology [77] in order to optimize the action
+‘planner’, ultimately seeking to minimize both instrumental and epistemic signals from its learned world model.
+Our agent operates on standard POMDPs, in discrete time, where the interaction between the agent and the
+environment is formally expressed as M = (S, A, O, p, E, r, g). S is the set of all environment states (hidden
+from the agent), O is the set of observations, E(ot|st) is an emission function which produces the observable
+signal ot conditioned on the unobserved state distribution st. Additionally, we have the action space A, the reward
+function r : S × A →R, and the transition probability p(st+1|st, at) [77]. Finally, we also consider the function
+g : S → {0, 1} indicating whether the agent has achieved its goal (or not) in a particular time step.
+3.1 The Generative World Model
+Active inference posits that an agent finds an action sequence based on an estimated future state distribution [22,
+75, 21, 86, 16, 48]. To achieve this, we predict the next state st+1 given the current state st and action at, along
+with a recurrent state ht that serves as temporal memory (zt serving as the memory’s output). For modeling ht, we
+employ a gated recurrent unit [11] following the approach from [52, 30, 32, 34]. In general, this framing of the
+temporal integration of information is referred to as the recurrent state space model (RSSM) [31], which builds on
+concepts from the state space model literature [7, 27, 38, 13]. The RSSM formulation can formally be expressed as
+1Implementation details available at https://github.com/NACLab/robust-active-inference
+3
+Preprint
+follows:
+Latent dynamics model: fθR(zt, ht|st−1, at−1, ht−1)
+Approx. posterior (encoder): qθE (st|ot, ht)
+Prior (transition): pθT (st|zt)
+Likelihood (decoder): qθD(ot|st, ht)
+Reward (decoder): qθr (rt|st, ht).
+(3)
+Throughout this work, unless stated otherwise, every posterior q(·) and prior p(·) estimator that is parameterized by
+an artificial neural network (ANN) will be equipped with a recurrent neural network (RNN), i.e., a latent dynamics
+model. For clarity and simplicity, we have omitted the RNN and the module letter (i.e., E for encoder) in the
+notation; this leaves us with the encoder qθ(st|ot), transition pθ(st|st−1, at−1), decoder qθ(ot|st), and the reward
+predictor qθ(rt|st).
+As the agent seeks to minimize its surprise, it continuously changes its belief(s) over hidden states to match its
+prior while maximizing the likelihood of observation [75]; this is done by maximizing the evidence lower bound
+(ELBO) [39] employed in variational inference. The posterior over hidden state q(st) can then be optimized by
+treating the agent’s (free) energy function in terms of a gradient descent objective [42, 26]. Minimizing the free
+energy based on both observed data ot and the prior transitioned state p(st|st−1, at−1) is often known as marginal
+free energy minimization [60], closely related to the mechanisms of variational autoencoders [39] and stochastic
+variational inference procedures [37]:
+arg min
+θ
+Lt(θ) =DKL [qθ(st|ot) ∥ pθ(st|st−1, at−1)]| {z }
+complexity
++ Eqθ(st|ot) [−ln (qθ(ot|st))]| {z }
+accuracy
+. (4)
+Minimizing the complexity (term) aids the agent in closing the gap between its prior and its approximate posterior,
+whereas minimizing the accuracy (term) improves the model’s future observation estimation. We utilize the world
+model, which has a discretized state space [ 32] where each hidden state is represented by a vector of discrete
+distributions instead of a vector of Gaussian distributional parameters (as is done in other deep active inference
+formulations). We also employ the KL balancing trick [ 32] and apply the “symlog” function to inputs [ 34] for
+numerical stability.
+3.2 Contrastive Recurrent State Prior Preference (CRSPP)
+In active inference, the agent takes the actions that it believes would lead to its preferred outcomes (i.e. using
+the instrumental signal) [ 68, 48, 23, 22, 21, 18]. To construct this prior preference, past work has provided a
+goal state/observation(s) directly to the agent [ 45] or manually crafted a prior preference distribution [ 18, 86].
+However, the first approach suffers from sparsity over the preference space while the second is impractical in
+more realistic POMDPs. To tackle this, we leverage a small quantity of seed imitation data to learn an ANN that
+dynamically produces the preference over states at each time step; this effectively provides an easily-generated
+dense instrumental/goal signal. Concretely, we design the agent such that it moves according to a trajectory
+that is shaped towards its own estimation of future preferred states, “nudging” its own trajectory toward the
+imitation/positive data distribution (see Figure 1).
+Dynamic Prior Preference Model Formulation.In this work, we consider a prior preference model that takes
+in the image observation ot ∈ O and produces a posterior estimate over state st ∈ S. Based on this latent
+representation, the model then estimates – or “imagines” – the future latent representation that has a high preference
+value ˜sτ:H over a time horizonH. To achieve this, we construct an RSSM without action encoded into the transition
+prior. Our model can then be further parameterized with an encoder posterior qϕ(st|ot) and a transition prior
+pϕ(st|st−1) (see Figure 2).
+Goal-Oriented Credit Assignment and PriorSelf-Revision. Assuming that the trajectories collected throughout
+the R-AIF agent’s learning process form a set E = {e0, e1, . . .}, if we follow the conventions of contrastive
+learning methodology [41, 36, 80], we partition this set of experiences into two portions based on the success
+status of each experience, i.e. P(E) = ({e+}, {e−}) where {e−} = E \ {e+}. Intuitively, we aim to learn a prior
+preference model which estimates the preferred state ˜s that is closer to (positive) states s ∈ e+ while pushing ˜s
+away from s ∈ e− (negative states). Specifically, to learn a model that performs roll-outs over a finite horizon with
+only preferred states, one can maximize the similarity of states between the prior preference model and the actual
+generative world model – where “reached goal states” are of “strong interest” (yielding a positive signal) – while
+minimizing this similarity measurement for the situations that the agent fails the task within an episode (yielding a
+4
+Preprint
+Figure 2: The CRSPP learning framework.CRSPP learns by optimizing the KL divergence between its
+approximate posterior and prior only when a state is “desired”, i.e. ρt > 0. It also learns to predict next preferred
+states using a dynamic contrastive loss based on ρt (which focuses on narrowing the gap between the estimated
+preferred state distribution and the actual approximate posterior produced by the RSSM).
+negative signal). We consider a prior preference rate ρt, at every time step, that is positively-signed in successful
+episodes, and negatively-signed otherwise. This signal is decayed backward from the end of the trajectory in
+order to reward/penalize the immediate actions that led to success/failure within the task. Note that we set ρt at its
+highest value at each successful state and decay this backward. In contrast, when the episode fails, the agent only
+needs to decay negatively backward from the end of the episode. We call this computation ofρ the self-revision
+mechanism 2 and use this rate as a scalar for the contrastive objective – facilitating a form of dynamic contrastive
+learning – when optimizing the CRSPP. As a result, our positive/negative scoring mechanism puts more weight on
+the states that are near the goal state, which partly resembles hindsight experience replay [1].
+Note that we may learn the prior preference model using any contrastive objective that is conditioned on this prior
+preference rate. Additionally, we minimize the KL divergence between the prior and the posterior such that the
+prior preference model possesses an accurate positive (sample) imagination. In our work, we use cosine similarity,
+e.g., sim(A, B) = A·B
+∥A∥∥B∥, to optimize the CRSPP model:
+arg min
+ϕ
+Lt(ϕ) = max
+ 
+0, sgn(ρt)
+
+×
+DKL [qϕ(st|ot) ∥ pϕ(st|st−1)] − ρt sim(ˆst, st)
+(5)
+where ˆst ∼ qϕ(st|ot), st ∼ sg
+ 
+qθ(st|ot)
+
+, ‘sg’ is the stop gradient function, ‘sgn’ is the sign function, and ρt is
+the prior preference rate computed at the end of each episode using the self-revision mechanism (see Section 3.2).
+In general, the KL term helps in estimating the next preferred state prior more accurately, and the similarity term
+helps to dynamically push or pull the state space of the prior preference model in relation to the world model
+based on ρt. As a result, the prior preference model is trained to only produce the next set of preferred states/latent
+dynamics (without producing the failing states) based on ρt. Note that we further use the world model’s decoder on
+the preferred state to produce the agent’s goal image at each time step (see Figure 3). Being able to produce goals
+dynamically at each time step helps to shape the local prior preference towards an optimal trajectory, serving as a
+precursor to optimizing the action planner (while utilizing the gradient of the contrastive model).
+3.3 R-AIF Agent Behavioral Learning
+In active inference, the agent estimates both future states and observations and then plans action sequences based
+on the expected free energy computed from these future ‘imagined realities’ [ 24, 19, 18, 14]. Although one
+can estimate both states and observations with respect to ‘imagination space’, for practical model inference, it
+is also possible to roll-out only the latent dynamics into the future [ 31, 54, 66]; in this work, we roll out only
+latent states. Formally, with the planning time step τ and imagination horizon H, we estimate the future state
+sτ ∼ pθ(sτ |sτ−1, aτ−1) using the (estimated) action aτ ∼ πψ(aτ |sτ ). We train the agent to minimize the expected
+free energy based on these “imagined” future states. Similarly to [34], we construct a policy network πψ(aτ |sτ )
+2See footnote 1 for details.
+5
+Preprint
+Figure 3: Actual observation (top row) versus the prior preference estimation (bottom row) across time (horizontal
+axis) of the mountain car problem (top image group) and the Meta-World ‘button press wall’ task (bottom image
+group). We see that CRSPP produces a goal dynamically at each time step.
+that maximizes the estimated advantage from the value function fχ(vτ |sτ ) such that:
+fχ(vτ |sτ ) ≈
+t+HX
+t=τ
+γt−τ (rτ + sim(sτ , ˆsτ ) − IGτ ) (6)
+where the action aτ is a tanh-normalized sampled from the Gaussian distribution with a mean µψ and standard
+deviation σψ produced by the policy network. The value function is then trained to estimate the rewardrτ , similarity
+between the estimated future state sτ and the imagined prior preference ˆsτ , and the negative information gain
+−IGτ .
+Expected Free Energy.R-AIF’s behavioral learning involves training the policy network to take actions that
+minimize the expected free energy [72, 18]. We construct our formulation of the expected free energy as below:
+Gτ (πψ) = −H[EQ(oτ ,sτ )Q(πψ|oτ , sτ )] (7a)
++ H[EQ(θ,πψ)Q(sτ |θ, πψ)] − EQ(θ|πψ)H[Q(sτ |θ, πψ)] (7b)
+− EQ(θ|πψ)H[Q(sτ |θ, πψ)] (7c)
+− rτ − sim(sτ , ˆsτ ). (7d)
+Following AIF process theory, we aim to train our policy network πψ to minimize the expected free energy Gτ (π),
+including the instrumental and epistemic signals. For the instrumental signal, the policy is trained to maximize the
+expected future estimated reward and the similarity between states and the agent’s prior preference (Equation 7d).
+For the epistemic signal, the policy network is provided with “incentives” when entering a state with higher policy
+entropy (Equation 7a), similar to the processes used in the soft actor-critic frameworks [28]. Furthermore, the policy
+network is trained to reduce the model parameter’s uncertainty (Equation 7b) or information gain (IG) [43, 44].
+This means that the agent takes more certain actions to maintain “homeostasis” [20, 56]. Similar to [79, 74], an
+ensemble of ANNs is utilized to computed IG (Equation 7b). The final epistemic signal provides the agent with an
+intrinsic reward whenever the agent enters unknown states with a high entropy over future state predictions (in
+other words, generative world model entropy; Equation 7c). Maximizing this uncertainty about future states is
+equivalent to providing additional motivation [3, 58, 12] for state exploration.
+Training Value Function.We train the value network by minimizing the mean squared error (MSE) between the
+output of the value network and the target value computed at each time step. The target value is computed from the
+discounted cumulative rewards and information gain through generalized advantage estimate [70] and temporal
+difference [77] methods, the use of which resembles sophisticated inference [17, 63]. Specifically, assuming that
+the agent is rolled-out over a state space with horizon H and a future time step τ, the target λ-return (value) for the
+advantage G is computed as follows:
+Gτ =
+
+rτ + sim
+
+sτ , ˆsτ
+
+− IGτ
+
++γcτ
+
+(1 − λ)fχ(vτ |sτ ) +λGτ+1
+ (8)
+6
+Preprint
+Figure 4: Cumulative reward ( y-axis) trend through environment time steps ( x-axis) of different agents. Pink
+dashed lines are average reward of the expert in the MDP version of the task.
+where rτ ∼ qθ(rτ |sτ ), sτ ∼ pθ(sτ |sτ−1, aτ−1), ˆsτ ∼ sg
+ 
+pϕ(sτ |sτ−1)
+
+. GH = vH = fχ(vτ |sτ )H, and γ is the
+discount factor. Similar to [ 34], cτ is an estimated boolean value that specifies whether or not an episode will
+continue. We can then optimize the λ-value estimator by minimizing the MSE between its estimation and the target
+as follows:
+arg min
+χ
+Lτ (χ) =Epθ(sτ |sτ−1,aτ−1)πψ(aτ−1|sτ−1)
+[fχ(vτ |sτ ) − sg (Gτ )]2 .
+(9)
+Behavioral Learning.In this work, we train the policy network by minimizing its EFE Gτ (πψ): maximizing the
+policy entropy (Equation 7a), the generative world model entropy (Equation 7c), and the estimated advantage value
+as computed from the value function Gτ ≈ fχ(vτ |sτ ). This advantage value is composed of an instrumental signal
+– reward and similarity (7d) – and the negative information gain (Equation 7b). Additionally, we also found the
+integration of an “actor refresh” term [57], e.g., −Eπψ(aτ |sτ ) ln(a∗
+τ ), to be useful in ensuring good performance.
+In general, the agent learns to shift its trajectory toward the preferred state distribution, taking actions that it is
+confident in while exploring uncertain states (see Figure 1). Formally, we aim to maximize the actor’s objective
+functional as follows:
+arg max
+ψ
+Lτ (ψ) =E ˜Q(a,s|ψ,θ)
+h
+fχ(vτ |sτ )
++ ζH[pθ(sτ |sτ−1, aτ−1)] +ηH[πψ(aτ |sτ )] + ln(a∗
+τ )
+i (10)
+where ˜Q(a, s|ψ, θ) =πψ(aτ |sτ )pθ(sτ |sτ−1, aτ−1). The coefficients of the generative world model’s entropy ζ
+and the actor distribution entropy η are set to 3 × 10−4 in order to perform percentile exponential moving average
+normalization (as in [34]). Generally, maximizing this objective is equivalent to minimizing EFE. Note that, by
+default, the actor objective applies to continuous action spaces. For discrete action spaces, we may adapt the
+training of the policy network using the straight-through gradient estimator [5], further motivated by the approach
+taken in [32].
+4 Experimental Results
+We compare the performance of our agent with relevant model-based RL and AIF baselines, namely: 1) Dream-
+erV3 [34], 2) our generalization of model in [47] (DAIVPG-G), and 3) the model in [82] (Himst-G). Additionally,
+we change the architecture of the active inference agent of [ 82] by replacing the 3D-convolution (applied over
+four stacked frames) with the state space model to make the agent operate properly in a POMDP environment
+(e.g., allowing it to process one image, instead of stacked frames, at each time-step, which we found improve the
+model’s performance and overall stability). For each baseline agent and benchmark environment, we run each
+experiment/simulation for 4 uniquely seeded trials, simulating each agent for 1, 3, and 5 million steps on the
+mountain car, Meta-World [87], and robosuite [88] environments, respectively. Agent performance is reported
+7
+Preprint
+as the mean and standard deviation of the following statistics: 1) average cumulative reward (ACR),2) relative
+stability (R-S) (proposed in [57], for characterizing the quality of a robotic controller’s convergence ability), and
+3) (task) success rate (SR). These statistics are computed from the last 100 recorded agent training episodes,
+yielding us an estimate of its online learning performance. We also train the expert (used for simulating collected
+imitation data) using SAC [28] (for robosuite) and PPO [71] (for the other problems) in the MDP version of each
+environment. 10, 000 steps of these collected expert data are used to produce a mean cumulative reward upper
+bound for the performance expected of experimental agents (see Figure 4). For the R-AIF agent’s expert/positive
+data collection, we record about 1, 000 steps for mountain car (about 22 episodes), 3, 300 steps for Meta-World
+(about 6 episodes), and 20, 000 steps for robosuite (about 40 episodes).
+Environment Setup.We perform experiments on three main problem environments: mountain car [77], Meta-
+World [87] (tasks start with “M”), and robosuite [88] (tasks start with “R”). The mountain car problem is a single
+sparse reward task, Meta-World contains 13 different tasks, and robosuite contains 2 robotic control tasks. For the
+robotic tasks, we utilize a combination of (camera) viewpoints as the image observation, including a top-down
+view, an agent workspace, a front camera view, and a side view (three of these are available in Meta-World, all four
+in robosuite. We also modify all environments such that the reward signal is sparse: 0 (1 for robosuite) is provided
+when the agent achieves the goal and −1 (0 for robosuite) everywhere else.
+Mountain Car ACR R-S SR
+R-AIF (Ours) −68.3 ± 1.0 0.1 ± 0.0 1.0 ± 0.0
+DreamerV3 −79.7 ± 12.4 0.4 ± 0.2 0.9 ± 0.1
+DAIVPG-G −200.0 ± 0.0 0.7 ± 0.5 0.0 ± 0.0
+Himst-G −199.9 ± 0.2 0.8 ± 0.3 0.0 ± 0.0
+M Button Press ACR R-S SR
+R-AIF (Ours) −38.2 ± 1.2 0.0 ± 0.0 1.0 ± 0.0
+DreamerV3 −37.2 ± 1.9 0.0 ± 0.0 1.0 ± 0.0
+DAIVPG-G −477.3 ± 3.3 0.9 ± 0.0 0.0 ± 0.0
+Himst-G −365.7 ± 163.0 0.4 ± 0.4 0.3 ± 0.4
+M Drawer Close ACR R-S SR
+R-AIF (Ours) −18.3 ± 0.3 0.0 ± 0.0 1.0 ± 0.0
+DreamerV3 −15.5 ± 0.1 0.0 ± 0.0 1.0 ± 0.0
+DAIVPG-G −73.6 ± 42.4 0.1 ± 0.1 1.0 ± 0.1
+Himst-G −45.0 ± 11.6 0.3 ± 0.4 0.7 ± 0.4
+M Window Open ACR R-S SR
+R-AIF (Ours) −48.1 ± 2.3 0.0 ± 0.0 1.0 ± 0.0
+DreamerV3 −44.8 ± 2.0 0.0 ± 0.0 1.0 ± 0.0
+DAIVPG-G −354.2 ± 69.0 0.7 ± 0.2 0.4 ± 0.2
+Himst-G −283.2 ± 126.1 0.5 ± 0.3 0.5 ± 0.3
+M Handle Pull ACR R-S SR
+R-AIF (Ours) −42.1 ± 2.0 0.0 ± 0.0 1.0 ± 0.0
+DreamerV3 −145.4 ± 193.8 0.2 ± 0.3 0.7 ± 0.4
+DAIVPG-G −416.9 ± 72.4 0.8 ± 0.1 0.3 ± 0.3
+Himst-G −461.3 ± 34.1 0.9 ± 0.1 0.1 ± 0.2
+M Door Close ACR R-S SR
+R-AIF (Ours) −51.4 ± 0.6 0.0 ± 0.0 1.0 ± 0.0
+DreamerV3 −50.7 ± 0.2 0.0 ± 0.0 1.0 ± 0.0
+DAIVPG-G −161.6 ± 66.2 0.2 ± 0.1 0.9 ± 0.1
+Himst-G −83.6 ± 4.7 0.1 ± 0.0 1.0 ± 0.0
+M Door Open ACR R-S SR
+R-AIF (Ours) −62.5 ± 0.6 0.0 ± 0.0 1.0 ± 0.0
+DreamerV3 −69.9 ± 2.6 0.0 ± 0.0 1.0 ± 0.0
+DAIVPG-G −440.0 ± 54.5 0.8 ± 0.1 0.2 ± 0.2
+Himst-G −481.0 ± 0.0 0.7 ± 0.2 0.0 ± 0.0
+M Pick Place ACR R-S SR
+R-AIF (Ours) −462.4 ± 38.8 0.9 ± 0.1 0.1 ± 0.1
+DreamerV3 −481.0 ± 0.0 0.8 ± 0.1 0.0 ± 0.0
+DAIVPG-G −480.9 ± 0.1 0.9 ± 0.0 0.0 ± 0.0
+Himst-G −481.0 ± 0.0 0.3 ± 0.4 0.0 ± 0.0
+M Push ACR R-S SR
+8
+Preprint
+R-AIF (Ours) −403.1 ± 43.4 0.8 ± 0.1 0.6 ± 0.3
+DreamerV3 −470.6 ± 8.9 0.9 ± 0.0 0.1 ± 0.1
+DAIVPG-G −478.2 ± 1.8 0.9 ± 0.0 0.1 ± 0.0
+Himst-G −481.0 ± 0.0 0.6 ± 0.4 0.0 ± 0.0
+M Reach ACR R-S SR
+R-AIF (Ours) −24.4 ± 1.4 0.0 ± 0.0 1.0 ± 0.0
+DreamerV3 −27.1 ± 10.4 0.0 ± 0.0 1.0 ± 0.0
+DAIVPG-G −426.6 ± 44.4 0.8 ± 0.1 0.6 ± 0.2
+Himst-G −481.0 ± 0.1 0.4 ± 0.0 0.0 ± 0.0
+M Soccer ACR R-S SR
+R-AIF (Ours) −332.7 ± 57.8 0.6 ± 0.1 0.5 ± 0.2
+DreamerV3 −385.5 ± 55.0 0.8 ± 0.1 0.3 ± 0.2
+DAIVPG-G −476.4 ± 1.1 1.0 ± 0.0 0.0 ± 0.0
+Himst-G −479.7 ± 1.8 1.0 ± 0.0 0.0 ± 0.0
+M Plate Slide ACR R-S SR
+R-AIF (Ours) −38.3 ± 7.0 0.0 ± 0.0 1.0 ± 0.0
+DreamerV3 −114.7 ± 136.7 0.2 ± 0.3 0.8 ± 0.3
+DAIVPG-G −481.0 ± 0.0 0.6 ± 0.4 0.0 ± 0.0
+Himst-G −481.0 ± 0.0 1.0 ± 0.0 0.0 ± 0.0
+M Disassemble ACR R-S SR
+R-AIF (Ours) −479.8 ± 2.4 0.6 ± 0.3 0.0 ± 0.1
+DreamerV3 −481.0 ± 0.0 0.5 ± 0.3 0.0 ± 0.0
+DAIVPG-G −480.8 ± 0.2 0.8 ± 0.1 0.0 ± 0.0
+Himst-G −481.0 ± 0.0 0.0 ± 0.0 0.0 ± 0.0
+M Lever Pull ACR R-S SR
+R-AIF (Ours) −50.6 ± 2.5 0.0 ± 0.0 1.0 ± 0.0
+DreamerV3 −161.3 ± 184.8 0.1 ± 0.1 0.7 ± 0.4
+DAIVPG-G −480.6 ± 0.1 0.6 ± 0.1 0.1 ± 0.0
+Himst-G −481.0 ± 0.0 0.5 ± 0.1 0.0 ± 0.0
+R Door Open ACR R-S SR
+R-AIF (Ours) 425.8 ± 10.0 0.1 ± 0.0 1.0 ± 0.0
+DreamerV3 0.0 ± 0.0 0.0 ± 0.0 0.0 ± 0.0
+DAIVPG-G 0.0 ± 0.0 0.0 ± 0.0 0.0 ± 0.0
+Himst-G 0.4 ± 0.4 0.3 ± 0.2 0.0 ± 0.0
+R Block Lift ACR R-S SR
+R-AIF (Ours) 120.8 ± 159.8 0.4 ± 0.2 0.4 ± 0.4
+DreamerV3 0.0 ± 0.0 0.0 ± 0.0 0.0 ± 0.0
+DAIVPG-G 0.0 ± 0.0 0.1 ± 0.1 0.0 ± 0.0
+Himst-G 0.1 ± 0.1 0.0 ± 0.0 0.0 ± 0.0
+Table 2: Table shows different statistics for each baseline agent under each benchmark robotic tasks.
+Results. In general, our proposed R-AIF agent obtains earlier convergence than the DreamerV3, DAIVPG-G, and
+Himst-G models; see Figure 4. For most of the tasks, the R-AIF agent exhibits an ability to perform successfully
+earlier on; we hypothesize that this happens because the agent’s underlying policy is trained to “shape” the trajectory
+to one that the CRSPP sub-module (prior) prefers. Furthermore, R-AIF also obtains a final cumulative reward as
+well as a success rate that is higher than the three baseline algorithms for most of the tasks (see Table 2). Figure 4
+and Table 2 also demonstrate that the proposed R-AIF model is more stable overall, with a standard deviation for
+most tasks that is lower than the other three baseline models.
+Specifically, for the mountain car environment, DreamerV3 struggles to optimize effectively in the earlier phases,
+and its performance improves only when enough successful experiences have been collected from its random
+exploration. For Meta-World tasks, all agents are able to achieve at least some degree of success over time.
+Observe that our R-AIF agent learns to excel at a task very early on (utilizing only a small portion of collected
+expert/imitation experiences) even in tasks where the expert struggles to succeed (e.g., M Push). For robosuite, the
+proposed R-AIF is the only agent that can solve the tasks successfully compared to other baselines.
+9
+Preprint
+5 Conclusions
+In this work, we crafted what we called the robust active inference (R-AIF) framework, where agents are engaged in
+the dynamic, active perception, manipulating their environments while driven by our proposedcontrastive recurrent
+state prior preference. An R-AIF agent learns to take actions by utilizing a policy network that optimizes through a
+generalized advantage value estimated from the instrumental and epistemic signals derived from our expected free
+energy objective. The instrumental (goal-orienting) signal is constructed from the (sparse) reward and the dynamics
+of the CRSPP model while the epistemic (exploration-driving) signal is computed from the information gain and
+statistics of a generative world model and the policy network. Overall, we provide empirical results showing that
+our R-AIF achieves greater performance compared to other baselines: DreamerV3 [34], DAIVPG [47], and Himst’s
+model [82]. Finally, our results also demonstrate that R-AIF agents can operate well in varied goal, sparse-reward
+POMDP environments. Future work can consider improving the latent state space model with methods such as
+variational dynamics, discrete-variable autoencoders, and attention-weighting models [4, 81, 10, 2, 84]. It would
+also be useful to study the integration of R-AIF into physical (neuro)robotic systems, which would entail an
+embodied, enactive, and survival-oriented formulation of active perception and world model learning [56]. syleacm
+References
+[1] ANDRYCHOWICZ , M., W OLSKI , F., R AY, A., S CHNEIDER , J., F ONG , R., W ELINDER , P., M CGREW,
+B., T OBIN , J., P IETER ABBEEL , O., AND ZAREMBA , W. Hindsight experience replay. In Advances in
+Neural Information Processing Systems (2017), I. Guyon, U. V . Luxburg, S. Bengio, H. Wallach, R. Fergus,
+S. Vishwanathan, and R. Garnett, Eds., vol. 30, Curran Associates, Inc.
+[2] ANONYMOUS . Causally aligned curriculum learning. In Submitted to The Twelfth International Conference
+on Learning Representations (2023). under review.
+[3] BARTO , A., M IROLLI , M., AND BALDASSARRE , G. Novelty or surprise? Frontiers in Psychology 4 (2013).
+[4] BECKER , P., AND NEUMANN , G. On uncertainty in deep state space models for model-based reinforcement
+learning. Transactions on Machine Learning Research(2022).
+[5] BENGIO , Y., LÉONARD , N., AND COURVILLE , A. C. Estimating or propagating gradients through stochastic
+neurons for conditional computation. ArXiv abs/1308.3432 (2013).
+[6] BISHOP , C. M. Pattern Recognition and Machine Learning (Information Science and Statistics). Springer-
+Verlag, Berlin, Heidelberg, 2006.
+[7] BUESING , L., W EBER , T., R ACANIÈRE , S., E SLAMI , S. M. A., R EZENDE , D. J., R EICHERT , D. P.,
+VIOLA , F., B ESSE , F., G REGOR , K., H ASSABIS , D., AND WIERSTRA , D. Learning and querying fast
+generative models for reinforcement learning. CoRR abs/1802.03006 (2018).
+[8] ÇATAL, O., N AUTA, J., V ERBELEN , T., S IMOENS , P., AND DHOEDT , B. Bayesian policy selection using
+active inference. CoRR abs/1904.08149 (2019).
+[9] ÇATAL, O., W AUTHIER , S., D E BOOM , C., V ERBELEN , T., AND DHOEDT , B. Learning generative state
+space models for active inference. Frontiers in Computational Neuroscience 14(2020), 574372.
+[10] CHEN , T. Q., L I, X., G ROSSE , R., AND DUVENAUD , D. Isolating sources of disentanglement in variational
+autoencoders, 2018.
+[11] CHUNG , J., Ç AGLAR GÜLÇEHRE , C HO, K., AND BENGIO , Y. Empirical evaluation of gated recurrent
+neural networks on sequence modeling. ArXiv abs/1412.3555 (2014).
+[12] DECI , E. L., AND RYAN, R. M. Intrinsic Motivation and Self-Determination in Human Behavior. Springer
+US, 1985.
+[13] DOERR , A., D ANIEL , C., S CHIEGG , M., D UY, N.-T., S CHAAL , S., T OUSSAINT , M., AND SEBASTIAN , T.
+Probabilistic recurrent state-space models. In Proceedings of the 35th International Conference on Machine
+Learning (10–15 Jul 2018), J. Dy and A. Krause, Eds., vol. 80 of Proceedings of Machine Learning Research,
+PMLR, pp. 1280–1289.
+[14] FOUNTAS , Z., S AJID , N., M EDIANO , P., AND FRISTON , K. Deep active inference agents using monte-carlo
+methods. Advances in neural information processing systems 33 (2020), 11662–11675.
+[15] FRISTON , K. Learning and inference in the brain. Neural Networks 16, 9 (2003), 1325–1352. Neuroinfor-
+matics.
+10
+Preprint
+[16] FRISTON , K. Life as we know it. Journal of the Royal Society, Interface / the Royal Society 10(06 2013),
+20130475.
+[17] FRISTON , K., D A COSTA , L., H AFNER , D., H ESP, C., AND PARR , T. Sophisticated inference. Neural
+Computation 33, 3 (03 2021), 713–763.
+[18] FRISTON , K., F ITZ GERALD , T., R IGOLI , F., S CHWARTENBECK , P., AND PEZZULO , G. Active inference:
+a process theory. Neural computation 29, 1 (2017), 1–49.
+[19] FRISTON , K., F ITZ GERALD , T., R IGOLI , F., SCHWARTENBECK , P., PEZZULO , G., ET AL . Active inference
+and learning. Neuroscience & Biobehavioral Reviews 68 (2016), 862–879.
+[20] FRISTON , K., K ILNER , J., AND HARRISON , L. A free energy principle for the brain. Journal of Physiology-
+Paris 100, 1 (2006), 70–87. Theoretical and Computational Neuroscience: Understanding Brain Functions.
+[21] FRISTON , K., R IGOLI , F., O GNIBENE , D., M ATHYS , C., F ITZ GERALD , T., AND PEZZULO , G. Active
+inference and epistemic value. Cognitive neuroscience (02 2015).
+[22] FRISTON , K. J. The free-energy principle: a unified brain theory? Nature Reviews Neuroscience 11 (2010),
+127–138.
+[23] FRISTON , K. J., L IN, M., F RITH , C. D., P EZZULO , G., H OBSON , J. A., AND ONDOBAKA , S. Active
+Inference, Curiosity and Insight. Neural Computation 29, 10 (10 2017), 2633–2683.
+[24] FRISTON , K. J., P ARR , T., AND DE VRIES , B. The graphical brain: belief propagation and active inference.
+Network Neuroscience 1, 4 (2017), 381–414.
+[25] GAL, Y., AND GHAHRAMANI , Z. Dropout as a bayesian approximation: Representing model uncertainty in
+deep learning. In Proceedings of The 33rd International Conference on Machine Learning(New York, New
+York, USA, 20–22 Jun 2016), M. F. Balcan and K. Q. Weinberger, Eds., vol. 48 ofProceedings of Machine
+Learning Research, PMLR, pp. 1050–1059.
+[26] GOODFELLOW , I., B ENGIO , Y., AND COURVILLE , A. Deep Learning. MIT Press, 2016. http://www.
+deeplearningbook.org.
+[27] H A, D. R., AND SCHMIDHUBER , J. World models. ArXiv abs/1803.10122 (2018).
+[28] HAARNOJA , T., Z HOU , A., A BBEEL , P., AND LEVINE , S. Soft actor-critic: Off-policy maximum entropy
+deep reinforcement learning with a stochastic actor. In Proceedings of the 35th International Conference on
+Machine Learning, ICML 2018, Stockholmsmässan, Stockholm, Sweden, July 10-15, 2018(2018), J. G. Dy
+and A. Krause, Eds., vol. 80 of Proceedings of Machine Learning Research, PMLR, pp. 1856–1865.
+[29] HAARNOJA , T., Z HOU , A., H ARTIKAINEN , K., T UCKER , G., H A, S., T AN, J., K UMAR , V., Z HU, H.,
+GUPTA , A., A BBEEL , P., AND LEVINE , S. Soft actor-critic algorithms and applications, 2018.
+[30] HAFNER , D., L ILLICRAP , T., B A, J., AND NOROUZI , M. Dream to control: Learning behaviors by latent
+imagination. In International Conference on Learning Representations (2020).
+[31] HAFNER , D., L ILLICRAP , T. P., F ISCHER , I., V ILLEGAS , R., H A, D., L EE, H., AND DAVIDSON , J.
+Learning latent dynamics for planning from pixels. In Proceedings of the 36th International Conference on
+Machine Learning, ICML 2019, 9-15 June 2019, Long Beach, California, USA (2019), K. Chaudhuri and
+R. Salakhutdinov, Eds., vol. 97 of Proceedings of Machine Learning Research, PMLR, pp. 2555–2565.
+[32] HAFNER , D., L ILLICRAP , T. P., N OROUZI , M., AND BA, J. Mastering atari with discrete world models. In
+International Conference on Learning Representations (2021).
+[33] HAFNER , D., O RTEGA , P. A., B A, J., P ARR , T., F RISTON , K. J., AND HEESS , N. M. O. Action and
+perception as divergence minimization. ArXiv abs/2009.01791 (2020).
+[34] HAFNER , D., P ASUKONIS , J., B A, J., AND LILLICRAP , T. Mastering diverse domains through world models.
+ArXiv abs/2301.04104 (2023).
+[35] HAN, D., M ULYANA, B., S TANKOVIC , V., AND CHENG , S. A survey on deep reinforcement learning
+algorithms for robotic manipulation. Sensors 23, 7 (2023).
+[36] HE, K., F AN, H., W U, Y., X IE, S., AND GIRSHICK , R. Momentum contrast for unsupervised visual
+representation learning. In 2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+(2020), pp. 9726–9735.
+[37] HOFFMAN , M. D., B LEI , D. M., W ANG , C., AND PAISLEY , J. Stochastic variational inference. Journal of
+Machine Learning Research 14, 40 (2013), 1303–1347.
+11
+Preprint
+[38] KARL , M., S OELCH , M., B AYER , J., AND VAN DER SMAGT, P. Deep variational bayes filters: Unsupervised
+learning of state space models from raw data. In International Conference on Learning Representations
+(2017).
+[39] KINGMA , D. P., AND WELLING , M. Auto-encoding variational bayes. In 2nd International Conference on
+Learning Representations, ICLR 2014, Banff, AB, Canada, April 14-16, 2014, Conference Track Proceedings
+(2014).
+[40] KRAYANI , A., A LAM , A. S., M ARCENARO , L., N ALLANATHAN , A., AND REGAZZONI , C. A novel
+resource allocation for anti-jamming in cognitive-uavs: An active inference approach. IEEE Communications
+Letters 26, 10 (2022), 2272–2276.
+[41] LASKIN , M., S RINIVAS , A., AND ABBEEL , P. CURL: Contrastive unsupervised representations for
+reinforcement learning. In Proceedings of the 37th International Conference on Machine Learning (13–18
+Jul 2020), H. D. III and A. Singh, Eds., vol. 119 of Proceedings of Machine Learning Research, PMLR,
+pp. 5639–5650.
+[42] L ECUN, Y., BENGIO , Y., AND HINTON , G. Deep learning. Nature 521 (05 2015), 436–44.
+[43] LINDLEY , D. V. On a Measure of the Information Provided by an Experiment. The Annals of Mathematical
+Statistics 27, 4 (1956), 986 – 1005.
+[44] MACKAY, D. J. C. Information Theory, Inference, and Learning Algorithms . Copyright Cambridge
+University Press, 2003.
+[45] MAZZAGLIA , P., V ERBELEN , T., AND DHOEDT , B. Contrastive active inference. In Advances in Neural
+Information Processing Systems (2021), A. Beygelzimer, Y . Dauphin, P. Liang, and J. W. Vaughan, Eds.
+[46] MAZZAGLIA , P., V ERBELEN , T., Ç ATAL, O., AND DHOEDT , B. The free energy principle for perception
+and action: A deep learning perspective. Entropy 24, 2 (2022).
+[47] MILLIDGE , B. Deep active inference as variational policy gradients. Journal of Mathematical Psychology 96
+(2020), 102348.
+[48] MILLIDGE , B., T SCHANTZ , A., AND BUCKLEY , C. Whence the expected free energy? Neural Computation
+33 (01 2021), 1–36.
+[49] MNIH , V., K AVUKCUOGLU , K., S ILVER , D., G RAVES , A., A NTONOGLOU , I., W IERSTRA , D., AND
+RIEDMILLER , M. A. Playing atari with deep reinforcement learning. CoRR abs/1312.5602 (2013).
+[50] MNIH , V., KAVUKCUOGLU , K., S ILVER , D., R USU , A. A., V ENESS , J., B ELLEMARE , M. G., G RAVES ,
+A., R IEDMILLER , M., F IDJELAND , A. K., O STROVSKI , G., ET AL . Human-level control through deep
+reinforcement learning. nature 518, 7540 (2015), 529–533.
+[51] MORALES , E. F., M URRIETA -CID, R., B ECERRA , I., AND ESQUIVEL -BASALDUA , M. A. A survey on
+deep learning and deep reinforcement learning in robotics with a tutorial on deep reinforcement learning.
+Intell. Serv. Robot. 14, 5 (nov 2021), 773–805.
+[52] NOEL , A. D., VAN HOOF, C., AND MILLIDGE , B. Online reinforcement learning with sparse rewards
+through an active inference capsule. ArXiv abs/2106.02390 (2021).
+[53] NOZARI , S., K RAYANI , A., M ARIN -PLAZA , P., M ARCENARO , L., G ÓMEZ , D. M., AND REGAZZONI ,
+C. Active inference integrated with imitation learning for autonomous driving. IEEE Access 10 (2022),
+49738–49756.
+[54] OKADA , M., AND TANIGUCHI , T. Dreaming: Model-based reinforcement learning by latent imagination
+without reconstruction. In 2021 IEEE International Conference on Robotics and Automation (ICRA) (2021),
+pp. 4209–4215.
+[55] OLIVER , G., L ANILLOS , P., AND CHENG , G. An empirical study of active inference on a humanoid robot.
+IEEE Transactions on Cognitive and Developmental Systems 14, 2 (2022), 462–471.
+[56] ORORBIA , A., AND FRISTON , K. Mortal computation: A foundation for biomimetic intelligence. arXiv
+preprint arXiv:2311.09589 (2023).
+[57] ORORBIA , A., AND MALI , A. Active predictive coding: Brain-inspired reinforcement learning for sparse
+reward robotic control problems. In 2023 IEEE International Conference on Robotics and Automation (ICRA)
+(2023), pp. 3015–3021.
+[58] OUDEYER , P.-Y., AND KAPLAN , F. What is intrinsic motivation? a typology of computational approaches.
+Frontiers in Neurorobotics 1(2007).
+12
+Preprint
+[59] PARR , T., AND FRISTON , K. J. Generalised free energy and active inference. Biological cybernetics 113, 5
+(2019), 495–513.
+[60] PARR , T., M ARKOVI ´C, D., K IEBEL , S. J., AND FRISTON , K. J. Neuronal message passing using mean-field,
+bethe, and marginal approximations. Scientific Reports 9 (2019).
+[61] PARR , T., P EZZULO , G., AND FRISTON , K. Active Inference: The Free Energy Principle in Mind, Brain,
+and Behavior. 01 2022.
+[62] PATHAK , D., A GRAWAL , P., E FROS , A. A., AND DARRELL , T. Curiosity-driven exploration by self-
+supervised prediction. In International conference on machine learning (2017), PMLR, pp. 2778–2787.
+[63] P AUL , A., S AJID , N., C OSTA , L. D., AND RAZI , A. On efficient computation in active inference, 2023.
+[64] PEZZULO , G., D’A MATO, L., M ANNELLA , F., P RIORELLI , M., V AN DE MAELE , T., S TOIANOV , I. P.,
+AND FRISTON , K. Neural representation in active inference: Using generative models to interact with—and
+understand—the lived world. Annals of the New York Academy of Sciences 1534, 1 (2024), 45–68.
+[65] RACANIÈRE , S., W EBER , T., R EICHERT , D., B UESING , L., G UEZ , A., J IMENEZ REZENDE , D., P UIG -
+DOMÈNECH BADIA , A., V INYALS , O., H EESS , N., L I, Y., PASCANU , R., B ATTAGLIA , P., H ASSABIS ,
+D., S ILVER , D., AND WIERSTRA , D. Imagination-augmented agents for deep reinforcement learning. In
+Advances in Neural Information Processing Systems (2017), I. Guyon, U. V . Luxburg, S. Bengio, H. Wallach,
+R. Fergus, S. Vishwanathan, and R. Garnett, Eds., vol. 30, Curran Associates, Inc.
+[66] RAJESWAR , S., M AZZAGLIA , P., V ERBELEN , T., P ICHÉ , A., D HOEDT , B., C OURVILLE , A., AND LA-
+COSTE , A. Mastering the unsupervised reinforcement learning benchmark from pixels. In 40th International
+Conference on Machine Learning (2023).
+[67] R USSELL , S., AND NORVIG , P. Artificial Intelligence: A Modern Approach, 3 ed. Prentice Hall, 2010.
+[68] SAJID , N., B ALL , P. J., P ARR , T., AND FRISTON , K. J. Active inference: demystified and compared.
+Neural computation 33, 3 (2021), 674–712.
+[69] SCHULMAN , J., L EVINE , S., A BBEEL , P., J ORDAN , M., AND MORITZ , P. Trust region policy optimization.
+In Proceedings of the 32nd International Conference on Machine Learning (Lille, France, 07–09 Jul 2015),
+F. Bach and D. Blei, Eds., vol. 37 of Proceedings of Machine Learning Research, PMLR, pp. 1889–1897.
+[70] SCHULMAN , J., M ORITZ , P., L EVINE , S., J ORDAN , M. I., AND ABBEEL , P. High-dimensional continuous
+control using generalized advantage estimation. CoRR abs/1506.02438 (2015).
+[71] SCHULMAN , J., W OLSKI , F., D HARIWAL , P., R ADFORD , A., AND KLIMOV, O. Proximal policy optimiza-
+tion algorithms. CoRR abs/1707.06347 (2017).
+[72] SCHWARTENBECK , P., PASSECKER , J., H AUSER , T. U., F ITZ GERALD , T. H., K RONBICHLER , M., AND
+FRISTON , K. J. Computational mechanisms of curiosity and goal-directed exploration. eLife 8 (may 2019),
+e41703.
+[73] SEKAR , R., R YBKIN , O., D ANIILIDIS , K., A BBEEL , P., H AFNER , D., AND PATHAK , D. Planning to
+explore via self-supervised world models. In Proceedings of the 37th International Conference on Machine
+Learning (13–18 Jul 2020), H. D. III and A. Singh, Eds., vol. 119 of Proceedings of Machine Learning
+Research, PMLR, pp. 8583–8592.
+[74] SHYAM , P., J A ´SKOWSKI , W., AND GOMEZ , F. J. Model-based active exploration. In International
+Conference on Machine Learning (2018).
+[75] SMITH , R., F RISTON , K. J., AND WHYTE , C. J. A step-by-step tutorial on active inference and its
+application to empirical data. Journal of Mathematical Psychology 107 (2022), 102632.
+[76] SUTTON , R. S. Dyna, an integrated architecture for learning, planning, and reacting. SIGART Bull. 2, 4 (jul
+1991), 160–163.
+[77] SUTTON , R. S., AND BARTO , A. G. Reinforcement Learning: An Introduction, second ed. The MIT Press,
+2018.
+[78] TSCHANTZ , A., B ALTIERI , M., S ETH , A. K., AND BUCKLEY , C. L. Scaling active inference. In 2020
+International Joint Conference on Neural Networks (IJCNN) (2020), pp. 1–8.
+[79] TSCHANTZ , A., M ILLIDGE , B., S ETH , A. K., AND BUCKLEY , C. L. Reinforcement learning through active
+inference. CoRR abs/2002.12636 (2020).
+[80] VAN DEN OORD , A., L I, Y., AND VINYALS , O. Representation learning with contrastive predictive coding.
+CoRR abs/1807.03748 (2018).
+13
+Preprint
+[81] VAN DEN OORD , A., V INYALS , O., AND KAVUKCUOGLU , K. Neural discrete representation learning. In
+Proceedings of the 31st International Conference on Neural Information Processing Systems (Red Hook, NY ,
+USA, 2017), NIPS’17, Curran Associates Inc., p. 6309–6318.
+[82] VAN DER HIMST , O., AND LANILLOS , P. Deep active inference for partially observable mdps. In Active
+Inference (Cham, 2020), T. Verbelen, P. Lanillos, C. L. Buckley, and C. De Boom, Eds., Springer International
+Publishing, pp. 61–71.
+[83] VAN HOEFFELEN , N., AND LANILLOS , P. Deep active inference for pixel-based discrete control: Evaluation
+on the car racing problem. In Machine Learning and Principles and Practice of Knowledge Discovery
+in Databases - International Workshops of ECML PKDD 2021, Virtual Event, September 13-17, 2021,
+Proceedings, Part I (2021), vol. 1524 of Communications in Computer and Information Science, Springer,
+pp. 843–856.
+[84] VASWANI , A., S HAZEER , N., P ARMAR , N., U SZKOREIT , J., J ONES , L., G OMEZ , A. N., K AISER , L. U.,
+AND POLOSUKHIN , I. Attention is all you need. In Advances in Neural Information Processing Systems
+(2017), I. Guyon, U. V . Luxburg, S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett, Eds.,
+vol. 30, Curran Associates, Inc.
+[85] WATTER , M., S PRINGENBERG , J., B OEDECKER , J., AND RIEDMILLER , M. Embed to control: A locally
+linear latent dynamics model for control from raw images. In Advances in Neural Information Processing
+Systems (2015), C. Cortes, N. Lawrence, D. Lee, M. Sugiyama, and R. Garnett, Eds., vol. 28, Curran
+Associates, Inc.
+[86] YANG , Z., D IAZ , G. J., F AJEN , B. R., B AILEY , R., AND ORORBIA , A. G. A neural active inference model
+of perceptual-motor learning. Frontiers in Computational Neuroscience 17 (2023), 1099593.
+[87] YU, T., Q UILLEN , D., H E, Z., J ULIAN , R., H AUSMAN , K., F INN , C., AND LEVINE , S. Meta-world: A
+benchmark and evaluation for multi-task and meta reinforcement learning. In Conference on Robot Learning
+(CoRL) (2019).
+[88] ZHU, Y., W ONG , J., M ANDLEKAR , A., M ARTÍN -MARTÍN , R., J OSHI , A., N ASIRIANY , S., AND ZHU,
+Y. robosuite: A modular simulation framework and benchmark for robot learning. In arXiv preprint
+arXiv:2009.12293 (2020).
+[89] ŁUKASZ KAISER , BABAEIZADEH , M., M IŁOS , P., O SI ´NSKI , B., C AMPBELL , R. H., C ZECHOWSKI , K.,
+ERHAN , D., F INN , C., K OZAKOWSKI , P., L EVINE , S., M OHIUDDIN , A., S EPASSI , R., T UCKER , G., AND
+MICHALEWSKI , H. Model based reinforcement learning for atari. In International Conference on Learning
+Representations (2020).
+14
+Preprint
+Appendix: Implementation Details Documentation
+A Recurrent State Space Model and World Model
+Temporal Information. In active inference, the hidden state inferred by the agent is often computed by a
+likelihood matrix Rm×n where m is the number of possible state values andn is the number of possible observation
+values [18]. A single observation from the environment can then be directly mapped to a state using this scheme.
+Similarly, in the amortized inference context, the recognition density parameterized by an artificial neural network
+(ANN) is often used to estimate the posterior probability density over the hidden states of the environment [14].
+However, in the POMDP setting, an observation from a single time step would not provide sufficient information
+about the state as is done in classic active inference literature with a likelihood matrix. For example, higher-order
+information, such as velocity and acceleration of particular variables, cannot be captured in one single image but
+instead must be inferred from a sequence of images (or manually integrated [ 59]). Therefore, it is crucial for
+every active inference model in POMDP environments to maintain temporal information or deterministic beliefs
+throughout time as additional information is input into the generative model framework.
+Since active inference posits that an agent finds a policy, i.e, a sequence of actions, based on the estimated future
+state distribution [22, 75, 21, 16, 48], one approach is to predict the next state st+1 given the current state st
+and action at. When operating in POMDP environments, this methodology involves predicting the next partial
+observation ot+1 given the previous partial observation ot and the action at. In order to integrate temporal
+information into this generative model, we can use the ‘carried-over’ recurrent state in some forms of RNN such as
+a gated recurrent unit [11] as was done in [30, 32, 34, 52]. Therefore, the prior p(s) and posterior q(s) distributions
+over states are able to encapsulate the temporal information h embodied in previous observations ; see Figure 5 for
+a visual representation of this process.
+B Improving Numerical Stability
+Minimizing the complexity (term) aids the agent in closing the gap between its prior and its approximate posterior
+whereas minimizing the accuracy (term) improves the model’s future observation estimation. We utilize the world
+model which has a discretized state space [ 32] where each hidden state is represented by a vector of discrete
+distributions instead of a vector of Gaussian distribution parameters as is done in other deep active inference
+formulations. We also employ the KL balancing [32] and applying “symlog” function to inputs [34] for numerical
+stability:
+DKL [qθ(st|ot) ∥ pθ(st|st−1, at−1)] ← ηrepDKL [qθ(st|ot) ∥ sg(pθ(st|st−1, at−1))]
++ ηdynDKL [sg(qθ(st|ot)) ∥ pθ(st|st−1, at−1)] (11)
+where sg is the stop gradient operation, ηrep and ηdyn are the coefficients for representation and dynamics KL
+losses, respectively. We also clip the KL term to a minimum value of free bits [30] and finally apply the symlog
+function [34] on its inputs for numerical stability.
+C The prior preference self-revision mechanism
+For each step in a trajectory e, we record the following statistics: 1) a boolean showing whether the step was carried
+out by an expert pt or not, 2) a boolean representing whether the agent immediately achieved the goal at a step dt,
+and 3) a boolean indicating whether the agent succeeded in reaching its goal at least one time within the episode k.
+For each time step, we want to craft a decaying signal that emphasizes the degree of preference ρt ∈ [−1, 1]. In
+order to do so, we equip the agent with a self-revision mechanism which allows the agent to “look back” on how
+it performed and determine whether a certain state is preferred or not (see Algorithm 1). Note that we complete
+the for-loop for positive samples and set the preference at its highest value at the state and decay this backward
+whenever there is a successful state. In contrast, when the episode fails, the agent only needs to decay negatively
+backward from the end of the episode.
+D Computing the Information Gain using a Network Ensemble
+Taking actions that reduce the uncertainty of model parameters requires estimating the uncertainty in the first place.
+One can compute such a term from an explicit ANN ensemble or by using Monte Carlo dropout [25] to compute
+information gain [14]; however, as the world model grows in size/complexity, it becomes impractical to maintain a
+collection of multiple world models or to sample from a large state distribution. Therefore, we instead construct a
+15
+Preprint
+Figure 5: The temporal generative dynamics model.A depiction of the generative model that R-AIF uses to
+make use of past information; this is equivalent to a RSSM operating in latent space.
+separate ensemble of small multi-layer perceptrons (MLPs) [42, 26] to estimate the next state based on the current
+state and action – this is the “information gain network ensemble.” Formally, we learn a collection of N transition
+prior models {pωi(st|st−1, at−1)}N
+i=1. We next optimize the network ensemble by minimizing the negative log
+likelihood between the predicted state distribution (Gaussian) and the actual state produced by the world model. In
+essence, we engage in maximum likelihood estimation and update ensemble parameters by maximizing Gaussian
+likelihood for a predicted state Gaussian with µωi, σωi ∈ RD and an observed next state sθ from the world model.
+This can be formally stated as:
+arg min
+ωi
+L(ωi) =−
+
+−D
+2 ln(2πσ2
+ωi) −
+DX
+j=1
+(sθ,j − µωi)2
+2σ2ωi
+
+. (12)
+When training the actor πψ and the value network fχ, we may compute the information gain by computing the
+difference between the entropy of the mixture-average of the underlying Gaussian and the average of the entropy of
+all Gaussian outputs from the information gain network ensemble at each rolled-out step τ in imagination space.
+This is also the main reason why a collection of models are used instead of a single one as was done in [74, 79].
+Given the Gaussian entropy formula ent(σ) =ln(2πσ2)
+2 + 1
+2 , we formulate the information gain (or the uncertainty
+associated with model parameters) estimator in the following way:
+IG = ent
+ 
+std
+ 
+{si}N
+i=1
+
+− Ei [ent(σωi)] , si ∼ N(µωi, σωi). (13)
+E Using Percentage Exponential Moving Average (PEMA)
+We introduce and set the coefficient of the generative world model entropy ζ and actor distribution entropy
+η = 3× 10−4 and perform percentile exponential moving average normalization as in [ 34]; these coefficients
+depend on both the reward value [34] and model parameters, and therefore, given that they would be impractical
+to dynamically adjust, we choose to keep ζ and η fixed and small enough for numerical stability. As a result,
+normalizing the return to the range between0 and 1 can align with ζ and η range [34]. We then divide the difference
+between the return and the computed value by the range S as in [34]
+PEMA(Gτ , fχ(vτ |sτ )) =
+ 
+Gτ − fχ(vτ |sτ )
+
+/ max
+ 
+1, S
+
+, (14)
+where S is computed using percentile (Per) exponential moving average (EMA) [34]:
+S = EMA(Per(Gτ , 95) − Per(Gτ , 5), 99). (15)
+F R-AIF Agent Algorithm
+See implementation details in Algorithm 2.
+16
+Preprint
+Algorithm 1The Prior Self-Revision Mechanism (per Episode)
+Initialize positive and negative preference rate arrays m+, m−.
+{pt}T
+i=1 ← {pt ⊙ k}T
+i=1 ▷ Ensure good expert actions
+// Compute positive preference rate
+c ← max(pT , 0) ▷ Initialize carry variable
+for t ∈ {T..1} do
+c ← max(c ⊙ α, dt) ▷ Discount positive rate
+c ← c ⊙ (c ≥ ϵ) ▷ Quantize to 0 if smaller than ϵ
+m+ ← {c} ∪m+ ▷ Append to front
+end for
+m+ ← {clip
+ 
+p + m+
+t , 0, 1
+
+}T
+t=1 ▷ Value expert states more
+// Compute negative preference rate
+c ← −1/β ▷ Initialize carry variable
+for t ∈ {T..1} do
+c ← c ⊙ β ▷ Decay backward from the episode end
+m− ← {c} ∪m− ▷ Append to front
+end for
+m− ← {m−
+t ⊙ (1 − k)}T
+t=1 ▷ No negative rate when successful
+m− ← {m−
+t ⊙ (1 − pt)}T
+t=1 ▷ No negative rate in expert steps
+ρ ← {0} ∪ {clip
+ 
+m−
+t + m+
+t , 0, 1
+
+}T
+t=2 ▷ First state is neutral
+return ρ
+Prepare episode data:
+Successful at least once boolean k.
+Successful step boolean dt.
+Step is taken by the expert boolean pt.
+Episode length T.
+Hyperparameters:
+Successful discount rate α.
+Failure decay rate β.
+Positive signal quantization threshold ϵ.
+Algorithm 2R-AIF Agent Algorithm
+Initialize θ, ϕ, ψ, χ,{ωi}N
+i=1
+Initialize E, M, and M+
+Collect a small number of successful trajectories for M+
+while total environment steps < max environment total steps do
+for environment step t in 1..T do
+st ∼ qθ(st|st−1, at−1, ot)
+at ∼ πψ(at|st)
+if done then
+Compute ρ from Algorithm 1
+M ← M ∪ {(ot, at, rt, ρt)}T
+t=1
+if successful at least once step then
+M+ ← M+ ∪ {(ot, at, rt, ρt)}T
+t=1
+end if
+end if
+end for
+for gradient step in 1..S do
+if i mod 2 = 0then
+{(ot, at, rt, ρt)}t+L
+t ∼ M ▷ Draw normal buffer
+else
+{(ot, at, rt, ρt)}t+L
+t ∼ M+ ▷ Draw positive buffer
+end if
+θ ← θ − ξ∇θE
+
+Lt(θ)
+
+ϕ ← ϕ − ξ∇ϕE
+
+Lt(ϕ)
+
+{ωi}N
+i=1 ← {ωi − ξ∇ωiE
+
+Lt(ωi)
+
+}N
+i=1
+Imagine trajectories {(sτ , aτ )}H
+τ=t from each st
+Imagine prior preference {ˆsτ }H
+τ=t from each st
+Predict qθ(rτ |sτ ), fχ(vτ |sτ )
+Compute information gain IGτ
+Compute target advantage value Gτ
+χ ← χ − ξ∇χE
+
+Lτ (χ)
+
+ψ ← ψ + ξ∇ψE
+
+Lτ (ψ)
+
+end for
+end while
+Prepare models’ parameters:
+Generative world model θ.
+CRSPP model ϕ.
+Policy network ψ.
+Value function χ.
+Information gain ensemble {ωi}N
+i=1.
+Prepare other components:
+Environment E.
+Memory buffer M.
+Positive memory buffer M+.
+Hyperparameters:
+Gradient update steps S.
+Imagination horizon H.
+Batch size B.
+Sequence length L.
+Learning rate ξ.
+Ensemble size N.
+17
+Preprint
+G Implementation of environments
+Pixel-level Mountain Car.The mountain car environment [77] is a standard testing problem in reinforcement
+learning in which an agent (the car) has to drive uphill. A difficult aspect of this problem is that the gravitational
+force is greater than full force that can be exerted by the car such that it cannot go uphill by simply moving forward.
+The agent has to learn to build up the car’s potential energy by driving to the opposite hill (behind it) in order to
+create enough acceleration to reach the goal state in front of it. The original mountain car problem was proposed
+as an MDP where the environment state included the exact position and velocity of the car at any step in time.
+In the POMDP extension of the task, agents are not permitted to use this state directly. Instead, an agent must
+use rendered pictures (height 64, width 64) as its observations (and must infer useful internal states that aid it
+in its completion of the taks). Critically, the reward signal provided by this task is very sparse, i.e., it is −1 for
+every step and 0 when the agent reaches the goal, and the action space is continuous. In the actual environment,
+we modify it slightly to provide a dark background and light objects, e.g., white car, to improve visualization for
+human experimenters.
+Meta-World. In this environment, the agent (a controllable robotic arm) has to control the proprioceptive joints
+(represented as a vector of continuous actions) in a velocity-based control system [ 87]. Since the workspace is
+3D, an observation from a single viewpoint might cause the agent to struggle when inferring environment hidden
+states, e.g., the height of the goal can never be inferred from the top-down view. Therefore, we construct a raw
+pixel observation image using three different (camera) viewpoints: these include a top-down, an agent workspace,
+and a side camera view. Furthermore, we ensure that the reward space for the tasks in this environment are sparse,
+similar in form to the sparse signals produced by the mountain car environment with a reward of 0 provided when
+the agent achieves the control objective (it reaches a successful state) and −1 everywhere else. Note that, unlike
+the mountain car, the environment simulation continues even after the agent reaches the goal state.
+robosuite. Similar to the Meta-World environment, robosuite [88] simulates a robotics environment where the
+agent controls different joints as continuous actions. Since the robot’s workspace in robosuite is larger, we utilized
+four different camera viewpoints as streams of pixel observations for the agent instead of three as we did in
+Meta-World, namely: bird’s-eye view (similar to the top-down view in Meta-World), agent view (the agent’s
+perspective of the workspace), side view, and front view. Additionally, we modified the environment to have a
+sparse reward system, yielding a reward of 1 when the agent successfully achieves the task goal, and 0 otherwise.
+Finally, the environment continues even after the agent successfully reaches the goal state.
+H Training R-AIF Agent
+In contrast to on-policy learning algorithms [69, 71], we train our agent in an off-policy fashion (using memory
+buffers). Specifically, we utilize two replay buffers: a standard replay buffer M stores all agent’s encountered
+transitions, and a positive replay buffer M+ only contains episodes with at least one step successfully-reached
+goal state. While training, we sample from these buffers equally as training with more successful samples is found
+to boost the convergence of CRSPP. We then simulate the agent in the environment and train the world model,
+CRSPP, information gain ensemble [79], policy network, and value function periodically (see Algorithm 2 for
+specific details).
+I Derivation of Expected Free Energy
+According to [72, 14, 23], the expected free energy given the planned action distribution π can be formulated as:
+Gτ (π) =E ˜Q[ln Q(sτ , θ|π) − ln Q(oτ , sτ , θ|π)] (16)
+with ˜Q = Q(oτ , sτ , θ|π) the joint probability of future observation, state, and model parameter given planned
+action π. This expected free energy formula can be further decomposed into:
+G(π, τ) =E ˜Q[ln Q(θ|π) − ln Q(θ|oτ , sτ , π)] +E ˜Q[ln Q(sτ |θ, π) − ln Q(sτ |oτ , π)] − E ˜Q[ln P(oτ )] (17)
+with the first term is the model parameter exploration, denoting the mutual information between the model parameter
+before and after making an observation and state. The second term is the mutual information of agent’s hidden
+state before and after making a new observation. The third term is realizing preference term where the agent tries
+to compute the amount of information about the observation that matches its prior preference.
+18
+Preprint
+For ease of computation, we decompose each terms into a form that could be implemented practically by our active
+inference agent. Firstly, we can further decompose the parameter exploration term:
+E ˜Q[ln Q(θ|π) − ln Q(θ|oτ , sτ , π)] =E ˜Q[ln Q(θ|π) + lnQ(π|oτ , sτ ) + lnQ(oτ , sτ ) − ln Q(θ, π, oτ , sτ )]
+= E ˜Q[ln Q(π|oτ , sτ ) + lnQ(oτ , sτ ) − ln Q(oτ , sτ |θ, π) − ln Q(π)]
+= E ˜Q[ln Q(π|oτ , sτ ) − ln Q(π)] +E ˜Q[ln Q(oτ , sτ ) − ln Q(oτ , sτ |θ, π)]
+= E ˜Q[ln Q(π|oτ , sτ ) − ln Q(π)]
++ E ˜Q[ln Q(oτ |sτ ) − ln Q(oτ |sτ , θ, π)]
++ E ˜Q[ln Q(sτ ) − ln Q(sτ |θ, π)]
+= EQ(θ|oτ ,sτ ,π)Q(oτ ,sτ |π)[ln Q(π|oτ , sτ ) − EQ(oτ ,sτ ) ln Q(π|oτ , sτ )]
++ EQ(oτ |sτ ,θ,π)Q(sτ |θ,π)Q(θ|π)[EQ(θ,π) ln Q(oτ |sτ , θ, π) − ln Q(oτ |sτ , θ, π)]
++ EQ(oτ |sτ ,θ,π)Q(sτ |θ,π)Q(θ|π)[EQ(θ,π) ln Q(sτ |θ, π) − ln Q(sτ |θ, π)]
+= EQ(θ|oτ ,sτ ,π)H[Q(π|oτ , sτ )] − H[EQ(oτ ,sτ )Q(π|oτ , sτ )]
++ EQ(sτ |θ,π)H[EQ(θ,π)Q(oτ |sτ , θ, π)] − EQ(sτ |θ,π)Q(θ|π)H[Q(oτ |sτ , θ, π)]
++ H[EQ(θ,π)Q(sτ |θ, π)] − EQ(θ|π)H[Q(sτ |θ, π)]
+≈ EQ(θ|oτ ,sτ ,π)H[Q(π|oτ , sτ )] − H[EQ(oτ ,sτ )Q(π|oτ , sτ )]
++ H[EQ(θ,π)Q(sτ |θ, π)] − EQ(θ|π)H[Q(sτ |θ, π)]
+(18)
+where the term EQ(θ|oτ ,sτ ,π)H[ln Q(π|oτ , sτ )] is defined as entropy of the predicted action distribution for
+each estimated future state and observation, whereas the term H[EQ(oτ ,sτ )Q(π|oτ , sτ ) is defined as the en-
+tropy of the policy in the Gaussian mixture averaging all possible future observation and states. In our experi-
+ment, we minimize −H[EQ(oτ ,sτ )Q(π|oτ , sτ ) similar to the reinforcement learning literature where the agent
+get some intrinsic reward when the policy entropy increases. The term EQ(sτ |θ,π)H[EQ(θ,π)Q(oτ |sτ , θ, π)] −
+EQ(sτ |θ,π)Q(θ|π)H[Q(oτ |sτ , θ, π)] is “the parameter exploration or active learning” term [72, 23] in predicting the
+future observation, and the term H[EQ(θ,π)Q(sτ |θ, π)] − EQ(θ|π)H[Q(sτ |θ, π)] is the “parameter exploration or
+active learning” term in predicting future states. Note that, since we do not specifically compute/rollout future
+observations due to impracticality, the parameter exploration over future observation is omitted.
+Secondly, we decompose the second term of the expected free energy function as followed:
+E ˜Q[ln Q(sτ |θ, π) − ln Q(sτ |oτ , π)] =EQ(oτ ,sτ ,θ|π)[ln Q(sτ |θ, π) − ln Q(sτ |oτ , π)]
+= EQ(oτ |sτ ,θ,π)Q(θ|π)H[Q(sτ |θ, π)] − EQ(θ|oτ ,sτ ,π)Q(oτ |π)H[Q(sτ |oτ , π)].
+(19)
+This term can be explained as the “hidden state exploration or active inference” [72, 23], which can be defined
+as the entropy of future prior state distribution rolled out from the world model minus the entropy of future state
+posterior estimated from future predicted observation. In our experiment, since we only roll-out from the state, and
+not observation, we can omit the term −EQ(θ|oτ ,sτ ,π)Q(oτ |π)H[Q(sτ |oτ , π)]. Additionally, instead of minimizing
+the entropy of future states EQ(θ|π)H[Q(sτ |θ, π)], we maximize it to balance the omitted term and to give the
+agent more incentive in exploring un-visited states which has higher state entropy. This is also similar to providing
+agent with more motivation [3, 58, 12] when there is a certain level of uncertainty estimated to be in future states.
+The “hidden state exploration” can then be approximately equal to −EQ(θ|π)H[Q(sτ |θ, π)].
+Lastly, for the third term, we are maximizing the probability of future predicted observation which match our prior
+preference at the same time step. Since closer states sτ eventually leads to closer observation oτ , we can formulate
+this instrumental term as:
+ln P(oτ ) ≈ rτ + sim(sτ , ˆsτ ) (20)
+where rτ is the predicted future reward observation, and sim(sτ , s∗
+τ ) is the similarity measure that we have defined
+in the manuscript.
+Overall, we have the full form of the expected free energy formula given the policyπ:
+19
+Preprint
+Gτ (π) = − H[EQ(oτ ,sτ )Q(π|oτ , sτ )]
++ H[EQ(θ,π)Q(sτ |θ, π)] − EQ(θ|π)H[Q(sτ |θ, π)]
+− EQ(θ|π)H[Q(sτ |θ, π)]
+− rτ − sim(sτ , ˆsτ ).
+(21)
+J Discussion
+Being able to estimate a particular goal or preferred state at any particular time step is very useful for cognitive
+control agent. As our results demonstrate, the agent can then learn to adapt to take actions that lead from a specific
+state to its estimated goal(s). In contrast to the approaches taken in the imitation learning and behavior cloning
+literature, which train the agent’s policy based on a fixed collected expert dataset, in our R-AIF framework, the
+expert signal (the preferred observation) is estimated dynamically through an adaptive prior preference model,
+closing the domain gap between the actual trajectories and the collected training imitation (preferred) trajectories.
+Note that, with respect to our CRSPP sub-module, our model utilizes contrastive objective to adapt its parameters
+(i.e., it solely learns how to estimate the world model’s encoded states while pushing itself away from undesired
+world model states/trajectories) and thus does not require or learn any decoder. We only make use of the learned
+decoder in the generative world model to visualize the preferred observation from the estimated CRSPP’s states.
+Experimentally, we remark that using an auxiliary decoder proved useful for clearly visualizing the preferred
+observation ˆot given the produced preferred state ˆst at each time step.
+Theoretically, behavior cloning will be unable to achieve a great of success in multi-goal environments due to its
+reliance on a fixed, finite-size imitation sample pool. The expert trajectories in this fixed pool might further differ
+from the actual trajectories that the agent needs to take to solve the problem at hand, i.e., there is a distributional
+gap in observations, and therefore require different sets of actions to be taken. On the other hand, CRSPP learns to
+produce a dynamic goal state while jointly training the agent’s core policy to reach task goal states. Therefore, as
+we empirically confirmed in simulation, R-AIF does not suffer from goal-mismatch problem in the training phase
+that other AIF schemes would.
+Broader Impacts.In line with active inference process theory’s focus on optimizing a policy that minimizes future
+expected free energy, R-AIF agents do so by taking actions that they are able to predict will lead to their preferences
+(in line AIF’s instrumental signal), while also jointly taking actions that they are mostly sure about and working to
+reduce uncertainty by taking intelligent explorative actions of their niches (in line with AIF’s epistemic signals).
+This is practical for different robotic tasks, particularly those with potential dangers in their operation/functioning
+(i.e., when human safety must be considered). For example, a self-driving car agent can take the actions that it
+is sure to be safe rather than focusing exploring wildly (as random exploration policies encourage, potentially
+causing traffic accidents. Furthermore, the R-AIF framework could prove useful to the imitation learning research
+community, as its ability to optimize a policy that achieves dynamic goals as produced from an adaptive prior
+preference model was found to be quite useful for the more complex POMDP tasks we sought to solve in this work.
+This carries with it possible positive implications for practical application in downstream tasks such as autonomous
+driving [53] and complex robotic control and navigation [40, 55].
+20

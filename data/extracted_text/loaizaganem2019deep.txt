@@ -1,0 +1,653 @@
+Deep Random Splines for Point Process Intensity
+Estimation of Neural Population Data
+Gabriel Loaiza-Ganem
+Department of Statistics
+Columbia University
+gl2480@columbia.edu
+Sean M. Perkins
+Department of Biomedical Engineering
+Columbia University
+sp3222@columbia.edu
+Karen E. Schroeder
+Department of Neuroscience
+Columbia University
+ks3381@columbia.edu
+Mark M. Churchland
+Department of Neuroscience
+Columbia University
+mc3502@columbia.edu
+John P. Cunningham
+Department of Statistics
+Columbia University
+jpc2181@columbia.edu
+Abstract
+Gaussian processes are the leading class of distributions on random functions, but
+they suffer from well known issues including difﬁculty scaling and inﬂexibility with
+respect to certain shape constraints (such as nonnegativity). Here we propose Deep
+Random Splines, a ﬂexible class of random functions obtained by transforming
+Gaussian noise through a deep neural network whose output are the parameters
+of a spline. Unlike Gaussian processes, Deep Random Splines allow us to readily
+enforce shape constraints while inheriting the richness and tractability of deep
+generative models. We also present an observational model for point process data
+which uses Deep Random Splines to model the intensity function of each point
+process and apply it to neural population data to obtain a low-dimensional repre-
+sentation of spiking activity. Inference is performed via a variational autoencoder
+that uses a novel recurrent encoder architecture that can handle multiple point
+processes as input. We use a newly collected dataset where a primate completes
+a pedaling task, and observe better dimensionality reduction with our model than
+with competing alternatives.1
+1 Introduction
+Gaussian Processes (GPs) are one of the main tools for modeling random functions [31]. They allow
+control of the smoothness of the function by choosing an appropriate kernel but have the disadvantage
+that, except in special cases (for example Gilboa et al. [17], Flaxman et al. [15]), inference in GP
+models scales poorly in both memory and runtime. Furthermore, GPs cannot easily handle shape
+constraints. It can often be of interest to model a function under some shape constraint, for example
+nonnegativity, monotonicity or convexity/concavity [29, 33, 30, 26]. While some shape constraints
+can be enforced by transforming the GP or by enforcing them at a ﬁnite number of points, doing so
+cannot always be done and usually makes inference harder, see for example Lin and Dunson [24].
+Splines are another popular tool for modeling unknown functions [ 37]. When there are no shape
+constraints, frequentist inference is straightforward and can be performed using linear regression,
+by writing the spline as a linear combination of basis functions. Under shape constraints, the basis
+function expansion usually no longer applies, since the space of shape constrained splines is not
+typically a vector space. However, the problem can usually still be written down as a tractable
+1Our code is available at https://github.com/cunningham-lab/drs.
+33rd Conference on Neural Information Processing Systems (NeurIPS 2019), Vancouver, Canada.
+arXiv:1903.02610v6  [stat.ML]  29 Dec 2019
+constrained optimization problem [33]. Furthermore, when using splines to model a random function,
+a distribution must be placed on the spline’s parameters, so the inference problem becomes Bayesian.
+DiMatteo et al. [10] proposed a method to perform Bayesian inference in a setting without shape
+constraints, but the method relies on the basis function expansion and cannot be used in a shape
+constrained setting. Furthermore, fairly simple distributions have to be placed on the spline parameters
+for their approximate posterior sampling algorithm to work adequately, which results in the splines
+having a restrictive and oversimpliﬁed distribution.
+On the other hand, deep probabilistic models take advantage of the major progress in neural networks
+to ﬁt rich, complex distributions to data in a tractable way [32, 28, 21, 16, 20]. However, their goal is
+not usually to model random functions.
+In this paper, we introduce Deep Random Splines (DRS), an alternative to GPs for modeling random
+functions. DRS are a deep probabilistic model in which standard Gaussian noise is transformed
+through a neural network to obtain the parameters of a spline, and the random function is then the
+corresponding spline. This combines the complexity of deep generative models and the ability to
+enforce shape constraints of splines.
+We use DRS to model the nonnegative intensity functions of Poisson processes [ 22]. In order to
+ensure that the splines are nonnegative, we use a parameterization of nonnegative splines that can be
+written as an intersection of convex sets, and then use the method of alternating projections [36] to
+obtain a point in that intersection (and differentiate through that during learning). To perform scalable
+inference, we use a variational autoencoder [21] with a novel encoder architecture that takes multiple,
+truly continuous point processes as input (not discretized in bins, as is common).
+Our contributions are: (i) Introducing DRS, (ii) using the method of alternating projections to
+constrain splines, (iii) proposing a variational autoencoder model whith a novel encoder architecture
+for point process data which uses DRS, and (iv) showing that our model outperforms commonly
+used alternatives in both simulated and real data.
+The rest of the paper is organized as follows: we ﬁrst explain DRS, how to parameterize them and
+how constraints can be enforced in section 2. We then present our model and how to do inference in
+section 3. We then compare our model against competing alternatives in simulated data and in two
+real spiking activity datasets, one of which we collected, in section 4, and observe that our method
+outperforms the alternatives. Finally, we summarize our work in section 5.
+2 Deep Random Splines
+Throughout the paper we will consider functions on the interval [T1,T2) and will select I + 1
+ﬁxed knots T1 = t0 < ··· < tI = T2. We will refer to a function as a spline of degree d and
+smoothness s<d if the function is a d-degree polynomial in each interval [ti−1,ti) for i= 1,...,I ,
+is continuous, and stimes differentiable. We will denote the set of splines of degreedand smoothness
+sby Gd,s = {gψ : ψ∈Ψd,s}, where Ψd,s is the set of parameters of each polynomial in each interval.
+That is, every ψ ∈Ψd,s contains the parameters of each of the I polynomial pieces (it does not
+contain the locations of the knots as we take them to be ﬁxed since we observed overﬁtting when not
+doing so). While the most natural ways to parameterize splines of degree dare a linear combination
+of basis functions or with the d+ 1 polynomial coefﬁcients of each interval, these parameterizations
+do not lend themselves to easily enforce constraints such as nonnegativity [ 33]. We will thus use
+a different parameterization which we will explain in detail in the next section. We will denote by
+Ψ ⊆Ψd,s the subset of spline parameters that result in the splines having the shape constraint of
+interest, for example, nonnegativity.
+DRS are a distribution over Gd,s. To sample from a DRS, a standard Gaussian random variable
+Z ∈Rm is transformed through a neural network parameterized by θ, fθ : Rm →Ψ. The DRS is
+then given by gfθ(Z) and inference on θcan be performed through a variational autoencoder [21].
+Note that f maps to Ψ, thus ensuring that the spline has the relevant shape constraint.
+2.1 Constraining Splines
+We now explain how we can enforce piecewise polynomials to form a nonnegative spline. We add the
+nonnegativity constraint to the spline as we will use it for our model in section 3, but constraints such
+2
+as monotonicity and convexity/concavity can be enforced in an analogous way. In order to achieve
+this, we use a parameterization of nonnegative splines that might seem overly complicated at ﬁrst.
+However, it has the critical advantage that it decomposes into the intersection of convex sets that are
+easily characterized in terms of the parameters, which is not the case for the naive parameterization
+which only includes the d+ 1 coefﬁcients of every polynomial. We will see how to take advantage of
+this fact in the next section.
+A beautiful but perhaps lesser known spline result (see Lasserre [23]) gives that a polynomial p(t) of
+degree d, where d= 2k+ 1 for some k∈N, is nonnegative in the interval [l,u) if and only if it can
+be written down as follows:
+p(t) = (u−t)[t]⊤Q1[t] + (t−l)[t]⊤Q2[t] (1)
+where [t] = (1,t,t 2,...,t k)⊤and Q1 and Q2 are (k+ 1)×(k+ 1) symmetric positive semideﬁnite
+matrices. It follows that a piecewise polynomial of degree dwith knots t0,...,t I deﬁned as p(i)(t)
+for t∈[ti−1,ti) for i= 1,...,I is nonnegative if and only if it can be written as:
+p(i)(t) = (ti −t)[t]⊤Q(i)
+1 [t] + (t−ti−1)[t]⊤Q(i)
+2 [t] (2)
+for i= 1,...,I , where each Q(i)
+1 and Q(i)
+2 are (k+ 1) ×(k+ 1) symmetric positive semideﬁnite
+matrices. We can thus parameterize every piecewise nonnegative polynomial on ourI intervals with
+(Q(i)
+1 ,Q(i)
+2 )I
+i=1. If no constraints are added on these parameters, the resulting piecewise polynomial
+might not be smooth, so certain constraints have to be enforced in order to guarantee that we are
+parameterizing a nonnegative spline and not just a nonnegative piecewise polynomial. To that end,
+we deﬁne C1 as the set of (Q(i)
+1 ,Q(i)
+2 )I
+i=1 such that:
+p(i)(ti) = p(i+1)(ti) for i= 1,...,I −1 (3)
+that is, C1 is the set of parameters whose resulting piecewise polynomial as in equation 2 is continuous.
+Analogously, let Cj for j = 2,3,... be the set of (Q(i)
+1 ,Q(i)
+2 )I
+i=1 such that:
+∂j−1
+∂tj−1 p(i)(ti) = ∂j−1
+∂tj−1 p(i+1)(ti) for i= 1,...,I −1 (4)
+so that Cj is the set of parameters whose corresponding piecewise polynomials have matching left
+and right (j−1)-th derivatives. Let C0 be the set of (Q(i)
+1 ,Q(i)
+2 )I
+i=1 which are symmetric positive
+semideﬁnite. We can then parameterize the set of nonnegative splines on [T1,T2) by Ψ = ∩s+1
+j=0Cj.
+Note that the case where dis even can be treated analogously (see appendix 1).
+2.2 The Method of Alternating Projections
+In order to use a DRS,fθ has to map toΨ, that is, we need to have a way for a neural network to map to
+the parameter set corresponding to nonnegative splines. We achieve this by taking fθ(z) = h( ˜fθ(z)),
+where ˜fθ is an arbitrary neural network and his a surjective function onto Ψ. The most natural
+choice for his the projection onto Ψ. However, while computing the projection onto Ψ (for Ψ as in
+section 2.1) can be done by solving a convex optimization problem, it cannot be done analytically.
+This is an issue because when we train the model, we will need to differentiate fθ with respect to
+θ. Note that Amos and Kolter [4] propose a method to have an optimization problem as a layer in
+a neural network. One might hope to use their method for our problem, but it cannot be applied
+due to the semideﬁnite constraint on our matrices. Concurrently to our work, Agrawal et al. [3]
+developed a method to differentiate through convex optimization problems that is compatible with
+our semideﬁnite constraints. We leave further exploration of their method within our framework for
+future work.
+The method of alternating projections [ 36, 5] allows us to approximately compute such a func-
+tion h analytically. If C0,..., Cs+1 are closed, convex sets in RD, then the sequence ψ(k) =
+Pkmod (s+2)(ψ(k−1)) converges to a point in ∩s+1
+j=0Cj for any starting ψ(0), where Pj is the projection
+onto Cj for j = 0,...,s + 1. The method of alternating projections then consists on iteratively
+projecting onto each set in a cyclic fashion. We call computing ψ(k) from ψ(k−1) the k-th iteration of
+the method of alternating projections. This method can be useful to obtain a point in the intersection
+if each Pj can be easily computed.
+3
+In our case, projecting onto C0 can be done by doing eigenvalue decompositions of Q(i)
+1 and Q(i)
+2
+and zeroing out negative elements in the diagonal matrices containing the eigenvalues. While this
+projection might seem computationally expensive, the matrices are small and this can be done
+efﬁciently. For example, for cubic splines ( d = 3), there are 2I matrices each one of size 2 ×2.
+Projecting onto Cj for j = 1 ,...s + 1 can be done analytically as it can be formulated as a
+quadratic optimization problem with linear constraints. Furthermore, because of the local nature of
+the constraints where every interval is only constrained by its neighboring intervals, this quadratic
+optimization problem can be reduced to solving a tridiagonal system of linear equations of size I−1
+which can be solved efﬁciently in O(I) time with simpliﬁed Gaussian elimination. We prove this
+fact, using the KKT conditions, in appendix 2.
+By letting hbe the ﬁrst M iterations of the method of alternating projections, we can ensure that fθ
+maps (approximately) to Ψ, while still being able to compute ∇θfθ(z). Note that we could ﬁnd such
+an hfunction using Dykstra’s algorithm (not to be confused with Dijkstra’s shortest path algorithm),
+which is a modiﬁcation of the method of alternating projections that converges to the projection of
+ψ(0) onto ∩s+1
+j=0Cj [14, 6, 35]), but we found that the method of alternating projections was faster to
+differentiate when using reverse mode automatic differentiation packages [1].
+Another way of ﬁnding such an hwould be unrolling any iterative optimization method that solves
+the projection onto Ψ, such as gradient-based methods or Newton methods. We found the alternating
+projections method more convenient as it does not involve additional hyperparameters such as learning
+rate that drastically affect performance. Furthermore, the method of alternating projections is known
+to have a linear convergence rate (as fast as gradient-based methods) that is independent of the
+starting point [5]. This last observation is important, as the starting point in our case is determined
+by the output of ˜fθ, so that the convergence rate being independent of the starting point ensures that
+˜fθ cannot learn to ignore h, which is not the case for gradient-based and Newton methods (for a
+ﬁxed number of iterations and learning rate, there might exist an initial point that is too far away to
+actually reach the projection). Finally, note that if we wanted to enforce, for example, that the spline
+be monotonic, we could parameterize its derivative and force it to be nonnegative or nonpositive.
+Convexity or concavity can be enforced analogously.
+3 Deep Random Splines as Intensity Functions of Point Processes
+Since we will use DRS as intensity functions for Poisson processes, we begin this section with a brief
+review of these processes.
+3.1 Poisson Processes
+An inhomogeneous Poisson process in a set Sis a random subset of S. The process can (for our
+purposes) be parameterized by an intensity function g : S→ R+ and in our case, S= [T1,T2).
+We write S ∼PPS(g) to denote that the random set S, whose elements we call events, follows a
+Poisson process on Swith intensity g. If S = {xk}K
+k=1 ∼PP S(g), then |S∩A|, the number of
+events in any A⊆S, follows a Poisson distribution with parameter
+∫
+Ag(t)dtand the log likelihood
+of Sis given by:
+log p({xk}K
+k=1|g) =
+K∑
+k=1
+log g(xk) −
+∫
+S
+g(t)dt (5)
+Splines have the very important property that they can be analytically integrated (as the integral of
+polynomials can be computed in closed form), which allows to exactly evaluate the log likelihood in
+equation 5 when gis a spline. As a consequence, ﬁtting a DRS to observed events is more tractable
+than ﬁtting models that use GPs to represent g, such as log-Gaussian Cox processes [29]. Inference in
+the latter type of models is very challenging, despite some efforts by Cunningham et al. [9], Adams
+et al. [2], Lloyd et al. [25]. Splines also vary smoothly, which incorporates the reasonable assumption
+that the expected number of events changes smoothly over time. These properties were our main
+motivations for choosing splines to model intensity functions.
+4
+3.2 Our Model
+Suppose we observe N simultaneous point processes in [T1,T2) a total of Rrepetitions (we will
+call each one of these repetitions/samples a trial). Let Xr,n denote the n-th point process of the r-th
+trial. Looking ahead to an application we study in the results, data of this type is a standard setup for
+microelectrode array data, where N neurons are measured from time T1 to time T2 for Rrepetitions,
+and each event in the point processes corresponds to a spike (the time at which the neurons “ﬁred”).
+Each Xr,n is also called a spike train. The model we propose, which we call DRS-V AE, is as follows:
+
+
+
+Zr ∼N(0,Im) for r= 1,...,R
+ψr,n = f(n)
+θ (Zr) for n= 1,...,N
+Xr,n|ψr,n ∼PP[T1,T2)(gψr,n)
+(6)
+xrN
+xr2
+xr1
+LSTM N
+LSTM 2
+LSTM 1
+dense
+. . .
+. . .
+1
+Figure 1: Encoder architecture.
+where each f(n)
+θ : Rm →Ψ is obtained as described in section 2.2. The hidden state Zr for the r-th
+trial Xr := (Xr,1,...,X r,N) can be thought as a low-dimensional representation of Xr. Note that
+while the intensity function of every point process and every trial is a DRS, the latent stateZr of each
+trial is shared among the N point processes. Note also that the data we are modeling can be thought
+of as Rmarked point processes [22], where the mark of the event xr,n,k (the k-th event of the n-th
+point process of the r-th trial) is n. In this setting, gψr,n corresponds to the conditional (on Zr and on
+the mark being n) intensity of the process for the r-th trial.
+Once again, one might think that our parameterization of nonnegative splines is unnecessarily
+complicated and that having f(n)
+θ in equation 6 be a simpler parameterization of an arbitrary spline
+(e.g. basis coefﬁcients) and using τ(gψr,n) instead of gψr,n, where τ is a nonnegative function, might
+be a better solution to enforcing nonnegativity constraints. The function τ would have to be chosen
+in such a way that the integral of equation 5 can still be computed analytically, makingτ(t) = t2 a
+natural choice. While this procedure would avoid having to use the method of alternating projections,
+we found that squared splines perform very poorly as they oscillate too much. Alternatively, we also
+tried using a B-spline basis with nonnegative coefﬁcients, resulting in nonnegative splines. While
+the approximation error between a nonnegative smooth function and its B-spline approximation
+with nonnegative coefﬁcients can be bounded [ 34], note that not every nonnegative spline can be
+written down as a linear combination of B-splines with nonnegative coefﬁcients. In practice we found
+the bound to be too loose and also obtained better performance through the method of alternating
+projections.
+3.3 Inference
+Autoencoding variational Bayes [21] is a technique to perform inference in the following type of
+model: {Zr ∼N(0,Im) for r= 1,...,R
+Xr|Zr ∼pθ(x|zr) (7)
+where Xr are the observables and Zr ∈Rm the corresponding latents. Since maximum likelihood is
+not usually tractable, the posterior p(z|x) is approximated with qφ(z|x), which is given by:
+qφ(z|x) =
+R∏
+r=1
+qφ(zr|xr),with qφ(zr|xr) = N
+(
+µφ(xr),diag
+(
+σ2
+φ(xr)
+))
+(8)
+where the encoder (µφ,σφ) is a neural network parameterized by φ. The ELBO L, a lower bound
+of the log likelihood, is then maximized over both the generative parameters θand the variational
+5
+parameters φ:
+L(θ,φ) =
+R∑
+r=1
+−KL(qφ(zr|xr)||p(zr)) + Eqφ(zr|xr)[log pθ(xr|zr)] (9)
+Maximizing the ELBO with stochastic gradient methods is enabled by the use of the reparameter-
+ization trick. In order to perform inference in our model, we use autoencoding variational Bayes.
+Because of the point process nature of the data, µφ and σφ require a recurrent architecture, since
+their input xr = (xr,1,xr,2,...,x r,N) consists of N point processes. This input does not consist
+of a single sequence, but N sequences of different lengths (numbers of events), which requires a
+specialized architecture. We use N separate LSTMs [19], one per point process. Each LSTM takes
+as input the events of the corresponding point process. The ﬁnal states of each LSTM are then
+concatenated and transformed through a dense layer (followed by an exponential activation in the case
+of σφ to ensure positivity) in order to map to the hidden spaceRm. We also tried bidirectional LSTMs
+[18] but found regular LSTMs to be faster while having similar performance. The architecture is
+depicted in ﬁgure 1. The ELBO for our model is then given by:
+L(θ,φ) =
+R∑
+r=1
+−KL(qφ(zr|xr)||p(zr)) +Eqφ(zr|xr)
+[ N∑
+n=1
+Kr,n∑
+k=1
+log gψr,n(xr,n,k) −
+∫
+S
+gψr,n(t)dt
+]
+(10)
+where Kr,n is the number of events in the n-th point process of the r-th trial. Gao et al. [16] have
+a similar model, where a hidden Markov model is transformed through a neural network to obtain
+event counts on time bins. The hidden state for a trial in their model is then an entire hidden Markov
+chain, which will have signiﬁcantly higher dimension than our hidden state. Also, their model can be
+recovered from ours if we change the standard Gaussian distribution of Zr in equation 6 to reﬂect
+their Markovian structure and choose Gto be piecewise constant, nonnegative functions. We also
+emphasize the fact that our model is very easy to extend: for example, it would be straightforward
+to extend it to multi-dimensional point processes (not neural data any more) by changing Gand its
+parameterization. It is also straightforward to use a more complicated point process than the Poisson
+one by allowing the intensity to depend on previous event history. Furthermore, DRS can be used in
+settings that require random functions, even if no point process is involved.
+One of the advantages of our method is that it scales well (not cubically, like most GP methods) with
+respect to most of its parameters like number of trials, number of knots, number of iterations of the
+alternating projections algorithm, hidden dimension and number of neurons. The only parameter
+with which our method does not scale as well is the number of spikes since the LSTM-based encoder
+has to process every spike individually (not spike counts over time bins). However, this issue can
+be addressed by using a non-amortized inference approach (i.e. not having an encoder and having
+separate variational parameters for each trial). We found that the amortized approach using our
+proposed encoder was better for the datasets we analyzed, but even larger datasets might beneﬁt from
+the non-amortized approach.
+4 Experiments
+4.1 Simulated Data
+We simulated data with the following procedure: First, we set 2 different types of trials. For each
+type of trial, we sampled one true intensity function on [0,10) for each of the N = 2 point processes
+by sampling from a GP and exponentiating the result. We then sampled 600 times from each type
+of trial, resulting in 1200 trials. We randomly selected 1000 trials for training and set aside the rest
+for testing. We then ﬁt the model described in section 3.2 and compare against other methods that
+perform intensity estimation while recovering a low-dimensional representation of trial: the PP-GPFA
+model [13], the PfLDS model [16] and the GPFA model [39]. The two latter models discretize time
+into Btime bins and have a latent variable per time bin and per trial (as opposed to our model which
+is only per trial), while the former recovers continuous latent trajectories. They do this as a way of
+enforcing temporal smoothness by placing an appropriate prior over their latent trajectories, which we
+do not have to do as we implicitly enforce temporal smoothness by using splines to model intensity
+functions. Note that Du et al. [11], Yang et al.[38], Mei and Eisner [27] and Du et al. [12] all propose
+related methods in which the intensity of point processes is estimated. However, we do not compare
+against these as the two former ones model dynamic networks, making a direct comparison difﬁcult,
+6
+and the two latter do not use latent variables, which is one of the main advantages and goals of our
+method as a way to perform dimensionality reduction for neural population data.
+We used a uniform grid with 11 knots (resulting in I = 10 intervals), d = 3 and s = 2. Since a
+twice-differentiable cubic spline on I intervals has I+ 3 degrees of freedom, when discretizing time
+for PfLDS and GPFA we use B = I+ 3 = 13 time bins. This way the distribution recovered by
+PfLDS also has B = 13 degrees of freedom, while the distribution recovered by GPFA has even
+more. We set the latent dimension min our model to 2 and we also set the latent dimension per
+time bin in PfLDS and GPFA to 2, meaning that the overall latent dimension for an entire trial was
+2B = 26. These two choices make the comparison conservative as they allow more ﬂexibility for the
+two competing methods than for ours. For PP-GPFA we set the continuous latent trajectory to have
+dimension 2. Our architecture and hyperparameter choices are included in appendix 3.
+The top left panel of ﬁgure 2 shows the posterior means of the hidden variables in our model for
+each of the 200 test trials. Each posterior mean is colored according to its type of trial. We can
+see that different types of trials form separate clusters, meaning that our model successfully obtains
+low-dimensional representations of the trials. Note that the model is trained without having access
+to the type of each trial; colors are assigned in the ﬁgure post hoc. The top right panel shows the
+events (in black) for a particular point process on a particular trial, along with the true intensity (in
+green) that generated the events and posterior samples from our model (in purple), PP-GPFA (in
+orange), PfLDS (in blue), and GPFA (in red) of the corresponding intensities. Note that since PfLDS
+and GPFA parameterize the number of counts on each time bin, they do not have a corresponding
+intensity. We plot instead a piecewise constant intensity on each time bin in such a way that the
+expected number of events in each time bin is equal to the integral of the intensity. We can see that our
+method recovers a smooth function that is closer to the truth than the ones recovered with competing
+methods. The bottom left panel of ﬁgure 2 further illustrates this point with a QQ-plot (where time is
+rescaled as in [7]), and we can see once again that our method recovers intensities that are closer to
+the truth.
+Table 1 shows performance from our model compared against PP-GPFA, PfLDS and GPFA. The
+second column shows the per-trial ELBO on test data, and we can see that our model has a larger
+ELBO than the alternatives. While having a better ELBO does not imply that our log likelihood
+is better, it does suggest that it is. Since both PfLDS and GPFA put a distribution on event counts
+on time bins instead of a distribution on event times as our models does, the log likelihoods are
+not directly comparable. However, in the case of PfLDS, we can easily convert from the Poisson
+likelihood on time bins to the piecewise constant intensity Poisson process likelihood, so that the
+numbers become comparable. In order to get a quantitative comparison between our model and
+GPFA, we take advantage of the fact that we know the true intensity that generated the data and
+compare average L2 distance, across point processes and trials, between posterior intensity samples
+and actual intensity function. Once again, we can see that our method outperforms the alternatives.
+Table 1 also includes the standard deviation of these L2 distances. Since the standard deviations are
+somewhat large in comparison to the means, for each of the two competing alternatives, we carry out
+a two sample t-test comparing theL2 distance means obtained with our method against the alternative.
+The p-values indicate that our method recovers intensity functions that are closer to the truth in a
+statistically signiﬁcant way.
+Table 1: Quantitative comparison of our method (DRS-V AE) against competing alternatives.
+SIMULATED DATA REACHING DATA CYCLING DATA
+METHOD ELBO L2 p-V ALUE ELBO 15-NN SSG/SST ELBO 15-NN SSG/SST
+DRS-V AE 57.1 4 .43 ±3.55 − − 500.8 23 .7% 73.9% 6372 55.9% 70.0%
+PfLDS 52.3 11 .9 ±6.18 <10−73 −505.7 3 .1% 6 .2% 6532 11.7% 3 .2%
+GPFA − 12.9 ±7.19 <10−72 − − − − − −
+PP-GPFA 29.0 15 .4 ±9.64 <10−71 −523.2 14 .1% 30 .5% 6079 51 .1% 14 .6%
+7
+0.4
+ 0.3
+ 0.2
+ 0.1
+ 0.0 0.1 0.2
+latent dimension 1
+1.0
+0.5
+0.0
+0.5
+1.0
+latent dimension 2
+0 2 4 6 8 10
+time (unitless)
+0
+2
+4
+6
+8
+10
+12intensity
+true intensity
+DRS-VAE posterior samples
+PfLDS posterior samples
+GPFA posterior means
+PP-GPFA posterior means
+events
+0.0 0.2 0.4 0.6 0.8 1.0
+theoretical quantiles
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0observed quantiles
+DRS-VAE
+PfLDS
+PP-GPFA
+100
+ 50
+ 0 50 100 150 200 250 300
+time (ms)
+0.000
+0.002
+0.004
+0.006
+0.008
+0.010
+0.012intensity
+DRS-VAE posterior samples
+PfLDS posterior samples
+PP-GPFA posterior samples
+spike train
+Figure 2: Posterior means of the hidden variables of DRS-V AE by type of trial on simulated data (top
+left panel), QQ-plot of time-rescaled intensities on simulated data (bottom left panel), comparison of
+posterior intensities of our method (DRS-V AE) against competing alternatives on simulated data (top
+right panel) and reaching data (bottom right panel).
+4.2 Real Data
+4.2.1 Reaching Data
+We also ﬁt our model to the dataset collected by Churchland et al.[8]. The dataset, after preprocessing
+(see appendix 4 for details), consists of measurements of 20 neurons for 3590 trials on the interval
+[−100,300) (in ms) of a primate. In each trial, the primate reaches with its arm to a speciﬁc location,
+which changes from trial to trial (we can think of the 40 locations as types of trials), where time 0
+corresponds to the beginning of the movement. We randomly split the data into a training set with
+3000 trials and a test set with the rest of the trials.
+We used twice-differentiable cubic splines and 18 uniformly spaced knots (that is, 17 intervals). For
+the comparison against PfLDS, we split time into 20 bins, resulting in time bins of 20ms(which
+is a standard length), once again making sure that the degrees of freedom are comparable. This
+makes once more for a conservative comparison as we ﬁx the number of knots in our model so that
+the number of degrees of freedom match against the already tuned comparison instead of tuning
+the number of knots directly. Further architectural details are included in appendix 3. Since we do
+not have access to the ground truth, we do not compare against GPFA as the L2 metric computed
+in the previous section cannot be used here. Again, we used a hidden dimension m = 2 for our
+model, resulting in hidden trajectories of dimension 40 for PfLDS, and continuous trajectories of
+dimension 2 for PP-GPFA. We experimented with larger values ofmbut did not observe signiﬁcant
+improvements in either model.
+The bottom right panel of ﬁgure 2 shows the spike train (black) for a particular neuron on a particular
+trial, along with posterior samples from our model (in purple), PP-GPFA (in orange) and PfLDS (in
+8
+blue) of the corresponding intensities. We can see that the posterior samples from our method look
+more plausible and smoother than the other ones.
+Table 1 also shows the per-trial ELBO on test data for our model and for the competing alternatives.
+Again, our model has a larger ELBO, even when PfLDS has access to 20 times more hidden
+dimensions: our method is more successful at producing low-dimensional representations of trials
+than PfLDS. The table also shows the percentage of correctly predicted test trial types when using
+15-nearest neighbors on the posterior means of train data (the entire trajectories are used for PfLDS
+and 20 uniformly spaced points along each dimension of the continuous trajectories of PP-GPFA,
+resulting in 40 dimensional latent representations). While 23.7% might seem small, it should be
+noted that it is signiﬁcantly better than random guessing (which would have 2.5% accuracy) and
+that the model was not trained to minimize this objective. Regardless, we can see that our method
+outperforms both PP-GPFA and PfLDS in this metric, even when using a much lower-dimensional
+representation of each trial. The table also includes the percentage of explained variation when doing
+ANOV A on the test posterior means (denoted SSG/SST), using trial type as groups. Once again, we
+can see that our model recovers a more meaningful representation of the trials.
+4.2.2 Cycling Data
+We also ﬁt our model to our newly collected dataset. After preprocessing (see supplementary material),
+it consists of 1300 and 188 train and test trials, respectively. During each trial, 20 neurons were
+recorded as the primate turns a hand-held pedal to navigate through a virtual environment. There are
+8 trial types, based on whether the primate is pedaling forward or backward and over what distance.
+We use the same hyperparameter settings as for the reaching data, except we use26 uniformly spaced
+knots (25 intervals) and 28 bins for PfLDS, as well as a hidden dimensionm= 10, resulting in hidden
+trajectories of dimension 280 for PfLDS (analogously, we set PP-GPFA to have 10 dimensional
+continuous trajectories, and take 28 uniformly spaced points along each dimension to obtain 280
+dimensional latent representations). Results are also summarized in table 1. We can see that while our
+ELBO is higher than for PP-GPFA, it is actually lower than for PfLDS, which we believe is caused
+by an artifact of preprocessing the data rather than any essential performance loss.
+While the ELBO was better for PfLDS, the quality of our latent representations is signiﬁcantly better,
+as shown by the accuracy of 15-nearest neighbors to predict test trial types (random guessing would
+have 12.5% accuracy) and the ANOV A percentage of explained variation of the test posterior means,
+which are also better than for PP-GPFA. This is particularly impressive as our latent representations
+have 28 times fewer dimensions. We did experiment with different hyperparameter settings, and
+found that the ELBO of PfLDS increased slightly when using more time bins (at the cost of even
+higher-dimensional latent representations), whereas our ELBO remained the same when increasing
+the number of intervals. However, even in this setting the accuracy of15-nearest neighbors and the
+percentage of explained variation did not improve for PfLDS.
+5 Conclusions
+In this paper we introduced Deep Random Splines, an alternative to Gaussian processes to model
+random functions. Owing to our key modeling choices and use of results from the spline and
+optimization literatures, ﬁtting DRS is tractable and allows one to enforce shape constraints on
+the random functions. While we only enforced nonnegativity and smoothness in this paper, it
+is straightforward to enforce constraints such as monotonicity (or convexity/concavity). We also
+proposed a variational autoencoder that takes advantage of DRS to accurately model and produce
+meaningful low-dimensional representations of neural activity.
+Future work includes using DRS-V AE for multi-dimensional point processes, for example spatial
+point processes. While splines would become harder to use in such a setting, they could be replaced
+by any family of easily-integrable nonnegative functions, such as, for example, conic combinations
+of Gaussian kernels. Another line of future work involves using a more complicated point process
+than the Poisson, for example a Hawkes process, by allowing the parameters of the spline in a certain
+interval to depend on the previous spiking history of previous intervals. Finally, DRS can be applied
+in more general settings than the one explored in this paper since they can be used in any setting
+where a random function is involved, having many potential applications beyond what we analyzed
+here.
+9
+Acknowledgments
+We thank the Simons Foundation, Sloan Foundation, McKnight Endowment Fund, NIH NINDS
+5R01NS100066, NSF 1707398, and the Gatsby Charitable Foundation for support.
+References
+[1] M. Abadi, P. Barham, J. Chen, Z. Chen, A. Davis, J. Dean, M. Devin, S. Ghemawat, G. Irving,
+M. Isard, et al. Tensorﬂow: a system for large-scale machine learning. In OSDI, volume 16,
+pages 265–283, 2016.
+[2] R. P. Adams, I. Murray, and D. J. MacKay. Tractable nonparametric bayesian inference
+in poisson processes with gaussian process intensities. In Proceedings of the 26th Annual
+International Conference on Machine Learning, pages 9–16. ACM, 2009.
+[3] A. Agrawal, B. Amos, S. Barratt, S. Boyd, S. Diamond, and J. Z. Kolter. Differentiable convex
+optimization layers. In Advances in Neural Information Processing Systems, 2019.
+[4] B. Amos and J. Z. Kolter. Optnet: Differentiable optimization as a layer in neural networks. In
+International Conference on Machine Learning, pages 136–145, 2017.
+[5] H. H. Bauschke and J. M. Borwein. On projection algorithms for solving convex feasibility
+problems. SIAM review, 38(3):367–426, 1996.
+[6] J. P. Boyle and R. L. Dykstra. A method for ﬁnding projections onto the intersection of convex
+sets in hilbert spaces. InAdvances in order restricted statistical inference, pages 28–47. Springer,
+1986.
+[7] E. N. Brown, R. Barbieri, V . Ventura, R. E. Kass, and L. M. Frank. The time-rescaling theorem
+and its application to neural spike train data analysis. Neural computation, 14(2):325–346,
+2002.
+[8] M. M. Churchland, J. P. Cunningham, M. T. Kaufman, J. D. Foster, P. Nuyujukian, S. I. Ryu,
+and K. V . Shenoy. Neural population dynamics during reaching.Nature, 487(7405):51, 2012.
+[9] J. P. Cunningham, K. V . Shenoy, and M. Sahani. Fast gaussian process methods for point
+process intensity estimation. In Proceedings of the 25th international conference on Machine
+learning, pages 192–199. ACM, 2008.
+[10] I. DiMatteo, C. R. Genovese, and R. E. Kass. Bayesian curve-ﬁtting with free-knot splines.
+Biometrika, 88(4):1055–1071, 2001.
+[11] N. Du, L. Song, M. Yuan, and A. J. Smola. Learning networks of heterogeneous inﬂuence. In
+Advances in Neural Information Processing Systems, pages 2780–2788, 2012.
+[12] N. Du, H. Dai, R. Trivedi, U. Upadhyay, M. Gomez-Rodriguez, and L. Song. Recurrent marked
+temporal point processes: Embedding event history to vector. In Proceedings of the 22nd
+ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, pages
+1555–1564. ACM, 2016.
+[13] L. Duncker and M. Sahani. Temporal alignment and latent gaussian process factor inference
+in population spike trains. In Advances in Neural Information Processing Systems, pages
+10445–10455, 2018.
+[14] R. L. Dykstra. An algorithm for restricted least squares regression. Journal of the American
+Statistical Association, 78(384):837–842, 1983.
+[15] S. Flaxman, A. Wilson, D. Neill, H. Nickisch, and A. Smola. Fast kronecker inference in
+gaussian processes with non-gaussian likelihoods. In International Conference on Machine
+Learning, pages 607–616, 2015.
+[16] Y . Gao, E. W. Archer, L. Paninski, and J. P. Cunningham. Linear dynamical neural population
+models through nonlinear embeddings. In Advances in Neural Information Processing Systems,
+pages 163–171, 2016.
+[17] E. Gilboa, Y . Saatçi, and J. P. Cunningham. Scaling multidimensional inference for structured
+gaussian processes. IEEE transactions on pattern analysis and machine intelligence, 37(2):
+424–436, 2015.
+[18] A. Graves and J. Schmidhuber. Framewise phoneme classiﬁcation with bidirectional lstm and
+other neural network architectures. Neural Networks, 18(5-6):602–610, 2005.
+10
+[19] S. Hochreiter and J. Schmidhuber. Long short-term memory. Neural computation, 9(8):
+1735–1780, 1997.
+[20] M. Johnson, D. K. Duvenaud, A. Wiltschko, R. P. Adams, and S. R. Datta. Composing graphical
+models with neural networks for structured representations and fast inference. In Advances in
+neural information processing systems, pages 2946–2954, 2016.
+[21] D. P. Kingma and M. Welling. Auto-encoding variational bayes. In International Conference
+on Learning Representations, 2014.
+[22] J. F. C. Kingman. Poisson processes, volume 3. Clarendon Press, 1992.
+[23] J.-B. Lasserre. Moments, positive polynomials and their applications, volume 1. World
+Scientiﬁc, 2010.
+[24] L. Lin and D. B. Dunson. Bayesian monotone regression using gaussian process projection.
+Biometrika, 101(2):303–317, 2014.
+[25] C. Lloyd, T. Gunter, M. Osborne, and S. Roberts. Variational inference for gaussian process
+modulated poisson processes. In International Conference on Machine Learning, pages 1814–
+1822, 2015.
+[26] E. Mammen. Estimating a smooth monotone regression function. The Annals of Statistics,
+pages 724–740, 1991.
+[27] H. Mei and J. M. Eisner. The neural hawkes process: A neurally self-modulating multivariate
+point process. In Advances in Neural Information Processing Systems, pages 6754–6764, 2017.
+[28] S. Mohamed and B. Lakshminarayanan. Learning in implicit generative models. InInternational
+Conference on Learning Representations, 2017.
+[29] J. Møller, A. R. Syversveen, and R. P. Waagepetersen. Log gaussian cox processes.Scandinavian
+journal of statistics, 25(3):451–482, 1998.
+[30] J. O. Ramsay. Monotone regression splines in action. Statistical science, pages 425–441, 1988.
+[31] C. E. Rasmussen. Gaussian processes in machine learning. In Advanced lectures on machine
+learning, pages 63–71. Springer, 2004.
+[32] D. J. Rezende, S. Mohamed, and D. Wierstra. Stochastic backpropagation and approximate
+inference in deep generative models. In International Conference on Machine Learning, pages
+1278–1286, 2014.
+[33] J. W. Schmidt and W. Hess. Positivity of cubic polynomials on intervals and positive spline
+interpolation. BIT Numerical Mathematics, 28(2):340–352, 1988.
+[34] W. Shen, S. Ghosal, et al. Adaptive bayesian density regression for high-dimensional data.
+Bernoulli, 22(1):396–420, 2016.
+[35] R. J. Tibshirani. Dykstra’s algorithm, admm, and coordinate descent: Connections, insights,
+and extensions. In Advances in Neural Information Processing Systems, pages 517–528, 2017.
+[36] J. von Neumann. The geometry of orthogonal spaces, functional operators-vol. ii. Annals of
+Math. Studies, 22, 1950.
+[37] G. Wahba. Spline models for observational data, volume 59. Siam, 1990.
+[38] J. Yang, V . Rao, and J. Neville. Decoupling homophily and reciprocity with latent space network
+models. In UAI, 2017.
+[39] M. B. Yu, J. P. Cunningham, G. Santhanam, S. I. Ryu, K. V . Shenoy, and M. Sahani. Gaussian-
+process factor analysis for low-dimensional single-trial analysis of neural population activity.
+In Advances in neural information processing systems, pages 1881–1888, 2009.
+[40] M. Yuan and Y . Lin. Model selection and estimation in regression with grouped variables.
+Journal of the Royal Statistical Society: Series B (Statistical Methodology), 68(1):49–67, 2006.
+11

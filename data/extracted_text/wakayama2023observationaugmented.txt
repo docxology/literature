@@ -1,0 +1,983 @@
+IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED AUGUST, 2024 1
+Observation-Augmented Contextual Multi-Armed
+Bandits for Robotic Search and Exploration
+Shohei Wakayama and Nisar Ahmed ∗
+Abstract—We introduce a new variant of contextual multi-
+armed bandits (CMABs) called observation-augmented CMABs
+(OA-CMABs) wherein a robot uses extra outcome observations
+from an external information source, e.g. humans. In OA-
+CMABs, external observations are a function of context features
+and thus provide evidence on top of observed option outcomes to
+infer hidden parameters. However, if external data is error-prone,
+measures must be taken to preserve the correctness of inference.
+To this end, we derive a robust Bayesian inference process for
+OA-CMABs based on recently developed probabilistic semantic
+data association techniques, which handle complex mixture model
+parameter priors and hybrid discrete-continuous observation
+likelihoods for semantic external data sources. To cope with
+combined uncertainties in OA-CMABs, we also derive a new
+active inference algorithm for optimal option selection based on
+approximate expected free energy minimization. This general-
+izes prior work on CMAB active inference by accounting for
+faulty observations and non-Gaussian distributions. Results for
+a simulated deep space search site selection problem show that,
+even if incorrect semantic observations are provided externally,
+e.g. by scientists, efficient decision-making and robust parameter
+inference are still achieved in a wide variety of conditions.
+Index Terms—Probabilistic Inference, Human-Robot Collabo-
+ration
+I. I NTRODUCTION
+I
+N uncertain remote environments, such as deep space
+and underwater, there are many situations in which an
+autonomous robot must choose the best option among multiple
+alternatives to accomplish a task. Such decisions are chal-
+lenging since the world is stochastic, and the distributions of
+outcomes resulting from options often are unknown a priori.
+One efficient way to reason about the parameters of outcome
+distributions would be to utilize extra observations from exter-
+nal information sources, e.g. humans and object detectors [1].
+Yet, if these extra observations are noisy and a robot naively
+uses them to infer parameters, then such observations can do
+more harm than good unless these additional uncertainties can
+be mitigated.
+As an example, consider the motivating deep space explo-
+ration scenario illustrated in Fig. 1. A robotic lander dispatched
+to an icy moon must identify the best scientific exploration site
+with geological features of interest to scientists back on Earth
+using sensors with relatively low energy consumption, such
+Manuscript received: February 21, 2024; Revised: July 21, 2024; Accepted:
+August 15, 2024.
+This paper was recommended for publication by Editor Giuseppe Loianno
+upon evaluation of the Associate Editor and Reviewers’ comments.
+∗The authors are with the Smead Aerospace Engineering Sciences
+Department, University of Colorado Boulder, Boulder, CO 80303 USA
+[shohei.wakayama;nisar.ahmed]@colorado.edu
+Digital Object Identifier (DOI): see top of this page.
+K=1 K=2 K=3
+Search site selection with AIF (Alg. 2)
+K=1 K=2 K=3
+Measurement update with PSDA (Alg. 1)
+(*oI is already processed)
+He wanted to 
+observe hydrate
+K=1 K=2 K=3
+EFE(ak) 
+I observed 
+‘Sulfate’ in K=1
+γ0 = 0.58, so he might 
+misinterpret the 
+chemical compound  
+Prior Posterior
+Marginal parameter distribution
+Fig. 1. Asynchronous collaborative coupled decision-making and state
+estimation scenario: a deep space robotic lander iteratively selects the best
+search site (left) and updates the estimates with its own sensor measurements
+and delayed (possibly erroneous) scientist observations (right).
+as laser-induced breakdown spectroscopy (LIBS) [2]. If the
+mission time were unlimited, the robot would be able to make
+a sufficient number of observations at all candidate digging
+sites to accurately estimate their geological characteristics
+and identify the best site for risky operations like drilling,
+digging, etc. (e.g. the number of measured points × in each
+search site is considerable). However, in reality, external
+factors (e.g. high radiation) make it necessary to perform the
+identification as quickly and efficiently as possible [3]. Hence,
+a balance must be struck between increasing the certainty
+of plausible search sites (i.e. exploitation) and reducing the
+uncertainty of less well-studied search sites (i.e. exploration).
+The robot can make use of contextual information from the
+surrounding environment, for instance, the albedo of search
+sites. Furthermore, in addition to (noisy) LIBS readings for
+determining specimen categories at each site, the robot may be
+able to receive supplementary discrete semantic observations
+from Earth-bound human scientists on a time delay (e.g. “Site
+#2 contains a lot of sulfate, site #4 has very few salts”).
+Previous work formulated such robotic exploration scenar-
+ios as contextual multi-armed bandits (CMABs) [4], [5]. In
+CMABs, for each option, there exist hidden parameters that
+inform the robot of expected outcomes for taking specific
+options as a function of side information, i.e. contexts. Typ-
+ically, prior distributions for estimating these parameters are
+updated via Bayes’ rule based on the outcomes only obtained
+by executing options. The outcome observations are usually
+derived from onboard sensor data and are assumed a priorito
+have known relevance to the parameters, which is modeled by
+a probabilistic likelihood function. However, it is not known in
+advance how likely it is that any extra outcome observations
+provided by an external source (e.g. scientist in Fig. 1) will
+be useful for hidden parameter estimation. This is because
+humans can make mistakes, and so extra care must be taken
+to ensure data validity for inference and decision making. This
+arXiv:2312.12583v2  [cs.RO]  5 Jan 2025
+2 IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED AUGUST, 2024
+makes both processes more complex for CMABs.
+Hence, in this study, we first introduce a new variant of
+CMABs called observation-augmented CMABs (OA-CMABs)
+wherein a decision-making robot can utilize extra outcome
+observations from an external information source. Then, we
+enable a robust measurement update step by adapting prob-
+abilistic semantic data association (PSDA), which was de-
+veloped for human-robot collaborative sensing [6] to deal
+with data validation problems like those described above. This
+adaptation is a novel approach to CMAB-based decision mak-
+ing. Additionally, we introduce a generalized way to derive
+expected free energy (EFE) for active inference [7], which
+was recently shown to be a powerful approach for determining
+option selection strategies in bandit problems [5], [8]. Our
+generalization accounts for hidden parameters modeled via
+mixture distributions, which naturally appear when using data
+validation techniques like PSDA. These methods are validated
+in a simulated collaborative asynchronous search site selection
+scenario. The results show that using the PSDA measurement
+update process with generalized EFE-based active inference
+identifies the best site with fewer iterations than conventional
+baselines, leading to smaller cumulative regrets even when
+incorrect human semantic observations are provided to robots.
+For the remainder of the paper: Sec. II provides an overview
+of CMABs, data association, and active inference. Sec. III
+then describes the problem setup and PSDA measurement
+update process, and explains how to compute the EFE for
+mixture prior distributions. In Sec. IV, the simulation setup
+and the results are presented, followed by conclusions and
+future perspectives in Sec. V.
+II. B ACKGROUND
+A. Contextual Multi-Armed Bandits
+A CMAB is a reinforcement learning problem which iterates
+between two steps: inference over latent parameters that enable
+prediction of expected outcomes (based on prior outcomes),
+and option selection given available parameter estimates. Al-
+though apparently simple compared to other sequential deci-
+sion making problems, such as MDPs [9] and POMDPs [10],
+the scope of CMAB applications is broad and long studied in
+areas such as recommendation systems and finance [11].
+CMABs typically aim to minimize cumulative regret, i.e.
+the difference between optimal and selected option outcomes.
+Bayes’ theorem is primarily used to infer latent predictive
+model parameters between option selections. However, this
+requires adequate models of uncertainties, including those
+arising from observations obtained by the agent. Whereas such
+observations are usually available in bandit settings only after
+options are selected, the problem of handling uncertainties
+from observations available outside of option selection is
+examined here for the first time and addressed in Sec. II-C.
+For option selection, ε-greedy, strategies based on the upper
+confidence bound (UCB) [12], and Thompson sampling (TS)
+[13] are well-known, but often require many iterations or
+heuristics to achieve good performance. More recently, active
+inference-based option selection methods have been shown to
+identify the best option with fewer iterations, though in certain
+cases they may potentially get stuck in local minima [5], [8].
+B. Active Inference and Expected Free Energy
+Active inference is a neuro-inspired decision-making frame-
+work that applies the free energy principle [14] to the behav-
+ioral norms of biological agents. In active inference theory [7],
+agents are thought to select an action/option that minimizes
+a quantity called expected free energy (EFE), which has
+attracted interest in computational neuroscience and robotics
+[15] as a mechanism for autonomous sequential decision
+making under uncertainty. Agents reasoning via the EFE
+consider not only the utility gained by executing an option,
+but also how much uncertainty about a hidden state can be
+reduced by executing that option, thus naturally balancing
+exploitation and exploration. This is achieved by reasoning
+against an evolutionary prior (a.k.a. prior preference), which
+defines an outcome distribution that the agent expects to see
+when undertaking options and which provides a reference for
+updating the agent’s internal (probabilistic) world model.
+Recent work in [5] developed techniques for calculating
+EFE in CMABs with semantic observations using variational
+and Laplace approximation for Bayesian parameter updating.
+However, like other work in the bandit study [8], active
+inference does not account for problems where agents must
+also reason about the validity of the observations that they rely
+on to perform parameter inference. This not only requires more
+advanced inference mechanisms and probability distribution
+representations to account for multiple data validity hypothe-
+ses, but also complicates the calculation of EFE for active
+inference (as this can be a multimodal/non-convex function).
+C. Reasoning about Data Validity
+When utilizing observations from external information
+sources to accelerate the estimates of unknown parameters,
+care should be taken to assess their validity. This is because if
+incorrect observations are naively used to derive parameter
+posteriors, the resulting posteriors can diverge significantly
+from true parameter values and lead to suboptimal decision
+making behavior. Although there are several possible ways
+to validate the external observations [16], [17], in this study
+we focus on data association (DA)[18], a class of estimation
+methods that explicitly accounts for observation origin uncer-
+tainties. Prominent DA methods include nearest neighbor [19],
+probabilistic data association (PDA) [18], and multi-hypothesis
+tracking [20], all of which differ mainly in how they handle
+data association variables, which explain origin hypotheses.
+Among these, we employ Probabilistic Semantic Data As-
+sociation (PSDA) [6], which fits the scheme of CMABs that
+update the distribution of hidden parameters based on semantic
+observations obtained at every decision-making iteration. Note
+that semantic observations refer to noisy categorical descrip-
+tions of abstract object/event properties or relations. Such data
+has attracted attention in robotics due to the usefulness of
+meaningfully grounded reasoning over continuous variables
+such as spatial positions [21].
+W AKAY AMA AND AHMED: OBSERV ATION-AUGMENTED CONTEXTUAL MULTI-ARMED BANDITS 3
+III. M ETHODOLOGY
+A. Problem Statement
+We first formulate the robotic decision-making and in-
+ference problem under uncertainty introduced in Sec. I as
+a contextual bandit (CMAB). Suppose the total number of
+options (i.e. search sites) taken into account is K. Note that
+these options are equivalent to the bandit arms and selecting
+an option k ∈ {1, ··· , K} is denoted as a = k (for the
+shorthand notation, in the following, we use ak ↔ a = k).
+Also, suppose that a semantic observation, ok of each option
+k from an observation source (i.e. the robot sensor or human
+input) is multicategorical across F labels, i.e. ok = f, f ∈
+F = {1, ··· , F}. Thus, the probability that a feature f is
+observed by investigating option k can be described as the
+softmax likelihood function [22], [23],
+p(ok = f|⃗Θk; ⃗ xc, ⃗ xk) = e
+⃗ΘT
+k,f (⃗ xc+⃗ xk)
+PF
+h=1 e
+⃗ΘT
+k,h(⃗ xc+⃗ xk)
+, (1)
+where ⃗Θk =[ ⃗Θk,1, ··· , ⃗Θk,F ], ⃗Θk ∈ RC×F is a hidden linear
+parameter vector unique to the option k, and ⃗ xc, ⃗ xk ∈ RC are
+the option-agnostic and the option-specific context vectors 1,
+where C is the context feature dimension.
+Recall, the CMAB objective is to minimize cumulative
+regrets. Here, a unit reward ( 1) is provided if a preferable
+feature fp ∈ Fis observed, and no reward ( 0) is given if any
+other feature is observed. For the search site selection scenario,
+fp represents a chemical label that scientists want the robot
+to find. Thus, if the probability of observing fp with the best
+(unknown a priori) option is ψ∗, the cumulative regret is [12],
+Regret(T) = T ψ∗ −
+KX
+k=1
+NT (k)ψk, (2)
+where T is the total number of iterations, NT (k) represents the
+number of times an option k is executed within T iterations,
+and ψk is the probability that fp is observed by executing
+the option k. So, to minimize the cumulative regrets, the
+robot is required to efficiently estimate the set of softmax
+parameters ⃗Θk for all k to identify the best option. However,
+in standard CMABs, only a single observation is obtained
+per selected options, therefore a number of iterations are
+typically necessary before these parameters can be correctly
+estimated. Yet, as is often the case with robotics, external
+information sources can also be utilized although they may
+not be immediately available. Hence, in this study, we consider
+observation-augmented CMABs (OA-CMABs) such that extra
+outcome observations on the robot’s choice of option could
+be used. Nevertheless, this could be counterproductive if the
+data validity of is not considered as described in Sec. II-C. In
+the following, we first review the conventional measurement
+update process for CMABs and its problem when external
+observations are naively fused, and then introduce a robust
+measurement update process by accounting for the data va-
+lidity via PSDA. We then consider how to undertake option
+selection while accounting for data validity uncertainties, using
+the framework of active inference.
+1Without loss of generality, the context vectors are assumed common for
+all iterations and a bias term can be ignored.
+B. Semantic Data Association Update
+In the conventional measurement update process, a latent
+parameter vector ⃗Θk associated with an option k is, by and
+large, updated via Bayes’ theorem based on the observation
+ok =f obtained by executing that option.
+p(⃗Θk|ok =f;⃗ xc,⃗ xk)= p(ok =f|⃗Θk;⃗ xc,⃗ xk)p(⃗Θk)R
+⃗Θk
+p(ok =f|⃗Θk;⃗ xc,⃗ xk)p(⃗Θk)d⃗Θk
+.
+(3)
+However, as mentioned previously, when an (external) ob-
+servation ok is faulty/erroneous, taking it at face value and
+deriving the posterior of hidden parameters ⃗Θk for that option
+reduces the accuracy of predicted outcome probabilities via
+(1). Although there are multiple ways to evaluate data valid-
+ity in such cases, particularly when the faulty measurement
+probability (FP) rate of the external information sources is
+known, the probability that a received external observation
+is valid (referred to here as a data association hypothesis)
+can also be explicitly calculated through a Bayesian update
+to enable more robust parameter inference. This is achieved
+here using probabilistic semantic data association (PSDA)
+[6], a theoretical generalization of the aforementioned PDA
+algorithm widely used for continuous-valued data validation
+in dynamic target tracking. PSDA is able to dynamically
+assess the association hypothesis probabilities for semantic
+observations at every OA-CMAB decision-making iteration.
+1) Robust PSDA measurement update:In the PDA/PSDA
+methodologies, the probability density function (pdf) of a
+hidden variable becomes a weighted sum of individual pdfs
+that reflect the histories of past data associations. Thus, a prior
+pdf of a hidden linear parameter vector ⃗Θk for OA-CMABs
+is expressed by the following mixture distribution
+p(⃗Θ) =
+MX
+u=1
+p(⃗Θ|u)p(u), (4)
+where p(⃗Θ|u) is a mixand indexed by u, p(u) represent a
+mixture weight, i.e. how plausible a mixand is to describe
+the prior, and M is the total number of mixands. Suppose
+a latent data association (DA) variable is represented by ζ.
+Here, since the robot is only required to reason if an external
+outcome observation is correct or not, ζ is binary, i.e. ζ = 0
+and ζ = 1 indicates that the observation o is incorrect and
+correct, respectively. Hence, the probabilistic graphical model
+(PGM) for OA-CMABs when processing external observations
+with DA is illustrated as in Fig. 2. Note that the option index
+k and the mixture index u are abbreviated for simplicity. In
+the following, assume that the robot internal sensor data oI
+is preprocessed, and the external outcome observation oE is
+denoted as o. Given this PGM, the joint posterior of the latent
+variables ⃗Θ and ζ are described as
+p(⃗Θ, ζ|o) =
+MX
+u=1
+p(⃗Θ, ζ, u|o). (5)
+Although the type of semantic data association posterior can
+vary depending on how the DA variable ζ is treated, when the
+4 IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED AUGUST, 2024
+⃗Θt
+ot
+E ot
+I
+at
+I
+⃗ xt
+ζt
+⃗Θt+1
+ot+1
+E ot+1
+I
+at+1
+I
+⃗ xt+1
+ζt+1
+ζ: DA variable, o: outcome, a: option,
+⃗Θ: latent parameters, ⃗ x: contexts
+Fig. 2. A PGM for OA-CMABs with DA; observable/latent variables
+are highlighted in yellow/gray. (·)E and (·)I represent external
+and internal observations/actions. Context vectors ⃗ xc and ⃗ xk are
+summarized as ⃗ x. Dotted lines indicate causality of option selection.
+PSDA method is applied, the posterior pPSDA (⃗Θ|o) is
+pPSDA (⃗Θ|o)
+=
+MX
+u=1
+p(⃗Θ, u) p(ζ =0, o)P
+ζ p(ζ, o) +
+MX
+u′=1
+p(⃗Θ, u′|o) p(ζ =1, o)P
+ζ p(ζ, o) (6)
+=γ0 ·
+MX
+u=1
+p(⃗Θ, u) + γ1 ·
+MX
+u′=1
+p(⃗Θ, u′|o) (7)
+where u′ represents an index of a mixand for the posterior and
+γ0 = p(ζ=0,o)P
+ζ p(ζ,o) and γ1 = p(ζ=1,o)P
+ζ p(ζ,o) are corresponding to the
+posteriors of association probabilities. Although the detailed
+derivation can be referred to [6], p(ζ =0, o) and p(ζ =1, o) in
+(6) are further expanded as follows.
+p(ζ =0, o) = (1/F) · p(ζ =0), (8)
+p(ζ =1, o) = p(ζ =1)
+MX
+u=1
+p(u)
+Z
+⃗Θ
+p(o|⃗Θ)p(⃗Θ|u)d⃗Θ. (9)
+The joint posterior of ⃗Θ and u′ given o in (7) is
+p(⃗Θ, u′|o) = p(⃗Θ|u′, o)p(u′|o)
+= p(o|⃗Θ)p(⃗Θ|u′)R
+⃗Θ p(o|⃗Θ)p(⃗Θ|u′)d⃗Θ
+· p(u′)
+R
+⃗Θ p(o|⃗Θ)p(⃗Θ|u′)
+P
+u′ p(u′)
+R
+⃗Θ p(o|⃗Θ)p(⃗Θ|u′)d⃗Θ
+.
+(10)
+By dynamically and probabilistically estimating association
+hypothesis probabilities γ, the PSDA method enables more
+robust measurement updates by deriving a new mixture dis-
+tribution, consisting of the posterior derived by naively fusing
+an observation o and the prior by ignoring the observation o.
+In practice, since the number of mixands of pPSDA (⃗Θ|o) is
+doubled (i.e. from M to 2M) at every measurement update,
+the computation cost can become problematic. To address this,
+a mixture reduction method such as Salmond’s or Runnall’s
+methods [24], [25] is applied following each update. Also,
+when the softmax function is used as the observation likeli-
+hood, the posterior shown in (3) is analytically intractable.
+This can be handled by applying statistical approximation
+methods such as the Laplace approximation [22] or variational
+Bayes importance sampling [26]. Algorithm 1 summarizes the
+process for calculating the PSDA posterior for OA-CMABs.
+Algorithm 1 PSDA measurement update [6] adapted for OA-
+CMABs
+Input: Estimated weights, means, and covariances for ⃗Θk, a human semantic
+observation o, context vectors ⃗ xc and ⃗ xk, the total number of possible
+observations F, and a prior faulty measurement probability (FP) rate
+p(ζ = 0)
+Output: Updated weights, means, and covariances for ⃗Θk
+1: for each mixand u do
+2: ⃗ µpos,u, Σpos,u, and Cpos,u via approximation algorithms [22], [26]
+3: end for
+4: Λ = PM
+u=1(wprior,u × Cpos,u)
+5: for each mixand u do
+6: wpos,u = (wprior,u × Cpos,u)/Λ
+7: end for
+8: γ0 =
+1
+F ×FP
+1
+F ×FP +(1−FP )×Λ , γ1 = (1−FP )×Λ
+1
+F ×FP +(1−FP )×Λ
+9: wprior∗ = γ0, wpos∗ = γ1
+10: return wpsda, ⃗ µpsda, Σpsda by stacking the prior and the posterior
+C. Expected Free Energy with Mixture Priors
+As explained in Sec. II-B, it has become clearer in recent
+years that using active inference as an action/option selection
+strategy in MABs and CMABs can identify the best option
+with fewer iterations [5], [8]. This is because by selecting
+an option minimizing expected free energy (EFE) agents can
+naturally balance exploitation and exploration while rigorously
+evaluating option uncertainties. Yet, in the previous approach
+for CMABs [5], the prior distribution of hidden variables (here
+it is denoted as ⃗Θk) is unimodal; multimodal distributions such
+as those generally obtained via PSDA are not addressed. Thus,
+in the following, we present a more general derivation of EFE
+especially when a prior proposal distribution is a mixture pdf
+and the observation likelihood is the softmax function.
+According to the active inference theory [7], the goal
+of a decision-making agent is to minimize the surprise of
+observations to maintain its homeostasis. The surprise in the
+case of OA-CMABs defined in Sec. III-A is expressed as
+Surprise = −log p(o) = −log
+Z
+⃗Θ
+p(o, ⃗Θ)d⃗Θ. (11)
+However, calculating (11) directly via multiple integral tends
+to be analytically intractable, so its upper bound called free
+energy is tried to be minimized. Yet, in decision making,
+outcomes o are unknown till an option is actually executed.
+Thus, the decision-making agent instead selects an option that
+minimizes EFE as shown in (12). Hereafter, the option index
+k and context vectors ⃗ xc and ⃗ xk are abbreviated for simplicity
+EFE(a)=
+Z
+⃗Θ
+q(⃗Θ)
+X
+o
+p(o|⃗Θ) log q(⃗Θ)
+p(⃗Θ|o)pev(o)
+d⃗Θ, (12)
+where q(⃗Θ) is a proposal prior and pev(o) is an evolutionary
+prior, which reflects a (human’s) prior preference for possible
+outcomes. Since the proposal prior q(⃗Θ) is set as a multimodal
+distribution, (12) is rewritten as follows.
+EFE(a)=
+Z
+⃗Θ
+X
+u
+q(⃗Θ, u)
+X
+o
+p(o|⃗Θ) log
+P
+u q(⃗Θ, u)
+p(⃗Θ|o)pev(o)
+d⃗Θ,
+(13)
+where q(⃗Θ, u) is a joint proposal prior distribution. By ap-
+plying the conditional dependency from the PGM and Bayes’
+W AKAY AMA AND AHMED: OBSERV ATION-AUGMENTED CONTEXTUAL MULTI-ARMED BANDITS 5
+Algorithm 2 Generalized EFE calculation of [5] with mixture
+priors and hybrid likelihoods
+Input: Estimated weights, means, and covariances of ⃗Θk, context vector
+⃗ xc and ⃗ xk, the total number of possible observations F, a prior faulty
+measurement probability (FP) rate p(ζ = 0), and the evolutionary prior
+pev(o)
+Output: EFE for selecting an option k
+1: for each observation do
+2: ⃗ µpos,u, Σpos,u, and Cpos,u , ∀u, u∈ {1, ··· , M} via approximation
+algorithms [22], [26]
+3: q(o) from (15) and calculate the 1st term (16)
+4: G, H, and K from (17) and calculate the 2nd term (19)
+5: EFE (ak, o) = the 1st term - the 2nd term
+6: end for
+7: return EFE(ak) = P
+o EFE(ak, o)
+rule, (13) is further expanded as below.
+(13) =
+X
+o,u
+q(u)
+Z
+⃗Θ
+q(⃗Θ|u)p(o|⃗Θ) log q(o)
+pev(o)p(o|⃗Θ)
+d⃗Θ,
+=
+X
+o
+hX
+u
+q(u)
+Z
+⃗Θ
+q(⃗Θ|u)p(o|⃗Θ) log q(o)
+pev(o)d⃗Θ,
+−
+X
+u
+q(u)
+Z
+⃗Θ
+q(⃗Θ|u)p(o|⃗Θ) logp(o|⃗Θ)d⃗Θ
+i
+. (14)
+where q(o) is
+q(o) =
+Z
+⃗Θ
+X
+u
+q(⃗Θ, u, o)d⃗Θ =
+X
+u
+q(u)
+Z
+⃗Θ
+q(o|⃗Θ)q(⃗Θ|u)d⃗Θ.
+(15)
+The part of the first term of (14) can be calculated by using
+the normalization constant Cu =
+R
+⃗Θ q(⃗Θ|u)p(o|⃗Θ)d⃗Θ when
+deriving the posterior for each mixand u, as when calculating
+association hypothesis probabilities in Sec. III-B,
+(1st) = log q(o)
+pev(o)
+X
+u
+q(u) · Cu. (16)
+However, the second term of (14) cannot be calculated
+analytically because the integral of the log of the hybrid
+likelihood is analytically intractable. Nevertheless, if the prior
+q(⃗Θ|u) associated with each mixand u is Gaussian, exp(Lu+
+MT
+u ⃗Θ − 1
+2
+⃗ΘT Nu⃗Θ), and the hybrid likelihood p(o|⃗Θ) is
+softmax function, the posterior can be approximated as another
+Gaussian, exp(Pu+QT
+u ⃗Θ−1
+2
+⃗ΘT Ru⃗Θ) [26], so that the softmax
+function is approximately expressed as another exponential
+form, exp(G+HT ⃗Θ−1
+2
+⃗ΘT K⃗Θ), where
+G = Pu + log
+Z
+⃗Θ
+q(⃗Θ|u)p(o|⃗Θ)d⃗Θ
+
+− Lu, (17)
+H = Qu − Mu, K = Ru − Nu. (18)
+Note that this Gaussian approximation process for the softmax
+likelihood needs to be done only once from the fact of the
+conditional independence between u and o given ⃗Θ (see the
+PGM in Fig. 2). As a consequence, the part of the second term
+of (14) is derived as follows,
+(2nd) =
+X
+u
+q(u) · Cu · E[G + HT ⃗Θ − 1
+2
+⃗ΘT K⃗Θ], (19)
+and Algorithm 2 outlines the process for calculating the EFE
+when mixture priors and hybrid likelihoods are used.
+IV. S IMULATION STUDY
+To validate the effectiveness of the proposed PSDA mea-
+surement update process and the generalized hybrid EFE
+・・・
+・Context vectors
+・Sensed search sites
+・K=2: Sulfate
+︙
+・K=3: Ice
+Once oE received, 
+update the estimates
+: Downlink
+: Uplink
+δ steps
+Δ steps
+・・・
+・Context vectors
+・Sensed search sites
+・K=5: Hydrated salt
+︙
+・K=1: Sodium
+Time
+Fig. 3. Asynchronous lander and scientist communication.
+calculation method for option selections for OA-CMABs, we
+performed a simulated asynchronous collaborative search site
+selection study modeled around the deep space exploration
+application shown in Fig. 1. We first explain details for mod-
+eling the lander science exploration scenario as an OA-CMAB
+and describe the simulation experiment setup. Then, based on
+the results of the extensive Monte Carlo (MC) simulation,
+we at first establish which option selection approaches are
+effective for OA-CMABs by assuming that the FP rate is 0.
+Thereafter, we examine how robust the PSDA method is to
+data association uncertainties.
+A. Motivating Scenario
+Suppose the robotic lander is dispatched to icy moons like
+Europa or Enceladus [27], [28]. One of the missions of the
+lander is to perform high-level science-related tasks such as
+deciding where to deploy a resource-intensive manipulator.
+This can occur among the non-overlapping K search sites that
+are determined based on panoramic images taken immediately
+after landing. To perform this science task, it is necessary to
+efficiently infer in advance, using lightweight sensors such
+as the LIBS [2], which search sites have the most features
+of interest fp to scientists out of the broadly classified F
+scientific categories (e.g. hydrated salts and sulfates [27]).
+While the lander can choose a site based solely on past
+observation data, it can utilize secondary context information
+to predict the likelihood of observing each outcome. For
+instance, contexts can include the sun direction, common to
+all search sites (i.e. ⃗ xc), and albedo, which is unique to
+each search site (i.e. ⃗ xk). Furthermore, as illustrated in Fig.
+3, the lander periodically and asynchronously receives extra
+discrete semantic human observations about what scientists
+recognize in the downlinked data. Yet, the lander must also
+account for a non-zero probability that some observations are
+erroneous, e.g. due to the limited bandwidth and quality of data
+transmitted back to Earth. We formulate this coupled inference
+and decision-making problem as an OA-CMAB.
+B. Simulation Setup
+The option selection problem for the OA-CMAB here
+corresponds to selecting a site to illuminate with LIBS,
+whereas measurement updating entails processing LIBS data
+returns and received human semantic observations. In this
+study, the following solution approaches are considered and
+compared in extensive MC simulation: (i) best possible option
+6 IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED AUGUST, 2024
+(site) selection, using an offline oracle (required to compute
+cumulative regrets); (ii) ε-greedy (where ε = 0.25 was found
+to work best after initial trials); (iii) upper confidence bound
+(UCB); (iv) multicategorical Thompson sampling (TS); and
+(v) active inference (AIF). The option selection methods for
+(iv) and (v) are paired with the Laplace approximations [22]
+for the measurement updates. 100 MC runs are performed,
+and the number of iterations T in each MC run is set to
+102, which is much smaller compared to common MAB
+algorithm benchmarks [8] and reflects a practical upper limit
+for robotic lander sensor deployment. Later in this section,
+we also analyze the asymptotic behaviors of the AIF and TS
+agents to discuss the pros/cons of using EFE. The true hidden
+linear parameters ⃗Θk for each candidate search site k were
+randomly generated from a uniform distribution of 0 to 1. The
+search-common and search-agnostic context vectors ⃗ xc and ⃗ xk
+was randomly generated assuming that each element takes a
+binary value with uniform probability. Note that the ways to
+generate ⃗Θk, ⃗ xc and ⃗ xk in this study may not align with actual
+phenomena since even partial environmental information is
+not available as of now. Yet, our approaches do not rely on
+any particular generative functions. Thus, once more suitable
+distributions are indicated from future deep space missions
+[29], these can be easily adapted. Finally, given the limited
+mission lifetime (≈ 20 days [3]), it may be desirable to identify
+the best search site from one science perspective within several
+days (e.g. 3 days) and move on to the next science objective.
+In particular, given the significant distance between icy moons
+and Earth – resulting in a one-way communication time delay
+of approximately 45 minutes – and the necessary margins for
+performing the other duties that the lander would have to do,
+the interval ∆ at which it downlinks data is assumed to be 4
+steps (around 3 hours), and the period δ between the downlink
+of data and the uplink of semantic information by the scientists
+is assumed to be 2 steps (around 90 minutes)2. Our simulation
+experiments were conducted on a computer with Intel Core i7-
+8550 1.8 GHz 4-Core Processor.
+C. Results
+1) Effectiveness of extra outcome observations from exter-
+nal information sources: In the first set of simulation experi-
+ments, we determine appropriate option selection approaches
+for OA-CMABs assuming no erroneous external observations.
+In the most difficult case (more options and features but less
+contexts), the total number of search site K is 15, the length
+of context vectors C is 3, and the number of science categories
+F is 12 (e.g. ‘Ice’, ‘Hydrated salt’, ‘Sulfate’, and ‘Hydrated
+sulfuric acid’). Therefore, the lander is required to estimate
+540 hidden parameters in total. Assuming that scientists are
+most interested in hydrated sulfuric acid (i.e. it is fp), the
+prior preference pev(o) was set as pev(o) = 0.01 if o ̸= fp.
+As a result, as can be seen in Fig. 4, for all experiments,
+2In our simulation experiments, for the most complex scenario ( K=15,
+C=3, F=12), the maximum (i.e. using AIF) average computation time is 32.3
+seconds, comporting with our assumptions for the communication intervals.
+It is worth noting that if there is prior knowledge indicating that only
+specific outcome observations are relevant, agents can limit the calculation
+of EF E(ak, o) to those outcomes, thus reducing computational costs.
+0 50 1000
+5
+10
+K=5, C=3, F=4
+0 50 1000
+5
+10
+K=10, C=3, F=4
+0 50 1000
+5
+10
+K=10, C=6, F=8
+0 50 1000
+5
+10
+K=15, C=3, F=12
+Time steps
+Cumulative regrets 
+ (lower = better)
+ε-greedy (w/o human)
+ε-greedy (w/ human)
+UCB (w/o human)
+UCB (w/ human)
+AIF (w/o human)
+AIF (w/ human)
+TS (w/o human)
+TS (w/ human)
+Softmax (w/o human)
+Softmax (w/ human)
+Fig. 4. Cumulative regrets when human semantic observations are
+always correct, i.e. F P=0.
+Fig. 5. Comparison of typical transition of selected search sites. Black
+triangles indicate fusion of external outcome observations oE.
+we observed that smaller cumulative regrets were achieved
+when (asynchronous) human semantic information was used
+to estimate the latent parameter vectors (solid lines) than when
+it was not used (dashed lines). This is because, as illustrated
+in Fig. 5, compared to the approach without extra external
+observations oE (gray), the robot using the approach with
+additional observations oE (yellow) selects the best search site
+(k = 1 for this instance) much more often. Since the results
+were notably good when AIF and TS were used with human
+semantic observations (orange and blue plots in Fig. 4), only
+these two approaches are used in the rest of the experiments.
+Also, hereafter we focus on the case of K = 5, C = 3, and
+F = 4 , since compared to the other cases, the alternative
+methods considered here become most competitive with AIF.
+2) Performance of the PSDA algorithm: Next, to assess
+the benefit of the proposed PSDA measurement update al-
+gorithm, we conducted simulation experiments with the prior
+probability of human semantic observation being incorrect, i.e.
+F P= p(ζ = 0), set at 0.2, 0.4, and 0.63. Here we compared
+the following data fusion modalities 1) no semantic obser-
+vations (w/o human), 2) naively fuse semantic observations
+(w/ human, naive), and 3) fuse semantic observations with
+PSDA (w/ human, PSDA), for AIF and TS. The threshold
+value for activating the Runnall’s mixture reduction method
+3Previous work [6] showed that autonomous agents do need to know the
+precise FP rate, as long as the assumed FP rate is higher than the true rate.
+W AKAY AMA AND AHMED: OBSERV ATION-AUGMENTED CONTEXTUAL MULTI-ARMED BANDITS 7
+Fig. 6. Cumulative regrets with different data fusion modalities and the FP rates ( 0.2, 0.4, and 0.6). Even if the FP rate is high enough,
+when the PSDA measurement update is used, the cumulative regrets are lower compared to the other modalities.
+Fig. 7. Typical estimate transitions of the AIF PSDA marginal
+posteriors for hidden parameters θ5 and θ6 (true values at dashed
+vertical lines) for K = 2, F P= 0.4, and t ∈ {2, 20, 50, 100} for a
+single Monte Carlo run. (top row): typical final marginal posteriors
+at same conditions for different data fusion methods (bottom row).
+was set as 10. As can be seen from Fig. 7 (top row), even
+when the human semantic observations were occasionally
+erroneous, by dynamically and probabilistically estimating
+association hypothesis probabilities γ, the PSDA estimates
+gradually approached to the true hidden parameters (dashed
+vertical lines) and the final estimates were better compared to
+the ones when incorrect human semantic observations were
+naively fused as in Fig. 7 (bottom row). As a consequence,
+employing the PSDA measurement update algorithm resulted
+in smaller cumulative regrets (Fig. 6). Note that in Fig. 7, the
+marginal posteriors look nearly unimodal/Gaussian, as various
+mixands cluster near the same locations for the observations
+provided, though some pdfs are actually skewed/asymmetric.
+Such clustering will not always occur, e.g. when humans pro-
+vide negative observations (not used here) to scatter posterior
+mixand locations [6].
+3) Asymptotic behaviors of AIF and TS agents:The results
+so far show that (under the same simulation conditions)
+AIF outperforms TS. However, in stationary MABs, it is
+experimentally known that the asymptotic behaviors of AIF
+can be worse than TS, due to the biased generative model
+by incorporating evolutionary prior pev(o) [8]. Thus, we
+conducted another simulation experiment with MC and T set
+to 103 each to see if the same trend could be confirmed for
+contextual bandits. As shown in Fig. 8, initially, the AIF agents
+(orange lines) perform better than those of the TS agents (blue
+lines). However, as Fig. 9 shows, when the AIF agents find
+one of multiple good sites where a desired outcome can be
+easily observed (not necessarily the best one), the EFE value
+of this site can be smaller than the others due to the very small
+exploitation term, leading to the cluster on the right-hand side
+of this figure. Thus, even if one subset of AIF agents quickly
+determines the best search site and generates very small
+cumulative regrets (magenta lines in Fig. 8), the suboptimal
+behavior of the remaining AIF agents (green lines in Fig. 8)
+causes average cumulative regrets (orange lines) to gradually
+become larger than those of the TS agents. Therefore, the
+AIF-based option selection method is generally more suitable
+for switching bandit problems where the underlying (reward)
+models associated with options change dynamically [30], [31].
+Fig. 8. Asymptotic cumulative regrets for AIF and TS. In the early
+stages, AIF outperform TS. Yet, due to the bimodality of AIF
+(magenta and green lines), the average asymptotic behaviors (orange
+lines) are worse than TS (blue lines).
+V. C ONCLUSION AND FUTURE WORKS
+We introduced observation-augmented contextual multi-
+armed bandits to utilize semantic observations from external
+sources that can accelerate parameter inference for robotic de-
+cision making. To address possible errors in such observations,
+8 IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED AUGUST, 2024
+Fig. 9. Cumulative regrets at T = 103. As with standard MABs [8],
+the AIF agents exhibit their tendencies to be stuck at local minima
+and produce the bimodal cumulative regrets.
+we developed a robust Bayesian inference process to dynam-
+ically evaluate data validity. We also derived a generalized
+expected free energy approximation for active inference option
+selection with mixture-based parameter priors and observation
+likelihoods inherent to semantic data validation problems.
+Simulation studies showed our methods achieve smaller cu-
+mulative regrets vs. other conventional bandit algorithms, even
+with erroneous external observations. One next step is to
+validate our methods on more realistic deep space simulation
+environments with humans on the loop. In the case of icy
+moon site selection, the required data may be obtained from a
+high-fidelity physics simulator such as OceanW ATERS [32].
+Additionally, in our experiments, pev(o) was fixed across
+all iterations, which may not be true in actual operations,
+e.g. as scientists may change their preferences to study new
+phenomena. Thus, it is also worthwhile to consider dynamic
+pev(o) for active inference.
+REFERENCES
+[1] J. Redmon, S. Divvala, R. Girshick, and A. Farhadi, “You only look
+once: Unified, real-time object detection,” in Proceedings of the IEEE
+conference on computer vision and pattern recognition, 2016, pp. 779–
+788.
+[2] L. Jolivet, M. Leprince, S. Moncayo, L. Sorbier, C.-P. Lienemann, and
+V . Motto-Ros, “Review of the recent advances and applications of libs-
+based imaging,” Spectrochimica Acta Part B: Atomic Spectroscopy, vol.
+151, pp. 41–53, 2019.
+[3] J. R. Adam, “Europa mission overview,” NASA Marshall Space Flight
+Center, Tech. Rep., 2016.
+[4] S. McGuire, P. M. Furlong, T. Fong, C. Heckman, D. Szafir, S. J. Julier,
+and N. Ahmed, “Everybody needs somebody sometimes: Validation
+of adaptive recovery in robotic space operations,” IEEE Robotics and
+Automation Letters, vol. 4, no. 2, pp. 1216–1223, 2019.
+[5] S. Wakayama and N. Ahmed, “Active inference for autonomous
+decision-making with contextual multi-armed bandits,” in 2023 IEEE
+International Conference on Robotics and Automation (ICRA), 2023,
+pp. 7916–7922.
+[6] ——, “Probabilistic semantic data association for collaborative human-
+robot sensing,” IEEE Transactions on Robotics, vol. 39, no. 4, pp. 3008–
+3023, 2023.
+[7] R. Smith, K. J. Friston, and C. J. Whyte, “A step-by-step tutorial
+on active inference and its application to empirical data,” Journal of
+mathematical psychology, vol. 107, p. 102632, 2022.
+[8] D. Markovic, H. Stojic, S. Schwobel, and S. Kiebel, J., “An empirical
+evaluation of active inference in multi-armed bandits,” Neural Networks;
+2021 Special Issue on AI and Brain Science: AI-powered Brain Science,
+vol. 144, p. 229–246, may 2021.
+[9] M. J. Kochenderfer, Decision making under uncertainty: theory and
+application. MIT press, 2015.
+[10] H. Kurniawati, “Partially observable markov decision processes and
+robotics,” Annual Review of Control, Robotics, and Autonomous Systems,
+vol. 5, pp. 253–277, 2022.
+[11] D. Bouneffouf, I. Rish, and C. Aggarwal, “Survey on applications
+of multi-armed and contextual bandits,” in 2020 IEEE Congress on
+Evolutionary Computation (CEC), 2020, pp. 1–8.
+[12] P. Auer, N. Cesa-Bianchi, and P. Fischer, “Finite-time analysis of
+the multiarmed bandit problem,” Mach. Learn., vol. 47, no. 2–3,
+p. 235–256, may 2002. [Online]. Available: https://doi.org/10.1023/A:
+1013689704352
+[13] W. R. Thompson, “On the likelihood that one unknown probability
+exceeds another in view of the evidence of two samples,” Biometrika,
+vol. 25, pp. 285–294, 1933.
+[14] K. Friston, “The free-energy principle: A unified brain theory?” Nature
+Reviews Neuroscience, vol. 11, no. 2, pp. 127–138, 2010.
+[15] P. Lanillos, C. Meo, C. Pezzato, A. A. Meera, M. Baioumy,
+W. Ohata, A. Tschantz, B. Millidge, M. Wisse, C. L. Buckley, and
+J. Tani, “Active inference in robotics and artificial agents: Survey and
+challenges,” CoRR, vol. abs/2112.01871, 2021. [Online]. Available:
+https://arxiv.org/abs/2112.01871
+[16] E. Breck, N. Polyzotis, S. Roy, S. Whang, and M. Zinkevich, “Data
+validation for machine learning.” in MLSys, 2019.
+[17] T. Horvat, L. Hava ˇs, and D. Srpak, “The impact of selecting a validation
+method in machine learning on predicting basketball game outcomes,”
+Symmetry, vol. 12, no. 3, p. 431, 2020.
+[18] Y . Bar-Shalom, F. Daum, and J. Huang, “The probabilistic data associa-
+tion filter,” IEEE Control Systems Magazine, vol. 29, no. 6, pp. 82–100,
+2009.
+[19] X. R. Li and Y . Bar-Shalom, “Tracking in clutter with nearest neighbor
+filters: analysis and performance,” IEEE transactions on aerospace and
+electronic systems, vol. 32, no. 3, pp. 995–1010, 1996.
+[20] C. Kim, F. Li, A. Ciptadi, and J. M. Rehg, “Multiple hypothesis tracking
+revisited,” in Proceedings of the IEEE international conference on
+computer vision, 2015, pp. 4696–4704.
+[21] R. Tse and M. Campbell, “Human–robot communications of proba-
+bilistic beliefs via a dirichlet process mixture of statements,” IEEE
+Transactions on Robotics, vol. 34, no. 5, pp. 1280–1298, 2018.
+[22] C. M. Bishop, Pattern Recognition and Machine Learning (Information
+Science and Statistics). Berlin, Heidelberg: Springer-Verlag, 2006.
+[23] N. Ahmed, “Data-free/data-sparse softmax parameter estimation with
+structured class geometries,” IEEE Signal Processing Letters, vol. 25,
+pp. 1–1, 07 2018.
+[24] D. J. Salmond, “Mixture reduction algorithms for target tracking in
+clutter,” in Signal and Data Processing of Small Targets 1990, ser.
+Society of Photo-Optical Instrumentation Engineers (SPIE) Conference
+Series, O. E. Drummond, Ed., vol. 1305, Oct. 1990, pp. 434–445.
+[25] A. Runnalls, “Kullback-leibler approach to gaussian mixture reduction,”
+Aerospace and Electronic Systems, IEEE Transactions on, vol. 43, pp.
+989 – 999, 08 2007.
+[26] N. R. Ahmed, E. M. Sample, and M. Campbell, “Bayesian multicategor-
+ical soft data fusion for human–robot collaboration,” IEEE Transactions
+on Robotics, vol. 29, no. 1, pp. 189–206, 2013.
+[27] K. P. Hand, C. B. Phillips, A. Murray, J. Garvin, E. Maize, R. Gibbs,
+G. Reeves, A. San Martin, G. Tan-Wang, J. Krajewski et al., “Science
+goals and mission architecture of the europa lander mission concept,”
+The Planetary Science Journal, vol. 3, no. 1, p. 22, 2022.
+[28] J. McMahon, N. Ahmed, M. Lahijanian, P. Amorese, T. Deka,
+K. Muvvala, K. Shakerin, T. Slack, and S. Wakayama, “Reason-recourse
+software for science operations of autonomous robotic landers,” in 2023
+IEEE Aerospace Conference, 2023, pp. 1–11.
+[29] C. B. Phillips and R. T. Pappalardo, “Europa Clipper Mission Concept:
+Exploring Jupiter’s Ocean Moon,” EOS Transactions, vol. 95, no. 20,
+pp. 165–167, May 2014.
+[30] T. Jun, “A survey on the bandit problem with switching costs,” de
+Economist, vol. 152, pp. 513–541, 2004.
+[31] N. Gupta, O.-C. Granmo, and A. Agrawala, “Thompson sampling for
+dynamic multi-armed bandits,” in 2011 10th International Conference
+on Machine Learning and Applications and Workshops, vol. 1. IEEE,
+2011, pp. 484–489.
+[32] D. Catanoso, A. Chakrabarty, J. Fugate, U. Naal, T. M. Welsh, and L. J.
+Edwards, “Oceanwaters lander robotic arm operation,” in 2021 IEEE
+Aerospace Conference (50100), 2021, pp. 1–11.

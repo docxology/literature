@@ -1,0 +1,612 @@
+Toward Design of
+Synthetic Active Inference Agents
+by Mere Mortals
+Bert de Vries
+Eindhoven University of Technology
+Eindhoven, the Netherlands
+bert.de.vries@tue.nl
+July 27, 2023
+Abstract
+The theoretical properties of active inference agents are impressive,
+but how do we realize effective agents in working hardware and software
+on edge devices? This is an interesting problem because the computa-
+tional load for policy exploration explodes exponentially, while the com-
+putational resources are very limited for edge devices. In this paper, we
+discuss the necessary features for a software toolbox that supports a com-
+petent non-expert engineer to develop working active inference agents. We
+introduce a toolbox-in-progress that aims to accelerate the democratiza-
+tion of active inference agents in a similar way as TensorFlow propelled
+applications of deep learning technology.
+1 Introduction
+Thispositionpaperaimstocomplementarecentwhitepaperondesigningfuture
+intelligent ecosystems where autonomous Active InFerence (AIF) agents learn
+purposeful behavior through situated interactions with other AIF agents [11].
+The white paper states that these agents “... can be realized via (variational)
+message passing or belief propagation on a factor graph” [11, abstract]. Here,
+we discuss the computational requirements for a factor graph software toolbox
+that supports this vision. Noting that the steep rise of commercialization op-
+portunities for deep learning systems was greatly facilitated by the availability
+of professional-level toolboxes such as TensorFlow and successors, we claim that
+a high-quality AIF software toolbox is needed to realize the proposition in [11].
+Therefore, in this paper, we ask the question: what properties should a fac-
+tor graph toolbox possess that enable a competent engineer to develop relevant
+AIF agents? The question is important since the number of applications for au-
+1
+arXiv:2307.14145v1  [stat.ML]  26 Jul 2023
+tonomous AIF agents is expected to vastly outgrow the number of world-class
+experts in AIF and robotics.
+As an illustrating example, consider an engineer (Sarah) who needs to design
+a quad-legged robot that is tasked to enter a building and switch off a valve.
+We assume that Sarah is a competent engineer with an MS degree and a few
+years of experience in coding and control systems. She has some knowledge of
+probabilistic modeling but is not a top expert in those fields.
+In order to relieve Sarah from designing every detail of the robot, we expect
+that the robot possesses some “intelligent” adaptation capabilities. Firstly, the
+robot should be able to define sub-tasks and solve these tasks autonomously.
+Secondly, since we do not know a-priori the inside terrain of the building, the
+robotshouldbecapableofadaptingitswalkingandotherlocomotiveskillsunder
+situatedconditions. Thirdly, weexpectthattherobotperformsrobustly, inreal-
+time, and cleverly manages the consumption of its computational resources.
+All these robot properties should be supported seamlessly by Sarah’s AIF
+software toolbox. For instance, she should not need to know the specifics of
+how to implement robustness in her algorithms or how many time steps the
+robot needs to look ahead in any given situation for effective planning purposes.
+We want a toolbox that enables competent engineers to develop effective AIF
+agents, not a toolbox for a select group of world-class machine learning experts.
+We do expect that Sarah is capable of describing her beliefs about desired robot
+behavior through the high-level specification of a probabilistic (world or gener-
+ative) model or, at least, the prior preferences or constraints that underwrite
+behavior.
+After reviewing some motivating agent properties that follow immediately
+from committing to free energy minimization (section 2), we proceed to discuss
+why message passing in a factor graph is the befitting framework for imple-
+menting AIF agents (section 3.1). More specifically, we argue that a reactive
+programming-based implementation of message passing will be the standard in
+professional-level AIF tools (section 3.2). In comparison to the usual procedural
+codingstyle, reactivemessagepassingleadstoincreasedrobustness(section3.3),
+lower power consumption (section 3.5), hard real-time processing (section 3.4),
+and support for continual model structure adaptation (section 4). In section 5.3
+we introduce RxInfer, a toolbox-in-progress for developing AIF agents that
+robustly minimize free energy in real-time by reactive message passing.
+2 The Free Energy Principle and Active Infer-
+ence
+2.1 FEP for synthetic AIF agents
+TheFreeEnergyPrinciple(FEP)describesself-organizingbehaviorinpersistent
+natural agents (such as a brain) as the minimization of an information-theoretic
+2
+functional that is known as the variational Free Energy (FE).1 Essentially, the
+FEP is a commitment to describing adaptive behavior by Hamilton’s Principle
+of Least Action [14]. The process of executing FE minimization in an agent
+that interacts with its environment through both active and sensory states is
+called Active Inference(AIF). Crucially, the FEP claims that, in natural agents,
+FE minimization isall that is going on. While engineering fields such as signal
+processing, control, and machine learning are considered different disciplines, in
+nature these fields all relate to the same computational mechanism, namely FE
+minimization.
+For an engineer, this is good news. If we wish to design a synthetic AIF
+agent that learns purposeful behavior solely through self-directed environmental
+interactions, we can focus on two tasks:
+1. Specification of the agent’s model and inference constraints. This is equiv-
+alent to the specification of a (constrained) FE functional.
+2. A recipe to continually minimize the FE in that model under situated
+conditions, driven by environmental interactions.
+We are interested in the development of an engineering toolbox to support
+these two tasks.
+2.2 FEM for simultaneous refinement of problem repre-
+sentation and solution proposal
+An important quality of the robot will be to define tasks for itself and solve
+these tasks autonomously. Here, we shortly discuss how the FEP supports this
+objective.
+Consider a generative modelp(x, s, u), wherex are observed sensory inputs,
+u are latent control signals ands are latent internal states. For notational ease,
+we collect the latent variables byz = {s, u}. The variational FE for model
+p(x, z) and variational posteriorq(z) is then given by
+F[q, p] =−log p(x)| {z }
+surprise
++
+X
+z
+q(z) log q(z)
+p(z|x)
+| {z }
+bound
+(1a)
+=
+X
+z
+q(z) logq(z)
+p(z)
+| {z }
+complexity
+−
+X
+z
+q(z) logp(x|z)
+| {z }
+accuracy
+. (1b)
+The FE functional in (1a) can be interpreted as the sum of surprise (negative
+log-evidence) and a non-negative bound that is the Kullback-Leibler divergence
+1For reference, we use the following abbreviations in this paper: Active Inference (AIF),
+Constrained Bethe Free Energy (CBFE), Expected Free Energy (EFE), (variational) Free En-
+ergy (FE), Free Energy Principle (FEP), Free Energy Minimization (FEM), Message Passing
+(MP), Reactive Message Passing (RMP).
+3
+between the variational and the optimal (Bayesian) posterior. The first term,
+surprise, can be interpreted as a performance score for the problem represen-
+tation in the model. This term is completely independent of any inference
+performance issues. The second term (the bound) scores how well actual solu-
+tions are inferred, relative to optimal (Bayesian) inference solutions. In other
+words, the FE functional is a universal cost function that can be interpreted as
+the sum of problem representation and solution proposal costs. FE minimiza-
+tion leads toward improving both the problem representation and solving the
+problem through inference over latent variables. In particular, FE minimization
+over a particular model structurep should lead to nested sub-models that reflect
+the causal structure of the sensory data. Sub-tasks are solved by FE minimiza-
+tion in these sub-models. Hence, both creation of subtasks and solving these
+subtasks are driven solely by FE minimization.
+In conclusion, a high-end toolbox should be capable to minimize FE both
+over (beliefs over) latent variables through adaptation ofq(z) (leading to better
+solution proposals for the current model p), and over the model structurep
+(leading to a better problem representation).
+As an aside, an interesting consequence of the FE decomposition into prob-
+lem plus solution costs is that a relatively poor problem representation with
+a superior inference process may be preferred (evidenced by lower FE), over
+a model with a good problem representation (high Bayesian evidence) where
+inference costs are high. The notion that the model with the largest Bayesian
+evidence may not be the most useful model in a practical application, casts an
+interesting light on the common interpretation of FE as a mere upper bound
+on Bayesian evidence. We argue here that FE is actually a more principled
+performance score for a model, since in addition to Bayesian model evidence,
+FE also scores the performance loss in a model due to an inaccurate inference
+process.
+2.3 AIF for smart data sets and resource management
+If we want the robot to cope with unknown physical terrain conditions, it is not
+sufficient to pre-train the robot offline on a large set of relevant examples. The
+robot must be able to acquire relevant new data and update its model under
+real-world conditions.
+FE minimization in the generative model’s roll-out to the future results in
+theminimizationofacostfunctionalknownastheExpectedFreeEnergy(EFE).
+It can be shown that the EFE decomposes into a sum of pragmatic (goal-driven,
+exploitation) and epistemic (information-seeking, exploration) costs [9]. As a
+result, inferred actions balance the need to acquire informative data (to learn a
+better predictive model) with the goal to reach desired future behavior.
+In contrast to the current AI direction towards training larger models on
+larger data sets, an active inference process elicits an optimally informative,
+small (“smart”) data set for training of just “good-enough” models to achieve
+a desired behavior. AIF agents adapt enough to accomplish the task at hand
+while minimizing the consumption of resources such as energy, data, and time.
+4
+𝑋!
+𝑋" 𝑋#𝑋$ 𝑋% 𝑋&
+𝑋'
+𝑝( 𝑝) 𝑝* 𝑝+
+𝑝, 𝑝- 𝑝.𝜇⃖%(𝑥%)
+𝜇⃖$(𝑥$)
+𝜇⃗$(𝑥$)
+Figure 1: Forney-style Factor Graph representation of the factorization (2).
+The trade-off between data accuracy and resource consumption is driven by
+the decomposition in (1b) of FE as a measure of complexity minus accuracy.
+According to this decomposition, more accurate models are only pursued if the
+increase in accuracy outweighs the resource consumption costs.
+In short, AIF agents that are driven solely by FE minimization will inher-
+ently manage their computational resources. These agents automatically infer
+actions that elicit appropriately informative data to upgrade their skills toward
+good-enough performance levels. Since both the agent and environment mutu-
+ally affect each other in a real-time information processing loop, it would not be
+possible to acquire the same data set through the sampling of the environment
+without the agent’s participation.
+3 FE Minimization by Reactive Message Passing
+3.1 Why message passing-based inference?
+Up to this point, our arguments strongly supported AIF as an information
+processing engine for the robot. Unfortunately, the computational demands
+for simulating a non-trivial synthetic AIF agent are extreme. For comparison,
+consider the human brain that minimizes in real-time, for less than 20 watts,
+a highly time-varying FE functional (visual data rate about of about a million
+bits per second) over about100 trillion latent variables (synapses). It has been
+estimated that the human brain consumes about a million times less energy
+than a high-tech silicon computer on quantitatively comparable information
+processing tasks. [17].
+Clearly, the human brain minimizes FE in a very different way than is avail-
+able in standard optimization toolboxes. In this section, we will argue for devel-
+oping a FE minimization toolbox based on reactive message passing in a factor
+graph.
+First, we shortly recapitulate why message passing in factor graphs is an
+effective inference method for large models. Consider a factorized multivariate
+5
+function
+p(x1,x2, . . . , x7)
+= fa(x1)fb(x2)fc(x1, x2, x3)fd(x4)fe(x3, x4, x5)ff (x6)fg(x5, x6, x7) (2)
+Assume that we are interested in inferring (the so-called marginal distribution)
+p(x3) =
+X
+x1
+X
+x2
+X
+x4
+X
+x5
+X
+x6
+X
+x7
+p(x1, x2, . . . , x7) (3)
+If each variablexi in (3) has about10 possible values, then the sum contains
+about 1 million terms. However, making use of the factorization (2) and the
+distributive law [7], we can rewrite this sum as
+p(x3) =
+
+− →µ 3(x3)
+z }| {X
+x1
+X
+x2
+fa(x1)fb(x2)fc(x1, x2, x3)
+
+·
+·
+X
+x4
+X
+x5
+fd(x4)fe(x3, x4, x5)
+ 
+← −µ 5(x5)
+z }| {X
+x6
+X
+x7
+ff (x6)fg(x5, x6, x7)
+
+| {z }
+← −µ 3(x3)
+
+(4)
+The computation in (4), which requires only a few hundred summations and
+multiplications, is clearly preferred from a computational load viewpoint. To
+execute (4), we need to compute intermediate results− →µ i(xi) and ← −µ i(xi) that
+afford an interpretation of local messages in a Forney-style Factor Graph (FFG)
+representation of the model, see Fig. 1.
+Variational FE minimization can also be executed by message passing in a
+factor graph. In fact, nearly all known effective variational inference methods on
+factorized models can be interpreted as minimization of a so-called “constrained
+Bethe Free Energy” (CBFE) functional [16]. In this formulation, posterior vari-
+ational beliefs are factorized into beliefs over both the nodes and the edges of the
+graph. It is possible to add constraints to these local beliefs such as requiring
+that a particular variational posterior is expressed by a Gaussian distribution.
+In general, CBFE minimization by message passing in a factor graph supports
+local adaptation of a plethora of constraints to optimize accuracy vs resource
+consumption. [16, 1]
+Useful dynamic models for real-time processing of data streams with a large
+number of latent variables are necessarily sparsely connected because otherwise,
+real-time inference would not be tractable. In sparse models, the computational
+complexity of inference can be vastly reduced by message passing in a factor
+graph representation of the model. In particular, automated CBFE minimiza-
+tion by message passing in a factor graph supports refined optimization of the
+accuracy vs resource consumption balance.
+6
+3.2 Reactive vs procedural coding style
+Next, we discuss a key technological component for a synthetic AIF agent,
+namely the requirement to execute FE minimization through areactive pro-
+gramming paradigm.
+A crucial feature of all MP-based inference is that the inference process
+consists entirely of a (parallelizable) series of small steps (messages) that in-
+dividually and independently contribute to FE minimization. As a result, a
+message passing-based FE minimization process can be interruptedat any time
+without loss of important intermediate computational results.
+In a practical setting, it is very important that an ongoing inference process
+can be robustly (without crashing) interrupted at any time with a result. These
+intermediate inference results can only be reliably retrieved if the inference pro-
+cess iteratively updates its beliefs in small steps, or, in other words, by message
+passing. Moreover, the inference process should not be subject to a prescribed
+control flow that contains for-loops. Rather, if we were to write code for an
+anytime-interruptable inference process in a programming language, we should
+use areactive rather than the more commonproceduralprogramming style. In
+a reactively coded inference engine, there is no code for control flow, such as “do
+first this, then that”, but instead only a description of how a processing module
+(a factor graph node) should react to changes in incoming messages. We will
+call this process Reactive Message Passing (RMP) [2]. In an RMP inference
+process, there is no prescribed schedule for passing messages such as the Viterbi
+or Bellman algorithm. Rather, an RMP inference process just reacts by FE
+minimization whenever FE increases due to new observations.
+In Fig. 2, we display the consequences of choosing a reactive programming
+style for an application engineer like Sarah. The procedural programming style
+in Algorithm-1 requires Sarah to provide the control flow (the “procedure”) for
+the inference process. Sarah needs to write code for when to collect observations,
+when to update states, etc. The specific control flow in Algorithm-1 is just an
+example and there exists literature that aims to improve the efficiency of the
+control flow [5, 10]. In order to write an efficient inference control flow recipe
+for a complex AIF agent, Sarah needs to be an absolute expert in this field.
+Consider in contrast the code for reactive inference in Algorithm-2. In a
+reactive programming paradigm, there is no control flow. Rather, the only
+inference instruction is for the agent to react to any opportunity to minimize
+FE. When FE minimization is executed by a reactive message passing toolbox,
+the application engineer only needs to specify the model.
+Aside from lowering the competence bar for application engineers to design
+effective AIF agents, the procedural style of implementing FE minimization
+is fundamentally inappropriate. The control flow in Algorithm-1 necessarily
+contains many design choices that only become known during deployment. For
+instance, how far should the agent roll out its model to the future for computing
+the EFE? This kind of information is highly contextual and not available to the
+application engineer. In contrast, the application engineer’s code for reactive
+inference ("react to any FEM opportunity") works for any model in any context.
+7
+Algorithm 1Procedural AIF
+1: Specify modelp(x, s, u, θ)
+2: for t = 1, 2, . . .do ▷ Deploy
+3: Collect new observationxt
+4: Update stateq(st|x1:t)
+5: Update desired future˜p(x>t)
+6: Upd. candidate policies
+{π(i)}
+7: for allπ(i) do
+8: Predict future
+p(x>t|st, π(i))
+9: Compute EFEG(π(i))
+10: end for
+11: Select π∗ = arg min
+π∈{π(i)}
+G(π)
+12: end for
+Algorithm 2Reactive AIF
+1: Specify modelp(x, s, u, θ)
+2: while true do ▷ Deploy
+3: React to any FEM opportunity
+4: end while
+Figure 2: Pseudo-code for procedural and reactive coding styles for AIF agents.
+In a reactive inference setting, the appropriate planning horizon is going to be
+continually updated (inferred) with contextual information. In other words, it
+is the reactive FEM process itself that leads to optimizing the inference control
+flow.
+3.3 RMP for robustness
+Since an AIF agent executes under situated conditions, it must perform the FE
+minimization process robustly in real-time. Consider an agent whose computa-
+tional resources are represented by a graph and FE minimization results from
+executing MP-based inference on that graph. Any MP schedule that visits the
+nodes in the graph in a prescribed fixed order (as would be the case in a proce-
+dural approach to FE minimization) is vulnerable to malfunction in any of the
+nodes in the schedule. In principle, the FE minimization process needs to stop
+after such a malfunction and proceed to compute a new MP schedule. Since
+FE minimization is theonly ongoing computational process, the robot basically
+moves blindfolded after a reset. Clearly, for robustness, we need a system that
+continues to minimize FE, even after parts of the graph break down over time.
+In a reactive inference framework, collapse of a component is simply a switch
+to an alternative model structure. The new model may perform better or worse
+at FE minimization, but there is no reason to stop processing.
+3.4 RMP for real-time, situated processing
+An ongoing RMP process can always be interrupted when computational re-
+sources have run out on a given platform. In this way, by trading computational
+8
+complexity (i.e., the number of messages) for accuracy, any RMP-based infer-
+ence process can be scaled down to a real-time processing procedure, where of
+course a prediction accuracy price may have to be paid, depending on the avail-
+able computational resources. In short, FE minimization in any model can be
+executed in real-time on any computational platform if we implement inference
+by RMP in a factor graph.
+3.5 RMP for low power consumption
+Similarly, an ongoing RMP process can always be terminated if the expected
+improvement in accuracy does not outweigh the expected computational load
+that additional messages would incur.2 Note that, since FE decomposes as
+computationalcomplexityminusaccuracy, interruptinganRMP-basedinference
+process for this reason is fully consistent with the goal of FE minimization.
+Interrupting an ongoing MP process by any of the above-mentioned rea-
+sons (e.g., node malfunction, running out of computational resources, expected
+processing costs outweighing expected accuracy gains, etc.), in principle always
+leads to sacrificing some prediction accuracy in favor of saving computational
+costs. Crucially, these interrupts will not cause a system-wide crash in a reactive
+system.
+4 Model Structure Adaptation
+In section 2.2, we touched upon the notion that FE minimization should ideally
+drive the generative modelp to evolve to structurally segregated but communi-
+cating sub-models that reflect the causal structure of the environment. Techni-
+cally, this is due to the drive for a lower surprise (−log p(x)).
+There is another reason why online structural adaptation is important. Free
+energy minimization over the structure ofp should also lead to a model structure
+for which inference costsDKL[q(z)||p(z|x)] are lower by movingp(z|x) closer to
+q(z). Consider again the procedural and reactive inference code in Fig. 2. The
+control flow in the procedural code aims to cleverly steer the inference process
+toward maximal inference accuracy for minimal computational costs. In con-
+trast, the reactive code just declares that the system should react (by message
+passing) to any FE minimization opportunity. In the reactive framework,clever
+inference is learned over time by continual minimization over all movable parts
+of the CBFE, i.e., by FEM over states, parameters, structure (adaptation ofp),
+and constraints (adaptation of the structure ofq). To learn the most effective
+paths for inference, the toolbox should support structural adaptation over both
+p and q.
+Unfortunately, online structural adaptation during the deployment of the
+robot is still an ongoing research issue, e.g., [8, 15, 3]. One technical difficulty
+2The computational load and complexity can only be equated in the absence of a Von
+Neumann bottleneck (i.e., with mortal computation or in-memory processing). This is because
+energy and time are ‘wasted’ by reading and writing to memory.
+9
+is that an efficient inference control flow (which states are updated at what
+time, etc.) may change if the structure of the generative model changes. In a
+procedural programming style, we would need to reset the system and repro-
+gram the inference code in Algorithm-1 (in Fig. 2). This is incompatible with
+the demand that the agent adapts during deployment. As discussed above, a
+reactive programming style solves this issue since the application inference code
+(Algorithm-2 in Fig. 2) is independent of the model structure.
+5 Discussion
+5.1 Review of arguments
+We shortly summarize our view on a professional-level supporting software tool-
+box for the design of relevant AIF agents, see also Table 1. In section 2, we
+discussed a few extraordinary features that follow straightaway from committing
+to free energy minimization as the sole computational mechanism for a future
+AI ecosystem as proposed in Friston et al. [11]. First, the FE functional in an
+AIF agent can be interpreted as a universal performance criterion that applies
+in principle to all problems. If FEM can be extended to structural model adap-
+tation, then an AIF agent is naturally able to create and solve sub-problems.
+Moreover, by virtue of the decomposition of EFE into a sum of information-
+and goal-seeking costs, AIF agents naturally seek out small "smart" data sets.
+In terms of FEM implementation, we asserted that useful models are highly
+factorized and sparse. Efficient inference in factorized models can always be
+described as message passing in a factor graph. In particular, nearly all known
+variants of highly efficient message passing algorithms for FEM can be formu-
+lated in a single framework as minimizing a Constrained Bethe Free Energy
+(CBFE).
+Wethen claimedthat areactiveratherthan proceduralprocessingstrategy is
+essential. Reactive message passing-based (RMP) inference is always interrupt-
+ible with an inference result, thus supporting guaranteed real-time processing,
+which is a hard requirement for AIF agents in the real world. In comparison
+realization technology benefits
+1 FEP, AIF one solution approach;
+smart data
+2 reactive message passing low power;
+robustness;
+real-time
+3 structural adaptation problem refinement;
+clever inference
+Table 1: Summary of benefits for supporting reactive message passing and struc-
+tural adaptation in an AIF agent.
+10
+to the more common procedural programming approach to FEM, reactive pro-
+cessing also improves robustness, resource consumption, and the capability to
+make structural changes without the need for resetting the inference process.
+This latter feature, support for online structural adaptation is also a vital
+feature of a high-quality AIF toolbox. Online structural adaptation leads to
+both continual problem representation refinement (by lowering surprise) and to
+a more efficient inference process.
+5.2 Review of existing tools
+Currently, there exists a small but vibrant research community on the devel-
+opment of open-source tools for simulating synthetic AIF agents. In this com-
+munity, a few supporting packages have been released, including SPM [12],
+PyMDP [13] andForneyLab [6]. The SPM toolbox was originally written by
+Karl Friston and colleagues, and has developed into a very large set of tools
+and demonstrations for experimental validation of the scientific output of the
+UCL team and collaborators. PyMDP is a more recent Python package for
+simulating discrete-state POMDP models by Conor Heins, Alexander Tschantz
+and a team of collaborators. ForneyLab.jl is a Julia package from BIASlab
+(http://biaslab.org) for simulating FE minimization by message passing in
+Forney-style factor graphs. Unfortunately, none of the above-mentioned tools
+support reactive message passing-based inference. Therefore, we believe that
+these tools will serve the community well as AIF prototyping and validation
+tools, but they will not scale to support real-time, robust simulation of AIF
+agents with commercializable value.
+5.3 Reactive message passing with RxInfer
+More recently, BIASlab has released the open-source Julia packageRxInfer
+(http://rxinfer.ml) to support an engineer at Sarah’s level to develop com-
+mercially relevant AIF agents that minimize FE by automated reactive message
+passing in a factor graph [2]. Julia is a modern open-source scientific program-
+ming language with roughly the syntax of MATLAB and out-of-the-box speed
+of C [4].
+The development process ofRxInfer focuses on the following priorities:
+1. model space coverage
+• RxInfer aims to support reactive message passing-based FEM for a
+very large set of freely definable relevant probabilistic models.
+2. user experience
+• RxInfer aims to support a busy, competent researcher or developer
+who understands probabilistic modeling (but doesn’t know Julia) to
+design and deploy an AIF agent into the world. In particular, a
+user-friendly specification of nested AIF agents should be supported.
+11
+3. adaptation
+• RxInfer aims to support continual adaptation by automated FEM
+over all movable parts of the CBFE functional, including states, pa-
+rameters, structure, and variational constraints.
+4. real-time
+• RxInfer aims to process data streams in “hard” real-time, under
+situated conditions, even for large models. Larger models may lead to
+lessaccurateinference(intermsofKL-divergencebetweenvariational
+and Bayesian posteriors), but no crashes.
+5. low-power
+• RxInfer aims to process data streams on any, possibly time-varying,
+power budget. Lower power budgets may lead to less accurate infer-
+ence but no crashes.
+At the time of writing this paper,RxInfer supports fast and robust auto-
+mated CBFE minimization by reactive message passing for states and parame-
+ters in a large set of freely definable models.RxInfer processes streaming data
+very fast, but not yet guaranteed in hard real-time. User-friendly specifications
+of AIF agents will be released this summer. Model structure adaptation is sup-
+ported by NUV priors (normal priors with unknown variance) [15], but not yet
+by online Bayesian model reduction [3, 8].RxInfer comes with a large set of
+examples and is slated to support the above priority list in the future.
+6 Conclusions
+Supportedby RxInfer orasimilartoolbox, futureAIengineerswillnolongerde-
+sign end-product algorithms, but will instead design the designers (AIF agents)
+of production algorithms in short and easy-readable code scripts. Along with
+[11], we think that the potential benefits of shared intelligence in ecosystems of
+communicating AIF agents are hard to overstate. As we have argued in this
+position paper, the required underlying technology for realizing this vision is
+very demanding and currently not yet available. Still, we also think it is not
+out of reach and is one of the most exciting ongoing research threads in the AI
+field.
+6.0.1 Acknowledgments
+I would like to acknowledge my colleagues at BIASlab (http://biaslab.org)
+for the stimulating work environment and the anonymous reviewers for excellent
+feedback on the draft version. Some wording in this document, such as footnote
+2, comes straight from a reviewer.
+12
+References
+[1] SemihAkbayrak,IvanBocharov,andBertdeVries.“ExtendedVariational
+Message Passing for Automated Approximate Bayesian Inference”. In:En-
+tropy 23.7 (July 2021). Number: 7 Publisher: Multidisciplinary Digital
+Publishing Institute, p. 815.issn: 1099-4300. doi: 10.3390/e23070815 .
+url: https : / / www . mdpi . com / 1099 - 4300 / 23 / 7 / 815(visited on
+05/26/2023).
+[2] Dmitry Bagaev and Bert de Vries. “Reactive Message Passing for Scalable
+BayesianInference”.In: Scientific Programming2023(May27,2023).Pub-
+lisher: Hindawi, e6601690.issn: 1058-9244.doi: 10.1155/2023/6601690.
+url: https://www.hindawi.com/journals/sp/2023/6601690/ (visited
+on 05/28/2023).
+[3] JimBeckersetal. Principled Pruning of Bayesian Neural Networks through
+Variational Free Energy Minimization. Oct. 17, 2022. doi: 10 . 48550 /
+arXiv.2210.09134. arXiv:2210.09134[cs,eess]. url: http://arxiv.
+org/abs/2210.09134 (visited on 05/26/2023).
+[4] Jeff Bezanson et al. “Julia: A Fresh Approach to Numerical Computing”.
+In: SIAM Review 59.1 (Jan. 1, 2017). Publisher: Society for Industrial
+and Applied Mathematics, pp. 65–98. issn: 0036-1445. doi: 10 . 1137 /
+141000671. url: https://epubs.siam.org/doi/10.1137/141000671
+(visited on 02/03/2022).
+[5] Théophile Champion, Marek Grześ, and Howard Bowman. “Realizing Ac-
+tive Inference in Variational Message Passing: The Outcome-Blind Cer-
+tainty Seeker”. In:Neural Computation33.10 (Sept. 16, 2021), pp. 2762–
+2826. issn: 0899-7667.doi: 10.1162/neco_a_01422. url: https://doi.
+org/10.1162/neco_a_01422 (visited on 05/26/2023).
+[6] MarcoCox,ThijsvandeLaar,andBertdeVries.“Afactorgraphapproach
+to automated design of Bayesian signal processing algorithms”. In:Inter-
+national Journal of Approximate Reasoning104 (Jan. 1, 2019), pp. 185–
+204. issn: 0888-613X.doi: 10.1016/j.ijar.2018.11.002. url: http://
+www.sciencedirect.com/science/article/pii/S0888613X18304298
+(visited on 11/16/2018).
+[7] Distributive property.In: Wikipedia.PageVersionID:1124679546.Nov.29,
+2022.url:https://en.wikipedia.org/w/index.php?title=Distributive_
+property&oldid=1124679546 (visited on 05/26/2023).
+[8] Karl Friston, Thomas Parr, and Peter Zeidman. “Bayesian model reduc-
+tion”. In: arXiv:1805.07092 [stat] (May 18, 2018). arXiv: 1805 . 07092.
+url: http://arxiv.org/abs/1805.07092 (visited on 05/28/2018).
+[9] Karl Friston et al. “Active inference and epistemic value”. In: Cogni-
+tive Neuroscience 0 (ja Feb. 17, 2015), null.issn: 1758-8928. doi: 10.
+1080/17588928.2015.1020053 . url: http://dx.doi.org/10.1080/
+17588928.2015.1020053 (visited on 02/22/2015).
+13
+[10] Karl Friston et al. “Sophisticated Inference”. In:Neural Computation33.3
+(Mar. 1, 2021), pp. 713–763. issn: 0899-7667. doi: 10.1162/neco_a_
+01351. url: https :/ / doi . org/ 10 . 1162 /neco _ a _ 01351(visited on
+02/14/2022).
+[11] Karl J. Friston et al. Designing Ecosystems of Intelligence from First
+Principles. Dec. 2, 2022. doi: 10 . 48550 / arXiv . 2212 . 01354. arXiv:
+2212.01354[nlin] . url: http://arxiv.org/abs/2212.01354 (vis-
+ited on 12/08/2022).
+[12] KarlJ.Fristonetal. SPM12 toolbox, http://www.fil.ion.ucl.ac.uk/spm/software/.
+2014.
+[13] Conor Heins et al. “pymdp: A Python library for active inference in dis-
+crete state spaces”. In:arXiv:2201.03904 [cs, q-bio](Jan. 11, 2022). arXiv:
+2201 . 03904. url: http : / / arxiv . org / abs / 2201 . 03904(visited on
+02/03/2022).
+[14] Cornelius Lanczos. The Variational Principles of Mechanics. 4th Revised
+ed. edition. New York: Dover Publications, Mar. 1, 1986. 464 pp.isbn:
+978-0-486-65067-8.
+[15] Hans-Andrea Loeliger et al. “On sparsity by NUV-EM, Gaussian mes-
+sage passing, and Kalman smoothing”. In:2016 Information Theory and
+Applications Workshop (ITA). 2016 Information Theory and Applications
+(ITA). La Jolla, CA, USA: IEEE, Jan. 2016, pp. 1–10.isbn: 978-1-5090-
+2529-9. doi: 10.1109/ITA.2016.7888168 . url: http://ieeexplore.
+ieee.org/document/7888168/ (visited on 07/21/2021).
+[16] İsmail Şenöz et al. “Variational Message Passing and Local Constraint
+Manipulation in Factor Graphs”. In:Entropy (Basel, Switzerland) 23.7
+(June 24, 2021), p. 807.issn: 1099-4300.doi: 10.3390/e23070807.
+[17] Lena Smirnova et al. “Organoid intelligence (OI): the new frontier in
+biocomputing and intelligence-in-a-dish”. In:Frontiers in Science(2023).
+Publisher: Frontiers.
+14

@@ -1,0 +1,2013 @@
+JOURNAL OF LATEX CLASS FILES, 1
+Zero-shot Structure Learning and Planning for Autonomous Robot
+Navigation using Active Inference
+Daria de Tinguy, Tim Verbelen, Emilio Gamba, Bart Dhoedt
+Abstract—Autonomous navigation in unfamiliar environments
+requires robots to simultaneously explore, localise, and plan
+under uncertainty, without relying on predefined maps or
+extensive training. We present a biologically inspired, Active
+Inference-based framework, Active Inference MAPping and
+Planning (AIMAPP). This model unifies mapping, localisation,
+and decision-making within a single generative model. Inspired
+by hippocampal navigation, it uses topological reasoning, place-
+cell encoding, and episodic memory to guide behaviour. The
+agent builds and updates a sparse topological map online, learns
+state transitions dynamically, and plans actions by minimising
+Expected Free Energy. This allows it to balance goal-directed
+and exploratory behaviours. We implemented a ROS-compatible
+navigation system that is sensor and robot-agnostic, capable of
+integrating with diverse hardware configurations. It operates in
+a fully self-supervised manner, is resilient to drift, and supports
+both exploration and goal-directed navigation without any pre-
+training. We demonstrate robust performance in large-scale real
+and simulated environments against state-of-the-art planning
+models, highlighting the system’s adaptability to ambiguous
+observations, environmental changes, and sensor noise. The
+model offers a biologically inspired, modular solution to scalable,
+self-supervised navigation in unstructured settings. AIMAPP is
+available at https://github.com/decide-ugent/AIMAPP.
+Index Terms—Autonomous Navigation, Active Inference, Cog-
+nitive Mapping, Predictive-coding, Topological Navigation, Plan-
+ning, Bio-inspired, Robot Navigation, Mobile Robot,
+I. INTRODUCTION
+The transition toward fully automated factories requires
+robots to be capable of autonomously exploring and navigating
+unfamiliar environments, a key challenge in robotics [1]–[3].
+Navigation requires the integration of localisation, mapping,
+and planning into a coherent system. While each of these
+problems has been studied extensively in isolation, combining
+them into a robust and general-purpose framework remains
+challenging, particularly in large, dynamic, and partially ob-
+servable environments. Classical approaches often suffer from
+high computational demands for real-time operation (a path-
+planning algorithm) [4], drift-prone odometry and metric
+maps (a SLAM method) [5], or heuristic strategies that lead
+to inefficient exploration and backtracking (a path planning
+method) [6]. Neural methods such as Neural-SLAM (a path
+planning and SLAM method) [7] improve flexibility but rely
+on extensive pre-training, which limits adaptability to new or
+dynamic environments.
+One promising alternative to strategise path planning is the
+Active Inference Framework (AIF) [8], a computational model
+of perception and action rooted in neuroscience. Active Infer-
+ence treats navigation as a process of probabilistic inference:
+Manuscript received xxxx; revised xxx.
+Fig. 1. Our model coarsely localises itself based on local motion and
+accumulated observations, remembering in a topological map where it has
+been and could potentially go. Planning follows Active Inference Principles,
+considering where the agent’s preferences lie (whether to gather information
+about the surroundings or reach a specific objective). Visited states (up to
+timetpresented with coloured circles on the topological map) have a visual
+observation and a known position, while unvisited states (blank circles with
+dotted edges) hold a probable position and no observation. We plan through
+consecutive nodes in the topological graph to determine the next motion.
+an agent maintains beliefs about the world, which can be re-
+shaped based on new evidence, compares them to predicted
+future outcomes, and acts to minimise the mismatch between
+its predictions and sensory observations. In robotics, this trans-
+lates into a unified framework where exploration and goal-
+directed navigation emerge naturally from the same underlying
+principle: reducing uncertainty about the environment while
+pursuing task-relevant states.
+Building on this idea, we propose a bio-inspired navigation
+model, Active Inference MAPping and Planning (AIMAPP),
+coarsely presented in Figure 1, that maintains a sparse topolog-
+ical map linking sensory observations with metric localisation,
+and uses it to plan trajectories that balance information gain
+with goal efficiency. Unlike traditional artificial intelligence
+approaches, our system does not rely on pre-training, pre-
+defined map structures, or globally consistent metric rep-
+resentations [9]. Instead, it continuously adapts its beliefs
+from sensorimotor feedback, enabling robust performance in
+arXiv:2510.09574v1  [cs.RO]  10 Oct 2025
+JOURNAL OF LATEX CLASS FILES, 2
+ambiguous, dynamic, and partially observable environments.
+To keep planning tractable, the agent evaluates only relevant
+policies based on its current context [10]. Localisation is han-
+dled probabilistically rather than relying solely on odometry,
+ensuring resilience to drift. To move, the agent autonomously
+assigns and reassesses goals, balances exploration and ex-
+ploitation, and recovers from most motion failures without
+requiring manual intervention.
+AIMAPP exhibits the following key properties:
+•Online learning: the agent incrementally updates its inter-
+nal representation of the environment without requiring
+pre-training.
+•Self-supervised learning: it autonomously determines
+how to navigate based on accumulated sensorimotor
+experience without requiring human intervention.
+•Dynamic system modelling: the agent learns to model
+motion and transitions without assuming a fixed envi-
+ronmental structure, enabling generalisation to arbitrary,
+unknown environments.
+•Robustness to uncertainty: localisation and decision mak-
+ing are Bayesian-based, allowing resilience to sensor drift
+and ambiguous inputs (aliased observations or change in
+environment).
+•Data modality flexibility: any sensory input (e.g., RGB,
+depth, LiDAR) can be incorporated.
+•Biological plausibility: the architecture draws inspiration
+from hippocampal functions such as episodic memory,
+place cells, and topological reasoning.
+•Modularity: our approach can be integrated into existing
+navigation stacks in ROS-based systems and is fit for
+diverse navigation tasks (exploration or goal-reaching).
+•Scalability: due to its sparse, topological map structure
+and belief-based planning, the model scales efficiently to
+large and high-dimensional spaces.
+We evaluate our model in both simulated and real envi-
+ronments of varying scale and complexity. Results show that
+our Active Inference approach achieves exploration efficiency
+comparable to or exceeding state-of-the-art planning-based
+algorithmic methods (e.g., FAEL [11], GBPlanner [12], Fron-
+tiers [6]), while maintaining near-optimal coverage relative
+to human teleoperated exploration (90% Coverage Efficient
+-CE- overall runs). The system demonstrates robustness to
+moved obstacles in simulation and drift and sensor uncertainty
+in the real world, enabling reliable operation in real-world
+settings where our odometry-based baselines (e.g., Frontiers
+with Nav2 [13]) often failed. Moreover, exploration and goal-
+reaching are achieved within a single architecture, without
+task-specific re-tuning, across environments ranging from sim-
+ulated houses and warehouses to real-world garages up to
+325 m2.
+Together, these contributions highlight the robustness,
+adaptability, and biological plausibility of Active Inference as
+a navigation strategy, bridging neuroscience-inspired theory
+and practical deployment in robotics. Rather than relying
+on globally accurate maps, our agent treats navigation as
+hypothesis testing: generating predictions about future states,
+evaluating them through action, and updating beliefs based on
+surprise.
+In the following sections, we review related work, present
+our Active Inference-based model for mapping, localisation,
+and decision-making, and evaluate its performance in terms
+of exploration, adaptation to moving obstacles, drift resistance,
+and goal-reaching.
+II. RELATEDWORK
+Robust and efficient autonomous navigation requires solv-
+ing several interconnected challenges, including localisation,
+mapping, path planning, and obstacle avoidance. Traditional
+approaches have tackled these components with varying lev-
+els of integration and success. More recently, bio-inspired
+frameworks, particularly those based on Active Inference, have
+gained traction for their ability to provide flexible and adaptive
+navigation. In this section, we review key methodologies in
+three main categories: classical navigation systems, learning-
+based models, and biologically inspired approaches.
+A. Classical Navigation Systems
+Classical navigation methods are often built upon metric
+mapping and localisation pipelines such as Simultaneous
+Localisation and Mapping (SLAM). There have been many
+notable examples, such as ORB3-SLAM [5] and many other
+notable approaches, such as depth-based SLAM [14], PLP-
+SLAM [15] and FAST-LIO2 [16], which leverage visual or
+LiDAR data for accurate pose estimation and mapping. These
+approaches excel in structured and uniformly lit conditions
+(especially LiDAR-based mappings), but they are prone to
+drift over time, even with loop closure, particularly in large
+or dynamic environments. Furthermore, many metric methods
+struggle with memory inefficiency and do not scale well to
+large unstructured worlds. Finally, SLAM primarily focuses
+on localisation and mapping, while path planning and obstacle
+avoidance require additional modules as indicated in [17].
+Topological mapping offers an alternative to metrical maps,
+where the environment is represented as a graph of connected
+states rather than precise coordinates, as demonstrated in [18],
+[19]. This improves scalability and can better handle aliasing
+in perceptual input. However, many topological methods rely
+on heuristics for node creation and can be sensitive to envi-
+ronmental changes or perceptual noise.
+B. Learning-Based Navigation
+With the rise of machine learning, many navigation systems
+now leverage deep neural networks to learn policies directly
+from data. Reinforcement Learning (RL), in particular, enables
+agents to acquire navigation and mapping skills through iter-
+ative interaction with the environment, improving decision-
+making under uncertainty, such as sensor noise and par-
+tial observability [2]. Neural network-based approaches (RL,
+Deep-RL...) offer advantages such as improved navigation
+performance (better exploration and more refined planning
+strategies), increased robustness to sensor noise, and reduced
+reliance on engineered features.
+JOURNAL OF LATEX CLASS FILES, 3
+Some notable examples include Neural SLAM [7], which
+integrates cognitive mapping and policy learning in an end-
+to-end fashion to visually explore. Self-supervised methods
+such as BYOL [20], RECON [21], and ViKiNG [22], learn
+visual representations without explicit supervision but with
+months of collected data. NoMaD [23] uses a Transformer
+and diffusion model to jointly handle exploration and goal-
+reaching within a unified framework. Other approaches employ
+world models, such as [3], which uses latent Bayesian surprise
+to drive exploration, or [24], which predicts action outcomes
+and enables zero-shot manipulation. Zero-shot learning refers
+to the agent’s ability to navigate without pre-training or prior
+exposure to the environment.
+These methods often generalise well across visually simi-
+lar environments and reduce dependence on human-designed
+features. However, they typically require large-scale offline
+training and curated datasets. Moreover, they usually struggle
+with knowledge transfer across environments, particularly in
+dynamic or large-scale settings. Most are also task-specific,
+trained either specifically for exploration [20], [21] or goal-
+reaching [22], [25]. NoMaD [23] is a notable exception,
+simultaneously addressing both tasks, but it remains limited
+to visual observations. In contrast, our approach supports any
+input modalities (bag-of-words, semantic labels, images, point
+clouds, etc.), though we only use visual observations as input
+in this work; the observation process is not considered part of
+the model.
+C. Bio-Inspired Navigation
+Inspired by the cognitive processes of animals, bio-inspired
+navigation approaches integrate perception, memory, and
+decision-making in more adaptive ways. RatSLAM [26], for
+example, draws on principles from rodent hippocampal func-
+tion to construct a topological cognitive map. It is effective at
+correcting drift and maintaining robust maps under uncertainty.
+However, it lacks autonomy in decision-making and goal-
+directed behaviour.
+Other models like NNSLAM [7] incorporate neural net-
+works for exploration and localisation, but require extensive
+visual training and struggle in unfamiliar scenarios. Bio-
+inspired neural networks have also been widely used in reac-
+tive collision-free navigation [27], but most systems assume
+static environments and lack probabilistic reasoning under
+uncertain situations.
+Among bio-inspired methods, Active Inference has emerged
+as a unifying framework. Rooted in the principle that agents
+act to minimise Expected Free Energy (i.e. surprise), AIF
+treats navigation as inference rather than control. It integrates
+sensing, prediction, localisation, and planning into a single,
+adaptive generative process [8].
+Several works have illustrated the use of AIF for navigating
+simulated mazes [28], [29] or simple structured environ-
+ments [30], [31]. However, illustrations of navigating real envi-
+ronments with active inference are but a few. [32] demonstrates
+how combining AIF with imitation learning enables dynamic
+replanning and visual prediction in simple real-world scenar-
+ios, while GSLAM [33] fuses AIF and RatSLAM principles
+to improve localisation and mapping in indoor environments.
+However, both methods require pre-training over, respectively,
+possible actions or observations and do not support full
+exploration in open-ended environments. They need to have
+previously defined the environment, usually requiring human
+intervention. Our model, inspired by AIF principles, operates
+in a zero-shot, online fashion, continuously learning from
+incoming sensory data without requiring prior training. The re-
+sulting model supports robust exploration, drift correction, and
+dynamic adaptation, demonstrating performance competitive
+with more classical path planning approaches while requiring
+fewer assumptions and no training resources.
+III. ACTIVEINFERENCE INAIMAPP
+The Active Inference Framework presents an interesting
+framework for understanding how organisms perceive and
+interact with their environment. Traditionally, biological agents
+have been thought to understand their environment by piecing
+together detailed information from sensory inputs [34], [35].
+Continuously reconstructing the environment to track changes
+can be resource-intensive, particularly in fast-changing settings
+where quick decision-making is crucial for survival. Being
+able to reproduce such a mechanism would translate to more
+flexible and intuitive systems in robotics. AIF suggests that
+organisms are continually making predictions, a process akin
+to statistical inference, where they develop hypotheses or
+expectations about the actual state of their environment [36].
+Our model adheres to the AIF principle, employing a math-
+ematically grounded pipeline that remains fully interpretable,
+thereby explaining how agents interact, adapt, and navigate
+unstructured environments. It operates in a zero-shot, self-
+supervised, online-learning fashion: no pre-training is required,
+and sensory data is processed in real time to build and update
+an internal map of the environment.
+The AIF framework is structured around three recurring
+steps:
+1) Perception: inferring hidden world states from incoming
+observations.
+2) Prediction and Action Selection: using a generative
+model to plan actions that either maximise task utility
+or reduce uncertainty about the model.
+3) Learning: updating model parameters based on mis-
+matches between expected and actual observations.
+Our internal generative model is formalised as a par-
+tially observable Markov decision process (POMDP), enabling
+decision-making under uncertainty. At each step, the agent
+simulates possible action sequences (policiesπ), in our case,
+using a Monte Carlo Tree Search (MCTS), scores them accord-
+ing to its current beliefs and goals, selects the most promising
+one, and executes the first action. Observations from the en-
+vironment are then compared to predictions, and the model is
+updated accordingly. This continuous sense–predict–act–learn
+loop allows the agent to balance exploration and goal-seeking
+seamlessly.
+We will first present our model before diving into each step
+of the process
+JOURNAL OF LATEX CLASS FILES, 4
+A. World Modelling
+World models are an internal representation of the envi-
+ronment, generating predictions about possible future sensory
+information emitted by the environment. They are widely used
+for modelling abstract rules of the environment and allow the
+agent to predict the next state of the world based on the
+previous state and incoming action. The closer the rules of
+the world model match the real world, the better the agent’s
+understanding of the consequences of its actions. Classically,
+worlds are modelled as a POMDP with, at any timet, the
+current observationo t and determined past motiona t−1 from
+which we can infer states t, following Equation (1) where
+tildes (˜) denote sequences over time.
+P(˜o,˜s,˜a) =P(o0|s0)P(s0)
+τY
+t=1
+P(ot|st)P(st|st−1, at−1) (1)
+In this work, we deviate from the standard form by consider-
+ing the latent state to be decomposed into two parts: a spatial
+positionp t and a states t (capturing particular information
+about a specific localisation defined byoandp). This results
+in the extended generative model (2).
+P(˜o,˜s,˜p,˜a) =P(o0|s0)P(s0)P(p0)
+τY
+t=1
+P(ot|st)P(st, pt|st−1, pt−1, at−1) (2)
+In practice, calculating the true posteriorP(o|s)is typically
+intractable, because the model evidenceP(o)and the posterior
+probabilityP(s|o)cannot be computed [8]. Thus, we resort
+to variational inference, which introduces the approximate
+posteriorQ. In our temporal model, it takes the form de-
+fined in Eq (3). The goal is to makeQ(s)as close as
+possible toP(s|o), which is achieved by minimising their
+Kullback–Leibler (KL) divergence.
+Q(˜s,˜p|˜o,˜a) =Q(s0, p0|o0)
+τY
+t=1
+Q(st, pt|st−1, pt−1, at−1, ot)
+(3)
+How well this approximation fits the evidence can be
+measured by the Variational Free Energy (VFE) denotedF,
+defined in (4). NegativeFis known as the Evidence Lower
+Bound (ELBO) in machine learning.
+FQ =D KL[Q(˜s,˜p|˜a,˜o))||P(˜s,˜p|˜a,˜o)]| {z }
+posterior approximation
+−log[P(˜o)]| {z }
+log evidence
+(4)
+Minimising the KL divergence between the variational pos-
+teriorQand the true posteriorPis equivalent to reducing the
+model’s variational free energyF, which serves as a bound on
+the negative log-evidence (or ”surprise”) of the observations.
+In other words, minimisingFincreases the evidence the model
+has for its internal beliefs about the world, a process also
+known as maximising the ELBO.
+This minimisation is equivalent to reducing the model’s
+variational free energyF, which serves as a bound on the
+negative log-evidence (or “surprise”) of the observations. In
+other words, minimisingFincreases the evidence the model
+has for its internal beliefs about the world — a process also
+known as maximising the Evidence Lower Bound (ELBO).
+Through this mechanism, the agent continually updates
+its internal beliefs to select the approximate posterior that
+best explains its past and current sensory inputs, aligning
+perception and action toward reducing uncertainty.
+In the next subsection, we extend this classical formulation
+to our specific generative model used throughout this work.
+B. Model Specification
+Our specific approximate posterior distribution defined in
+Equation (3) relies on priors (previous states and known struc-
+ture of the world, either deduced or given) and observations to
+localise the agent within its environment. The presented model
+works with the following essential distributions:
+•State transitions (B s): Likelihood of the agent moving
+between states.
+•Position transitions (B p): Likelihood to move between
+positions.
+•Observation likelihoods (A o): How likely certain obser-
+vations are at each state.
+•Position likelihoods (A p): The likelihood of being in a
+particular position at each state.
+Fig. 2. POMDP of our model.Catstands for Categorical. The model
+integrates states (s t), positions (p t), and observations (o t) over time, guided
+by policies (π) and expected free energy (G). The categorical distributions
+define transition and observation likelihoods:A p (position likelihoods),A o
+(observation likelihoods),B p (position transitions), andB s (state transitions).
+This structure underpins the inference scheme in Equation (3), enabling the
+agent to infer hidden states and positions from sensory observations and prior
+beliefs.
+Figure 2 visually explains our POMDP process, whereG
+refers to Expected Free Energy (EFE), which allows us to
+evaluate and select future policiesπ(series of actions) that
+will be applied as actionsa. The process to obtainGwill be
+discussed in the next section.
+C. Predicting the Next States and Decision-Making
+According to the Free Energy Principle, agents must min-
+imise free energy to form a model that best explains their
+environment [8]. For perception, this principle is implemented
+by minimising VFE during inference, as previously explained.
+JOURNAL OF LATEX CLASS FILES, 5
+For action and planning, the same principle extends into the
+future: agents should act to minimise the EFEGunder their
+candidate policies.
+Formally, a policyπis a sequence of future actions. The
+expected free energyG(π)quantifies how well followingπ
+is expected to reduce surprise [28]. It decomposes into two
+complementary contributions:
+•Exploration (epistemic value): expected information
+gain reducing uncertainty about the environment.
+•Exploitation (pragmatic value): expecting to reach a
+preferred observation, such as a specific target object (e.g.
+”food”).
+This decomposition illustrates that exploration and exploita-
+tion are not separate objectives bolted onto the model, but
+emerge naturally from minimising EFE. Behaviour can thus
+be understood in the same way as, for example, a rat in a
+maze [37]: sometimes venturing into unknown corridors to
+learn about the environment (uncertainty reduction), and some-
+times returning to rewarding locations (preference fulfilment).
+In both cases, behaviour emerges from balancing curiosity
+with goal-directed action.
+Practically, we first define the potential policies from the
+current localisation through a greedy MCTS strategy [38],
+[39]; definition and pseudo code are available in Ap-
+pendix A-C. This approach incrementally builds a search tree
+by simulating possible action sequences and focusing compu-
+tation on the most promising branches, considering EFE over
+policies. This yields three main advantages over predefined or
+exhaustive policy sets: 1) Scalability, as it avoids combinatorial
+explosion in large or continuous action spaces, 2) Adaptability,
+which dynamically prioritises policies relevant to the agent’s
+current context, and 3) Efficiency, which limits computation to
+policies that meaningfully differ in their predicted outcomes.
+To determine the most relevant policy at any timet, we
+assess all policies through a softmax transformation (5).
+P(π) =σ(−γG(π)−H)(5)
+whereσis the softmax function andγis a precision parameter
+(inverse temperature) controlling action stochasticity. Higher
+values ofγbias the agent towards policies with minimal
+expected free energy, while lower values promote greater
+randomness in action selection.
+A general issue with prediction over future steps, without
+relying on hierarchical structures, is that the further into the
+future the prediction lies, the more diluted the probabilities
+become. That is why we introduce an inductive termH[40]
+in our policy evaluation. This term allows us to consider
+pragmatic values from states over the horizon range of the
+policies. It adds weight to actions leading toward those pre-
+ferred states and propagates this information from those states
+to adjacent nodes up to our current state. For a more in-depth
+comprehension of this term, refer to Appendix A-B.
+The EFEGof a particular policy is computed throughG(π)
+presented in Equation (6).
+G(π) =
+X
+τ
+G(π, τ)(6)
+whereτindexes consecutive steps of the future policy.
+To determineGwe balance epistemic values (information
+gain) over future states (how much can we learn about a
+state) and parameters (how much can we update our model)
+with pragmatic values (utility term), considering possible
+preferences on observations, poses or states (respectivelyC o,
+Cp andC s). The inference ofGstep by step in the future
+is detailed in Equation (7) considering multiple elements. To
+fully understand the mechanism of our model, we decoupled
+the collision perceptioncfrom the observationo, however,
+fundamentally, the collision knowledge stems from observa-
+tiono. In fact, the probability of encountering an obstacle
+P(cτ ), measured as a binary probability (1 or 0, respectively
+there is a risk of collision or not) over the preferenceC c of
+not encountering an obstacle, has a major impact on the policy
+viability.
+G(π, τ) =EQπ [logQ(s τ , pτ , Ap|π)−logQ(s τ , pτ , Ap|cτ , π)
+−logP(c τ |Cc)−logP(o τ |Co)
+−logP(p τ |Cp)−logP(s τ |Cs)]
+=E Qπ [logQ(s τ , pτ |cτ , oτ , π)−logQ(s τ , pτ |π)]| {z }
+expected information gain on states (inference)
+−EQπ [logQ(A p|sτ , pτ , cτ , oτ , π)−logQ(A p|sτ , pτ , π)]| {z }
+expected information gain on parameters (learning)
+−EQπ [logP(c τ |Cc)]| {z }
+expected collision
+−EQπ [log(P(o τ |Co))]| {z }
+utility term on observation
+−EQπ [log(P(p τ |Cp))]| {z }
+utility term on position
+−EQπ [log(P(s τ |Cs))]| {z }
+utility term on state
+(7)
+The expected information gain quantifies the anticipated
+shift in the agent’s belief over the state from the prior (e.g.
+Q(sτ |π)) to the posterior (e.g.Q(s τ |cτ , oτ , π)) when pursuing
+a particular policyπ. On the other hand, the utility term
+assesses the expected log probability of observing a preferred
+outcome under the chosen policy. This value intuitively mea-
+sures the likelihood of the policy guiding the agent toward its
+preferences. Free Energy indirectly encourages outcomes that
+align with its preferences or target states. This approach makes
+the utility term less about ”reward” in the traditional sense of
+Reinforcement Learning and more about achieving coherence
+with the agent’s preferences.
+D. Updating the model
+Having determined how the agent infers its state and se-
+lects actions, we now describe how it practically updates its
+internal parameters in light of inferred poses, current and
+expected observations. This learning step closes the percep-
+tion–action–learning loop, enabling the agent to refine its
+world model so that it continues to explain sensory obser-
+vations accurately.
+In essence, the agent compares its current generative model,
+as defined by parameters governing pose likelihoods (A p),
+observation likelihoods (Ao), and state transitions (Bs), against
+an expanded model incorporating newly predicted or observed
+states [10]. The goal is to determine whether the expanded
+JOURNAL OF LATEX CLASS FILES, 6
+model better explains the environment. This comparison ap-
+plied toA p is quantified by the change in free energy,∆F,
+shown in Equation 8:
+∆F=F[ ˜Ap(θ)]−F[A p(θ)](8)
+Here, ˜Ap represents the updated pose likelihood model, and
+θits parameters. If∆Fis negative (meaning the new model
+has lower free energy), the agent updates its internal struc-
+tureA p to incorporate the newly encountered (or predicted)
+information.
+When a new state is confirmed or predicted, the pose model
+Ap is expanded, triggering corresponding updates to the pose
+transition tensorB p and to all other state-related matrices. The
+updated observation modelA o assigns uniform probabilities to
+unvisited states, reflecting initial uncertainty (high entropy, low
+P(st)). The transition modelB s is also adapted to connect
+new states with existing ones. This is done via a Dirichlet
+pseudo-count update, with a learning rate that depends on
+whether the trajectory was imagined or physically experienced,
+and whether it was deemed feasible or impossible (details in
+Appendix A-A).
+A similar mechanism applies during inference when a novel
+sensory input is encountered. In this case, onlyAo is expanded,
+since the update pertains to the observation dimension rather
+than the state dimension.
+By continuously applying this update process, the agent
+maintains an adaptable, self-consistent world model that in-
+tegrates both real and imagined experience. This ensures that
+exploration not only extends the map but also improves the
+accuracy of navigation when pursuing specific goals.
+IV. ROBOTICINTEGRATION
+AIMAPP was implemented in a physical agent during
+navigation. It covers mapping, localisation and planning.
+Having introduced the generative model in Section III-A,
+we will now discuss how minimising free energy in a robotics
+context yields mapping and localisation.
+A. Mapping
+Mapping in our framework is grounded in Active Inference.
+The agent maintains a generative model linking statess(lo-
+cations), positionsp(metric displacements), and observations
+o(sensory inputs such as visual panoramas). It updates its
+internal generative model to minimise expected free energy,
+allowing it to predict unexplored regions and infer the structure
+of the environment. Concretely, EFE drives the trade-off be-
+tween exploiting familiar states (goal-directed path planning)
+and enriching the map when predictions about observations are
+uncertain or surprising. This dynamic process gives rise to a
+cognitive map, an internal representation inspired by biological
+navigation systems [41]–[45]. Cognitive maps support flexible
+navigation and spatial reasoning, capturing both the layout of
+the environment and the agent’s experience within it.
+In our approach, the cognitive map is implemented as a
+topological graph containing metric information, where nodes
+represent distinct agent states (s), each corresponding to a
+spatial location (p) with an associated observation (o). Metric
+information is retained locally for each node, enabling approx-
+imate spatial reasoning without requiring globally consistent
+coordinates. The map grows adaptively as the agent explores,
+adding new states when new poses are expected in given direc-
+tions, supporting scalability to large or dynamic environments.
+a) Node creation and connectivity:New nodes are cre-
+ated when a motion leads to a predicted positionp t exceeding
+a radius of influence from existing states. This expansion
+step comes from a discrepancy between the current model
+parametersA p and expected model parameters ˜Ap if we
+were to move to that new position, as defined in our EFE
+Eq (7) expected information gain on parameters and Eq (8),
+estimating that discrepancy.
+The discrete set of available actions (e.g., 12 headings plus
+a ”stay” action) defines the potential connectivity. This process
+is illustrated in Figure 3: each state can spawn neighbours only
+when motion carries the agent outside the influence zone of
+previous nodes, ensuring sparse but informative coverage.
+Fig. 3. Influence of a node at position (0,0) on adjacent node creation for
+an influence radius of 0.5 m and 12 discrete headings spanning360 ◦. Red
+circles represent the influence radius of each newly created node. The blue
+dashed circle marks the robot’s radius, including a padding term to account
+for its physical size (important near walls). The 12 black dots correspond to
+the midpoints of the 12 possible action directions. Dots with a black aura
+indicate valid positions where a new node can be created while respecting
+the minimum distance constraint (red radius) of adjacent nodes. Dots without
+an aura represent invalid positions (too close to an existing node) and could
+instead be created farther away (e.g., at 1 m). This arrangement allows the
+agent to maintain open junctions for future node expansion.
+b) State representation and observations:Observations
+are stored as360 ◦ panoramas stitched from consecutive cam-
+era frames (Figure 4). Each node encodes a coarse spatial
+position and a panoramic visual observation. The incoming
+observations are compared to stored visual memories using the
+Structural Similarity Index (SSIM) to determine familiarity. If
+no match is found, this signals either a novel location or a
+significant environmental change. The process of integrating
+observations into the map is illustrated in Figure 4. In the
+figure, we have a forward-facing camera; the robot turns to
+capture consecutive images of its surroundings. They are then
+stitched together to form a panorama.
+JOURNAL OF LATEX CLASS FILES, 7
+Fig. 4. schematic of what could be the topological map in a simple 2-room
+environment. Dots are states, or nodes, each state containing a360 ◦ panorama
+obtained through stitching images together and associated with a position.
+Links between nodes are plausible transitions.
+c) Updating the generative model:This learned map
+provides the base for localisation. Inference over hidden states
+samounts to finding the most plausible node in the graph
+that explains the current observationo t and predicted motion.
+If we are confident in our current states t (considering our
+VFE compared to a threshold defined in Appendix A-A),
+the likelihood matrixA o is updated to associate the current
+observation with the believed state, improving robustness
+against perceptual aliasing and minor visual variations and
+reducing future surprise. However, if its Variational Free
+Energy confidence is low, the agent prioritises re-localisation,
+searching for familiar observations before updating the model.
+d) Sensory and motion agnosticism:AIMAPP is de-
+signed to be modular: it accepts recognised observations from
+any perception system and relies on a motion controller to
+report goal-directed stops. This allows interchangeable com-
+ponents within the architecture, as shown in Figure 5. While
+resilient to moderate visual changes (lighting, small object
+displacements), the current panoramic-based approach strug-
+gles in highly dynamic environments where structural elements
+frequently change. Additionally, goal locations defined using
+panoramas may become invalid if the scene is no longer
+visually accessible. Prior work [46] explores lower bounds of
+visual place recognition and potential avenues for more robust
+sensory encoding. Future extensions could replace panoramic
+images with semantic or symbolic encodings (e.g., object
+categories or textual cues [47], [48]) to improve robustness
+in dynamic environments or reach objectives given specific
+objects’ characteristics or names.
+B. Localisation
+Given the topological map built during exploration, locali-
+sation is the inference step of Active Inference: determining
+which states t in the map best explains the current observation
+ot and motion predictionP(p t|pt−1, at−1). Rather than de-
+pending solely on raw odometry or sensor data, the agent relies
+on its beliefs, i.e. the posterior distribution over states resulting
+from combining predicted motion with sensory evidence. This
+belief-driven approach makes localisation an active process of
+minimising free energy through perceptual inference (inferring
+st), updating beliefsswith new evidenceoand triggering
+Fig. 5. Overview of the system architecture. In grey, we have modules
+that any ROS-compatible solution can replace. Modules interact through
+belief propagation. Inferring and planning (localisation, mapping and action
+selection) rely on the AIF framework. The perceptual and motion planning still
+use traditional approaches. Believed odometry takes precedence over sensor
+odometry. Preferences (goal) are expected from the user if we want to reach
+a target observation.
+a full goal-oriented navigation with a preference to known
+observations when uncertain about its localisation.
+A key implication of this design is that internal localisation
+is robust to drift. Since the agent prioritises consistency
+between predicted and observed outcomes, the exact physical
+position is less critical than whether its internal model cor-
+rectly explains the sensory data. In familiar areas, mismatches
+caused by odometry drift can be corrected by recognising
+stored observations. In unexplored areas, however, drift cannot
+be directly corrected, and the agent must rely on its generative
+model to maintain consistency until additional information
+becomes available.
+To illustrate this, consider the scenario in Figure 6. The
+agent starts at states 0 with observationo 0 at positionp 0.
+It intends to move forward 1m, but due to drift, it actually
+moves 2m. Its model, however, creates a new states 1 atp 1 =
+p0 + 1m, consistent with the intended motion rather than the
+true displacement. After moving back 1m (without drift), the
+agent expects to be ats 0. At this point, it faces an inference
+problem: which state best explains the current observation?
+Depending on its confidence in motion and observation, four
+outcomes are possible:
+•Figure 6 1) the belief update favours prediction. We have
+a high confidence in motion towardp 0 and observation,
+the agent recogniseso 0 even though it is not exactly at
+the right position, infers it is ats 0, and updates its belief
+accordingly (drift remains uncorrected physically, but the
+model is internally consistent).
+•Figure 6 2) posterior shifts toward perceptual evidence.
+We have low confidence in motion, high confidence in
+observationo 1: the agent recogniseso 1, infers it is ats 1,
+and updates its belief over motion to match perception.
+JOURNAL OF LATEX CLASS FILES, 8
+The agent is believed to be at positionp 1, in this simple
+example, the drift would be corrected.
+•Figure 6 3) EFE encourages exploration. A low confi-
+dence in the current positiono 1 and observationo 0: the
+agent has a high uncertainty about its location, it will
+be considered lost whenP(s t)is low (given a threshold
+set by the user and described in Appendix A-A). The
+agent will enter an exploratory phase, seeking consecutive
+familiar observations to re-localise.
+•Figure 6 4) updateA o matrix for known states. A
+low confidence in observation (we don’t recognise the
+observation) but high confidence in positionp 0: the agent
+assumes it is ats 0 but fails to recognise the input.
+It therefore adds a new observation tos 0, refining the
+observation model to account for variability (e.g., changes
+in lighting). The previous observation is not replaced;
+both are linked to the same state.
+This belief-centred localisation shows how Active Inference
+principles naturally lead to flexible handling of odometry
+errors, perceptual aliasing, and uncertainty. The system does
+not simply ”trust” sensors, but instead continuously evaluates
+which internal model best explains its sensory history.
+Fig. 6. Impact of drift on the agent’s localisation. The top row illustrates the
+scenario: the red triangle is the agent; the solid line shows the true trajectory;
+the dashed line shows the trajectory perceived through odometry; the yellow
+circles are inferred states; the green circles are observations. The agent intends
+to move 1m right froms 0 but actually moves 2m. Its model creates states 1
+at the perceived position, while the true observationo 1 belongs to the real
+position. On the next step, the agent moves 1m left (without drift) and expects
+to return tos 0. At this point, four localisation outcomes are possible: 1) High
+confidence in motion and observation: recogniseso 0, inferss 0, updates belief
+(drift remains physically uncorrected). 2) Low confidence in motion, high
+confidence in observation: recogniseso 1, inferss 1, updates belief accordingly.
+3) Low confidence in both: cannot localise, enters the exploratory phase until
+a familiar observation is encountered. 4) High confidence in position, low
+confidence in observation: assumess 0 but fails to match input; adds a new
+observation (o′
+0) tos 0, expanding the observation model.
+V. RESULTS
+We evaluate our framework across both simulated and
+real-world environments to assess its exploration efficiency,
+robustness to sensing, motion errors, and capacity for goal-
+directed navigation. Results are organised into three parts.
+First, we examine exploration performance, focusing on cov-
+erage efficiency compared to baseline approaches. Second, we
+study how the agent adapts to obstacles and odometric drift,
+highlighting differences between simulation and real-world
+trials. Finally, we evaluate goal-reaching behaviour, both in
+terms of qualitative strategy and quantitative success rates.
+A. Exploration
+1) Coverage:We evaluated AIMAPP in four simulated en-
+vironments and three real-world settings. The simulated setups
+included a mini (36 m 2), small (80 m 2), and large (280 m 2)
+warehouse inspired by the Amazon Gazebo environment [49],
+and a 175 m 2 house environment [50] without doors, fea-
+turing kitchens, playrooms, and bedrooms. Both warehouses
+and houses contained challenging objects for LiDAR-based
+detection, such as curved chairs and forklifts. The real-world
+experiments were performed in 1) a small, fully controlled
+20.3 m 2 bedroom environment with drift-inducing flooring,
+2) a controlled 185 m 2 warehouse, and 3) a large 325 m 2
+sandy parking lot where moving cars occasionally altered the
+navigable space (navigation was paused while cars crossed).
+Environment layouts are provided in Appendix C.
+Across all scenarios, the agent began exploration from
+multiple initial positions. Since our model does not construct
+a metric map, we associated LiDAR range measurements with
+internal state representations to evaluate exploration.
+We compared our approach (12m range 2D LiDAR +
+cameras, Nav2 for motion control) to several heuristic or
+algorithm-based exploration strategies that do not require pre-
+training:
+•Frontier-based exploration [6], using a LiDAR and Nav2
+SLAM [51].
+•Gbplanner, an enhanced version of the 2021 DARPA
+SubT Challenge winner [52], combines V oxblox [53] with
+a topological map for 3D exploration planning.
+•FAEL [11], based on frontier logic, with 3D mapping via
+UFOMap [54] and topological navigation.
+•Manual exploration, a human teleoperated the robot
+around while NA V2 SLAM cartographed the surround-
+ings.
+Sensor setups varied substantially: Frontiers required a
+single 2D LiDAR, while our model also used a camera (in our
+work, the obstacle distancecwas extracted from the LiDAR
+sensor instead of our visual observationodue to the lack of
+depth or stereo in our data. This dissimilarity has no impact
+on the model); FAEL used a 3D LiDAR, and Gbplanner used
+three cameras and two 3D LiDARs. For fairness, all models
+could use their sensors up to 12m (be it 2D or 3D LiDARs).
+All simulated experiments used a Turtlebot3 Waffle, except
+FAEL (Jackal [55]). Real-world trials used a RosbotXL [56]
+with an 18m range LiDAR (which was also restricted to a
+12m range for comparable results). Additional details about the
+JOURNAL OF LATEX CLASS FILES, 9
+models and robots are in Appendix D-A and B, respectively.
+Because AIMAPP is a zero-shot learning agent, we did not
+compare against learning-based methods [20], [21] requiring
+pre-training, which would have had unfair prior knowledge of
+the environments.
+a) Simulation Results:The average coverage efficiency
+of each model, measured as explored area relative to distance
+travelled, averaged over five successful trials, is reported in
+Figure 7. Failures and human interventions are documented
+in appendix D-C. As a summary, we observed that Gbplanner
+was the most robust algorithm (87% success rate), followed by
+our model (79% success rate, comprising all simulated and real
+environments); FAEL is the model requiring the most human
+interventions.
+Human explorations (”Manual” in Figure 7) are considered
+near-optimal, as the human has a general understanding of the
+whole layout and map while navigating. With this assumption
+in mind, we can compare Coverage Efficiency (CE) against
+teleoperated navigation. CE is a coefficient obtained by di-
+viding the area covered (in m 2) by the travelled distance (in
+m); time in seconds is not considered, as it largely depends
+on the motion-planning parameters (wheel speed) rather than
+the decision-making process. AIMAPP achieved near-optimal
+coverage compared to FAEL, Gbplanner and manual explo-
+ration, with an exploration efficiency 90.3% that of the manual
+motion, based on results shown in Table I. Overall, these
+results confirm that our model achieves consistently high cov-
+erage efficiency and normalised coverage progression across
+simulated and real environments, performing comparably to
+FAEL and often surpassing GBPlanner. In contrast, Frontiers
+consistently underperformed, highlighting the limitations of
+heuristic frontier-based strategies in cluttered or partially ob-
+servable environments. Gbplanner methods valorise safe ex-
+ploration paths, often wasting distance performing redundant
+back-and-forth movements before expanding to new zones.
+Frontiers performed worst, as it repeatedly attempted to reach
+unreachable frontier cells, wasting significant travel distance.
+These outcomes reflect the design intent of each method:
+AIMAPP and FAEL emphasise exploration efficiency, Gb-
+planner is tailored for robust subterranean exploration where
+narrow passages dominate and allow for human intervention
+in the navigation, while Frontiers is a well-known lightweight
+heuristic model.
+A consistent plateau at approximately 90% coverage gain
+was observed in AIMAPP. This arose because the model
+prioritised updating nearby unvisited states already represented
+in its internal graph, rather than extending exploration beyond
+current detection range. As a result, node refinements occurred
+without proportional increases in spatial coverage. In smaller
+environments (<= 80m 2), all methods converged to similar
+performance levels (see Appendix D-B).
+b) Real-world Results:In real-world trials, only
+AIMAPP and Frontiers could be deployed, as FAEL and Gb-
+planner required sensors unavailable on the physical platform.
+Both were tested from five different starting positions in the
+warehouse environment, which contained two long aisles and
+a large open area.
+Our model consistently achieved faster coverage than Fron-
+(a)
+(b)
+(c)
+Fig. 7. Coverage efficiency of each model in the largest warehouse and home,
+as well as Frontiers and AIMAPP in a real warehouse, considering the agent’s
+travelling distance.
+TABLE I
+EXPLORATION EFFICIENCY METRICS ACROSS ENVIRONMENTS. CE:
+COVERAGEEFFICIENCY(M 2/M),NAUC: NORMALISEDAREAUNDER
+COVERAGECURVE. VALUES ARE MEAN±STD OVER5RUNS.
+Env. ModelCE nAUC
+Simulated
+Large Warehouse
+Manual 4.25±0.43 0.55±0.02
+AIMAPP 4.02±1.24 0.62±0.06
+Frontiers 0.60±0.35 0.53±0.15
+FAEL 4.65±0.45 0.77±0.07
+GBPlanner 1.13±0.17 0.56±0.04
+Simulated House
+Manual 4.02±0.74 0.70±0.08
+AIMAPP 4.89±1.10 0.87±0.10
+Frontiers 2.18±0.15 0.77±0.17
+FAEL 5.23±1.90 0.79±0.06
+GBPlanner 3.70±0.15 0.50±0.04
+Real Warehouse
+Manual 4.89±0.53 0.65±0.09
+AIMAPP 2.68±0.40 0.70±0.10
+Frontiers 2.11±0.52 0.62±0.15
+tiers, as presented in Figure 7c and Table I. The difference
+stemmed from strategy: AIMAPP efficiently moved between
+JOURNAL OF LATEX CLASS FILES, 10
+unexplored regions, while Frontiers repeatedly revisited the
+same aisles due to attraction toward removed frontier cells (yet
+not using the unvisited aisle to plan going there). Performance
+varied with initial placement, reflecting the strong influence of
+warehouse geometry.
+Interestingly, Frontiers performed somewhat better in the
+real warehouse than in the simulated warehouse or house
+of similar dimensions, likely because long aisles are more
+forgiving for its greedy strategy. Conversely, AIMAPP per-
+formed slightly less efficiently in the real warehouse than in
+simulation, as LiDAR detection errors occasionally caused it to
+attempt reaching unreachable goals, introducing inefficiencies
+in motion planning.
+Exploration in the parking lot can be found in ap-
+pendix D-B. While this environment is dynamic, we did not
+experiment with the obstacle avoidance performance of the
+motion planning, as it is not part of the model. When a change
+occurred in the environment (namely, a car moving around),
+the robot’s motion was paused.
+B. Obstacles and Drift
+AIMAPP dynamically adapts to changes in the environ-
+ment during navigation by continuously updating its internal
+topological map. This process is illustrated in Figure 8 in a
+small-scale environment where the position of a box changes.
+As the agent moves and attempts transitions, it incrementally
+weakens the likelihood of inaccessible paths and reinforces
+the plausibility of reachable ones. Failed attempts to move
+toward an obstructed location trigger significant updates to
+the agent’s belief structure, while successful access reinforces
+existing transitions. This adaptive behaviour enables rapid
+reconfiguration of the model in response to environmental
+shifts. For instance, in Figure 8b, state 7 becomes inaccessible
+after being blocked by the box. Consequently, all transitions
+leading to it are suppressed as the agent gathers evidence by
+navigating around the obstacle. For numerical details regarding
+the belief update mechanism, refer to Appendix A-A. The
+mechanism is agnostic of the environment, be it simulated
+or real; however, in the real world (namely, the parking lot),
+maps showing this process are blurred by motion drift. The
+effective task to contour a dynamic obstacle relies on our
+motion planning module, which was either a potential field
+or Nav2 in our experiments. They are not considered part of
+the proposed model.
+a) Drift Measurement:To quantify drift under controlled
+conditions, we conducted experiments in a 185 m 2 warehouse
+equipped with Qualisys motion-capture cameras providing
+ground-truth odometry. These cameras were used exclusively
+for benchmarking and were not available to any navigation
+model. The trajectories estimated by our model, the robot’s
+onboard sensor odometry, and the ground truth can be quali-
+tatively compared in Figure 9. Missing segments correspond
+to gaps in Qualisys coverage.
+The Root Mean Square Error (RMSE) on thexandy
+axes are reported in Table II, averaged across five successful
+runs. While the mean error of AIMAPP (1.83m) is similar to
+that of Frontiers (1.68m), the variance is substantially lower
+(a)
+(b)
+Fig. 8. The environment can adapt to change in real-time, here a box was dis-
+placed from (a) (-1,0) to (b) (0,-1)during exploration of a 25m 2 environment
+to rapidly demonstrate (in twenty steps taken around the box) how the map
+weakens impossible transitions and enforces previously improbable links. If
+pertinent, new nodes would be created.
+(±0.77m vs.±2.00m). This indicates that our approach pro-
+duces consistently reliable trajectories, whereas Frontier-based
+exploration exhibits high variability, occasionally resulting in
+very poor localisation. The stability of our model brings it
+closer to the manual exploration lower bound (1.40±0.25
+m), which had a faster exploration, thus less opportunity
+to drift, suggesting that AIMAPP delivers competitive drift
+performance and greater robustness across repeated runs.
+JOURNAL OF LATEX CLASS FILES, 11
+Fig. 9. Drift comparison in the(x, y)plane between our agent’s internal belief
+(model odometry), the robot’s onboard sensor odometry, and the ground-truth
+trajectory measured with Qualisys. Missing segments in the plot correspond
+to gaps in ground-truth perception.
+TABLE II
+RMSEOVER X AND Y AVERAGED OVER5RUNS PER MODEL.
+AIMAPP Frontiers Manual
+model sensor sensor sensor
+RMSE (x,y) 1.83±0.77 1.65±0.79 1.68±2.00 1.40±0.25
+A more pronounced distinction emerged in real-world con-
+ditions prone to severe drift. In environments with uneven ter-
+rain (such as parking lot) or changing flooring (house with both
+wood and carpet), wheel slippage led to large odometry errors
+which we could not quantitatively measure. While our model’s
+belief-driven map gradually lost metric alignment with the
+ground truth, it remained operational: the agent could continue
+exploring and reliably reach goal observations. Moreover, the
+system tolerated temporary sensor failures; when odometry,
+camera, or LiDAR streams were restarted after a failure, the
+agent resumed operation without requiring reinitialisation. By
+contrast, Frontier-based exploration, relying on Nav2, failed
+under these conditions: once drift accumulated, maps became
+inconsistent and unusable, restarting the odometry was not
+an option, preventing further navigation. Consequently, no
+quantitative comparison with Frontiers was possible in the
+house or garage scenarios.
+In summary, AIMAPP achieves drift performance compara-
+ble to that of ground truth odometry in controlled environments
+and demonstrates superior robustness under severe real-world
+conditions where baseline methods often fail. Its ability to
+remain functional, even with misaligned maps or sensor resets,
+highlights the practical resilience of the framework. However,
+future work should address long-term metric consistency for
+industrial usage.
+C. Goal Reaching
+Beyond exploring and mapping its environment, a key re-
+quirement for autonomous agents is reliably reaching specified
+goals despite uncertainty in sensing, motion, or environmental
+changes. We evaluated how AIMAPP leveraged its internal
+belief and planning mechanisms to select and follow paths
+toward desired observations. We first illustrate the conceptual
+strategy underlying goal-directed navigation, showing how the
+agent prioritises states and sequences that maximise expected
+utility. This is then followed by a quantitative assessment
+of performance, highlighting efficiency, robustness, and the
+ability to cope with real-world challenges such as drift, change
+in the environments, and partial observability.
+a) Goal-Directed Navigation Strategy:In those experi-
+ments, we gave visual observations seen during exploration as
+the preferred observationC o to reach. With a weight of 10 on
+the pragmatic value, to encourage the agent toward desiring
+this goal over exploration.
+In our framework, goal-directed navigation emerges from
+the same Active Inference principles that drive exploration.
+While exploration favours previously unobserved states for
+their potential information gain, goal pursuit biases the agent
+toward states likely to generate a desired observation, given
+as input by the user.
+Crucially, this preference only influences behaviour if the
+agent can imagine a feasible trajectory toward these states dur-
+ing planning. Indeed, far-removed high-utility states (desired
+objectives) that do not appear in the planning horizon of the
+MCTS would not guide navigation. To address this, we employ
+an inductive priorH(Formally introduced in Equation (5)
+and (10)), which spreads utility along sequences of plausible
+actions leading to the goal. This mechanism allows the agent
+to evaluate paths rather than single states, effectively assigning
+intermediate states a utility based on their potential to reach
+the target observation, even outside its planning horizon.
+In this way, the planning algorithm favours sequences of ac-
+tions that are most likely to lead to successful goal attainment,
+even if the terminal goal states are not presently imagined from
+the current position.
+This process is illustrated in Figure 10, in a simulated large
+warehouse. Heatmaps show the evolving utility of paths over
+five planning steps. Initially (step 0), the agent is biased in
+the correct general direction, despite the goal states (circled
+green) not yet being pictured. As the agent transitions to
+step 1, intermediate states leading toward the goal increase in
+utility, while states in the opposite direction are suppressed.
+This iterative process continues through steps 2-4: at each
+step, the agent updates its belief over state transitions and
+refines its utility estimates, progressively converging toward
+the goal state cluster. The agent’s trajectory demonstrates
+how probabilistic generative models under Active Inference
+can support robust zero-shot planning in partially explored
+environments. The use of the inductive prior ensures that
+even distant or initially unimagined goals can influence im-
+mediate action selection, producing efficient, coherent, and
+biologically plausible navigation behaviour. At each step, the
+agent simultaneously updates its positional belief through
+re-localisation and evaluates future trajectories, maintaining
+flexibility in response to newly encountered information. This
+stepwise propagation of utility resembles ”place cell firing”
+in the hippocampus, where spatial locations associated with
+expected sensory outcomes become activated before the agent
+physically reaches them [57]. By integrating predicted obser-
+vations with trajectory planning, the agent can dynamically
+JOURNAL OF LATEX CLASS FILES, 12
+(a) step 0
+ (b) step 1
+ (c) step 2
+(d) step 3
+ (e) step 4
+Fig. 10. MCTS path ”states rewards” (free energy minimisation) considering an observation held by two states (circled green on figures). The higher the
+value, the more attractive the place. The agent went from the starting pose, circled green in step 0, to a state holding the desired observation in 5 steps. The
+full path of the agent is presented in dark green, and its current location is circled in dark green. We can see the zone attractivity of the path as the agent
+moves. In a) step 0, we see that the agent is attracted toward the correct direction even before it can imagine the goal state.
+select actions that maximise the likelihood of reaching desired
+sensory states while accounting for uncertainty in partially
+mapped environments.
+In the situation where we give an unknown desired observa-
+tion to reach the agent, the model will show a preference over
+unvisited states until it finds a matching observation, resulting
+in a behaviour akin to exploration. Thus, all our tests have
+been realised in partially explored environments where the
+goal has been observed during the exploration phase to clearly
+differentiate the exploration from the goal-reaching behaviour.
+b) Quantitative Goal Reaching and Robustness in Real
+and Simulated Environments:Having illustrated how the agent
+plans and propagates utility to reach a target observation in a
+step-by-step demonstration, we now evaluate the quantitative
+performance of this goal-directed navigation. This includes
+measuring path efficiency and the agent’s ability to maintain
+near-optimal behaviour across both simulated and real-world
+environments.
+To quantitatively assess goal-directed navigation, we mea-
+sured the path length taken by the agent relative to the
+optimal path distance, computed using the A* algorithm over
+the agent’s topological graph. The A* path assumes perfect
+knowledge of transitions and serves as a benchmark for ideal
+goal-reaching performance. This evaluation is not perfect as
+deviations from this baseline naturally occur when the agent
+initially overestimates the feasibility of a transition. Upon
+encountering an invalid transition, the model updates its beliefs
+and re-plans around the obstacle, resulting in longer, but
+necessary, detours that are not considered by A*. The same
+mechanism handles newly encountered obstacles during exe-
+cution, reflecting the agent’s capacity for adaptive replanning.
+We realised 40 goal-reaching runs in all environments with
+goals of various distances from the agent’s starting position,
+presented in Figure 11. We assumed the agent had prior knowl-
+JOURNAL OF LATEX CLASS FILES, 13
+edge of its starting position to avoid the re-localisation steps
+the agent would need to identify its location. Average path
+lengths across all trials indicate that the agent’s performance
+remains close to the optimal A* benchmark. Across all runs,
+the agent achieved an average deviation of0.9m±1.48m
+from the ideal path, indicating low variability in goal-reaching
+performance. Relative deviations averaged13.8%±23.2%.
+The mean efficiency was approximately 91%, demonstrating
+that the agent typically journeyed only 9% further than the
+optimal path. Furthermore, the agent reached the goal within
+20% of the ideal distance in 73% of trials, highlighting
+robustness even in the presence of drift (in real environments
+only) or unexpected obstacles. As long as the goal observation
+was recognised by the model, no run failed to reach its location
+except in two cases we will detail.
+Fig. 11. Travelled distance to goals vs A* expected distance from robot
+position to closest goal image position across all environments.
+Three representative paths from a fixed starting location to
+the same goal (Figure 12a) in a simulated environment are
+shown in Figure 12c. Across all trials, the agent successfully
+reaches the target observation, prioritising transitions with
+high expected utility. Slightly longer paths are sometimes
+preferred to maintain higher confidence in expected outcomes,
+consistent with the Active Inference principle that action
+selection balances efficiency with belief consistency.
+In real-world trials, the agent was evaluated in three envi-
+ronments of varying complexity: a small controlled bedroom,
+a structured warehouse, and a semi-structured parking lot.
+Figure 12d illustrates the taken trajectories in the parking
+lot to reach the goal presented in Figure 12b. Despite chal-
+lenges such as sensor drift, changes in the environments (car’
+presence between exploration and goal-reaching runs may
+have changed), and varying lighting conditions, the agent
+successfully reached its goals in nearly all runs (15 out of 17
+runs over all environments). When initial localisation errors or
+unexpected obstacles occurred, belief updates and replanning
+allowed the agent to correct its course, as illustrated by minor
+detours in the green trajectory.
+Across the seventeen real-world goal-reaching experiments,
+only two failures occurred: one in the house environment,
+caused by severe drift resulting in a wrong re-localisation and
+having the goal far beyond a wall, and one in the parking lot,
+where the robot’s holonomic wheels became physically stuck
+in sandy terrain. These edge cases underscore the limits of
+AIMAPP to drift in clamped areas and the impact of physical
+limitations on the navigation.
+Overall, the agent demonstrates robust, near-optimal goal-
+directed navigation across both simulated and real-world
+settings. Deviations from optimal paths are reasonable and
+interpretable, arising primarily from belief estimations and
+updates or environmental constraints. These results confirm the
+efficacy of our MCTS and AIF-based planning with inductive
+utility propagation, showing that the agent can achieve reliable
+zero-shot navigation while balancing efficiency and robustness
+in partially explored environments.
+D. AIMAPP Computational Scalability
+To evaluate the scalability of AIMAPP, we measured its
+computational footprint in terms of memory usage and runtime
+performance on a Jetson Orin Nano platform.
+a) Model size and memory usage:Model size was as-
+sessed by serialising its parameters into a.pklfile across
+31 independent runs over time. The number of stored states
+had no measurable effect on model size, confirming that the
+state-space representation remains lightweight even as the map
+grows. The dominant memory factor is the storage of RGB
+panoramic observations. Model size (in Megabits -MB-) scales
+linearly with the number of stored observations, following:
+Model size (MB)≈1.32×(number of observations) + 0.17.
+The largest model contained 36 unique observations and
+required only 44.9 MB, demonstrating that AIMAPP remains
+memory-efficient even with heavy observation data.
+b) Runtime and resource usage:Runtime performance
+was profiled over the same 31 navigation runs on the Jetson
+Orin Nano (15V power, Jetpack 6.1, Ubuntu 22.04, ROS2
+Humble). During each run, AIMAPP operated concurrently
+with the Nav2 stack, camera drivers, plotting, and logging
+processes (saving model at a periodic interval). The average
+system resource consumption was47.5%±16.8%CPU and
+36.8%±2.2%RAM. Of this, Nav2 accounted for approxi-
+mately 30% of CPU usage, which remained stable across all
+trials. At no point did computation exceed platform capacity
+or cause performance degradation. As shown in Figure 13b,
+CPU load varied dynamically with task demands, namely,
+plotting and saving the data periodically, but remained within
+approximately 60% of available capacity.
+For comparison, the Frontiers baseline, known for being a
+simple and lightweight solution, exhibited42.7±26.2%CPU
+and26.3±1.2RAM usage over 14 runs, showing similar
+overall resource efficiency.
+c) Execution time and model dimensionality:Model exe-
+cution time scaled linearly with model dimensionality (i.e., the
+number of states considered at each planning step), following:
+Execution time (s)≈0.18×Model dimension−2.18.
+Figure 13a illustrates this relationship, confirming that
+AIMAPP maintains predictable processing time growth as
+JOURNAL OF LATEX CLASS FILES, 14
+(a) Image given as an objective to
+the agent in the warehouse.
+(b) Image given as an objective to
+the agent in the garage.
+(c) Paths taken by the agent to reach the
+goal in the warehouse.
+(d) Paths taken by the agent to
+reach the goal in the garage.
+Fig. 12. In the big warehouse and garage, examples of paths taken by the agent (red, green, blue), from the start to the goal image presented along the ideal
+trajectory (dashed black line).
+the model expands. The current configuration used a MCTS
+depth of 10 (the maximum number of loops, through already
+explored nodes, to reach a new node without any prior connec-
+tions), and 30 consecutive simulation runs before deciding on
+one decisive action, which are both non negligible values that
+could be reduced to approximately 5 loops and 20 simulations
+in future iterations to further improve real-time performance.
+These results confirm that AIMAPP’s processing time grows
+linearly with map complexity and computational load remains
+well within the limits of embedded hardware. No instance of
+CPU or memory overload was observed, even during extended
+exploration. Overall system runtime (including motion control
+and perception pipelines) was not benchmarked, as it depends
+on the specific robotic platform and sensor suite. The reported
+measurements isolate the cognitive navigation component,
+validating its scalability to large and high-dimensional envi-
+ronments without compromising real-time operation.
+VI. DISCUSSION
+Our results demonstrate that the proposed Active Inference-
+based model achieves exploration and goal-directed navigation
+performance. We will recapitulate the key elements here.
+a) Exploration Performance:AIMAPP achieves explo-
+ration efficiency comparable to state-of-the-art planning-
+based methods such as GBPlanner, FAEL, and Frontier-
+based approaches. In simulated environments, coverage grows
+smoothly over time, and in real-world deployments, the agent
+successfully mapped areas up to 325 m 2. A key strength of
+the approach is that it does not rely on heuristic methods
+as frontiers or pre-defined exploration policies; instead, it
+evaluates states according to their expected information gain
+within a generative model of observations and transitions. This
+enables flexible behaviour in both structured and unstructured
+spaces.
+In our current formulation, the agent reasons over dis-
+crete states representing specific locations in a topological
+graph, with metric information attached for localisation. This
+design allows efficient planning in large-scale environments
+but does not explicitly account for the uneven distribution
+of information across space. For example, a large open hall
+may be overrepresented in the graph despite containing little
+new information, whereas a narrow alley may provide greater
+utility but be collapsed into a few nodes. Grouping states by
+information gain, as proposed in [58]–[60], could improve the
+efficiency of both mapping and path planning by reducing
+redundancy and emphasising high-value regions.
+Our system reached complete coverage with trajectories
+only moderately longer than those of manual exploration (on
+average 90% as efficient in Coverage Efficiency (CE)). FAEL
+occasionally outperformed AIMAPP, but at the cost of heavier
+JOURNAL OF LATEX CLASS FILES, 15
+(a) Model growth (number of states) im-
+pact on execution time (s).
+(b) CPU usage in % of the Jetson over
+runtime (s).
+Fig. 13. The measured impact of AIMAPP with MCTS policy evaluation and
+Nav2 on the Jetson Orin Nano measured over 31 experiments.
+3D mapping requirements and less reliable performance, as
+it failed more than 50% of the time due to various reasons
+detailed in Appendix D-C. In contrast, AIMAPP and GB-
+Planner were the most robust baselines among all, with a
+79% and 87% success rate, respectively. AIMAPP exploration
+was considered a failure when the map overlapped too much
+(localisation was lost and re-localised at the wrong location)
+or the robot flipped. Gbplanner is proving its reliability by
+only failing when the robot flips over unconsidered obstacles.
+Incorporating hierarchical reasoning, as suggested in [30],
+could further improve performance by enabling the agent to
+plan over multi-scale representations, accelerating coverage in
+large open areas while still resolving fine-grained details when
+necessary.
+Overall, the exploration experiments demonstrate that Ac-
+tive Inference provides a competitive alternative to dedicated
+exploration planners, with the added benefit of being embed-
+ded within a single framework that naturally supports goal-
+directed navigation as well.
+b) Goal-Directed Navigation and Robustness:The agent
+consistently reaches visual goals in partially explored envi-
+ronments using belief-driven inference and active planning.
+Hyperparameters controlling utility, inductive bias, and infor-
+mation gain allow modulation of behaviour depending on the
+task. While the framework naturally supports mixed objectives
+simultaneously, we can emphasise reaching a preferred obser-
+vation over exploration or vice-versa.
+The agent’s goal-directed behaviour balances efficiency with
+robustness: it often prefers slightly longer paths that offer
+higher confidence over shorter, more uncertain routes. Replan-
+ning is triggered when unanticipated obstacles are encountered
+or transitions initially deemed feasible turn out to be blocked,
+ensuring near-optimal performance even in partially explored
+or dynamic environments. Across all real-world experiments,
+only two goal-reaching failures were recorded due to extreme
+drift or physical constraints, demonstrating the system’s reli-
+ability.
+A key advantage of our approach is the use of probabilistic
+observation-state mappings, as we can store several observa-
+tions for the same state, making the model resistant to changes
+in the environment. However, as environments expand, like-
+lihood distributions for earlier observations naturally dilute,
+sometimes necessitating revisiting known locations to refresh
+perceptual beliefs. This reflects the trade-offs of dynamically
+updating cognitive maps compared to static representations.
+Our current implementation uses panoramic visual inputs
+and a simple SSIM-based processing pipeline. The platform-
+and sensor-agnostic design ensures adaptability across robotic
+systems. Incorporating more sophisticated recognition mod-
+ules (e.g., semantic object detectors [47]) would improve local-
+isation confidence, particularly for critical goal observations.
+With basic panoramic observations, small modifications in the
+environment can prevent the agent from recognising the goal
+at the correct location, highlighting a limitation of the current
+perception module.
+Despite its strengths, our system may fail under extreme
+environmental changes or definitive sensor loss. In our archi-
+tecture, in case a sensor fails temporarily, the model pauses
+until reliable data is available.
+Future work include hierarchical reasoning, space chunking
+based on information gain [58], [59], improving the likelihood
+model probability dissolution over time and prediction over a
+long-range horizon [61] and integrating semantic perception
+for improved goal recognition [47]. These modifications could
+increase efficiency in exploration and navigation, particularly
+in large or dynamic environments.
+VII. CONCLUSION
+We have presented a biologically inspired, Active Inference-
+based navigation model that unifies exploration and goal-
+reaching within a single probabilistic framework. By maintain-
+ing a sparse topological map and continuously updating beliefs
+through sensorimotor feedback, the agent navigates complex,
+unknown environments without pre-training, metric maps, or
+heavy reliance on odometry. Experiments in both simulated
+and real-world settings (up to 325 m 2) demonstrate perfor-
+mance comparable to state-of-the-art planners, with resilience
+to sensor drift, ambiguous observations, and dynamic changes.
+AIMAPP provides a robust and interpretable navigation so-
+lution that integrates exploration and goal-directed behaviour
+within a unified architecture. It adapts to new environments
+without training, operates efficiently in varied conditions, and
+can be seamlessly integrated into existing ROS-based systems.
+JOURNAL OF LATEX CLASS FILES, 16
+Its modular, sensor-agnostic design makes it suitable for
+flexible deployment where task-specific tuning or pre-training
+is impractical.
+Crucially, our approach naturally balances information-
+seeking and task-driven behaviour, adapting on the fly through
+probabilistic inference. Its modular, sensor-agnostic design
+supports interpretability and straightforward integration with
+existing robotic systems.
+Future work should focus on improving goal recognition via
+richer observation processing [47], enabling user intervention
+when desired [12], and exploring hierarchical reasoning [30]
+and spatial chunking [58] to further improve efficiency. Ro-
+bustness to failing sensors also remains an important direction
+for deployment in safety-critical settings.
+In sum, this work provides evidence that Active Inference
+can serve as a practical, general-purpose navigation strategy,
+bridging the gap between neuroscience-inspired models of
+cognition and the demands of real-world robotic autonomy.
+ACKNOWLEDGMENTS
+This research received funding from the Flemish
+Government (AI Research Program) under the “Onder-
+zoeksprogramma Artifici ¨ele Intelligentie (AI) Vlaanderen”
+programme and the Inter-university Microelectronics Centre
+(IMEC).
+DATA
+Our model is available at https://github.com/decide-ugent/
+AIMAPP
+REFERENCES
+[1] H. S. Hewawasam, M. Y . Ibrahim, and G. K. Appuhamillage, “Past,
+present and future of path-planning algorithms for mobile robot navi-
+gation in dynamic environments,”IEEE Open Journal of the Industrial
+Electronics Society, vol. 3, pp. 353–365, 2022.
+[2] M. Dehghani Tezerjani, M. Khoshnazar, M. Tangestanizade, and
+Q. Yang, “A survey on reinforcement learning applications in slam,”
+07 2024.
+[3] D. de Tinguy, S. Remmery, P. Mazzaglia, T. Verbelen, and B. Dhoedt,
+“Learning to navigate from scratch using world models and curiosity:
+the good, the bad, and the ugly,” 2023.
+[4] D. An, H. Wang, W. Wang, Z. Wang, Y . Huang, K. He, and L. Wang,
+“Etpnav: Evolving topological planning for vision-language navigation
+in continuous environments,” 2024.
+[5] C. Campos, R. Elvira, J. J. Gomez, J. M. M. Montiel, and J. D.
+Tardos, “ORB-SLAM3: An accurate open-source library for visual,
+visual-inertial and multi-map SLAM,”IEEE Transactions on Robotics,
+vol. 37, no. 6, pp. 1874–1890, 2021.
+[6] A. Topiwala, P. Inani, and A. Kathpal, “Frontier based exploration for
+autonomous robot,” 2018.
+[7] D. S. Chaplot, D. Gandhi, S. Gupta, A. Gupta, and R. Salakhutdinov,
+“Learning to explore using active neural slam,” inInternational Confer-
+ence on Learning Representations (ICLR), 2020.
+[8] T. Parr, G. Pezzulo, and K. Friston,Active Inference: The Free Energy
+Principle in Mind, Brain, and Behavior. The MIT Press, 03 2022.
+[9] K. Friston, R. J. Moran, Y . Nagai, T. Taniguchi, H. Gomi, and J. Tenen-
+baum, “World model learning and inference,”Neural Networks, vol. 144,
+pp. 573–590, 2021.
+[10] D. de Tinguy, T. Verbelen, and B. Dhoedt, “Learning dynamic cognitive
+map with autonomous navigation,”Frontiers in Computational Neuro-
+science, vol. 18, Dec. 2024.
+[11] J. Huang, B. Zhou, Z. Fan, Y . Zhu, Y . Jie, L. Li, and H. Cheng, “Fael:
+Fast autonomous exploration for large-scale environments with a mobile
+robot,”IEEE Robotics and Automation Letters, vol. 8, pp. 1667–1674,
+2023.
+[12] T. Dang, M. Tranzatto, S. Khattak, F. Mascarich, K. Alexis, and
+M. Hutter, “Graph-based subterranean exploration path planning using
+aerial and legged robots,”Journal of Field Robotics, vol. 37, no. 8,
+pp. 1363–1388, 2020. Wiley Online Library.
+[13] nav2, “nav2,” 2021. Accessed: 2024-12-01.
+[14] H. Wang, C. Wang, and L. Xie, “Lightweight 3-d localization and
+mapping for solid-state lidar,”IEEE Robotics and Automation Letters,
+vol. 6, no. 2, pp. 1801–1807, 2021.
+[15] F. Shu, J. Wang, A. Pagani, and D. Stricker, “Structure plp-slam:
+Efficient sparse mapping and localization using point, line and plane
+for monocular, rgb-d and stereo cameras,” 2023.
+[16] W. Xu, Y . Cai, D. He, J. Lin, and F. Zhang, “FAST-LIO2: fast direct
+lidar-inertial odometry,”CoRR, vol. abs/2107.06829, 2021.
+[17] H. Qin, S. Shao, T. Wang, X. Yu, Y . Jiang, and Z. Cao, “Review of
+autonomous path planning algorithms for mobile robots,”Drones, vol. 7,
+no. 3, 2023.
+[18] H. Jardali, M. Ali, and L. Liu, “Autonomous mapless navigation on
+uneven terrains,”2024 IEEE International Conference on Robotics and
+Automation (ICRA), pp. 13227–13233, 2024.
+[19] S. Sharma, A. Curtis, M. Kryven, J. B. Tenenbaum, and I. R. Fiete,
+“Map induction: Compositional spatial submap learning for efficient
+exploration in novel environments,”CoRR, vol. abs/2110.12301, 2021.
+[20] Z. D. Guo, S. Thakoor, M. P ˆıslar, B. A. Pires, F. Altch ´e, C. Tallec,
+A. Saade, D. Calandriello, J.-B. Grill, Y . Tang, M. Valko, R. Munos,
+M. G. Azar, and B. Piot, “Byol-explore: Exploration by bootstrapped
+prediction,” 2022.
+[21] D. Shah, B. Eysenbach, G. Kahn, N. Rhinehart, and S. Levine, “Rapid
+exploration for open-world navigation with latent goal models,” 2023.
+[22] D. Shah and S. Levine, “Viking: Vision-based kilometer-scale naviga-
+tion with geographic hints,” inRobotics: Science and Systems XVIII,
+Robotics: Science and Systems Foundation, June 2022.
+[23] A. Sridhar, D. Shah, C. Glossop, and S. Levine, “Nomad: Goal masked
+diffusion policies for navigation and exploration,” 2023.
+[24] R. Mendonca, O. Rybkin, K. Daniilidis, D. Hafner, and D. Pathak,
+“Discovering and achieving goals via world models,” 2021.
+[25] P. Mirowski, R. Pascanu, F. Viola, H. Soyer, A. J. Ballard, A. Banino,
+M. Denil, R. Goroshin, L. Sifre, K. Kavukcuoglu, D. Kumaran, and
+R. Hadsell, “Learning to navigate in complex environments,”CoRR,
+vol. abs/1611.03673, 2016.
+[26] M. Milford, G. Wyeth, and D. Prasser, “Ratslam: a hippocampal model
+for simultaneous localization and mapping,” inIEEE International
+Conference on Robotics and Automation, 2004. Proceedings. ICRA ’04.
+2004, vol. 1, pp. 403–408 V ol.1, 2004.
+[27] J. Li, Z. Xu, D. Zhu, K. Dong, T. Yan, Z. Zeng, and S. X. Yang, “Bio-
+inspired intelligence with applications to robotics: a survey,”Intelligence
+and Robotics, vol. 1, no. 1, 2021.
+[28] R. Kaplan and K. Friston, “Planning and navigation as active inference,”
+bioRxiv, 12 2017.
+[29] M. Zhao, “Human spatial representation: What we cannot learn from
+the studies of rodent navigation,”Journal of Neurophysiology, vol. 120,
+08 2018.
+[30] de Tinguy, Daria and Van de Maele, Toon and Verbelen, Tim and Dhoedt,
+Bart, “Spatial and temporal hierarchy for autonomous navigation using
+active inference in minigrid environment,”ENTROPY, vol. 26, no. 1,
+p. 32, 2024.
+[31] V . Neacsu, M. B. Mirza, R. A. Adams, and K. J. Friston, “Struc-
+ture learning enhances concept formation in synthetic active inference
+agents,”PLOS ONE, vol. 17, pp. 1–34, 11 2022.
+[32] S. Nozari, A. Krayani, P. Marin, L. Marcenaro, D. Mart ´ın G ´omez, and
+C. Regazzoni, “Exploring action-oriented models via active inference
+for autonomous vehicles,”EURASIP Journal on Advances in Signal
+Processing, vol. 2024, 10 2024.
+[33] A. Safron, O. C ¸ atal, and T. Verbelen, “Generalized simultaneous lo-
+calization and mapping (g-slam) as unification framework for natural
+and artificial intelligences: towards reverse engineering the hippocam-
+pal/entorhinal system and principles of high-level cognition,”Frontiers
+in Systems Neuroscience, vol. V olume 16 - 2022, 2022.
+[34] J. C. R. Whittington, D. McCaffary, J. J. W. Bakermans, and T. E. J.
+Behrens, “How to build a cognitive map,”Nature Neuroscience, vol. 25,
+no. 10, pp. 1257–1272, 2022.
+[35] G. Pezzulo, T. Parr, and K. Friston, “Active inference as a theory of
+sentient behavior,”Biological Psychology, vol. 186, p. 108741, 2024.
+[36] K. Friston, T. FitzGerald, F. Rigoli, P. Schwartenbeck, J. O. Doherty,
+and G. Pezzulo, “Active inference and learning,”Neuroscience and
+Biobehavioral Reviews, vol. 68, pp. 862–879, 2016.
+JOURNAL OF LATEX CLASS FILES, 17
+[37] M. Rosenberg, T. Zhang, P. Perona, and M. Meister, “Mice in a labyrinth
+show rapid learning, sudden insight, and efficient exploration,”eLife,
+vol. 10, p. e66175, jul 2021.
+[38] C. B. Browne, E. Powley, D. Whitehouse, S. M. Lucas, P. I. Cowling,
+P. Rohlfshagen, S. Tavener, D. Perez, S. Samothrakis, and S. Colton,
+“A survey of monte carlo tree search methods,”IEEE Transactions on
+Computational Intelligence and AI in Games, vol. 4, no. 1, pp. 1–43,
+2012.
+[39] Z. Fountas, N. Sajid, P. A. M. Mediano, and K. Friston, “Deep active
+inference agents using monte-carlo methods,” 2020.
+[40] K. J. Friston, T. Salvatori, T. Isomura, A. Tschantz, A. Kiefer, T. Ver-
+belen, M. Koudahl, A. Paul, T. Parr, A. Razi, B. Kagan, C. L. Buckley,
+and M. J. D. Ramstead, “Active inference and intentional behaviour,”
+2023.
+[41] D. George, R. Rikhye, N. Gothoskar, J. S. Guntupalli, A. Dedieu,
+and M. L ´azaro-Gredilla, “Clone-structured graph representations enable
+flexible learning and vicarious evaluation of cognitive maps,”Nature
+Communications, vol. 12, 04 2021.
+[42] M. Peer, I. K. Brunec, N. S. Newcombe, and R. A. Epstein, “Struc-
+turing knowledge with cognitive maps and cognitive graphs,”Trends in
+Cognitive Sciences, vol. 25, no. 1, pp. 37–54, 2021.
+[43] P. Foo, W. Warren, A. Duchon, and M. Tarr, “Do humans integrate routes
+into a cognitive map? map- versus landmark-based navigation of novel
+shortcuts.,”Journal of experimental psychology. Learning, memory, and
+cognition, vol. 31, pp. 195–215, 04 2005.
+[44] R. Epstein, E. Z. Patai, J. Julian, and H. Spiers, “The cognitive map in
+humans: Spatial navigation and beyond,”Nature Neuroscience, vol. 20,
+pp. 1504–1513, 10 2017.
+[45] W. H. Warren, D. B. Rothman, B. H. Schnapp, and J. D. Ericson,
+“Wormholes in virtual space: From cognitive maps to cognitive graphs,”
+Cognition, vol. 166, pp. 152–163, 2017.
+[46] M. Milford, “Vision-based place recognition: how low can you go?,”The
+International Journal of Robotics Research, vol. 32, no. 7, pp. 766–789,
+2013.
+[47] D. S. Chaplot, D. Gandhi, A. Gupta, and R. Salakhutdinov, “Object goal
+navigation using goal-oriented semantic exploration,” 2020.
+[48] V . S. Dorbala, J. F. Mullen, and D. Manocha, “Can an embodied agent
+find your “cat-shaped mug”? llm-based zero-shot object navigation,”
+IEEE Robotics and Automation Letters, vol. 9, p. 4083–4090, May 2024.
+[49] aws-robotics, “aws-robomaker-small-warehouse-world,” 2020. Ac-
+cessed: 2024-08-01.
+[50] aws-robotics, “aws-robomaker-small-house-world,” 2021. Accessed:
+2024-10-01.
+[51] P. Gyanani, M. Agarwal, R. Osari,et al., “Autonomous mobile ve-
+hicle using ros2 and 2d-lidar and slam navigation,”Research Square,
+vol. Preprint (Version 1), May 2024. Available at Research Square.
+[52] M. Tranzatto, M. Dharmadhikari, L. Bernreiter, M. Camurri, S. Khattak,
+F. Mascarich, P. Pfreundschuh, D. Wisth, S. Zimmermann, M. Kulkarni,
+V . Reijgwart, B. Casseau, T. Homberger, P. D. Petris, L. Ott, W. Tubby,
+G. Waibel, H. Nguyen, C. Cadena, R. Buchanan, L. Wellhausen,
+N. Khedekar, O. Andersson, L. Zhang, T. Miki, T. Dang, M. Mattamala,
+M. Montenegro, K. Meyer, X. Wu, A. Briod, M. Mueller, M. Fallon,
+R. Siegwart, M. Hutter, and K. Alexis, “Team cerberus wins the darpa
+subterranean challenge: Technical overview and lessons learned,” 2022.
+[53] H. Oleynikova, Z. Taylor, M. Fehr, J. I. Nieto, and R. Siegwart,
+“V oxblox: Building 3d signed distance fields for planning,”CoRR,
+vol. abs/1611.03631, 2016.
+[54] D. Duberg and P. Jensfelt, “UFOMap: An efficient probabilistic 3D
+mapping framework that embraces the unknown,”IEEE Robotics and
+Automation Letters, vol. 5, no. 4, pp. 6411–6418, 2020.
+[55] clearpathrobotics, “Jackal.” Accessed: 2025-07-28.
+[56] husarion, “rosbotxl.” Accessed: 2025-07-28.
+[57] H. Xu, P. Baracskay, J. O’Neill, and J. Csicsvari, “Assembly responses
+of hippocampal ca1 place cells predict learned behavior in goal-directed
+spatial tasks on the radial eight-arm maze,”Neuron, vol. 101, no. 1,
+pp. 119–132.e4, 2019.
+[58] A. Caticha, “The information geometry of space and time,” 2005.
+[59] J. Hwang, Z.-W. Hong, E. Chen, A. Boopathy, P. Agrawal, and I. Fiete,
+“Grid cell-inspired fragmentation and recall for efficient map building,”
+2024.
+[60] M. Selin, M. Tiger, D. Duberg, F. Heintz, and P. Jensfelt, “Efficient
+autonomous exploration planning of large-scale 3-d environments,”
+IEEE Robotics and Automation Letters, vol. 4, no. 2, pp. 1699–1706,
+2019.
+[61] W. W. L. Nuijten, M. Lukashchuk, T. van de Laar, and B. de Vries,
+“A message passing realization of expected free energy minimization,”
+2025.
+APPENDIXA
+MODELDEFINITION
+A. Model Parameters
+This section details the parameters used to configure and
+operate our active inference-based navigation model. These
+parameters define the structure of the agent’s internal rep-
+resentation, the characteristics of the planning process, and
+the learning dynamics that allow it to adapt to environmental
+changes.
+At initialisation, a series of hyperparameters can be set. The
+user can define :
+•the number of likelihood matrices the agent will use,
+in our paper, we set it to two, for the visual and pose
+likelihood matrices. Theoretically, it can be increased to
+accept more observations, such as Lidar or Radar, etc.,
+but it was not tested here.
+•the number of available actions, discretised over the
+agent’s rotation or movement space (typically 360°).
+When the given number is odd, an additional ”stay” or
+”no-op” action is included. In this paper, it was set to 13
+actions.
+•the physical radius of the agent, acting as a collision
+buffer when deciding whether new states can be created
+near obstacles.
+•the influence radius, which defines the minimum distance
+required between states. If the agent moves within this
+radius, no new topological node is created, promoting
+compactness in the map. In our experiment, it was
+set to 1m in small environments (real home and mini-
+warehouse) and 2m in larger environments (>40m 2).
+•how far the agent can see, or how many new, consecutive
+nodes can be hypothesised within the current LiDAR
+sensing range, enabling more anticipatory map expansion
+during exploration. In this paper, a maximum of 8 nodes
+was set.
+1) Transition Update:
+Bπ =B π +Q(s t|st−1, π)Q(st−1)∗B π ∗λ(9)
+To update its beliefs about the environment, the agent uses
+a Dirichlet-based pseudo-count mechanism (Equation 9) with
+situation-dependent learning rates (λ). These rates vary based
+on whether the agent:
+•successfully reaches a location,
+•is physically blocked while trying to move,
+•or anticipates reaching (or failing to reach) a location
+based on sensory evidence.
+Table III lists the specific learning rates for each situation.
+This continual adjustment allows the agent to refine transition
+likelihoods in its internal model rapidly.
+TABLE III
+TRANSITION LEARNING RATE(λ)DEPENDING ON THE SITUATION
+Transitions Possible Impossible
+Predicted
+Possible
+Predicted
+Impossible
+Forward 7 -7 5 -5
+Reverse 5 -5 3 -3
+JOURNAL OF LATEX CLASS FILES, 18
+2) Uncertainty About Current State:To determine whether
+an agent is lost, we evaluate its certainty about the current
+state. Specifically, we compute a Z-score to measure how
+strongly the most likely state stands out compared to the
+others. If this dominance falls below a user-defined threshold
+(set to 4 in this work), the agent is considered uncertain about
+its location.
+B. Expected Free Energy Terms
+H is an inductive term applied to the state preferenceCs
+defined in Equation 10, which is computed inductively by
+propagating backwards in time from the goal state toward the
+current state (innsteps, that might be lower than the planning
+horizon). This inductive process accumulates structural prefer-
+ences and becomes silent (i.e., has no influence) if no specific
+target state is preferred or if the preferred state lies beyond the
+predictive horizon. LetCs 0 be a weighted preference vector
+over existing states, as derived from the joint preference over
+observations (Co) and transitions (Cp). Then the backwards
+recursion is defined as [40]:
+Csn =BT
+s ⊙Cs n−1 for n= 0, .., τ
+H=ln(ϵ)·(B T
+s ⊙Cs τ )⊙s(τ) (10)
+nis a backwards value propagating from the goal (thus the
+future, if under our prediction horizon) up to our current state
+t, ifCslies over the horizon, we can predict, this term will
+also be silent.
+C. Monte Carlo Tree Search
+We use an MCTS merged with Active Inference to deter-
+mine the expected free energy of the surrounding possible
+paths. MCTS is used to explore possible future trajectories as
+far as possible while avoiding the limitations of fixed policy
+sets typically used in standard Active Inference implementa-
+tions.
+In many Active Inference models, policies are predefined
+and limited in number, with the agent selecting among them
+by evaluating their expected free energy at each decision
+point [10], [28], [31]. This fixed policy set constrains the
+agent’s ability to flexibly adapt to complex, dynamic, or large-
+scale environments, as it cannot reason beyond the span of
+those precomputed policies.
+By contrast, integrating MCTS allows the agent to dynami-
+cally simulate multiple future action sequences (i.e., rollouts)
+from its current belief state. These simulations are guided
+by the principle of minimising expected free energy [39],
+enabling the agent to actively search for policies that balance
+goal-directed behaviour (utility maximisation) with epistemic
+exploration (information gain). This approach enables deeper
+lookahead without incurring the combinatorial explosion of
+evaluating all possible action sequences, thus significantly
+reducing computational load while maintaining adaptive and
+scalable planning.
+Moreover, using MCTS with Active Inference enables the
+agent to flexibly revise its planned trajectory in light of new
+evidence at each time step, rather than being bound by a fixed
+horizon or static policy set. This results in more robust and
+context-sensitive navigation behaviour, particularly in uncer-
+tain or partially observable environments. Our algorithm is
+presented in Algorithm 1, where the policy length sets the
+number of future steps we need to predict, the lookahead
+policy is the depth of the agent’s policy simulation horizon
+(set to 10 in our experiments), and the possible motions are
+the actions the agent can execute from its current position.
+Two parameters are used, the lookahead policy, which is
+represented as n in H equation 10 (how far from us can the
+goal be induced), and the policy length that determine how
+many time we run the planning (it will impact how far we
+can see, while not setting a strict rule on horizon visibility),
+we set it to one action. For each step in the policy length, we
+run the MCTS simulation 30 times before determining which
+action is the most ideal.
+APPENDIXB
+ROBOTS
+Our system is robot-agnostic; however, we have to adapt the
+sensor pipeline to the specific sensors used. In simulation, we
+used a TurtleBot3 Waffle with a Pi camera and a 360-degree
+lidar with a 12 m range. In the real environment, several robots
+have been used; at first, we used the Turtlebot with a forward
+lidar of 240 degrees of 12 m range and a camera RealSense
+D435; the Turtlebot4 with a 360-degree lidar of 8 m range and
+a camera OAK-D-Pro. Due to a large uncorrected drift (1m
+drift after a 3m motion), the resulting maps did not allow a
+clear superposition with the layout of the environment; thus,
+we used a RosbotXL with a 360-degree lidar of 18m range
+and a 360-degree camera (Theta X) to better show the results
+of the navigation. However, while the Lidar range is 18m, the
+agent only considers the Lidar up to 8 consecutive nodes as
+defined in Appendix A-A to create or update new transitions
+to be as reliable as possible.
+(a) Turtlebot3: Waffle
+ (b) Husarion: RosbotXL
+Fig. 14. Turtlebot3 waffle robot was used in simulation, while tests have been
+conducted with a turtlebot and RosbotXL in the real environment
+JOURNAL OF LATEX CLASS FILES, 19
+1Algorithm:AIF based MCTS
+Input:possible motions,policy length,lookahead policy,num simulation
+Output:best policy
+2FunctionMCTS planning(possible motions,policy length,lookahead policy,num simulation):
+3qs←get believed localisation over states() ;
+4qo←get expected observations for qs(qs) ;
+5root←create root state(qs,qo,possible motions);
+6fori←1topolicy lengthdo
+7fori←1tonum simulationdo
+8leaf←Selection(root);
+9expanded leaf←Expansion(leaf);
+10reward←Simulation(expanded leaf,lookahead policy);
+11Backpropagate(expanded leaf,reward);
+12action i ←SelectBestAction(root);
+13root←leaf;
+14selected actions←action i
+15returnselected actions;
+16FunctionSelection(node):
+17whilenodehas childrendo
+18node←child ofnodewith highest UCB1 score;
+19returnnode;
+20FunctionExpansion(node):
+21foreachactioninnode.possible actionsdo
+22next pose←Transition(node.pose,action);
+23next pose, qs′, qo′, G←Infer(node.qs,action);
+24Create new child node with state(qs ′, nextpose, qo′, G);
+25returnnode;
+26FunctionSimulation(node,lookahead policy):
+27foreachactioninnode.possible actionsdo
+28action←choice from nodeactions;
+29next pose, qs′, qo′, G←Infer(qs,action,lookahead policy);
+30ifbest measuredGthen
+31best G←G;
+32total reward←total reward+best G;
+33returntotal reward;
+34FunctionBackpropagate(node,reward):
+35whilenode existsdo
+36node←update node(node,reward);
+37node←node.parent;
+38FunctionSelectBestAction(root):
+39foreach(a, child)inroot.childsdo
+40Compute average reward ofchild;
+41returnactionactionwith highest AIF policy score ;
+42FunctionInfer(qs,action):
+43next pose←Transition(pose,action);
+44qs ′ ←BeliefTransition(qs,action);
+45qo ′ ←ExpectedObservation(qs ′);
+46G←ExpectedFreeEnergy(qs ′,qo ′,qs,action);
+47returnnext pose,qs ′,qo ′,G;
+JOURNAL OF LATEX CLASS FILES, 20
+(a) Home 175m2
+ (b) Big warehouse 280m2
+ (c) Small warehouse 80m2
+(d) Mini warehouse 36m2
+ (e) Map of a real-world parking
+lot 325m2, dashed grey areas rep-
+resent cars that may or may not
+be present during experiments, the
+ramp is represented by a triangle.
+(f) Figurative layout of a real-
+world small house 20.27m2
+(g) Figurative layout of a real-world warehouse
+186m2, dashed grey areas are inaccessible areas,
+the green areas correspond to the Qualysis odometry
+coverage
+Fig. 15. The three Amazon warehouse environments and the house used in Gazebo, as well as the parking lot, small house and warehouse used in the real
+world.
+APPENDIXC
+ENVIRONMENTS
+Our experiments used a home [50] of 156m 2 and a ware-
+house [49] of 3 different sizes, ranging from 36m2, 80m2 up to
+2802 and a real-world house of 21m 2, a warehouse of 185m 2
+and a parking lot of 325m 2. All environments are presented
+in Figure 15.
+APPENDIXD
+DETAILS ABOUT EXPERIMENTAL RESULTS
+A. Aversial Models
+GBPlanner, FAEL, and Frontiers were used with their given
+parameters, except for the map resolution, which was increased
+to 0.05m/cell. Other parameters, such as obstacle inflation,
+were modified to ensure that all agents could physically reach
+every location.
+Despite our efforts, FAEL wouldn’t fully turn around the
+central box in the mini warehouse, explaining why Figure 16b
+coverage is not 100%.
+B. Exploration paths
+In smaller environments (warehouses up to80m 2), model
+efficiency is more closely aligned across different approaches,
+as can be seen in Figure 16 and matches the five averaged
+manual explorations realised from the same starting points,
+metrical results are summarised in Table IV. This homogeneity
+between models is largely due to the limited Lidar range,
+JOURNAL OF LATEX CLASS FILES, 21
+(a) Coverage of the small warehouse by
+Frontiers, Gbplanner, FAEL and AIMAPP ,
+over the travelled distance. Obstacles
+were removed from the total map area
+(80m2)
+(b) Coverage of the mini warehouse by
+Frontiers, Gbplanner, FAEL and AIMAPP ,
+over the travelled distance. Obstacles
+were removed from the total map area
+(36m2)
+Fig. 16. Coverage efficiency of each model over 5 runs in small environments,
+considering the agent’s travelling distance.
+TABLE IV
+EXPLORATION EFFICIENCY METRICS ACROSS ENVIRONMENTS. CE:
+COVERAGEEFFICIENCY(M 2/M),NAUC: NORMALISEDAREAUNDER
+COVERAGECURVE. VALUES ARE MEAN±STD OVER5RUNS.
+Env. ModelCE nAUC
+Small
+Warehouse
+Manual 3.13±0.43 0.74±0.03
+AIMAPP 2.25±0.87 0.87±0.04
+Frontiers 1.08±0.12 0.73±0.03
+FAEL 2.60±0.58 0.98±0.03
+GBPlanner 1.59±0.25 0.63±0.06
+Mini
+warehouse
+Manual 2.66±0.16 0.92±0.01
+AIMAPP 2.64±0.98 0.91±0.04
+Frontiers 2.45±0.07 0.88±0.01
+FAEL 2.61±1.16 0.85±0.03
+GBPlanner 2.55±0.4 0.82±0.08
+Real
+Garage Manual 13.18 0.74
+AIMAPP 7.41±0.87 0.71±0.03
+which can quickly encompass a significant portion of the
+environment, thereby reducing the relative advantage of long-
+term planning strategies.
+Example of exploration trajectories from AIMAPP, FAEL,
+GBPlanner, and a Frontier-based approach are illustrated in
+Figure 17, all starting from the same initial location near the
+dumbbell (trajectory colour progresses from black to yellow).
+In this run, FAEL, AIMAPP, and Frontiers all achieved nearly
+100% coverage, while GBPlanner reached approximately 95%.
+Notably, GBPlanner became trapped near the chair in the
+sports room, preventing complete exploration.
+Qualitatively, the strategies exhibit distinct behaviours.
+FAEL avoided entering the playroom but approached its door-
+way, providing partial coverage of the interior without direct
+visitation. The Frontier-based strategy aggressively targeted
+the largest unexplored areas, ensuring complete coverage but
+at the cost of repeated backtracking and long, inefficient paths,
+an approach that does not scale well to larger environments.
+AIMAPP exhibited a mixture of forward progression and
+small corrective loops to accumulate additional observations.
+However, in this run, it failed to detect that the bedroom could
+be accessed from the playroom on the far right, leaving this
+connection unexplored.
+These results highlight that while coverage performance
+across methods converges in smaller environments, qualitative
+differences in trajectory efficiency and robustness become
+more apparent in larger, more complex spaces.
+Direct coverage comparisons between AIMAPP and FAEL
+or GBPlanner could not be performed in real-world settings
+due to incompatible sensor requirements. In addition, our
+evaluation pipeline relies on Nav2 to generate a 2D occupancy
+map from Lidar measurements for metric calculation. This
+introduces a limitation: in real-world house exploration, cov-
+erage values were fundamentally unreliable due to significant
+drift and restricted Lidar range. For the same reason, Frontier-
+based results in the garage could not be fairly compared to our
+model. In these cases, Nav2 failed to compensate for wheel
+slippage and drift (e.g., when the robot became stuck on sandy
+ground), which resulted in superimposed, misaligned maps
+that could not be disambiguated post hoc.
+To provide a consistent baseline, all reported real-world
+coverage values for AIMAPP were averaged over five runs
+and compared to the coverage obtained through manual ex-
+ploration using Nav2 SLAM mapping. The achieved coverage
+in the parking lot environment by AIMAPP and our manual
+teleoperation is illustrated in Figure 18. It is worth noting that
+the accessible area varied between runs, as parked cars dynam-
+ically altered the free space available to the agent. Despite
+these variations, AIMAPP demonstrated robust exploration
+and reliable coverage across multiple trials.
+C. Reasons for human interventions
+TABLE V
+NUMBER OF TIMES THE ROBOT GOT STUCK AND REQUIRED
+INTERVENTION PER ENVIRONMENT.
+External
+intervention AIMAPP FAEL Gbplanner Frontiers
+Home 2 5 1 5
+Big warehouse 0 5 2 0
+Small warehouse 1 3 4 2
+Mini warehouse 0 2 2 3
+Real home 4 x x x
+Real parking 2 x x x
+Real warehouse 7 x x 14
+The reasons for human interventions varied substantially
+across models:
+JOURNAL OF LATEX CLASS FILES, 22
+(a) FAEL exploration trajectory
+ (b) AIMAPP exploration trajectory
+(c) GBplanner exploration trajectory
+ (d) Frontiers exploration trajectory
+Fig. 17. Approximate exploration trajectories from black to yellow. We can notice how some agents never enter the bedroom and playroom, as their Lidar
+range can already encompass most of it from the doors (yet the coverage would not be fully complete).
+Fig. 18. Coverage of the real-world parking lot by AIMAPP compared to a
+manual exploration. Note that the accessible areas vary between runs due to
+the presence of cars.
+AIMAPP: Most interventions occurred when the LiDAR
+failed to detect certain obstacles, such as forklifts or flat-
+based chairs. In these cases, the robot would either collide too
+quickly and flip over or remain stuck. Since Frontiers uses the
+same LiDAR, it experienced similar issues. For both models,
+this limitation could theoretically be mitigated by inflating
+obstacle areas in the costmap when using Nav2; however,
+doing so would also significantly restrict the explorable space,
+making coverage comparisons unfair. In the real warehouse,
+we also had the issue of undetected white walls (the lidar
+would give an erroneous distance). When against an unde-
+tected obstacle, the robot would have its wheels spinning
+against the wall, updating the odometry. Thus, the agent did
+not receive the information that the robot was stuck. We had
+to send the motion planning failure manually to the agent and
+push the robot away from the obstacle. Another situation has
+been a manual re-localisation of the robot when the drift was
+too big in an unexplored area, leading to a non-sensical map
+from a human perspective (the map was valid for the model,
+but could not be used for the benchmarking).
+Frontiers: In addition to the LiDAR issue, Frontiers often
+persevered in attempting to reach unreachable goals, repeat-
+edly trying to navigate toward them regardless of feasibility.
+When this happened, the agent was manually repositioned to
+a more central area, allowing exploration to resume.
+FAEL: Failures were typically linked to mismatches be-
+tween topological node creation and obstacles in V oxblox. If
+a node was generated just before the obstacle was considered
+by its sensors, FAEL could repeatedly attempt to reach it and
+remain stuck. A gentle push usually allowed the agent to con-
+tinue, similar to Frontiers (unsurprising given FAEL’s frontier-
+based logic). FAEL also exhibited failures in open spaces,
+where its open-space detection module occasionally misclas-
+sified the surroundings as non-traversable (see Figure 19).
+Again, slight repositioning often resolved the issue. However,
+sometimes, the agent would just persevere in refusing to move
+for undefined reasons, requiring to cancel the exploration and
+start anew.
+GB-Planner: This model proved more robust to both obsta-
+cle occlusion and sensor noise, successfully detecting objects
+such as forklifts and chairs. However, GB-Planner did not
+always classify these obstacles as impassable. When a goal
+lay beyond such objects, the planner frequently generated a
+direct path across them, while it was, in fact, an infeasible
+trajectory. Since no automatic fail-safe is in place, the agent
+remained blocked until manually nudged aside, which then
+triggered re-planning around the obstacle.
+JOURNAL OF LATEX CLASS FILES, 23
+It is worth noting that in our framework, re-planning when
+faced with an undetected obstacle is handled not by the
+decision-making component itself but by the motion planning
+layer. The model simply specifies the target objective and
+relies on the motion planner to report its current position and
+whether it is moving successfully.
+Finally, in the real-world parking lot experiments, interven-
+tions required to move the robot away from approaching cars
+were not included in Table V, as we halted the experiment in
+such situations.
+Every model had cases of failure that even human inter-
+vention could not resolve (usually, if the robot tilted too
+much, the Lidars would form an inconsistent map, and the
+agent would struggle to recover from it). The details of the
+success rate to obtain five successful explorations is reported
+in Table VI. Frontiers succeeded in its exploration in only 52%
+of the runs overall. Largely due to Nav2 losing the odometry
+or the SLAM merging aisles together. FAEL has an even
+lower rate of 48% successful runs. The exploration strategy
+is efficient when everything works well, but sometimes the
+model refuses to start or stops in an open space, and even
+moving it a bit or waiting does not solve the situation. We
+have a 79% success rate. In our case, the robot failed due
+to the robot flipping and wheels still recording motion or the
+agent being temporarily lost and re-localising at the wrong
+position, proposing a scrambled map. In the real world, we
+could pause the agent to solve sensor issues (namely, a loose
+wheel, resetting the Lidar or restarting the robot) and resume
+the runs without considering it a failure, a feature that would be
+missing in most models. Gbplanner is the most robust model
+with an 87% success rate; failure only resulted from the agent
+not considering an obstacle insurmountable and flipping the
+robot, resulting in a scrambled 3D map.
+TABLE VI
+PERCENTAGE OF EXPLORATION SUCCESS RATE FOR EACH MODEL OVER
+EACH ENVIRONMENT.
+External
+intervention AIMAPP FAEL Gbplanner Frontiers
+Home 0.71 0.45 0.83 0.63
+Big warehouse 1 0.5 1 0.83
+Small warehouse 1 0.63 0.87 0.83
+Mini warehouse 0.83 0.83 1 0.83
+Real home 0.6 x x 0.09
+Real parking 0.75 x x 0.00
+Real warehouse 0.63 x x 0.45
+(a) Detected free space
+around the agent is rainbow
+coloured while actual free
+space is black.
+(b) Jackal in the environ-
+ment
+Fig. 19. Example of the FAEL getting stuck in an open area.

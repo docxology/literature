@@ -1,0 +1,988 @@
+IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. 1
+Multi-Modal MPPI and Active Inference for
+Reactive Task and Motion Planning
+Yuezhe Zhang, Corrado Pezzato, Elia Trevisan, Chadi Salmi, Carlos Hern ´andez Corbato, Javier Alonso-Mora
+Abstract—Task and Motion Planning (TAMP) has made strides
+in complex manipulation tasks, yet the execution robustness of
+the planned solutions remains overlooked. In this work, we
+propose a method for reactive TAMP to cope with runtime
+uncertainties and disturbances. We combine an Active Inference
+planner (AIP) for adaptive high-level action selection and a
+novel Multi-Modal Model Predictive Path Integral controller
+(M3P2I) for low-level control. This results in a scheme that
+simultaneously adapts both high-level actions and low-level mo-
+tions. The AIP generates alternative symbolic plans, each linked
+to a cost function for M3P2I. The latter employs a physics
+simulator for diverse trajectory rollouts, deriving optimal control
+by weighing the different samples according to their cost. This
+idea enables blending different robot skills for fluid and reactive
+plan execution, accommodating plan adjustments at both the
+high and low levels to cope, for instance, with dynamic obstacles
+or disturbances that invalidate the current plan. We have tested
+our approach in simulations and real-world scenarios. Project
+website: https://autonomousrobots.nl/paper websites/m3p2i-aip
+Index Terms—Task and Motion Planning, Manipulation Plan-
+ning
+I. I NTRODUCTION
+T
+ASK and Motion Planning (TAMP) is a powerful class
+of methods for solving complex long-term manipulation
+problems where logic and geometric variables influence each
+other. TAMP [1]–[3] has been successfully applied to domains
+such as table rearrangement, stacking blocks, or solving the
+Hanoi tower. However, the plan is often executed in open-
+loop in static environments. Recent works [4]–[6] recognized
+the importance of robustifying the execution of TAMP plans
+to be able to carry them out in the real world reliably. But
+they either rely only on the adaptation of the action sequence
+in a plan [6]–[9] or only on the motion planning problem in a
+dynamic environment given a fixed plan [4], [5]. Unlike typical
+TAMP planners that focus on solving static and complex
+tasks offline and then execute the solution, this paper aims to
+achieve reactive execution by simultaneously adapting high-
+level actions and low-level motions.
+Reactive TAMP faces the challenge of accommodating
+unforeseen geometric constraints during planning, such as
+the need to pull rather than push a block when it’s in a
+corner, complicating high-level planning without complete
+This research was supported in part by Ahold Delhaize; by the Nether-
+lands Organization for Scientific Research (NWO), domain Science (ENW),
+TRILOGY project; and by the European Union through ERC, under Grant
+101041863 (INTERACT). (Corresponding author: Yuezhe Zhang.)
+The authors are with Cognitive Robotics Department, TU Delft, The Nether-
+lands yuezhezhang_bit@163.com, {corrado.pezzato,
+salmi.chadi}@gmail.com, {e.trevisan,
+c.h.corbato, j.alonsomora}@tudelft.nl
+scene knowledge. Additionally, scenarios like pick-and-place
+tasks with dynamic obstacles and human disturbances demand
+varied grasping poses for different objects and obstacles,
+requiring TAMP algorithms to adapt to such configurations
+dynamically.
+We address these challenges by proposing a control scheme
+that jointly achieves reactive action selection and robust
+low-level motion planning during execution. We propose a
+high-level planner capable of providing alternative actions to
+achieve a goal. These actions are translated to different cost
+functions for our new Multi-Modal Model Predictive Path
+Integral controller for motion planning. This motion planner
+leverages a physics simulator to sample parallel motion plans
+that minimize the given costs and computes one coherent
+control input that effectively blends different strategies. To
+achieve this, we build upon two of our recent works: 1)
+an Active Inference planner (AIP) [7] for symbolic action
+selection, and 2) a Model Predictive Path Integral (MPPI)
+controller [10] for motion planning. The AIP computes a
+sequence of actions and state transitions through backchaining
+to achieve a sub-goal specified in a given Behavior Tree (BT).
+The BT guides the search and allows real-time high-level
+planning within the AIP framework [7]. In this work, we
+extend the previous AIP to plan possible alternative action
+plans, and we propose a new Multi-Modal Model Predictive
+Path Integral controller (M3P2I) that can sample in parallel
+these alternatives and smoothly blend them considering the
+geometric constraints of the problem.
+A. Related work
+To robustly operate in dynamic environments, reactive mo-
+tion planners are necessary. In [4], the authors provided a
+reactive Model Predictive Control (MPC) strategy to execute a
+TAMP plan as a given linear sequence of constraints. The re-
+active nature of the approach allows coping with disturbances
+and dynamic collision avoidance during the execution of a
+TAMP plan. Authors in [5] formulated a TAMP plan in object-
+centric Cartesian coordinates, showing how this allows coping
+with perturbations such as moving a target location. However,
+both [4], [5] do not consider adaptation at the symbolic action
+level if a perturbation invalidates the current plan.
+Several papers focused on adapting and repairing high-
+level action sequences during execution. In [11], robot task
+plans are represented as robust logical-dynamical systems to
+handle human disturbances. Similarly, [12] coordinates control
+chains for robust plan execution through plan switching and
+controller selection. A recent paper [13] suggests employing
+arXiv:2312.02328v2  [cs.RO]  10 Jul 2024
+2 IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION.
+Monte Carlo Tree Search with IsaacGym to accelerate task
+planning for multi-step object retrieval from clutter involving
+intricate physical interactions. While promising, [13] only
+supports high-level reasoning with predefined motions in an
+open loop. Recent works [6], [14] combined BTs and linear
+temporal logic to adapt the high-level plan to cope with coop-
+erative or adversarial human operators, environmental changes,
+or failures. In our previous work [7], AIP and BT were
+combined to provide reactive action selection in long-term
+tasks in partially observable and dynamic environments. This
+method achieved hierarchical deliberation and continual online
+planning, making it particularly appealing for the problem
+of reactive TAMP at hand. In this paper, we extend [7] by
+bridging the gap to low-level reactive control by planning cost
+functions instead of symbolic actions.
+At the lower level, MPC is a widely used approach [15]–
+[17]. However, manipulation tasks often involve discontinuous
+contacts that are hard to differentiate. Sampling-based MPCs,
+such as MPPI [18], [19], can handle non-linearities, non-
+convexities, or discontinuities of the dynamics and costs.
+MPPI relies on sampling control input sequences and forward
+system dynamics simulation. The resulting trajectories are
+weighted according to their cost to approximate an optimal
+control input. In [20], the authors proposed an ensemble MPPI
+to cope with model parameters uncertainty. Sampling-based
+MPCs are generally applied for single-skill execution, such
+as pushing or reaching a target point. As pointed out in the
+future work of [21], one could use a high-level agent to
+set the cost functions for the sampling-based MPC for long-
+horizon cognitive tasks. We follow this line of thought and
+propose a method to reactively compose cost functions for
+long-horizon tasks. Moreover, classical MPPI approaches can
+only keep track of one cost function at a time. This means the
+task planner should propose a single plan to solve the task.
+However, some tasks might present geometric ambiguities for
+which multiple plans could be effective, and selecting what
+strategy to pursue can only be determined by the motion
+planner based on the geometry of the problem.
+B. Contributions
+The main contribution of this work is a reactive task and
+motion planning algorithm based on the following:
+• A new Multi-Modal MPPI (M3P2I) capable of sampling
+in parallel plan alternatives to achieve a goal, evaluating
+them against different costs. This enables the smooth
+blending of alternative solutions into a coherent behavior
+instead of switching based on heuristics.
+• An enhanced Active Inference planner (AIP) capable of
+generating alternative cost functions for M3P2I.
+We demonstrate the method in several scenarios in simula-
+tions and real robots for pushing, pulling, picking, and placing
+objects under disturbances.
+II. B ACKGROUND
+In this section, we present the background knowledge
+about the Active Inference planner and Model Predictive Path
+Integral Control to understand the contributions of this paper.
+We refer the interested reader to the original articles [7], [22],
+[23] for a more in-depth understanding of the techniques.
+A. Active Inference Planner (AIP)
+AIP is a high-level decision-making algorithm that relies
+on symbolic states, observations, and actions [7]. Each in-
+dependent set of states in AIP is a factor, and the planner
+contains a total of nf factors. For a generic factor fj where
+j ∈ J= {1, ..., nf }, it holds:
+s(fj) =
+h
+s(fj,1), s(fj,2), ..., s(fj,m(fj))
+i⊤
+,
+S =
+
+s(fj)|j ∈ J
+	
+(1)
+where m(fj) is the number of mutually exclusive symbolic
+values a state factor can have, each entry of s(fj) is a real
+value between 0 and 1, and the sum of the entries is 1. This
+represents the current belief state.
+The continuous state of the world x ∈ Xis discretized
+through a symbolic observer such that the AIP can use it.
+Discretized observations o are used to build a probabilistic
+belief about the symbolic current state. Assuming one set of
+observations per state factor with r(fj) possible values:
+o(fj) =
+h
+o(fj,1), o(fj,2), ..., o(fj,r(fj))
+i⊤
+,
+O =
+
+o(fj)|j ∈ J
+	
+(2)
+The robot has a set of symbolic actions that can act then
+their corresponding state factor:
+aτ ∈ α(fj) =
+
+a(fj,1), a(fj,2), ..., a(fj,k(fj))	
+,
+A =
+
+α(fj)|j ∈ J
+	
+(3)
+where k(fj) is the number of actions that can affect a specific
+state factor fj. Each generic action a(fj,·) has associated a
+symbolic name, parameters, pre- and postconditions:
+Action a(fj,·) Preconditions Postconditions
+action_name(par) prec a(fj,·) posta(fj,·)
+where preca(fj,·) and posta(fj,·) are first-order logic predi-
+cates that can be evaluated at run-time. A logical predicate is
+a boolean-valued function B : X → {true, false}. Finally,
+we define the logical state l(fj) as a one-hot encoding of s(fj).
+The AIP computes the posterior distribution over p plans π
+through free-energy minimization [7]. The symbolic action to
+be executed by a robot in the next time step is the first action
+of the most likely plan, denoted with πζ,0:
+ζ = max([π1, π2, ...,πp]| {z }
+π⊤
+), aτ=0 = πζ,0. (4)
+B. Model Predictive Path Integral Control (MPPI)
+MPPI is a method for solving optimal stochastic problems
+in a sampling-based fashion [22], [23]. Let us consider the
+following discrete-time systems:
+xt+1 = f(xt, vt), v t ∼ N(ut, Σ), (5)
+ZHANG et al.: MULTI-MODAL MPPI AND ACTIVE INFERENCE FOR REACTIVE TASK AND MOTION PLANNING 3
+where f, a nonlinear state-transition function, describes how
+the state x evolves over time t with a control input vt. ut and
+Σ are the commanded input and the variance, respectively.
+K noisy input sequences Vk are sampled and then applied
+to the system to forward simulate K state trajectories Qk,
+k ∈ [0, K− 1], over a time horizon T. Given the state tra-
+jectories Qk and a designed cost function C to be minimized,
+the total state-cost Sk of an input sequence Vk is computed
+by evaluating Sk = C(Qk). Finally, each rollout is weighted
+by the importance sampling weights wk. These are computed
+through an inverse exponential of the cost Sk with tuning
+parameter β and normalized by η. For numerical stability, the
+minimum sampled cost ρ = mink Sk is subtracted, leading to:
+wk = 1
+η exp
+
+− 1
+β (Sk − ρ)
+
+,
+KX
+k=1
+wk = 1 (6)
+The parameter β is called inverse temperature. The impor-
+tance sampling weights are finally used to approximate the
+optimal control input sequence U∗:
+U∗ =
+KX
+k=1
+wkVk (7)
+The first input u∗
+0 of the sequence U∗ is applied to the
+system, and the process is repeated. At the next iteration, U∗
+is used as a warm-start, time-shifted backward of one timestep.
+Specifically, the second last input in the shifted sequence is
+also propagated to the last input. In this work, we build upon
+our previous MPPI approaches [10], [24], where we employed
+IsaacGym as a dynamic model to forward simulate trajectory
+rollouts and allow for arbitrary sampling distributions.
+III. M ETHODOLOGY
+The proposed method is depicted in Fig. 1. After a general
+overview, we discuss the three main parts of the scheme:
+action planner, motion planner, and plan interface.
+A. Overview
+The proposed scheme works as follows. First, the symbolic
+observers translates continuous states x into discretized sym-
+bolic observations o, which are then passed to the action plan-
+ner. The current desired state sd for Active Inference can be
+Hard-coded knowledge
+Planning algorithms
+Utilities
+IsaacGym
+Low frequency
+High frequency
+Active 
+Inference
+Action planner
+Behavior
+Tree Symbolic
+Observer
+System
+Motion planner
+M3P2I
+Plan interface
+Cost
+Selector
+Set of costs
+symbolic plans
+Fig. 1. Proposed scheme. Given symbolic observations o of the environment,
+the action planner computes N different plan alternatives linked to individual
+cost functions Ci. M3P2I samples control input sequences and uses an
+importance sampling scheme to approximate the optimal control u∗
+0.
+manually set or be encoded as the skeleton solution of a BT as
+previous work [7]. The AIP computes N alternative symbolic
+plans based on the current symbolic state and the available
+symbolic actions. The symbolic actions are encoded as action
+templates with pre-post conditions that Active Inference uses
+to construct action sequences to achieve the desired state.
+After the plans are generated, the plan interface links the first
+action a0,i, i = 0 ...N − 1 of each plan to a cost function
+Ci. The cost functions are sent to M3P2I, which samples
+N · K different control input sequences. The input sequences
+are forward simulated using IsaacGym, which encodes the
+dynamics of the problem [10]. The resulting trajectories are
+evaluated against their respective costs. Finally, an importance
+sampling scheme calculates the approximate optimal control
+u∗
+0. All processes are running continuously during execution
+at different frequencies. The action planner runs, for instance,
+at 1Hz while the motion planner runs at 25Hz. An overview
+can be found in Algorithm 1.
+Algorithm 1 Overview of the method
+1: Input: action templates and inputs from Algorithm 2 to 4
+2: AIP.task = AIP.agent(ActionT emplates)
+3: while task not completed do
+4: o ← GetSymbolicObservation (x)
+5: /* Get current desired state */
+6: AIP.sd ← BT (o) or be manually set ▷ from [7]
+7: /* Get current action plans from Active Inference */
+8: P ←AIP.parall act sel(o) ▷ Algorithm 2
+9: /* Translate action plan to cost function */
+10: C ← Interface (P)
+11: /* Compute motion commands */
+12: M3P2I.command(C) ▷ Algorithm 4
+13: end while
+B. Action planner - Active Inference Planner (AIP)
+In contrast to our previous work [7] where only one action
+aτ for the next time step is computed, we modify the AIP to
+generate action alternatives. In particular, instead of stopping
+the search for a plan when a valid executable action aτ is
+found, we repeat the search while removing that same aτ from
+the available action set A. This simple change is effective
+because we are looking for alternative actions to be applied
+at the next step, and the AIP builds plans backward from the
+desired state [7]. The pseudocode is reported in Algorithm 2.
+The algorithm will cease when no new actions are found,
+returning a list of possible plans P. This planner is later
+integrated with M3P2I to evaluate different alternatives in real-
+time. This increases the robustness at run-time and, at the same
+time, reduces the number of heuristics to be encoded in the
+action planner. Specifically, one does not need to encode when
+to prefer a symbolic action over another based on the geometry
+of the problem.
+C. Motion planner - Multi-Modal MPPI (M3P2I)
+We propose a Multi-Modal MPPI capable of sampling
+different plan alternatives from the AIP. Traditional MPPI
+4 IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION.
+Algorithm 2 Generate alternative plans using Active Inference
+1: Input: available action set: A
+2: aτ ← AIP.act sel(o) ▷ from [7]
+3: Set P ← ∅
+4: while aτ ! = none do
+5: P.append(aτ )
+6: A = A\{aτ }
+7: aτ ← AIP.act sel(o) ▷ from [7]
+8: end while
+9: Return P
+approaches consider one cost function and one sampling
+distribution. In this work, we propose keeping track of N
+separate control input sequences corresponding to N different
+plan alternatives/costs. This is advantageous because it offers
+a general approach to exploring different strategies in parallel.
+We perform N separate sets of importance weights, one for
+each alternative, and only ultimately, we combine the weighted
+control inputs in one coherent control. This allows the smooth
+blending of different strategies. Assume we consider N alter-
+native plans, a total of N · K samples. Assume the cost of
+plan i, i∈ [0, N) to be formulated as:
+Si(Vk) =
+T−1X
+t=0
+γtCi(xt,k, vt,k) (8)
+∀k ∈ κ(i) where κ(i) is the integer set of indexes ranging
+from i · K to (i + 1) · K − 1. State xt,k and control input
+vt,k are indexed based on the time t and trajectory k. The
+random control sequence Vk = [v0,k, v1,k, . . . , vT−1,k] defines
+the control inputs for trajectory k over a time horizon T. The
+trajectory Qi(Vk) = [x0,k, x1,k, . . . , xT−1,k] is determined by
+the control sequence Vk and the initial state x0,k. Ci is the
+cost function for plan i. Finally, γ ∈ [0, 1] is a discount factor
+that evaluates the importance of accumulated future costs.
+As in classical MPPI approaches, given the costs Si(Vk), we
+can compute the importance sampling weights associated with
+each alternative as:
+ωi(Vk) = 1
+ηi
+exp
+
+− 1
+βi
+(Si(Vk) − ρi)
+
+, ∀k ∈ κ(i) (9)
+ηi =
+X
+k∈κ(i)
+exp
+
+− 1
+βi
+(Si(Vk) − ρi)
+
+(10)
+ρi = min
+k∈κ(i)
+Si(Vk) (11)
+We use the insight in [10] to 1) sample Halton splines
+instead of Gaussian noise for smoother behavior, 2) auto-
+matically tune the inverse temperature βi to maintain the
+normalization factor ηi within certain bounds. The latter is
+helpful since ηi indicates the number of samples to which
+significant weights are assigned. If ηi is close to the number
+of samples K, an unweighted average of sampled trajectories
+will be taken. If ηi is close to 1, then the best trajectory sample
+will be taken. We observed that setting ηi between 5% and
+10% of K generates smooth trajectories. As opposed to [10],
+we update η within a rollout to stay within bounds instead
+of updating it once per iteration, see Algorithm 3. We use µi
+Algorithm 3 Update inverse temperature βi
+1: Input: parameters: ηl, ηu
+2: while ηi /∈ [ηl, ηu] do
+3: ρi ← mink∈κ(i) Si(Vk) ▷ (11)
+4: ηi ← P
+k∈κ(i) exp
+
+−Si(Vk)−ρi
+βi
+
+▷ (10)
+5: if ηi > ηu then ▷ greater than upper bound
+6: βi = 0.9 ∗ βi
+7: else if ηi < ηl then ▷ smaller than lower bound
+8: βi = 1.2 ∗ βi
+9: end if
+10: end while
+11: Return ρi, ηi, βi
+to denote the action sequence of plan i over a time horizon
+µi = [ µi,0, µi,1, . . . , µi,T−1]. Each sequence is weighted by
+the corresponding weights leading to:
+µi =
+X
+k∈κ(i)
+ωi(Vk)Vk (12)
+At every iteration, we add to µi the sampled noise from
+Halton splines [19]. Then, we forward simulate the state
+trajectories Qi(Vk) using IsaacGym as in [10]. Finally, given
+the state trajectories corresponding to the plan alternatives,
+we need to compute the weights and mean for the overall
+control sequence. To do so, we concatenate the N state-costs
+Si(Vk), i∈ [0, N) and represent it as ˜S(V ). Therefore, we
+calculate the weights for the whole control sequence as [19]:
+˜ω(V ) = 1
+η exp
+
+− 1
+β
+
+˜S(V ) − ρ
+
+(13)
+Similarly, η, ρare computed as in (10) and (11) but consid-
+ering ˜S(V ) instead. The overall mean action over time horizon
+T is denoted as u = [u0, u1, . . . , uT−1]. For each timestep t:
+ut = (1 − αu)ut−1 + αu
+N·K−1X
+k=0
+˜ωk(V )vt,k (14)
+where αu is the step size that regularizes the current solution
+to be close to the previous ut−1. The optimal control is set
+to u∗
+0 = u0. Note that through (13), we can smoothly fuse
+different strategies to achieve a goal in a general way.
+The pseudocode is summarized in Algorithm 4. After the
+initialization, we sample Halton splines and forward simulate
+the plan alternatives using IsaacGym to compute the costs
+(Lines 8-18). The costs are then used to update the weights
+for each plan and update their means (Lines 20-24). Finally,
+the mean of the overall action sequence is updated (Line 28),
+and the first action from the mean is executed.
+D. Plan interface
+The plan interface is a component that takes the possible
+alternative symbolic actions in P and links them to their
+corresponding cost functions, forwarding the latter to M3P2I.
+For every symbolic action a robot can perform, we store a cost
+function in a database that we can query at runtime, bridging
+the output of the action planner to the motion planner.
+ZHANG et al.: MULTI-MODAL MPPI AND ACTIVE INFERENCE FOR REACTIVE TASK AND MOTION PLANNING 5
+Algorithm 4 Multi-Modal Model Predictive Path Integral
+Control (M3P2I)
+1: Input: cost functions: Ci, ∀i ∈ [0, N)
+2: Parameters: N, K, T
+3: Initial sequence: µi = 0, u= 0, ∈ RT ∀i ∈ [0, N)
+4: while task not completed do
+5: x ← GetStateEstimate()
+6: InitIsaacGym (x)
+7: /* Begin parallel sampling of alternatives */
+8: for i = 0 to N − 1 do
+9: for k ∈ κ(i) do
+10: Si(Vk) ← 0
+11: Sample noise Ek ← SampleHaltonSplines ()
+12: µi ← BackShift (µi)
+13: for t = 0 to T − 1 do
+14: Qi(Vk) ← ComputeT rajIsaacGym(µi + Ek)
+15: Si(Vk) ← UpdateCost (Ci, Qi(Vk)) ▷ (8)
+16: end for
+17: end for
+18: end for
+19: /* Begin computing trajectory weights */
+20: for i = 0 to N − 1 do
+21: ρi, ηi, βi ← UpdateInvT emp(i) ▷ Algorithm 3
+22: ωi(k) ← 1
+ηi
+exp
+
+− 1
+βi
+(Si(Vk) − ρi)
+
+, ∀k ▷ (9)
+23: µi = P
+k∈κ(i) ωi(Vk)Vk ▷ (12)
+24: end for
+25: /* Begin control update */
+26: ˜ω(V ) = 1
+η exp
+
+−1
+β
+
+˜S(V ) − ρ
+
+▷ (13)
+27: for t = 0 to T − 1 do
+28: ut = (1 − αu)ut−1 + αu
+PN·K−1
+j=0 ˜ωkvt,k ▷ (14)
+29: end for
+30: ExecuteCommand(u∗
+0 = u0)
+31: u = BackShift (u)
+32: end while
+IV. E XPERIMENTS
+We evaluate the performance of our method in two different
+scenarios. The first is a push-pull scenario for non-prehensile
+manipulation of an object with an omnidirectional robot. The
+second is a object stacking scenario with a 7-DOF manipulator
+with dynamic obstacles and external disturbances at runtime.
+A. Push-pull scenario
+Goal
+Object to push
+Push-pull scenario
+RobotWalls
+Dyn. Obst.
+Fix. Obst.
+Movable Obj.
+Fig. 2. Push-pull scenario. The dark purple object has to be placed on the
+green area. The robot can pull or push the object while avoiding dynamic and
+fixed obstacles. The objects and goals can have different initial positions.
+This scenario is depicted in Fig. 2. One object has to be
+placed to a goal, situated in one of the corners of an arena.
+The object can have different initial locations, for instance, in
+the middle of the arena or on one of the corners. There are
+also static and dynamic obstacles, and the robot can push or
+pull the object. We define the following action templates for
+AIP and the cost functions for M3P2I.
+1) Action templates for AIP: The AIP for this task requires
+one state s(goal) and a relative symbolic observation o(goal)
+that indicates when an object is at the goal. This is defined as:
+o(goal)) =
+(
+0, ||pG − pO|| ≤δ
+1, ||pG − pO|| > δ (15)
+where pG, pO represent the positions of the goal and the object
+in a 3D coordinate system. δ is a constant threshold determined
+by the user. The mobile robot can either push, pull, or move.
+These skills are encoded in the action planner as follows:
+Actions Preconditions Postconditions
+push(obj,goal) - l(goal) = [1 0]⊤
+pull(obj,goal) - l(goal) = [1 0]⊤
+The postcondition of the action push(obj, goal) is
+that the object is at the goal, similarly for the pull action. Note
+that we do not add complex heuristics to encode the geometric
+relations in the task planner to determine when to push or pull;
+instead, we will exploit parallel sampling in the motion planner
+later. The desired state sd of this task is set as a preference
+for l(goal) = [1 0] ⊤. The BT would contain more desired
+states for pushing or pulling several blocks. Our approach
+can be extended to multiple objects in different locations, for
+instance, and accommodate more involved pre-post conditions
+and fallbacks since it has the same properties as in [7].
+2) Cost functions for M3P2I: We need to specify a cost for
+each symbolic action. The cost function for pushing object O
+to the goal G is defined as:
+Cpush(R, O, G) = Cdist(R, O) + Cdist(O, G) + Cori(O, G)
++ Calign push(R, O, G)
+(16)
+where minimizing Cdist(O, G) = ωdist ·||pG −pO|| makes the
+object O close to the goal G. Cori(O, G) = ωori ·ϕ(ΣO, ΣG)
+defines the orientation cost between the object O and goal G.
+We define ϕ for symmetric objects as:
+ϕ(Σu, Σv) = min
+i,j∈{1,2,3}
+(2 − ||⃗ u1 · ⃗ vi|| − ||⃗ u2 · ⃗ vj||) (17)
+where Σu = {⃗ u1, ⃗ u2, ⃗ u3}, Σv = {⃗ v1,⃗ v2,⃗ v3} form the orthog-
+onal bases of two coordinates systems. Minimizing this cost
+makes two axes in the coordinate systems of the object and
+goal coincide. The orientation cost for asymmetric objects can
+be extended from (17) by aligning the corresponding axes.
+The align cost Calign push(R, O, G) is defined as:
+Calign push(R, O, G) = ωalign push · h(cos(θ)), (18)
+cos(θ) = (pR − pO) · (pG − pO)
+||pR − pO|| · ||pG − pO)||, (19)
+h(cos(θ)) =
+(
+0, cos(θ) ≤ 0
+cos(θ), cos(θ) > 0 (20)
+6 IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION.
+This makes the object O lie at the center of robot R and
+goal G so that the robot can push it, as illustrated in Fig. 3.
+General case
+Object
+Goal
+Push configuration Pull configuration
+Fig. 3. Push and pull ideal configurations. The robot R has to push or pull
+the object O to the goal G.
+Similarly, the cost function of making the robot R pull
+object O to the goal G can be formulated as:
+Cpull(R, O, G) = Cdist(R, O) + Cdist(O, G) + Cori(O, G)
++ Calign pull(R, O, G) + Cact pull(R, O, G)
+(21)
+where the align cost Calign pull(R, O, G) makes the robot R
+lie between the object O and goal G, see Fig. 3. While pulling,
+we simulate a suction force in IsaacGym, and we are only
+allowed to sample control inputs that move away from the
+object through Cact pull(R, O, G). Mathematically:
+Calign pull(R, O, G) = ωalign pull · h(−cos(θ)) (22)
+Cact pull(R, O, G) = ωact pull · h( (pO − pR) · ⃗ u
+||pO − pR|| · ||⃗ u||)
+(23)
+An example can be seen in Fig. 4. We also consider
+an additional cost Cdyn obs(R, D) to avoid collisions with
+(dynamic) obstacles while operating. The dynamic obstacle is
+assumed to move in a certain direction with constant velocity.
+We use a constant velocity model to predict the position of
+the dynamic obstacle D in the coming horizon and try to
+maximize the distance between the latter and the robot:
+Cdyn obs(R, D) = ωdyn obs · e−||pR−pDpred || (24)
+where pDpred is the predicted position of dynamic obstacle.
+Goal
+Object
+Pulling example Pushing example
+Robot
+Rollouts
+Wall
+Dyn. Obst.
+Fig. 4. Illustrative example of pulling and pushing a block to a goal. The
+strategy differs according to the object, goal location, and dynamic obstacle
+position. What action to perform is decided at runtime through multi-modal
+sampling.
+3) Results: We test the performance of our approach in
+two configurations: a) the object is in the middle of the arena,
+and the goal is to one corner, and b) both the object and the
+goals are in different corners. For each arena configuration,
+we test three cases: the robot can either only push, only pull,
+or combine the two through our M3P2I. The AIP plans for
+the two alternatives, pushing and pulling, and forwards the
+solution to the plan interface. Then, M3P2I starts minimizing
+the costs until the AIP observes the completion of the task.
+We performed 20 trials per case, per arena configuration, for a
+total of 120 simulations. By only pulling an object, the robot
+cannot tightly place it on top of the goal in the corner; on
+the other hand, by only pushing, the robot cannot retrieve the
+object from the corner. Using multi-modal motion, we can
+complete the task in every tested configuration. Table I shows
+that the multi-modal case outperforms push and pull in both
+arena configurations. It presents lower position and orientation
+errors and a shorter planning and execution time.
+TABLE I
+SIMULATION RESULTS OF PUSH AND PULL
+Case Skill Mean(std)
+pos error
+Mean(std)
+ori error
+Mean(std)
+time (s)
+Push 0.1061
+(0.0212)
+0.0198
+(0.0217)
+6.2058
+(6.8084)
+Middle-
+corner Pull 0.1898
+(0.0836)
+0.0777
+(0.1294)
+25.1032
+(13.7952)
+Multi-
+modal
+0.1052
+(0.0310)
+0.0041
+(0.0045)
+3.7768
+(0.8239)
+Push 7.2679
+(3.2987)
+0.0311
+(0.0929) time-out
+Corner-
+corner Pull 0.3065
+(0.1778)
+0.1925
+(0.2050)
+32.8838
+(7.9240)
+Multi-
+modal
+0.1375
+(0.0091)
+0.0209
+(0.0227)
+9.9473
+(3.4591)
+B. Object stacking scenario
+We address the challenge of stacking objects with external
+task disruptions, necessitating adaptive actions like re-grasping
+with different pick configurations (e.g., top or side picking in
+Fig. 5). We showcase the robot’s ability to rectify plans by
+repeating actions or compensating for unplanned occurrences,
+such as unexpected obstacles obstructing the path. We bench-
+mark against the cube-stacking task outlined in [25].
+Pick from table Pick from shelf
+Cube to pick
+Place on top of 
+Fig. 5. Pick-place scenarios. The red cube has to be placed on top of the
+green cube. The red cube can be either on the table or a constrained shelf,
+requiring different pick strategies from the top or the side, respectively.
+1) Action templates for AIP: For this task, we define the
+following states s(reach), s(hold), s(preplace), s(placed), and
+their corresponding symbolic observations. The robot has four
+symbolic actions, summarized below:
+Actions Preconditions Postconditions
+reach(obj) - l(reach) = [1 0]⊤
+pick(obj) reachable(obj) l(hold) = [1 0]⊤
+prePlace(obj) holding(obj) l(preplace) = [1 0]⊤
+place(obj) atPreplace(obj) l(placed) = [1 0]⊤
+ZHANG et al.: MULTI-MODAL MPPI AND ACTIVE INFERENCE FOR REACTIVE TASK AND MOTION PLANNING 7
+The symbolic observers to estimate the states are defined
+as follows. To estimate whether the gripper is close enough
+to the cube, we define the relative observation o(reach). We
+set o(reach) = 0 if δr ≤ δ, where δr = ||pee − pO|| measures
+the distance between the end effector ee and the object O.
+o(reach) = 1 otherwise. To estimate whether the robot is
+holding the cube of size 0.06m, we define:
+o(hold) =
+(
+0, δf < 0.06 + δ and δf ≥ 0.06 − δ
+1, δf ≥ 0.06 + δ or δf ≤ 0.06 − δ (25)
+where δf = ||pee l −pee r|| measures the distance between the
+two gripper’s fingers. To estimate whether the cube reaches the
+pre-place location, we define:
+o(preplace) =
+(
+0, Cdist(O, P) < δand Cori(O, P) < δ
+1, Cdist(O, P) ≥ δ or Cori(O, P) ≥ δ
+(26)
+where Cdist(O, P) and Cori(O, P) measure the distance and
+the orientation between the object O and the pre-place location
+P as in (16). The pre-place location is a few centimeters higher
+than the target cube location, directly on top of the green cube.
+We use the same logic as (26) for o(placed) where the place
+location is directly on top of the cube location. The desired
+state for this task is set to be l(placed) = [1 0]T , meaning the
+cube is correctly placed on top of the other. Note that in more
+complex scenarios, such as rearranging many cubes, the BT
+can guide the AIP as demonstrated in [7].
+2) Cost functions for M3P2I: At the motion planning level,
+the cost functions for the four actions are formulated as:
+Creach(ee, O, ψ) = ωreach · ||pee − pO||
++ ωtilt ·
+ ||⃗ zee · ⃗ zO||
+||⃗ zee|| · ||⃗ zO|| − ψ
+ (27)
+Cpick(ee) = ωgripper · lgripper (28)
+Cpreplace(O, P) = Cdist(O, P) + Cori(O, P) (29)
+Cplace(O, P) = ωgripper · (1 − lgripper ) (30)
+Creach(ee, O, ψ) moves the end effector close to the object
+with a grasping tilt constraint ψ. As ψ approaches 1, the
+gripper becomes perpendicular to the object; as it nears 0,
+the gripper aligns parallel to the object’s supporting plane.
+3) Results - reactive pick and place: We first consider the
+pick-and-place under disturbances. We model disturbances by
+changing the position of the cubes at any time. We compare the
+performance of our method with the off-the-shelf RL method
+[25]. This is a readily available Actor-Critic RL example from
+IsaacGym, which considers the same tabletop configuration
+and robot arm. We compare the methods in a vanilla task
+without disturbances and a reactive task with disturbances.
+It should be noticed that the cube-stacking task in [25] only
+considers moving the cube on top of the other cube while
+neglecting the action of opening the gripper and releasing
+the cube. In contrast, our method exhibits fluent transitions
+between pick and place and shows robustness to interferences
+such as repick during the long-horizon task execution. Results
+are available in Table II, with 50 trials per case. While the RL
+agent shows a slightly lower position error in the vanilla case,
+our method outperforms it in the reactive task. Planning and
+execution time for smooth pick-and-place with our method is
+approximately 5 to 10s.
+TABLE II
+SIMULATION RESULTS OF REACTIVE PICK AND PLACE
+Task Method Training
+epochs
+Mean(std)
+pos error
+Vanilla Ours 0 0.0075 (0.0036)
+RL 1500 0.0042 (0.0019)
+Reactive Ours 0 0.0117 (0.0166)
+RL 1500 0.0246 (0.0960)
+4) Results - multi-modal grasping: In this case, we consider
+grasping the object with different grasping poses by sampling
+two alternatives in parallel. That is, pick from the top or the
+side to cover the cases when the object is on the table or
+the constrained shelf with an obstacle above. To do so, we
+use the proposed M3P2I and incorporate the cost functions of
+Creach(ee, O, ψ= 0) and Creach(ee, O, ψ= 1) as shown in
+(27). This allows for a smooth transition between top and side
+grasp according to the geometry of the problem, see Fig. 6.
+Top Pick from table Side Pick from shelf
+Dyn. Obstacle
+Shelf
+Fig. 6. Example of different picking strategies computed by our multi-modal
+MPPI. The obstacle on top of the shelf can be moved, simulating a dynamic
+obstacle.
+5) Results - real-world experiments: Our real-world vali-
+dation of reactive pick-and-place, depicted in Fig. 7, involves
+avoiding a moving stick and disturbances such as movement
+and theft of the cube. M3P2I enables smooth execution and
+recovery while using different grasp configurations.
+Top Pick from table
+Side Pick from shelf
+Dynamic Obstacle 
+Displacing target Stealing the cube
+Fig. 7. Real-world experiments of picking a cube from the table or the shelf
+while avoiding dynamic obstacles and recovering from task disturbances.
+8 IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION.
+V. D ISCUSSION
+In this section, we discuss key aspects of our solution
+and potential future work. The main strength of M3P2I is
+its ability to reason over discrete alternative actions at the
+motion planning level. This is enabled by sampling different
+control sequences for each alternative symbolic action and then
+blending them through importance sampling. We thus alleviate
+the task planning burden by eliminating logic heuristics to
+switch between these actions. Sampling alternatives at the
+motion planning level increases robustness during execution,
+at the price of slightly degrading the performance since the
+control distribution is also slightly biased towards less effective
+strategies, as shown in [24]. The performance of M3P2I
+also depends on the weight tuning of the cost functions. In
+this case, implementing auto-tuning techniques can reduce
+manual effort [26]. The cost functions also need to capture
+the essence of the skills. The AIP requires manually defined
+symbolic action templates and a set of discrete states. The
+discrete desired states need to be encoded in a sequence in
+a BT or can be as simple as encoding the end state for a
+task, as in our examples. To transfer from simulation to the
+real world, we considered randomization of object properties
+in the rollouts [10]. Online system identification could be
+added to achieve better performance with uncertain model
+parameters [20].
+VI. C ONCLUSION
+In this paper, to address the runtime geometric uncertainties
+and disturbances, we proposed a method to combine the
+adaptability of an Active Inference planner (AIP) for high-level
+action selection with a novel Multi-Modal Model Predictive
+Path Integral Controller (M3P2I) for low-level control. We
+modified the AIP to generate plan alternatives that are linked
+to costs for M3P2I. The motion planner can sample the plan
+alternatives in parallel, and it computes the control input
+for the robot by smoothly blending different strategies. In a
+push-pull task, we demonstrated how our proposed framework
+can blend both push and pull actions, allowing it to deal
+with corner cases where approaches only using a single plan
+fail. With a simulated manipulator, we showed our method
+outperforming a reinforcement learning baseline when the en-
+vironment is disturbed while requiring no training. Simulated
+and real-world experiments demonstrated how our approach
+solves reactive object stacking tasks with a manipulator subject
+to severe disturbances and various scene configurations that
+require different grasp strategies.
+REFERENCES
+[1] C. R. Garrett, R. Chitnis, R. Holladay, B. Kim, T. Silver, L. P. Kaelbling,
+and T. Lozano-P ´erez, “Integrated task and motion planning,” Annual
+review of control, robotics, and autonomous systems , vol. 4, 2021.
+[2] M. Toussaint, “Logic-geometric programming: An optimization-based
+approach to combined task and motion planning,” in Twenty-Fourth
+International Joint Conference on Artificial Intelligence , 2015.
+[3] C. R. Garrett, T. Lozano-P ´erez, and L. P. Kaelbling, “Pddlstream:
+Integrating symbolic planners and blackbox samplers via optimistic
+adaptive planning,” in Proceedings of the International Conference on
+Automated Planning and Scheduling , vol. 30, 2020.
+[4] M. Toussaint, J. Harris, J.-S. Ha, D. Driess, and W. H ¨onig, “Sequence-
+of-constraints mpc: Reactive timing-optimal control of sequential ma-
+nipulation,” IEEE International Conference on Intelligent Robots and
+Systems, 2022.
+[5] T. Migimatsu and J. Bohg, “Object-centric task and motion planning in
+dynamic environments,” IEEE Robotics and Automation Letters , vol. 5,
+no. 2, 2020.
+[6] S. Li, D. Park, Y . Sung, J. A. Shah, and N. Roy, “Reactive task
+and motion planning under temporal logic specifications,” in IEEE
+International Conference on Robotics and Automation , 2021.
+[7] C. Pezzato, C. Hernandez, S. Bonhof, and M. Wisse, “Active infer-
+ence and behavior trees for reactive action planning and execution in
+robotics,” IEEE Transactions on Robotics , 2023.
+[8] N. Castaman, E. Pagello, E. Menegatti, and A. Pretto, “Receding horizon
+task and motion planning in changing environments,” Robotics and
+Autonomous Systems, vol. 145, 2021.
+[9] M. Colledanchise, D. Almeida, M, and P. ¨Ogren, “Towards blended
+reactive planning and acting using behavior tree,” in IEEE International
+Conference on Robotics and Automation , 2019.
+[10] C. Pezzato, C. Salmi, M. Spahn, E. Trevisan, J. Alonso-Mora, and
+C. Hern ´andez, “Sampling-based model predictive control leveraging
+parallelizable physics simulations,” arXiv arXiv:2307.09105, 2023.
+[11] C. Paxton, N. Ratliff, C. Eppner, and D. Fox, “Representing robot task
+plans as robust logical-dynamical systems,” in IEEE/RSJ International
+Conference on Intelligent Robots and Systems , 2019.
+[12] J. Harris, D. Driess, and M. Toussaint, “FC 3: Feasibility-based control
+chain coordination,” in IEEE/RSJ International Conference on Intelligent
+Robots and Systems , 2022.
+[13] B. Huang, A. Boularias, and J. Yu, “Parallel monte carlo tree search with
+batched rigid-body simulations for speeding up long-horizon episodic
+robot planning,” in IEEE/RSJ International Conference on Intelligent
+Robots and Systems , 2022.
+[14] Z. Zhou, D. J. Lee, Y . Yoshinaga, S. Balakirsky, D. Guo, and Y . Zhao,
+“Reactive task allocation and planning for quadrupedal and wheeled
+robot teaming,” in IEEE International Conference on Automation Sci-
+ence and Engineering , 2022.
+[15] M. Bangura and R. Mahony, “Real-time model predictive control for
+quadrotors,” IFAC Proceedings Volumes, vol. 47, no. 3, 2014.
+[16] N. Scianca, D. De Simone, L. Lanari, and G. Oriolo, “Mpc for
+humanoid gait generation: Stability and feasibility,” IEEE Transactions
+on Robotics, 2020.
+[17] M. Spahn, B. Brito, and J. Alonso-Mora, “Coupled mobile manipulation
+via trajectory optimization with free space decomposition,” in IEEE
+International Conference on Robotics and Automation , 2021.
+[18] G. Williams, N. Wagener, B. Goldfain, P. Drews, J. M. Rehg, B. Boots,
+and E. A. Theodorou, “Information theoretic mpc for model-based
+reinforcement learning,” in IEEE International Conference on Robotics
+and Automation, 2017.
+[19] M. Bhardwaj, B. Sundaralingam, A. Mousavian, N. D. Ratliff, D. Fox,
+F. Ramos, and B. Boots, “Storm: An integrated framework for fast joint-
+space model-predictive control for reactive manipulation,” in Conference
+on Robot Learning . PMLR, 2022.
+[20] I. Abraham, A. Handa, N. Ratliff, K. Lowrey, T. D. Murphey, and
+D. Fox, “Model-based generalization under parameter uncertainty using
+path integral control,” IEEE Robotics and Automation Letters , vol. 5,
+no. 2, 2020.
+[21] T. Howell, N. Gileadi, S. Tunyasuvunakool, K. Zakka, T. Erez, and
+Y . Tassa, “Predictive sampling: Real-time behaviour synthesis with
+mujoco,” arXiv arXiv:2212.00541, 2022.
+[22] G. Williams, A. Aldrich, and E. A. Theodorou, “Model predictive
+path integral control: From theory to parallel computation,” Journal of
+Guidance, Control, and Dynamics , vol. 40, no. 2, Feb. 2017.
+[23] G. Williams, P. Drews, B. Goldfain, J. M. Rehg, and E. A. Theodorou,
+“Information-theoretic model predictive control: Theory and applications
+to autonomous driving,” IEEE Transactions on Robotics , 2018.
+[24] E. Trevisan and J. Alonso-Mora, “Biased-MPPI: Informing sampling-
+based model predictive control by fusing ancillary controllers,” IEEE
+Robotics and Automation Letters , vol. 9, no. 6, 2024.
+[25] V . Makoviychuk, L. Wawrzyniak, Y . Guo, M. Lu, K. Storey, M. Macklin,
+D. Hoeller, N. Rudin, A. Allshire, A. Handa et al. , “Isaac gym: High
+performance gpu-based physics simulation for robot learning,” arXiv
+arXiv:2108.10470, 2021.
+[26] M. Spahn and J. Alonso-Mora, “Autotuning symbolic optimization
+fabrics for trajectory generation,” in IEEE International Conference on
+Robotics and Automation , 2023, pp. 11 287–11 293.

@@ -1,0 +1,935 @@
+Active Inference for Autonomous Decision-Making with
+Contextual Multi-Armed Bandits
+Shohei Wakayama and Nisar Ahmed ∗
+Abstract— In autonomous robotic decision-making under un-
+certainty, the tradeoff between exploitation and exploration of
+available options must be considered. If secondary information
+associated with options can be utilized, such decision-making
+problems can often be formulated as contextual multi-armed
+bandits (CMABs). In this study, we apply active inference,
+which has been actively studied in the ﬁeld of neuroscience
+in recent years, as an alternative action selection strategy for
+CMABs. Unlike conventional action selection strategies, it is
+possible to rigorously evaluate the uncertainty of each option
+when calculating the expected free energy (EFE) associated with
+the decision agent’s probabilistic model, as derived from the
+free-energy principle. We speciﬁcally address the case where a
+categorical observation likelihood function is used, such that
+EFE values are analytically intractable. We introduce new
+approximation methods for computing the EFE based on varia-
+tional and Laplace approximations. Extensive simulation study
+results demonstrate that, compared to other strategies, active
+inference generally requires far fewer iterations to identify
+optimal options and generally achieves superior cumulative
+regret, for relatively low extra computational cost.
+I. INTRODUCTION
+In robotics, autonomous robots must often optimize
+choices from among multiple alternatives to accomplish a
+task under uncertainty. Such decision-making can be com-
+plex when the outcomes obtained for different options are
+stochastic and their distributions are unknown a priori. If
+a robot could devote unlimited time and resources to the
+decision-making process, it would be possible to simulate
+all options a signiﬁcant number of times and derive accu-
+rate outcome distributions before ﬁnalizing the best option.
+However, in many environments where autonomous robots
+are actually expected to be deployed, time and resource (e.g.
+bandwidth and energy) constraints are severe. This can also
+hamper the ability of human users to effectively interact with
+robots. In such settings, lightweight and effective algorithms
+are needed for decision-making with limited information.
+For instance, as illustrated in Fig. 1, suppose a robot in a
+remote environment (such as an icy solar system moon) is
+assigned a task of collecting scientiﬁcally interesting objects
+(e.g. ice deposits and minerals) from a single search area
+using a resource-intensive manipulator. Although the robot
+could send image and spectral data about each area to
+human experts and let them decide where to investigate,
+mission time and communication constraints (e.g. due to
+∗Work supported by the NASA COLDTech Program, grant
+#80NSSC21K1031. S. Wakayama was also supported by the
+Masason Foundation. The authors are with the Smead Aerospace
+Engineering Sciences Department, University of Colorado
+Boulder, Boulder, CO 80303 USA [shohei.wakayama;
+nisar.ahmed]@colorado.edu
+Fig. 1. A robotic lander reasons about whether candidate dig sites on an
+icy moon contain scientiﬁcally interesting data. To speed up the process,
+it is desirable not only to balance exploitation and exploration, but also
+incorporate a selection bias, i.e. prior preferences, for desired observations.
+high radiation and hours long round trip time delays for
+speed of light signals) make smooth human-robot interaction
+hard in such missions [1], [2]. Thus, the robot must au-
+tonomously and accurately infer the outcome probability that
+each area contains valuable objects, while using sensors that
+are easily deployable and consume little energy. To improve
+efﬁciency, the robot must strike a balance between increasing
+the certainty of plausible areas ( exploitation) and reducing
+the uncertainty of unknown areas ( exploration), taking into
+account the surrounding environment, mission status, etc.
+Such a decision-making problem can be formulated as a
+contextual multi-bandit (CMAB), a type of reinforcement
+learning problem which has originally been studied and
+applied in recommendation systems [3] and recently utilized
+in robotics [4], [5]. Generally speaking, however, bandit
+problems (depending on their scale and complexity) typically
+require a large number of iterative interactions with the
+problem environment to ﬁnalize an optimal option, which
+can be a bottleneck in applying them to many practical
+robotic applications like space exploration. Therefore, to
+address such concerns, this paper considers active inference
+[6], [7] as an action selection strategy for CMAB problems.
+Active inference has recently attracted attention in the ﬁeld of
+neuroscience because it can mathematically rigorously take
+into account the uncertainty of each option in the process
+by calculating a measure named expected free energy (EFE)
+and incorporate a selection bias toward preferred outcomes.
+In this way, it is theoretically possible to determine the best
+option with fewer iterations. In fact, active inference has been
+applied to standard stationary and dynamic switching MABs
+and those properties have been experimentally veriﬁed [8],
+but no theory or studies have yet applied it to the important
+case of contextual bandits. Also, for CMABs with discrete
+arXiv:2209.09185v2  [cs.RO]  24 Feb 2023
+categorical action outcomes, the EFE terms are generally not
+tractable for general context-dependent likelihood models.
+Thus, we propose two novel statistical EFE approximation
+methods based on variational inference and Laplace approx-
+imation, to permit the use of active inference for solving
+CMABs. These methods are demonstrated and validated in
+a simulated autonomous search area selection problem, and
+their performances are compared with existing state of the
+art CMAB action selection strategies. For the remainder of
+the paper: Sec. II reviews the MAB and CMAB problems,
+as well as an overview of active inference and the free-
+energy principle behind the theory; Sec. III formulates the
+action selection strategy for CMAB problems using active
+inference, and derives the EFE approximations; Sec. IV
+presents the setup and results of the simulation experiment
+(motivated by the autonomous remote exploration example);
+and Sec. V presents conclusions.
+II. BACKGROUND AND RELATED WORK
+A. Multi Armed Bandits (MABs) and Contextual MABs
+The multi-armed bandit (MAB) is a classic reinforcement
+learning problem of optimal selection from multiple alterna-
+tives with uncertain outcomes. The MAB allows a decision-
+making agent like an autonomous robot to account for
+the tradeoff between exploitation (i.e. preferring alternatives
+with the higher expected outcome) and exploration (i.e.
+preferring alternatives with a more uncertain distribution
+of outcomes) [9]. Although seemingly simpler than other
+sequential decision-making problems such as the Markov
+decision process (MDP) [10], [11] and the partially ob-
+servable Markov decision process (POMDP) [12], [13], the
+theory of MABs has long been the subject of research in the
+ﬁeld of statistical machine learning and has been applied to
+solving problems in the ﬁelds of recommendation systems,
+healthcare, and ﬁnance [14]. While there are several major
+formulations of MABs such as stochastic bandits [15] and ad-
+versarial bandits [16], depending on how uncertain outcomes
+are handled, here we focus on stochastic bandits treating
+both present and future outcomes in the same fashion, i.e.
+without any discounting. This simpliﬁes the development and
+is appropriate in settings where it may not be possible to
+predict in advance how many iterations will be required for
+an agent to learn an action selection policy.
+More formally written, a stochastic MAB problem aims
+to minimize the cumulative regret, i.e. the sum of difference
+between the maximum expected outcome and an actual
+outcome over iterations, via alternately performing two steps:
+(1) action selection: selecting one option (a.k.a “arm”) from
+alternatives with unknown outcome distributions; and (2)
+observation update: updating the statistics for the selected
+option based on the outcome obtained. In stochastic bandits,
+it is common to apply the Bayes’ rule to update the posterior
+of the estimated outcome distribution of the selected option
+in step (2). For step (1), various action selection methods
+such as ϵ-greedy, the upper conﬁdence bound (UCB) [15],
+and the Thompson sampling (TS) [17] have been devised.
+In standard MAB problems, only the information about
+each option itself (e.g. the cumulative value of outcomes
+and/or the number of times it is selected) is taken into
+account during action selection. However, it may be pos-
+sible to minimize the cumulative regret more effectively
+and ﬁnd the best option with fewer iterations, by utilizing
+contextual information associated with each option (e.g. user
+age in case of web advertisement). Variants of stochastic
+MABs that incorporate such secondary information are called
+contextual multi-armed bandits (CMABs) and have been
+used for dialogue systems, anomaly detection, etc. [14]. In
+robotic decision-making problems, it is typical to collect
+and use multiple sources of side information, so we will
+focus on CMAB problems hereafter. However, conventional
+action selection strategies for CMABs use heuristics (e.g.
+the exploration bonus term in UCB) to select options, and
+these methods usually require many iterations for informed
+decision-making [3], [9]. Thus, it is desirable to develop an
+alternative action selection strategy for robotics applications
+where the number of iterations cannot be too large.
+B. Free-Energy Principle and Active Inference
+The free-energy principle is a theory in neuroscience that
+is expected to explain whole-brain mechanisms [18]. Accord-
+ing to this principle, biological agents perceive, learn, and
+act by minimizing free-energy, which is the upper bound of
+surprise (i.e. −log p(o), where ois an observation/outcome)
+observed from the external world, to maintain their home-
+ostasis according to neurally encoded probabilistic models.
+In neuroscience, this principle has been used to explain many
+physiological phenomena, such as predictive coding [19].
+Active inference is a mathematical framework that applies
+the free-energy principle to the behavioral norms of biologi-
+cal agents, and has recently begun to attract attention in not
+only neuroscience and but also robotics [20]. Since future
+observations are unobservable until an action is executed,
+in active inference, decision-making agents are assumed
+to act to minimize a measure called expected free energy
+(EFE). The reason why this framework is theoretically sound
+for sequential decision-making problems is that the EFE is
+composed of value and information gain terms. Thus, by
+minimizing the EFE, it is possible to naturally balance the
+tradeoff between exploitation and exploration in a princi-
+pled non ad-hoc manner. Additionally, active inference can
+easily incorporate prior information about the probability
+distribution of outcomes that agents desire to observe, which
+is called a prior preference (a.k.a “evolutionary prior”). By
+adjusting this distribution, agent behavior can be varied.
+Adjustment of the prior preference values corresponds to a
+type of reward tuning required in typical sequential decision-
+making problems. Yet, specifying the probability of observed
+outcomes desired by the agent arguably provides a theoreti-
+cally intuitive and elegant alternative to specifying numerical
+reward values over intermediate actions and states. 1
+1There exist studies attempting to estimate an appropriate prior preference
+in terms of reward functions via inverse reinforcement learning [21],
+however this type of learning is not the focus of our study.
+However, active inference has only recently been consid-
+ered for multi-armed bandit problems, namely in [8]. Their
+work has shown that an active inference action selection
+strategy produces higher performance (i.e. smaller cumula-
+tive regrets) than the state-of-the-art methods, especially for
+stationary MABs when the number of total iterations are
+relatively small and for dynamic switching MABs. Never-
+theless, their study does not focus on contextual bandits,
+which are arguably even more applicable and interesting for
+autonomous robotics. Thus, in the following, after reviewing
+CMAB problems (where in particular outcomes are cate-
+gorical), we explain how the EFE expression is derived in
+these problems. We then derive novel EFE approximations
+to address the fact that the resulting terms are analytically
+intractable due to the observation likelihoods.
+III. METHODOLOGIES
+A. Problem Statement
+In a contextual multi-armed (CMAB) problem introduced
+in Section II-A, suppose the total number of options (actions
+a) taken into account by an autonomous robot is K. These
+options correspond to the bandit arms. Also suppose that the
+observed outcome ok of each option/action a is binary, i.e.
+ok ∈{0,1}∀k∈{1,··· ,K}. 2 Note, we use the shorthand
+the notation ak ↔a= k.
+Since the number of outcomes is binary, the probability
+ψk that each option k outputs a preferred outcome, ok = 1,
+depends on a hidden linear parameter vector ⃗θk (unique to
+each option) and a shared context vector ⃗ x, and is represented
+by the following sigmoid function (without loss of generality,
+⃗ xis assumed common for all options and iterations),
+ψk = p(ok = 1) = e⃗θT
+k⃗ x
+1 + e⃗θT
+k⃗ x
+= 1
+1 + e−⃗θT
+k⃗ x
+. (1)
+In the case of such a Bernoulli contextual bandit, the
+expected outcome of each option is also ψk so that the
+cumulative regret is expressed as follows,
+Regret(T) = Tψ∗−
+K∑
+k=1
+NT(k)ψk, (2)
+where T is the total number of iterations, ψ∗is the maximum
+expected outcome (unknown a priori for the robot), and
+NT(k) represents how many times an option k is selected
+within T iterations. The goal of CMAB problems is to
+minimize expected cumulative regret. To do so, the robot
+needs to estimate the values of the hidden parameter vectors
+⃗θk ∀k, k∈{1,··· ,K}in the process of ﬁnding an optimal
+option by iteratively performing the two steps of action
+selection and measurement update.
+B. Expected Free Energy in CMABs
+As already mentioned in Sec. II-B, according to the free-
+energy principle, an agent wants to avoid (i.e. minimize)
+surprise to maintain homeostasis. The surprise in the case of
+2The methodology described in this section is extendable to more than
+two outcome categories with a few straightforward modiﬁcations.
+the CMAB problem deﬁned in Sec. III-A can be expressed
+by marginalizing the following joint distribution,
+−log p(o) = −log
+∫
+⃗θ1
+···
+∫
+⃗θK
+p(o,⃗θ1,··· ,⃗θK)d⃗θ1 ···d⃗θK. (3)
+However, calculating (3) directly via multiple integral is
+often analytically intractable, so instead its upper bound (i.e.
+free-energy) is minimized. Yet, outcomes are unobservable
+until an option is executed, in the case of active inference,
+the expected free energy (EFE) is considered. Note, in the
+following, ⃗Θ represents [⃗θ1,··· ,⃗θK]T,
+EFE(ak) =
+∫
+⃗Θ
+q(⃗Θ|ak)
+∑
+o
+p(o|⃗Θ,ak) log q(⃗Θ|ak)
+p(⃗Θ,o|ak)
+d⃗Θ. (4)
+where q(⃗Θ|ak) is a proposal distribution that approximates
+the posterior distribution p(⃗Θ|o,ak) and p(o|⃗Θ,ak) is an
+observation likelihood. By further transforming the log term
+in (4) as follows
+log q(⃗Θ|ak)
+p(⃗Θ,o|ak)
+= log q(⃗Θ|ak)
+p(⃗Θ|o,ak)p(o|ak)
+≈ log q(⃗Θ|ak)
+p(⃗Θ|o,ak)
++ log 1
+pev(o)
+= log q(⃗Θ|ak)p(o,ak)
+p(⃗Θ,o,a k)
++ log 1
+pev(o)
+= log q(⃗Θ|ak)p(o|ak)p(ak)
+p(o|⃗Θ,ak)p(⃗Θ|ak)p(ak)
++ log 1
+pev(o)
+≈ log q(o|ak)
+p(o|⃗Θ,ak)
++ log 1
+pev(o) (5)
+and substituting (5) back to (4), the EFE is approximated as
+EFE(ak) ≈
+∫
+Θ
+q(⃗Θ|ak)
+∑
+o
+p(o|⃗Θ,ak) log q(o|ak)
+pev(o) ·p(o|⃗Θ,ak)
+d⃗Θ,
+(6)
+where q(o|ak) is the marginalization of q(o,⃗Θ|ak) and
+pev(o) is a prior preference. For brevity, by further assuming
+that the hidden linear parameter vectors are independent each
+other, eq.(6) can be rewritten as
+EFE(ak) ≈∫
+⃗θk
+q(⃗θk|ak)
+∑
+o
+p(o|⃗θk,ak)
+{
+log q(o|ak)
+pev(o) −log p(o|⃗θk,ak)
+}
+d⃗θk
+= −
+∑
+o
+∫
+⃗θk
+q(⃗θk|ak)p(o|⃗θk,ak)d⃗θk ·log pev(o)
+−
+∑
+o
+∫
+⃗θk
+q(⃗θk|ak)p(o|⃗θk,ak) ·log p(⃗θk|o,ak)
+p(⃗θk|ak)
+d⃗θk
+= −
+∑
+o
+q(o|ak) ·log pev(o)
+−
+∑
+o
+q(o|ak)
+∫
+⃗θk
+q(⃗θk|o,ak) ·log p(⃗θk|o,ak)
+p(⃗θk|ak)
+d⃗θk
+= −Eq(o|ak)
+[
+log pev(o)
+]
+−Eq(o|ak)
+[
+DKL(q(⃗θk|o,ak)||q(⃗θk|ak))
+]
+.
+(7)
+As can be seen in (7), minimizing EFE value naturally
+achieves balancing exploitation (the ﬁrst term) and explo-
+ration (the second term). Thus, in CMAB problems with
+active inference, the robot needs to choose the option mini-
+mizing the EFE term in each action selection step,
+aselected = arg min
+a∈|A|
+EFE(a). (8)
+Yet, as the observation likelihood p(o|⃗θk,ak) is the sigmoid
+function, the EFE term cannot be computed analytically.
+Hence, in the following subsections, we introduce the two
+statistical approximation methods: (1) variational Bayesian
+importance sampling (VBIS) [22], which has been applied to
+other probabilistic decision-making under uncertainty prob-
+lems in robotics [23], [24]; and (2) Laplace approximation
+[25], which is commonly used in statistical machine learning.
+Note that, instead of the sigmoid function, a conditional
+probability table (CPT) [25] could be used to express the
+observation likelihood and achieve tractable posterior ex-
+pressions for the EFE (and CMAB inference more generally
+using other approaches like ϵ-greedy). However, this is gen-
+erally far less practical, since the number of CPT parameters
+increases exponentially with the dimension of ⃗ x, whereas
+this only increases linearly for the sigmoid likelihood.
+C. VBIS EFE Approximation
+The variational Bayesian importance sampling (VBIS) is a
+hybrid data fusion method that approximates an analytically
+intractable posterior distribution in human-robot collabora-
+tive sensing when a ﬂexible discrete-continuous function, e.g.
+softmax function, is used as an observation likelihood [22].
+The main idea behind the VBIS algorithm is that a softmax
+function can be lower-bounded by a variational Gaussian via
+the inequality proved in [26] so that if a prior distribution is
+a Gaussian, a posterior distribution is also approximated as
+another Gaussian. Here, since the logistic sigmoid function
+in the EFE expression is a special case of a softmax function
+with two classes, the following log-sum-exponential (LSE)
+function is upper bounded as follows
+log
+( 1∑
+h=0
+eyh
+)
+≤α+
+1∑
+h=0
+yh −α−ξh
+2
++ λ(ξh)
+[
+(yh −α)2 −ξ2
+h
+]
++ log(1 +eξh),
+(9)
+where y0 = 0 , y1 = ⃗θT⃗ x, λ(ξh) = 1
+2ξh
+[ 1
+1+e−ξh −1
+2 ].
+α and ξh are free variational parameters which can be
+adjusted to achieve the tighter bound of the LSE and be
+iteratively updated within the VBIS procedure. By replacing
+the denominator of (1) with this bound, the sigmoid function
+is lower bounded by the variational Gaussian.
+p(o= j|⃗θk) ≥exp
+(
+G+ HT⃗θk −1
+2
+⃗θT
+kK⃗θk
+)
+, (10)
+where G, H, and Kare
+G=
+1∑
+h=0
+[ξh
+2 + λ(ξh)(ξ2
+h −α2) −log(1 + eξh)
+]
+, (11)
+H=
+
+
+
+−1
+2⃗ x+ 2λ(ξ1) ·α·⃗ x if o= 0,
+1
+2⃗ x+ 2λ(ξ1) ·α·⃗ x if o= 1,
+(12)
+(13)
+K= 2λ(ξ1) ·⃗ x·⃗ xT. (14)
+Thus, in our problem, if we assume that the prior dis-
+tribution of a hidden linear parameter vector q(⃗θk|ak) is
+approximated as a (multivariate) Gaussian, the joint distri-
+bution q(⃗θk|ak) ·p(o|⃗θk,ak) in (7) becomes also another
+unnormalized Gaussian. By normalizing this distribution, the
+approximated normalization constant ˆCvb =
+∫
+⃗θk
+q(⃗θk|ak) ·
+exp
+(
+G+ HT⃗θk −1
+2
+⃗θT
+kK⃗θk
+)
+d⃗θk required for calculating (7)
+can be obtained from the well-known Gaussian integral.
+During this process, the VB posterior, which approximates
+the posterior p(⃗θk|o,ak), is also derived as a side product.
+p(⃗θk|o,ak) ≈pvb(⃗θk|o,ak)
+= q(⃗θk|ak) ·exp(G+ HT⃗θk −1
+2
+⃗θT
+kK⃗θk)
+∫
+q(⃗θk|ak) ·exp(G+ HT⃗θk −1
+2
+⃗θT
+kK⃗θk)d⃗θk
+(15)
+However, the value of ˆCvb is smaller than the true nor-
+malization constant C =
+∫
+⃗θk
+q(⃗θk|ak)p(o|⃗θk,ak)d⃗θk, the
+importance sampling (IS) is applied to improve the estimate
+by following [22].
+IS can approximate the expected value of an arbitrary
+function f(⃗θk) over a pdf such as a posterior that is difﬁcult
+to sample directly, by utilizing a proposal distribution that is
+roughly similar in shape to the posterior and easy to sample.
+Here, in particular, the IS approximation is constructed as
+⟨f(⃗θk)⟩= ⟨⃗θk⟩≈
+Ns∑
+s=1
+ws⃗θk,s,ws ∝q(⃗θk,s|ak)p(o|⃗θk,s,ak)
+pprop(⃗θk,s)
+,
+(16)
+where Ns is the number of samples, ws is the importance
+weight for sample s, and pprop(⃗θk) is the proposal pdf
+pprop(⃗θk) = N(⃗ µvb,Σprior) (17)
+where ⃗ µvb is the VB mean and Σprior is the prior covariance
+matrix of q(⃗θk|ak). During this procedure, the improved
+normalization constant estimate ˆCvbis can be calculated as∑
+sws/Ns. Thus, the ﬁrst term inside the summation over
+outcome o in the second equation of (7) is rewritten as
+log q(o|ak)
+pev(o) ·
+∫
+⃗θk
+q(⃗θk|ak)p(o|⃗θk,ak)d⃗θk =
+{
+log Cvbis
+pev(o)
+}
+·Cvbis.
+(18)
+Similarly, the second term is approximated as
+∫
+⃗θk
+q(⃗θk|ak)p(o|⃗θk,ak) logp(o|⃗θk,ak)d⃗θk
+= Cvbis
+∫
+⃗θk
+pvbis(⃗θk|o,ak)
+(
+G+ HT⃗θk −1
+2
+⃗θT
+kK⃗θk
+)
+d⃗θk. (19)
+However, the quadratic term in (19) (i.e. G+ HT⃗θk −
+1
+2
+⃗θT
+kK⃗θk) has not yet been processed via the IS step. There-
+fore, it is required to re-update the lower-bounded variational
+Gaussian from the following identical equation to avoid
+underestimating an EFE value.
+Cvbis ·N(⃗ µvbis,Σvbis) = N(⃗ µprior,Σprior) ·N(⃗ µsigm,Σsigm)
+(20)
+After re-deriving G′, H′, and K′terms of N(⃗ µsigm,Σsigm),
+(19) is further transformed as follows.
+(19) = Cvbis ·Epvbis(⃗θk|o,ak)
+[
+G′+ H′T⃗θk −1
+2
+⃗θT
+kK′⃗θk
+]
+= Cvbis
+(
+G′+ H′T⃗ µvbis −1
+2
+(
+Tr(K′Σvbis) + ⃗ µT
+vbisK′⃗ µvbis
+))
+(21)
+After subtracting (21) from (18), and sum the EFE (ak,o)
+term over possible outcomes o, the EFE (ak) is computed.
+Algorithm 1 Active inference action selection for CMABs
+Input: Context vector ⃗ x, evolutionary prior pev(o), estimated means and
+covariances, number of samples for importance sampling Ns
+Output: a selected index for action selection
+1: for each option do
+2: for each outcome do
+3: obtain ⃗ µposterior, Σposterior, and ˆCposterior from the VBIS
+or the Laplace approximation algorithm [22], [25]
+4: re-derive G′, H′, K′terms from (20)
+5: calculate EFE (ak,o) via (18) and (21)
+6: end for
+7: calculate EFE (ak) = ∑
+oEFE(ak,o)
+8: end for
+9: return a selected index = arg min
+a∈|A|
+EFE(a)
+Then, by following (8), an active inference robot ﬁnalizes the
+option in an action selection step. Algorithm 1 summarizes
+the process of active inference action selection for CMABs
+with the VBIS EFE approximation.
+D. Laplace EFE Approximation
+In statistical machine learning, the Laplace approximation
+is commonly used to approximate a continuous probability
+density function as a Gaussian distribution [25]. This uses the
+second-order approximation of the vector Taylor expansion
+of a logarithmic function whose gradient is ⃗0. Particularly,
+in the approximation of the EFE value in (7), a function
+g(⃗θk) is deﬁned as q(⃗θk|ak)p(o|⃗θk,ak), and the following
+logarithmic function is used.
+log g(⃗θk) ≈log g(⃗θ(0)
+k ) +
+n∑
+r=1
+(θk,r −θ(0)
+k,r)∂g(⃗θ(0)
+k )
+∂θk,r
++ 1
+2
+{ n∑
+r=1
+(θk,r −θ(0)
+k,r)∂log g(⃗θ(0)
+k )
+∂θk,r
+}2
+, (22)
+where ⃗θ(0)
+k satisﬁes ∇log g(⃗θ(0)
+k ) = ⃗0 and n is the length of
+⃗θk. However, since it is analytically intractable to ﬁnd ⃗θ(0)
+k ,
+⃗θk,MAP is computed via Newton’s method [27]. Also, the
+third term in (22) is rewritten as
+{ n∑
+r=1
+(θk,r−θ(0)
+k,r)∂log g(⃗θ(0)
+k )
+∂θk,r
+}2
+=
+{
+(⃗θk−⃗θ(0)
+k )T∇log g(⃗θ(0)
+k )
+}2
+,
+(23)
+therefore, (22) reduces to
+logg(⃗θk) ≈log g(⃗θk,MAP)+
+1
+2(⃗θk −⃗θk,MAP)TH
+[
+log g(⃗θk,MAP)
+]
+(⃗θk −⃗θk,MAP), (24)
+where H is the Hessian. Thus, if we deﬁne A = −H and
+by taking the logarithm from (24),
+g(⃗θk) ≈g(⃗θk,MAP)·exp
+(
+−1
+2(⃗θk−⃗θk,MAP)TA(⃗θk−⃗θk,MAP)
+)
+,
+(25)
+and the normalization constant Claplace is computed as
+Claplace = g(⃗θk,MAP) ·(2π)
+n
+2
+|A|
+1
+2
+. (26)
+After following the same procedures as with the VBIS de-
+scribed in Algorithm 1 (i.e. calculating the Laplace posterior
+N(⃗ µlaplace,Σlaplace) and re-deriving G′, H′, and K′ terms
+of N(⃗ µsigm,Σsigm)), the EFE (ak) of each option k is
+calculated, and then the best option can be selected.
+IV. SIMULATION STUDY
+A. Motivating Problem Scenario
+NASA recently launched the C oncepts for O cean worlds
+Life Detection Technology (COLDTech) program to research
+and develop software for ‘fail-operational’ autonomous
+robotic landers that will be dispatched to icy solar system
+moons like Europa and Enceladus [2]. Currently, the concept
+of operations calls for a robotic lander to perform basic
+surface tasks such as digging, imaging, moving objects,
+retrieving/analyzing samples with various instruments, and
+downlinked selected science data. As shown in Fig. 1, a key
+capability will be autonomous selection of surface areas to
+prioritize for science investigation. Although human experts
+can specify preferences for possible areas in advance, the
+unknown dynamic nature of icy moon environments can
+cause science priorities to shift unexpectedly, e.g. due to
+plume eruptions or changes in surface conditions. Such
+priorities must be considered in light of contextual infor-
+mation pertaining to overall mission progress, lander state,
+and engineering factors.
+In the following, we consider proof of concept CMAB
+simulations for a robotic lander which has been given the task
+of collecting an ice sample specimen from one of K non-
+overlapping designated reachable areas within the landing
+site. The candidate sampling sites are selected by scientists
+based on imaging data collected immediately after landing.
+Since a sampling action consumes a considerable amount
+of resources (e.g. energy and time for grinding, drilling,
+scooping, etc.), the lander cannot just deploy a resource-
+intensive manipulator in a haphazard way. It is necessary to
+infer in advance which areas can yield scientiﬁcally valuable
+information, i.e. ok = 1, using a laser spectrometer similar to
+those used on Martian rovers [28], which can be more easily
+and cheaply deployed than the manipulator tools. Panoramic
+images of the landing area taken onboard are also processed
+by a learning-based computer vision algorithm to produce
+a C-dimensional binary context feature vector ⃗ x, to encode
+various factors such as sun direction, surface reﬂectance, etc.
+[29], [30]. The autonomous site selection problem can thus
+be formulated as a CMAB, where the goal is to ﬁnd the best
+site k to sample with the manipulator, using observations
+ok = 1 /0 (interesting/uninteresting science returns) from
+selected spectrometer target sites ak and context ⃗ x.
+B. Simulation Setup and Results
+As described in Sec. III-A, CMAB problems require
+alternately executing two steps: action selection (which site
+to illuminate with laser spectrometer) and observation update
+(process spectrometer returns). In this simulation study, the
+following solution approaches are considered and compared
+in an extensive Monte Carlo study: (i) best possible action
+(site) selection, using an ofﬂine oracle (needed to compute
+regret); (ii) ϵ-greedy (where ϵ= 0.25 was found to work best
+Fig. 2. Comparison of cumulative regrets among different approaches. For
+each subplot, the cumulative regret is the average of 100 simulations. Prior
+preference of active inference agents is set as pev(o) = [0.001,0.999]T.
+after initial trials); (iii) upper conﬁdence bound (UCB); (iv)
+logistic Thompson sampling (LTS); and (v) active inference
+(AI). The action selection methods for (iv) and (v) are paired
+with VBIS and Laplace approximations for the observation
+updates. In all simulations, 100 Monte Carlo (MC) runs
+are performed, and the number of iterations T in each MC
+run is set to 102, which is small compared to common
+MAB algorithm benchmarks [8] and reﬂects a practical upper
+limit for robotic lander sensor deployment. Thus, there is no
+need to be too concerned about the suboptimal asymptotic
+behavior of active inference agents on very long time scales
+(e.g. 105 iterations) as experimentally showed in [8]. The
+true hidden linear parameters ⃗θk for each candidate search
+site kwere randomly generated from a multivariate Gaussian
+distributions, where the mean is sampled from a uniform
+distribution of 0 to 1, and the covariance matrix is generated
+using the result of a singular value decomposition on the
+Gram matrix of a matrix with uniformly randomly distributed
+entries. The search context vector ⃗ xwas randomly generated
+assuming that each element takes a binary value with uniform
+probability, and the same value is used for all sites. To
+compare how each approach performs with respect to the
+difﬁculty of CMAB, the number of areas K and search
+context elements C, and the evolutionary prior pev(o), were
+varied, such that K ∈ {5,10,20,40}, C ∈ {5,10,20},
+and pev(o) ∈ {[0.001,0.999]T,[0.4,0.6]T}, i.e. in total,
+24 ×7 = 168 sets of 100 MC sims were run. This setup
+produces difﬁcult CMABs since there can be multiple “good”
+(large ψ) sites, which makes it hard to distinguish the best
+site with highest chance of good science returns.
+Results: The cumulative regret (2) was used to compare
+the performance of all approaches. Fig. 2 shows the char-
+acteristic results, including those obtained when the easiest
+(bottom right; the most amount of information and the fewest
+number of options) and most difﬁcult (top right; lowest
+amount of information and most options) conditions are
+used. As can be seen from this ﬁgure, as the difﬁculty of
+Fig. 3. Cumulative regrets among different approaches in case of C=20
+and K=5. Prior preference is non-reward seeking and favors more uncertain
+outcome distributions, i.e. pev(o) = [0.4,0.6]T.
+the CMAB problem increases (counterclockwise from the
+bottom right to top right), the values of cumulative regrets
+tend to increase regardless of which action selection strategy
+is used, nevertheless the both AI VBIS and AI Laplace robots
+greatly outperforms the others (Note: the slight performance
+differences between the AI VBIS and AI Laplace robots
+are mainly from the accuracy of the posterior distribution
+approximation). This is owing to the fact that, as shown
+in (7), AI can rigorously evaluate the uncertainty of each
+option and quickly ﬁnd large ψ options, and prefers those
+options under the inﬂuence of the prior preference pev(o).
+On the other hand, when the prior preference is non-reward
+seeking and favors more uncertain outcome distributions (i.e.
+pev(o) = [0.4,0.6]T), the AI robots perform as comparable
+as other action selection strategies as presented in Fig. 3. In
+such a case, in order to assess the performance of the AI
+robots, other evaluation metric such as the Kullback-Leibler
+divergence may be utilized (i.e. the extent to which the out-
+come distribution obtained by executing the option preferred
+by the AI robots are aligned with the prior preference). In
+terms of computation cost, although the cost of AI VBIS
+approach is higher than other strategies due to importance
+sampling, this can be signiﬁcantly reduced by computing
+sample weights in parallel. With regard to AI Laplace, while
+the average single action selection time ( 0.010 sec in case
+of K = 10, C = 10) is again higher than that of ϵ-greedy
+(3.42E-06 sec in the same condition), still the computation
+cost may not be problematic since the number of total
+iterations is small enough (at most 102) and the performance
+of the AI Laplace robot outperforms the baseline methods.
+Even in the most difﬁcult case ( K = 40 ,C = 20 ), AI
+Laplace takes only 0.26 sec on average, compared to 5.48E-
+06 sec for ϵ-greedy.
+V. CONCLUSIONS
+In this paper, we applied active inference as an action
+selection strategy for contextual multi-armed bandit (CMAB)
+problems. We showed how to derive the expected free energy
+(EFE) in categorical outcome CMAB problems and intro-
+duced variational and Laplace approximation algorithms to
+cope with analytically intractable EFE terms. The proposed
+active inference strategy was demonstrated in a simulation
+for an autonomous remote science site selection scenario,
+and its cumulative regret was compared with the ones of
+other strategies. It was found that when the prior preference
+is reward-seeking, active inference brings signiﬁcant advan-
+tages, due to its ability to evaluate option uncertainty and
+bias towards preferred outcomes.
+The primary objective of this study was to validate the
+feasibility and performance of active inference strategy in
+practical CMAB problems using proof of concept simula-
+tions that reﬂect key aspects of the motivating remote space
+science exploration problem. Future work will conﬁrm the
+effectiveness of this strategy using OceanW ATERS, [31], a
+testbed for the Europa lander recently released by NASA.
+In this work, the value of prior preferences was determined
+and ﬁxed a priori, although adjusting this value according to
+search context, the regret analysis of active inference action
+selection strategies and results obtained from the actual
+action execution are also future tasks.
+REFERENCES
+[1] C. B. Phillips and R. T. Pappalardo, “Europa Clipper Mission Concept:
+Exploring Jupiter’s Ocean Moon,” EOS Transactions, vol. 95, no. 20,
+pp. 165–167, May 2014.
+[2] J. McMahon, N. Ahmed, M. Lahijanian, P. Amorese, T. Deka,
+K. Muvvala, T. Slack, and S. Wakayama, “Expert-informed au-
+tonomous science planning for in-situ observations and discoveries,”
+in 2022 IEEE Aerospace Conference (AERO), 2022, pp. 1–11.
+[3] L. Li, W. Chu, J. Langford, and R. E. Schapire, “A contextual-bandit
+approach to personalized news article recommendation.” in WWW.
+ACM, 2010, pp. 661–670.
+[4] S. McGuire, P. M. Furlong, T. Fong, C. Heckman, D. Szaﬁr, S. J. Julier,
+and N. Ahmed, “Everybody needs somebody sometimes: Validation
+of adaptive recovery in robotic space operations,” IEEE Robotics and
+Automation Letters, vol. 4, no. 2, pp. 1216–1223, 2019.
+[5] L. Chan, D. Hadﬁeld-Menell, S. Srinivasa, and A. Dragan, “The
+assistive multi-armed bandit,” in Proceedings of the 14th ACM/IEEE
+International Conference on Human-Robot Interaction, ser. HRI ’19.
+IEEE Press, 2019, p. 354–363.
+[6] K. Friston, F. Rigoli, D. Ognibene, C. Mathys, T. FitzGerald,
+and G. Pezzulo, “Active inference and epistemic value,” Cognitive
+neuroscience, 02 2015.
+[7] R. Kaplan and K. J. Friston, “Planning and navigation as active
+inference,” Biol. Cybern., vol. 112, no. 4, p. 323–343, aug 2018.
+[Online]. Available: https://doi.org/10.1007/s00422-018-0753-2
+[8] D. Markovic, H. Stojic, S. Schwobel, and S. Kiebel, J., “An empir-
+ical evaluation of active inference in multi-armed bandits,” Neural
+Networks; 2021 Special Issue on AI and Brain Science: AI-powered
+Brain Science, vol. 144, p. 229–246, may 2021.
+[9] V . Kuleshov and D. Precup, “Algorithms for multi-armed bandit
+problems,” Journal of Machine Learning Research, vol. 1, 02 2014.
+[10] R. BELLMAN, “A markovian decision process,” Journal of
+Mathematics and Mechanics, vol. 6, no. 5, pp. 679–684, 1957.
+[Online]. Available: http://www.jstor.org/stable/24900506
+[11] S. Thrun, W. Burgard, and D. Fox, Probabilistic Robotics (Intelligent
+Robotics and Autonomous Agents). The MIT Press, 2005.
+[12] L. P. Kaelbling, M. L. Littman, and A. R. Cassandra, “Planning and
+acting in partially observable stochastic domains,” Artif. Intell., vol.
+101, no. 1–2, p. 99–134, may 1998.
+[13] H. Kurniawati, “Partially observable markov decision processes and
+robotics,” Annual Review of Control, Robotics, and Autonomous
+Systems, vol. 5, no. 1, pp. 253–277, 2022.
+[14] D. Bouneffouf, I. Rish, and C. Aggarwal, “Survey on applications
+of multi-armed and contextual bandits,” in 2020 IEEE Congress on
+Evolutionary Computation (CEC), 2020, pp. 1–8.
+[15] P. Auer, N. Cesa-Bianchi, and P. Fischer, “Finite-time analysis of
+the multiarmed bandit problem,” Mach. Learn., vol. 47, no. 2–3, p.
+235–256, may 2002. [Online]. Available: https://doi.org/10.1023/A:
+1013689704352
+[16] P. Auer, N. Cesa-Bianchi, Y . Freund, and R. Schapire, “Gambling
+in a rigged casino: The adversarial multi-armed bandit problem,” in
+Proceedings of IEEE 36th Annual Foundations of Computer Science,
+1995, pp. 322–331.
+[17] W. R. Thompson, “On the likelihood that one unknown probability
+exceeds another in view of the evidence of two samples,” Biometrika,
+vol. 25, pp. 285–294, 1933.
+[18] K. Friston, “The free-energy principle: A uniﬁed brain theory?” Nature
+Reviews Neuroscience, vol. 11, no. 2, pp. 127–138, 2010.
+[19] K. Friston and S. Kiebel, “Predictive coding under the free-energy
+principle,” Philosophical transactions of the Royal Society of London.
+Series B, Biological sciences, vol. 364, pp. 1211–21, 06 2009.
+[20] P. Lanillos, C. Meo, C. Pezzato, A. A. Meera, M. Baioumy,
+W. Ohata, A. Tschantz, B. Millidge, M. Wisse, C. L. Buckley, and
+J. Tani, “Active inference in robotics and artiﬁcial agents: Survey and
+challenges,” CoRR, vol. abs/2112.01871, 2021. [Online]. Available:
+https://arxiv.org/abs/2112.01871
+[21] J. Y . Shin, C. Kim, and H. J. Hwang, “Prior preference learning from
+experts: Designing a reward with active inference,” Neurocomputing,
+vol. 492, pp. 508–515, 2022.
+[22] N. R. Ahmed, E. M. Sample, and M. Campbell, “Bayesian mul-
+ticategorical soft data fusion for human–robot collaboration,” IEEE
+Transactions on Robotics, vol. 29, no. 1, pp. 189–206, 2013.
+[23] L. Burks, I. Loefgren, and N. Ahmed, “Optimal continuous state
+pomdp planning with semantic observations: A variational approach,”
+IEEE Transactions on Robotics, vol. 35, pp. 1488–1507, 2019.
+[24] S. Wakayama and N. Ahmed, “Probabilistic semantic data association
+for collaborative human-robot sensing,” CoRR, vol. abs/2110.09621,
+2021. [Online]. Available: https://arxiv.org/abs/2110.09621
+[25] C. M. Bishop, Pattern Recognition and Machine Learning (Information
+Science and Statistics). Berlin, Heidelberg: Springer-Verlag, 2006.
+[26] G. Bouchard, “Efﬁcient bounds for the softmax function and ap-
+plications to approximate inference in hybrid models,” in Proc.
+Neural Inf. Process. Syst. Workshop Approx. Bayesian Inference
+Continuous/Hybrid Syst., 2007.
+[27] A. Galantai, “The theory of newton’s method,” Journal of
+Computational and Applied Mathemathics, vol. 124, pp. 25–44, 2000.
+[28] J. Manne, T. Q. Bui, and C. R. Webster, “Determination of foreign
+broadening coefﬁcients for methane lines targeted by the tunable laser
+spectrometer (tls) on the mars curiosity rover,” Journal of Quantitative
+Spectroscopy and Radiative Transfer, vol. 191, pp. 59–66, 2017.
+[29] L. Matthies, M. Maimone, A. Johnson, Y . Cheng, R. Willson, C. Villal-
+pando, S. Goldberg, A. Huertas, A. Stein, and A. Angelova, “Computer
+vision on mars,” International Journal of Computer Vision, vol. 75,
+no. 1, pp. 67 – 92, October 2007.
+[30] L. Palafox, C. Hamilton, S. Scheidt, and A. Alvarez, “Automated
+detection of geological landforms on mars using convolutional neural
+networks,” Computers & Geosciences, vol. 101, 01 2017.
+[31] Ocean worlds autonomy testbed for exploration research &
+simulation (oceanwaters). [Online]. Available: https://github.com/
+nasa/ow simulator

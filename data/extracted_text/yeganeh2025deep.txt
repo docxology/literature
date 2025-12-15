@@ -1,0 +1,1046 @@
+arXiv:2505.19867v1  [cs.LG]  26 May 2025
+Deep Active Inference Agents for Delayed and
+Long-Horizon Environments
+Yavar Taheri Yeganeh∗
+Politecnico di Milano
+Mohsen Jafari
+Rutgers University
+Andrea Matta
+Politecnico di Milano
+Abstract
+With the recent success of world-model agents—which extend the core idea of
+model-based reinforcement learning by learning a differentiable model for sample-
+efficient control across diverse tasks—active inference (AIF) offers a complemen-
+tary, neuroscience-grounded paradigm that unifies perception, learning, and action
+within a single probabilistic framework powered by a generative model. Despite
+this promise, practical AIF agents still rely on accurate immediate predictions
+and exhaustive planning, a limitation that is exacerbated in delayed environments
+requiring planning over long horizons—tens to hundreds of steps. Moreover, most
+existing agents are evaluated on robotic or vision benchmarks which, while natural
+for biological agents, fall short of real-world industrial complexity. We address
+these limitations with a generative–policy architecture featuring (i) a multi-step
+latent transition that lets the generative model predict an entire horizon in a single
+look-ahead, (ii) an integrated policy network that enables the transition and receives
+gradients of the expected free energy, (iii) an alternating optimization scheme that
+updates model and policy from a replay buffer, and (iv) a single gradient step
+that plans over long horizons, eliminating exhaustive planning from the control
+loop. We evaluate our agent in an environment that mimics a realistic industrial
+scenario with delayed and long-horizon settings. The empirical results confirm the
+effectiveness of the proposed approach, demonstrating the coupled world-model
+with the AIF formalism yields an end-to-end probabilistic controller capable of
+effective decision making in delayed, long-horizon settings without handcrafted
+rewards or expensive planning.
+1 Introduction
+There has been significant progress in data-driven decision-making algorithms, particularly in re-
+inforcement learning (RL), where agents learn policies through interaction with the environment
+and receive feedback [ 1]. Deep learning, in parallel, offers a powerful framework for extracting
+representations and patterns, while also enabling probabilistic modeling [2, 3], driving advancements
+in computer vision, natural language processing, biomedical applications, finance, and robotics. Deep
+RL merges these ideas—for example, by using neural function approximation in Deep Q-Networks
+(DQN), which achieved human-level performance on Atari games [4]. Model-based RL (MBRL)
+goes further by explicitly incorporating a model—either learned or provided—of the environment to
+guide learning and planning [5]. Similarly, the concept of world models centers on learning generative
+models of the environment to exploit representations and predictions of future outcomes, especially
+for decision-making [6]. This resonates with cognitive theories of the biological brain, which em-
+phasize the role of internal generative models [7]. At a broader theoretical level, active inference
+(AIF), an emerging field in neuroscience, unifies perception, action, and learning in biological agents
+through the use of internal generative models [8, 9].
+∗Email: yavar.taheri@polimi.it or yavaryeganeh@gmail.com
+Preprint.
+AIF is grounded in the free energy principle (FEP), which formulates neural inference and learning
+under uncertainty as minimization of surprise [10]. It provides a coherent mathematical framework
+that calibrates a probabilistic model governed by Bayesian inference, enabling both learning and
+goal-directed action directly from raw sensory inputs (i.e., observations) [9]. This can support the
+development of model-driven, adaptive agents that are trained end-to-end while offering uncertainty
+quantification and some interpretability [11, 12]. Similar to world models and model-based RL, AIF
+is powered by an internal model of the environment, which can help to capture dynamics and boost
+sample efficiency. Despite the potential of the AIF framework, its practical agents typically rely on
+accurate immediate predictions and extensive planning [12]. Such reliance can hinder performance,
+particularly in delayed environments, where the consequences of actions are not immediately observ-
+able—commonly framed in RL as sparse rewards, which exacerbates the credit-assignment problem
+[1]. Likewise, long-horizon tasks demand effective planning over extended temporal horizons, posing
+an additional challenge. These difficulties appear across diverse optimization tasks—such as manu-
+facturing systems [11], robotics [13, 6, 14], and protein design [15, 16]—where the consequences
+become apparent only after many steps or upon completion of the entire process.
+We explore how the potential of the AIF framework can be harnessed to build agents that remain
+effective in environments that are delayed and demanding long-horizon planning. Recent advances
+in deep generative modeling [17] have unlocked breakthroughs across diverse domains—such as
+AlphaFold’s high-accuracy protein-structure predictions [18]. Because the generative model is the
+core of AIF, our objective is to extend its capacity and fidelity as the world model by predicting
+deep into the future. Concretely, we propose a generative model with an integrated policy network,
+trained end-to-end under the AIF formalism, allowing the model to produce long-horizon roll-outs
+and supply gradient signals to the policy during optimization. The summary of our contributions is as
+follows:
+• We introduce an AIF-consistent generative–policy architecture that enables long-horizon
+predictions while providing differentiable signals to the policy.
+• We derive a joint training algorithm that alternately updates the generative model and the
+policy network, and we show how the learned model can be leveraged during planning via
+gradient updates to the policy.
+• We empirically demonstrate the concept’s effectiveness in an industrial environment, high-
+lighting its relevance to delayed and long-horizon scenarios.
+The remainder of the paper is organized as follows: Section 2 reviews the formalism and planning
+strategies. Section 3 presents our proposed concept and agent architecture, while Section 4 details the
+experimental results. Finally, Section 5 concludes with implications and outlines future directions.
+2 Background
+Agents based on the world models concept extend the core idea of MBRL, learning a differentiable
+predictive model to facilitate policy optimization and planning via imaginations in the model [19, 6].
+They create latent representations that capture spatial and temporal aspects to model dynamics and
+predict the future [ 19]. The architecture governing this dynamics—generative model—and how
+it is leveraged for policy and planning is foundational in this concept. Many designs resemble
+variational autoencoder [20] and are often augmented with Recurrent State-Space Models (RSSMs)
+to provide memory and help with credit assignment [ 21, 6, 14]. At the same time, RL methods
+such as actor–critic [ 1] are integrated with the model to optimize the policy [ 13, 6, 14], yielding
+sample-efficient agents that rely on imagination rather than extensive environment interaction.
+AIF offers a complementary, neuroscience-grounded perspective that subsumes predictive coding
+that postulates that the brain minimizes prediction errors—relative to an internal generative model
+of the world—under uncertainty [ 22]. It casts the brain as a hierarchy that performs variational
+Bayesian inference continuously to suppress prediction error [ 9]. It was originally advanced to
+explain how organisms actively control and navigate their environments by iteratively updating
+beliefs and inferring actions from sensory observations [ 9]. AIF emphasizes the dependency of
+observations on actions [ 22]; accordingly, it posits that actions are chosen, while calibrating the
+model, to align with preferences and reduce uncertainty, thereby unifying perception, action, and
+learning [22]. The free-energy principle provides the mathematical bedrock for this framework
+2
+[23, 24], and a growing body of empirical work supports its biological plausibility [25]. AIF-based
+agents have been deployed in robotics, autonomous driving, and clinical decision support [26, 27, 28],
+demonstrating robust performance in uncertain, dynamic settings. In this work, we adopt the AIF
+formulation of Fountas et al. (2020) [ 12], which was extended in [29, 11] and has been shown to
+result in effective agents across different environments—such as visual and industrial tasks.
+2.1 Formalism
+Within AIF, agents employ an integrated probabilistic framework consisting of an internal generative
+model [30] with inference mechanisms that allow them to represent and act upon the world. The
+framework assumes a Partially Observable Markov Decision Process [31, 30, 32], where an agent’s
+interaction with its environment is formalized in terms of three random variables—observation, latent
+state, and action—denoted (ot, st, at) at time t. In contrast to RL, this formalism does not rely on
+explicit reward feedback from the environment; instead, the agent learns solely from the sequence of
+observations it receives. The agent’s generative model, parameterized byθ, is defined over trajectories
+as Pθ(o1:t, s1:t, a1:t−1) up to time t. The agent’s behavior is driven by the imperative to minimize
+surprise, which is formulated as the negative log-evidence for the current observation, −log Pθ(ot)
+[12]. The agent approaches this imperative from two perspectives when interacting with the world, as
+follows [9, 12]:
+1) Using the current observation, the agent calibrates its generative model by optimizing the parameters
+θ to yield more accurate predictions. Mathematically, this surprise can be expanded as follows [20]:
+−log Pθ(ot) ≤ EQϕ(st,at) [log Qϕ(st, at) − log Pθ(ot, st, at)] , (1)
+which provides an upper bound, commonly known as the negative Evidence Lower Bound (ELBO)
+[33]. It is widely used as a loss function for training variational autoencoders [ 20]. In AIF, it
+corresponds to the Variational Free Energy (VFE), whose minimization reduces the surprise associated
+with predictions relative to actual observations [12, 34, 32].
+2) Looking into the future, where the agent needs to plan actions, an estimate of the surprise of future
+predictions can be obtained. Considering a sequence of actions—or policy—denoted as π, for τ ≥ t,
+this corresponds to −log P(oτ |θ, π), which can be estimated analogously to VFE [35]:
+G(π, τ) = EP(oτ |sτ ,θ)EQϕ(sτ ,θ|π) [log Qϕ(sτ , θ|π) − log P(oτ , sτ , θ|π)] . (2)
+This is known as the Expected Free Energy (EFE) in the framework, which quantifies the relative
+quality of policies—lower values correspond to better policies.
+The EFE in Eq. 2 can be derived as a decomposition of distinct terms for time τ, as follows [35, 12]:
+G(π, τ) = −E ˜Q [log P(oτ |π)] (3a)
++ E ˜Q [log Q(sτ |π) − log P(sτ |oτ , π)] (3b)
++ E ˜Q [log Q(θ|sτ , π) − log P(θ|sτ , oτ , π)] , (3c)
+where ˜Q = Q(oτ , sτ , θ|π) . Fountas et al. (2020) [ 12] rearranged this formulation with further use
+of sampling leading to a tractable estimate for the EFE that is both interpretable and easy to calculate
+[12]:
+G(π, τ) = −EQ(θ|π)Q(sτ |θ,π)Q(oτ |sτ ,θ,π) [log P(oτ |π)] (4a)
++ EQ(θ|π)
+
+EQ(oτ |θ,π)H(sτ |oτ , π) − H(sτ |π)
+
+(4b)
++ EQ(θ|π)Q(sτ |θ,π)H(oτ |sτ , θ, π) − EQ(sτ |π)H(oτ |sτ , π) . (4c)
+Conceptually, the contribution of each term in the EFE can be interpreted as follows [12]: Extrinsic
+value (Eq. 4a) — the expectedsurprise, which measures the mismatch between the outcomes predicted
+under policy π and the agent’s prior preferences over outcomes. This term is analogous to reward in
+RL, as it quantifies the misalignment between predicted and preferred outcomes. However, rather
+than maximizing cumulative reward, the agent minimizes surprise relative to preferred observations.
+State epistemic uncertainty (Eq. 4b) — mutual information between the agent’s beliefs about states
+before and after obtaining new observations. This term incentivizes exploration of regions in the
+environment that reduce uncertainty about latent states [12]. Parameter epistemic uncertainty (Eq. 4c)
+3
+— the expected information gain about model parameters given new observations. This term also
+corresponds to active learning or curiosity [ 12], and reflects the role of model parameters θ in
+generating predictions. The last two terms capture distinct forms of epistemic uncertainty, providing
+an intrinsic drive for the agent to explore and refine its generative model. They play a role analogous
+to intrinsic rewards in RL that balance the exploration–exploitation trade-off. Similar information-
+seeking or curiosity signals underpin many successful RL algorithms—ranging from curiosity-driven
+bonuses [36, 37] to the entropy-regularized objective optimized by Soft Actor-Critic [38]—and have
+been shown to yield strong, sample-efficient agents.
+Observation
+CalibrationDecision
+Agent
+Environment
+Observation
+Model ↔VFEEFE
+Inference & Prediction
+Figure 1: Two perspectives of the AIF framework: general steps (left) and core elements (right).
+In summary (Fig. 1), the framework is realized through a mathematical formalism that unfolds
+as follows: An observation is ingested and propagated through the generative model, yielding a
+perceptual update—beliefs about current and future states. These beliefs enable computation of the
+EFE (Eq. 4), which is used during planning to select actions. After the next observation arrives, the
+VFE (Eq. 1) is evaluated and used to calibrate—learn—the model by matching the new observation
+to the prior prediction. Each iteration optimizes the model with the VFE from the previous loop, and
+the updated model then guides subsequent inference for planning and action.
+2.2 Planning Strategy
+Agents based on MBRL typically leverage their world model to imagine future trajectories before
+acting, trading extra computation for large gains in sample-efficiency and performance. Monte Carlo
+Tree Search (MCTS) [39, 40] is a notable search algorithm, which selectively explores promising
+trajectories in a restricted manner. Its effectiveness was highlighted in AlphaGo Zero [40] and later
+by MuZero, which folds a learned latent dynamics model directly into the search loop [41]. In the
+AIF concept, the agent’s planning before taking actions is to minimize the EFE; mathematically, it
+corresponds to the negative accumulated EFE G as follows:
+P(π) = σ(−G(π)) = σ
+ 
+−
+X
+τ>t
+G(π, τ)
+!
+, (5)
+where σ(·) represents the Softmax function. The agent simulates possible trajectories via roll-outs
+from its generative model, under policy π, to evaluate the EFE. However, calculating this for any
+possible π is infeasible as the policy space grows exponentially with the depth of planning. Fountas
+et al. (2020) [ 12] an auxiliary module along with the MCTS to alleviate this obstacle. They
+proposed a recognition module [ 42, 43, 44], parameterized with ϕa as follows: Habit, Qϕa(at),
+which approximates the posterior distribution over actions using the prior P(at) that is returned from
+the MCTS [12]. This is similar to the fast and habitual decision-making in biological agents [ 45].
+They used this module for fast expansions of the search tree during planning, followed by calculating
+the EFE of the leaf nodes and backpropagating over the trajectory. Iteratively, it results in a weighted
+tree with memory updates for the visited nodes. They also used the Kullback–Leibler divergence
+between the planner’s policy and the habit provides as precision to modulate the latent state [ 12].
+Another approach to enhance the planning is using a hybrid horizon [11], in which the short-sighted
+EFE terms—based on immediate next-step predictions—are augmented with an additional term
+during planning to account for longer horizons. Taheri Yeganeh et al. (2024) [11] employed a Q-value
+network, Qϕa(at), to represent the amortized inference of actions, trained in a model-free manner
+using extrinsic values. These terms were then combined in the planner as follows:
+P(at) = γ · Qϕa(at) + (1− γ) · σ (−G(π)) , (6)
+4
+balancing long-horizon extrinsic value against short-horizon epistemic drive.
+Modern world-model agents increasingly shift the look -ahead into latent space; PlaNet [ 21] uses
+cross-entropy method roll-outs inside a RSSM trained with latent overshooting, while the Dreamer
+family [13, 6] propagates analytic value gradients through hundreds of imagined trajectories, without
+a tree search. EfficientZero [ 46] blends AlphaZero -style MCTS with latent -space imagination,
+surpassing human Atari performance with only 100k frames. These approaches typically couple
+multi-step model roll-outs with an actor (policy) and often a critic (value) network that are queried
+during imagination. In each simulated step, the policy proposes the next action and the critic supplies
+a bootstrapped value, enabling efficient multi-step look-ahead without enumerating the full action
+tree. Instead of sequentially sampling actions and states, Taheri Yeganeh et al . [11] trained multi-step
+latent transitions, conditioned on repeated actions; during planning, a single transition predicts the
+outcome while keeping an action for a fixed number of time-steps. This way, the impact of actions
+over a long horizon is captured using repeated-action simulations. While it can be combined with
+MCTS, this approximation helped distinguish different actions based on the EFE in highly stochastic
+control tasks with a single look-ahead [11]. It is limited to discrete actions, cannot go beyond repeated
+actions, and still requires planning via EFE computation before every action.
+3 Deep Active Inference Agent
+From habit-integrated MCTS to hybrid-horizon and gradient-based latent imagination, state-of-the-art
+agents increasingly integrate policy learning with planning to capture the long-term effects essential
+for scalable and sample-efficient control. A prominent approach is latent imagination, notably used by
+Dreamer agents [6, 21, 13], which perform sequential rollouts in latent space using a RSSM. Besides
+its computational burden, this method risks accumulating errors as networks are repeatedly inferred
+and sampled. These models embed the policy network in the latent space by sampling actions along
+each latent-state trajectory, so policy optimization depends on a large number of samplings in the
+model’s imaginations.
+A simpler strategy assumes a generative model that knows the exact form of the policy function—in
+other words, the network parameters themselves. We can train such a model to generate a prediction
+deep into the horizon with a single look-ahead, once provided with the policy parameters governing
+interaction with the environment over that horizon. Thus, the EFE can be computed directly over
+the horizon, and gradients can be backpropagated to minimize the EFE, thereby guiding the agent
+toward its intrinsic and extrinsic objectives. Given that the policy is optimized through the gradient
+steps of the EFE, this approach naturally scales to both discrete and continuous action spaces rather
+than choosing discrete actions, as in earlier AIF-agent implementations[12]. Here, we adopt this AIF-
+consistent generative-policy modeling, without incorporating further mechanisms typically employed
+to further enhance world models or AIF agents.
+3.1 Architecture
+The agent comprises, at a minimum, apolicy network that directly interacts with the environment and
+a generative model that is trained to optimize that policy. Conditioned on the policy, the generative
+model constitutes the core of AIF and can be instantiated with various architectures. In this work we
+adopt a generic—yet commonly used—autoencoder assembly [12] to instantiate the formalism of
+Sec. 2.1, which requires the tightly coupled modules illustrated in Fig. 2. Leveraging amortization
+[20, 43, 47] to scale inference [12], the generative model is parameterized by two sets: θ = {θs, θo}
+for prior generation and ϕ = {ϕs} for recognition. Accordingly, the Encoder Qϕs(st) performs
+amortized inference by mapping the currently sampled observation ˜ot to a posterior distribution
+over the latent state st [48]. The key difference here is that, rather than sampling actions inside the
+latent dynamics, we incorporate a policy function—or Actor—Qϕa(at | ˜ot), which itself infers a
+distribution over actions with parameters ϕa. We therefore introduce an explicit representation for
+the function itself with the mapping Π : Qϕa → ˆπ, resulting in ˆπ(ϕa). This approach is common in
+neural implicit representations [49]; recent work has moreover demonstrated that neural functions
+with diverse computational graphs can be embedded efficiently [50]. Conditioned on the actor, the
+Transition, Pθs(st+1 |˜st, ˆπ), overshoots the latent dynamics up to a planning horizon H, producing
+a distribution for st+H given the sampled latent state at time t, while the actor–denoted by ϕa–is
+5
+assumed fixed throughout the horizon. Finally, the Decoder Pθo(ot+H |˜st+H) converts the predicted
+latent state back into a distribution over future observations.
+Encoder
+𝜙𝑠
+Actor
+𝜙𝑎
+Environment
+Decoder
+𝜃𝑜
+Transition
+𝜃𝑠
+෤𝑜𝑡 … … … … … … … … 𝑄𝜙𝑠 𝑠𝑡 … … … … … … … … … … 𝑃𝜃𝑠 (𝑠𝑡+𝐻| ǁ𝑠𝑡, ො𝜋) … … … 𝑃𝜃𝑜 (𝑜𝑡+𝐻| ǁ𝑠𝑡+𝐻)
+෤𝑜𝑡  … … … … … … … 𝑄𝜙𝑎 𝑎𝑡| ෤𝑜𝑡
+ො𝜋(𝜙𝑎) ∇𝜙𝑎
+∼ ෥𝑎𝑡
+Figure 2: The Deep AIF agent architecture illustrates its interaction with the environment. The actor
+independently selects actions, while the generative model is used to optimize the policy.
+Each of the three modules in the generative model is realized by a neural network that outputs the
+parameters of a diagonal multivariate Gaussian, thereby approximating a pre-selected likelihood
+family. They can be trained end-to-end by minimizing the VFE (Eq. 1), whereas the actor is
+optimized—using predictions from the calibrated model—by minimizing the EFE (Eq. 4). In this
+way, the agent unifies the two free-energy paradigms derived in the formalism. Aside from the actor
+and transition, which account for latent dynamics with a single look-ahead, the architecture resembles
+a variational autoencoder (V AE) [20]; nevertheless, other generative mechanisms, such as diffusion
+or memory-based RSSM models, can be extended to support the same objective.
+3.2 Policy Optimization
+We propose a concise yet effective formulation for embedding the actor within the generative model
+so that it serves as a planner that minimizes the EFE via gradient descent. Conditioned on a fixed
+policy ˆπ(ϕa), the model generates the prediction distribution Pθ(ot+H|ϕa), from which we compute
+the EFE, denoted as the function Gθ(˜o, ϕa). Policy optimization then proceeds by updating the actor
+parameters according to the gradient∇ϕaGθ(˜o, ϕa). Most world-model agents introduce stochasticity
+by sampling actions during imagination, which promotes exploration—typically aided by auxiliary
+terms during the policy gradient. This results in a Monte Carlo estimation of the policy across
+imagined trajectories, which is then differentiated based on the return [13]. In contrast, our approach
+assumes the exact form of the policy is integrated into the dynamics, and exploration is driven by the
+AIF formalism based on the generative model.
+To effectively estimate the different components of the EFE in Eq. 4, Fountas et al. (2020) [ 12]
+employed multiple levels of Monte Carlo sampling. While their original formulation incorporated
+sampled actions over multi-step horizons, the same structure and sampling scheme remain beneficial
+when using an integrated actor with deep temporal overshooting. Similarly, we adopt ancestral
+sampling to generate the prediction Pθ(ot+H | ϕa) and leverage dropout [51] in the networks. It’s
+coupled with further sampling from the latent distributions to compute the entropies necessary for
+calculating the EFE terms. Crucially, under the AIF framework, agents need a prior preference
+over predictions to guide behavior—this is formalized through the extrinsic value (i.e., Eq. 4a).
+Accordingly, we define an analytical mapping that transforms the prediction distribution into a
+continuous preference spectrum, Ψ : Pθ(oτ ) → [0, 1].
+6
+Unlike RL, which relies on the return of accumulated rewards, this formulation allows the agent
+to express more general and nuanced forms of preference. In practice, designing a suitable reward
+function for RL agents remains a difficult task, often resulting in sparse or hand-crafted signals that
+can be costly to design and compute. The flexibility in preference, however, introduces challenges—
+particularly when agents have complex preference space and must act with short-sighted EFE
+approximations. Our approach, by optimizing planning through deep temporal prediction, mitigates
+this issue and enables longer-term evaluation of the extrinsic value.
+3.2.1 Training & Planning
+During training, the generative model gradually learns how different actor parameters ϕa affect the
+dynamics, and during policy optimization, this learned dynamics is then used to differentiate the
+actor toward lower EFE or surprise. Critical for effective policy learning is the accuracy of the world
+model, which forms the foundation of AIF [23, 9, 12] and predictive coding [22]. To improve model
+training, we introduce experience replay [ 4] using an experience memory/buffer M, from which
+we sample batches of experiences, while ensuring that each batch includes the most recent one. We
+compute the VFE in Eq. 1 for these experiences to train the model with β-regularization. With
+the updated model, we differentiate the EFE over a batch of observations—including previous and
+current ones—within imagined trajectories of length H, training the actor similarly to world-model
+methods [13, 6, 19]. This results in a joint training algorithm 1 that alternates between updating
+the generative model and the policy, using the model to guide planning via policy gradients. This
+approach, policy learning—rather than explicit action planning—relaxes the bounded-sight constraint
+of EFE, as the policy is iteratively trained across diverse scenarios within the planning horizon, and
+its effective sight extends beyond the nominal horizon H. Recent work on AIF-based agents has
+also emphasized the advantages of integrating a policy network with the EFE objective [14]. After
+training concludes and the agent’s model is fixed, the agent can still leverage its model for planning.
+Specifically, EFE-based gradient updates can be applied at the observation level once everyH steps,
+effectively fine-tuning the policy for the immediate horizon.
+4 Experiments
+Most existing AIF agents have shown effectiveness across a range of tasks typically performed by
+biological agents, such as humans and animals. These tasks often involve image-based observations
+[14]. For example, Fountas et al. (2020) [ 12] evaluated their agent on Dynamic dSprites [ 52]
+and Animal-AI [53], which biological agents can perform with relative ease. AIF has also been
+successfully applied in robotics [ 54, 29], including object manipulation [ 14, 27], aligning with
+behaviors humans naturally perform. This effectiveness is largely attributed to AIF’s grounding
+in theories of decision-making in biological brains [ 9]. However, applying AIF to more complex
+domains—such as industrial system control—poses significant challenges. Even humans may struggle
+to design effective policies in these settings. Such environments often exhibit high stochasticity,
+where short observation trajectories are dominated by noise, making it difficult to optimize free
+energy for learning and action selection. This issue is less pronounced in world model agents, which
+often use memory-based (e.g., recurrent) architectures [ 13, 6]. Moreover, realistic environments
+frequently combine discrete and continuous observation modalities, complicating generative and
+sampling predictions. Delayed feedback and long-horizon requirements further challenge planning
+under the AIF framework. Additionally, many real-world tasks require rapid, frequent decisions and
+sustained performance in non-episodic, stochastic settings. To assess our approach, we employ a
+high-fidelity simulation environment validated to reflect realistic industrial control scenarios [55],
+which incorporates all the above challenges [11].
+4.1 Application
+As energy efficiency becomes increasingly critical in manufacturing [56], RL offers a model-free
+alternative to traditional control, though it may struggle with rapid adaptations in non-stationary
+environments [57]. We focus on simulating workstations in an automotive manufacturing system
+composed of parallel, identical machines (see Appendix A for details). Governed by Poisson
+processes for arrivals, processing, failures, and repairs [55], the system evolves as a discrete-time
+Markov chain [58]. Control actions—switching machines on or off—aim to improve energy efficiency
+without compromising throughput. The problem is continual with no terminal state, and decisions
+7
+Algorithm 1 Deep AIF Agent Training (per epoch)
+1: Initialize θ = {θs, θo}, ϕ= {ϕs, ϕa}, M
+2: Randomly initialize E
+3: for n = 1, 2, ..., Ndo
+▷ ENVIRONMENT INTERACTION
+4: ˆπt ← Π(Qϕa)
+5: for τ = t + 1, t+ 2, ..., t+ H do
+6: Sample a new observation ˜oτ from E
+7: Apply ˜aτ ∼ Qϕa(aτ |˜oτ ) to E
+8: Sample a new observation ˜oτ+1 from E
+9: M ← M ∪ {(˜ot, ˆπt, ˜ot+H)}
+▷ MODEL LEARNING
+10: {(˜ot′, ˆπt′, ˜ot′+H)}B1 ∼ M
+11: for t′ = 1, 2, ..., B1 do
+12: run Model(˜ot′, ˆπt′, ˜ot′+H)
+13: Ls ← Ls + DKL
+
+Qϕs(st′+H) ||N (µ, σ2)
+
+14: Lo ← Lo − EQ(st′+H) [log Pθo(ot′+H|˜st′+H)]
+15: Lo ← Lo + β ∗ DKL
+
+Qϕs(st′+H) ||N (˜µ, ˜σ2)
+
+16: θs ← θs − ξ∇θsE
+
+Ls(θs)
+
+17: ϕs ← ϕs − γ∇ϕsE
+
+Ls(ϕo)
+
+18: θo ← θo − η∇θoE
+
+Lo(θo)
+
+▷ POLICY OPTIMIZATION
+19: {˜oτ }B2 ∼ M
+20: for τ = 1, 2, ..., B2 do
+21: Compute Qϕs(sτ ) using ˜oτ
+22: Sample ˜sτ ∼ Qϕs(sτ )
+23: for s = 1, 2, ..., S1 do
+24: Compute µ, σ← Pθs(sτ+H|˜sτ , ˆπt)
+25: Sample ˜sτ+H ∼ N(µ, σ2)
+26: Compute Pθo(oτ+H|˜sτ+H)
+27: Compute Qϕs(˜sτ+H) using ˜oτ+H
+28: Compute µ′, σ′ ← Qϕs(˜sτ+H)
+29: G ← G − log Ψ [Pθo(oτ+H|˜sτ+H)]
+30: G ← G + [H(µ′, σ′) − H(µ, σ)]
+31: for s = 1, 2, ..., S2 do
+32: Sample ˜sτ+H ∼ Pθs(sτ+H|˜sτ , ˆπτ ) ▷ Re-
+computed with dropout.
+33: Compute µ′′, σ′′ ← Pθo(oτ+H|˜sτ+H)
+34: Sample ˜sτ+H ∼ N(µ, σ2)
+35: Compute µ′′′, σ′′′ ← Pθo(oτ+H|˜sτ+H)
+36: G ← G + [H(µ′′, σ′′) − H(µ′′′, σ′′′)]
+37: ϕa ← ϕa − α∇ϕaE
+
+G(ϕa)
+
+Agent components:
+Model:
+Encoder Qϕs.
+Transition Pθs.
+Decoder Pθo.
+Actor Qϕa.
+Actor mapping Π.
+Preference mapping Ψ.
+Other components:
+Environment E.
+Experience Memory M.
+Hyperparameters:
+Iterations N.
+Beta β.
+Horizon H.
+Batch size B1 , B2.
+Sample size S1 , S2.
+Learning rate ξ , γ , η , α.
+Run Model(˜oi, ˆπ, ˜oi+H):
+Compute Qϕs(si) using ˜oi
+Sample ˜si ∼ Qϕs(si)
+Compute µ, σ← Pθs(si+H|˜si, ˆπ)
+Compute Qϕs(˜si+H) using ˜oi+H
+Compute µ′, σ′ ← Qϕs(˜si+H)
+Sample ˜si+H ∼ N(µ, σ2)
+Compute Pθo(oi+H|˜si+H)
+rely on both discrete and continuous observations. Due to stochastic delays, the system connects
+continuous-time dynamics to discrete-time decisions, making performance only observable over long
+horizons. Accordingly, we employ a window-based preference metric [11] that evaluates KPIs over
+the past eight hours. The production rate is defined as T = N(t)−N(t−ts)
+ts
+, where N(t) is the number
+of parts produced, and the energy consumption rate as E = C(t)−C(t−ts)
+ts
+, where C(t) denotes
+total energy consumed, with t − ts ≈ 8 hrs. This window may span thousands of actions, where
+due to stochasticity and the integral nature of performance, immediate observations are noisy and
+uninformative. As a result, the AIF agents based on short-horizon EFE planning are not feasible in
+this setting. By operating directly on raw performance signals rather than handcrafted rewards, the
+approach enables scalability to domains where reward signals are sparse or expensive. The agent
+must handle delayed feedback and plan over extended horizons to move the system towards the
+preferred performance.
+8
+4.2 Results
+To validate the performance of our agent in the aforementioned environment, we adopted a rigorous
+evaluation scheme (see Appendix C for details) based on Algorithm 1. Unlike previous works that
+used interactions with a batch of environments to improve training efficiency [ 12], our agent was
+trained in each epoch by interacting with a single environment instance, reflecting a more challenging
+setting. The trained agent’s performance was then evaluated across several randomly initialized
+environments. From these, the best-performing instance was selected for a one-month simulation run
+to assess energy efficiency and production loss, in comparison to a baseline scenario where no control
+was applied and machines were continuously active. We also constructed a compositional preference
+score—analogous to a reward function—based on time-window KPIs for energy consumption and
+production, serving as an overall indicator of agent performance, which is part of the observation of
+the agent. To enforce further regularization in the latent space to match a normal distribution, we
+used a Sigmoid function in its non-saturated domain. Since we needed to encode the actor function,
+which is essentially a computational graph [50], we adopted a simple, non-parametric mapping Π
+that concatenates the input with the first hidden and output values. Given its input-output structure
+and the fact that the model was continuously trained with that, this mapping effectively serves as an
+approximation of the actor’s neural function (see Appendix B for details).
+We implemented the agent in the exact production system, using parameters verified to reflect realistic
+conditions, following the aforementioned scheme. Figure 3 presents the performance of the agent
+with an overshooting horizon of H = 300. During evaluations after each epoch (100 iterations),
+the agent improved the preference score of observations (Fig. 3a), which correlates with increased
+energy efficiency (Fig. 3b). Notably, the EEF of imagined trajectories (Fig. 3c) used for policy
+updates decreased as the agent learned to control the system. This trend is observed in both the
+extrinsic and uncertainty components of the EFE. Since policy optimization relies heavily on learning
+a robust generative model—with the actor integrated within it—the agent gradually improved its
+predictive capacity and reduced reconstruction error across both continuous (Fig. 3d, preference) and
+discrete (Fig. 3e,f, machine and buffer states) elements of the observation space. While EFE and
+overall performance eventually stabilized, the generative model continued to improve, indicating that
+full reconstruction of future observations is not strictly required for effective control. Finally, we
+then evaluated the trained agent over one month of simulated interaction (10 replications), applying
+gradient updates every H steps during planning. Loffredo et al. (2023) [ 57] tested model-free RL
+agents across a reward parameterϕ , with DQN emerging as the top performer. Table 1 shows that our
+DAIF agent outstrips this baseline, raising energy efficiency per production unit by 10.21% ± 0.14%
+while keeping throughput loss negligible.
+0 20 40 60 80 100
+Epoch
+0.70
+0.75
+0.80
+0.85
+0.90
+0.95
+1.00
+(a) Preference Score
+0 20 40 60 80 100
+Epoch
+10
+5
+0
+5
+10
+15
+(b) Improving Consumption/Part (%)
+0 20 40 60 80 100
+Epoch
+0.2
+0.0
+0.2
+0.4
+0.6
+0.8
+(c) EFE T erms
+EFE
+EFE T erm 1
+EFE T erm 2
+EFE T erm 3
+0 20 40 60 80 100
+Epoch
+0.050
+0.075
+0.100
+0.125
+0.150
+0.175
+0.200
+0.225
+0.250
+(d) Preference Reconstruction (MAE)
+0 20 40 60 80 100
+Epoch
+0.25
+0.30
+0.35
+0.40
+0.45
+0.50
+0.55
+(e) Machine State Reconstruction (BCE)
+0 20 40 60 80 100
+Epoch
+0.28
+0.30
+0.32
+0.34
+0.36
+(f) Buffer Level Reconstruction (BCE)
+Figure 3: The performance of the agent with H = 300 on the real industrial system.
+9
+Agent(ϕ) Production Loss [%] EN Saving [%]
+DQN (0.93) 4.82 ± 0.34 10 .87 ± 0.76
+DQN (0.94) 3.34 ± 0.23 9 .92 ± 0.69
+DAIF 2.59 ± 0.16 12 .49 ± 0.04
+DQN (0.95) 1.27 ± 0.05 7 .00 ± 0.07
+DQN (0.96) 1.27 ± 0.09 7 .62 ± 0.12
+DQN (0.97) 1.20 ± 0.05 7 .72 ± 0.10
+DQN (0.98) 0.54 ± 0.04 2 .72 ± 0.19
+DQN (0.99) 0.40 ± 0.03 2 .46 ± 0.01
+Table 1: Production loss versus energy-saving (EN) across reward parameters ϕ of DQN agents [57]
+and for the DAIF agent.
+4.2.1 Effect of Depth
+The agent manages to improve the performance even when the overshooting horizon can be longer
+(e.g., H = 1000 steps). We conducted experiments with different overshooting horizons H to
+evaluate the performance of the agent. As shown in Figure 4, we report the preference scores
+from the best epoch during the validation phase. We also extracted the percentage improvement in
+energy-efficient consumption. The results demonstrate that even with longer overshooting horizons,
+the agent is still able to learn robust policies.
+200 400 600 800 1000
+H
+0.960
+0.965
+0.970
+0.975
+0.980
+0.985
+0.990
+0.995
+(a) Preference Score
+Mean
+95% CI
+200 400 600 800 1000
+H
+10
+11
+12
+13
+14
+15
+(b) Improving Consumption/Part (%)
+Mean
+95% CI
+Figure 4: Performance of the agents versus overshooting horizon H.
+5 Conclusion and Future Work
+We introduced Deep Active Inference (DAIF) Agents that integrate a multi-step latent transition and
+an explicit, differentiable policy inside a single generative model. By overshooting the dynamics
+to a long horizon and back-propagating expected-free-energy gradients into the policy, the agent
+plans without an exhaustive tree search, scales naturally to continuous actions, and preserves the
+epistemic–exploitative balance that drives active inference. We evaluated DAIF on a high-fidelity
+industrial control problem whose feature complexity has rarely been tackled in previous works based
+on active inference. Empirically, DAIF closed the loop between model learning and control in highly
+stochastic, delayed, long-horizon environment. With a single gradient update every H steps, the
+trained agent planned, and achieved strong performance—surpassing model-free RL baseline—while
+its world model continued to refine predictive accuracy even after the policy stabilized.
+Limitations and future work: While predicting an H-step transition removes the expensiveper-step
+planning loop, the agent still has to gather experience after H interactions and store it in the replay
+memory for training, so its sample-efficiency can still be improved. To update the world model
+after each new environment interaction—obtained under different actor/moving parameters—we
+need an operator that aggregates the sequence of actor representations. Recurrent models are a
+natural choice for this, but their sequential unrolling adds latency and can hinder gradient flow. A
+10
+lighter alternative is to treat the H embeddings as an (almost) unordered set and use a set function
+[59]; when the temporal structure with simple positional embeddings (e.g. sinusoidal [60]) can be
+concatenated before the set pooling. This allows us to break the horizon into segments—down to
+a single step—while still enabling EFE gradient backpropagation via aggregation of the current
+policy representation. Finally, (neural) operator-learning techniques could enable resolution-invariant
+aggregation across function spaces [61, 62]. Additional extensions include replacing the V AE world
+model with diffusion- or flow-matching-based generators [28], adopting actor–critic optimization
+(as in Dreamer and related world-model agents [13, 6, 14]), and introducing regularization schemes
+to stabilize EFE gradient updates and reduce their variance. Rapid adaptation in non-stationary
+settings—where model-free agents often struggle—remains an especially promising direction.
+Overall, this work bridges neuroscience-inspired active inference and contemporary world-model RL,
+demonstrating that a compact, end-to-end probabilistic agent can deliver efficient control in domains
+where hand-crafted rewards and step-wise planning are impractical.
+Acknowledgments
+The work presented in this paper was supported by HiCONNECTS, which has received funding from
+the Key Digital Technologies Joint Undertaking under grant agreement No. 101097296.
+References
+[1] Richard S Sutton and Andrew G Barto. Reinforcement learning: An introduction. MIT press,
+2018.
+[2] Yann LeCun, Yoshua Bengio, and Geoffrey Hinton. Deep learning.Nature, 521(7553):436–444,
+2015.
+[3] Christopher M. Bishop and Hugh Bishop. Deep Learning: Foundations and Concepts. Springer
+International Publishing, 2024.
+[4] V olodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A Rusu, Joel Veness, Marc G
+Bellemare, Alex Graves, Martin Riedmiller, Andreas K Fidjeland, Georg Ostrovski, et al.
+Human-level control through deep reinforcement learning. nature, 518(7540):529–533, 2015.
+[5] Thomas M. Moerland, Joost Broekens, Aske Plaat, and Catholijn M. Jonker. Model-based
+reinforcement learning: A survey. Foundations and Trends® in Machine Learning, 16(1):1–118,
+2023.
+[6] Danijar Hafner, Jurgis Pasukonis, Jimmy Ba, and Timothy Lillicrap. Mastering diverse control
+tasks through world models. Nature, 640:647–653, 2025.
+[7] Karl Friston, Rosalyn J. Moran, Yukie Nagai, Tadahiro Taniguchi, Hiroaki Gomi, and Joshua B.
+Tenenbaum. World model learning and inference. Neural Networks, 144:573–590, 2021.
+[8] Karl Friston, Thomas FitzGerald, Francesco Rigoli, Philipp Schwartenbeck, and Giovanni
+Pezzulo. Active inference: a process theory. Neural computation, 29(1):1–49, 2017.
+[9] Thomas Parr, Giovanni Pezzulo, and Karl J Friston. Active inference: the free energy principle
+in mind, brain, and behavior. MIT Press, 2022.
+[10] Karl Friston. The free-energy principle: a unified brain theory? Nature reviews neuroscience,
+11(2):127–138, 2010.
+[11] Yavar Taheri Yeganeh, Mohsen Jafari, and Andrea Matta. Active inference meeting energy-
+efficient control of parallel and identical machines. In International Conference on Machine
+Learning, Optimization, and Data Science, pages 479–493. Springer, 2024.
+[12] Z. Fountas, Noor Sajid, Pedro A. M. Mediano, and Karl J. Friston. Deep active inference agents
+using monte-carlo methods. ArXiv, abs/2006.04176, 2020.
+11
+[13] Danijar Hafner, Timothy Lillicrap, Jimmy Ba, and Mohammad Norouzi. Dream to control:
+Learning behaviors by latent imagination. In International Conference on Learning Representa-
+tions, 2020.
+[14] Viet Dung Nguyen, Zhizhuo Yang, Christopher L Buckley, and Alexander Ororbia. R-aif:
+Solving sparse-reward robotic tasks from pixels with active inference and world models. arXiv
+preprint arXiv:2409.14216, 2024.
+[15] Christof Angermueller, David Dohan, David Belanger, Ramya Deshpande, Kevin Murphy,
+and Lucy Colwell. Model-based reinforcement learning for biological sequence design. In
+International conference on learning representations, 2019.
+[16] Chenyu Wang, Masatoshi Uehara, Yichun He, Amy Wang, Tommaso Biancalani, Avantika
+Lal, Tommi Jaakkola, Sergey Levine, Hanchen Wang, and Aviv Regev. Fine-tuning discrete
+diffusion models via reward optimization with applications to dna and protein design. arXiv
+preprint arXiv:2410.13643, 2024.
+[17] Jakub M Tomczak. Deep Generative Modeling. Springer Cham, 2024.
+[18] Josh Abramson, Jonas Adler, Jack Dunger, Richard Evans, Tim Green, Alexander Pritzel,
+Olaf Ronneberger, Lindsay Willmore, Andrew J. Ballard, Joshua Bambrick, Sebastian W.
+Bodenstein, David A. Evans, Chia Chun Hung, Michael O’Neill, David Reiman, Kathryn
+Tunyasuvunakool, Zachary Wu, Akvil˙e Žemgulyt˙e, Eirini Arvaniti, Charles Beattie, Ottavia
+Bertolli, Alex Bridgland, Alexey Cherepanov, Miles Congreve, Alexander I. Cowen-Rivers,
+Andrew Cowie, Michael Figurnov, Fabian B. Fuchs, Hannah Gladman, Rishub Jain, Yousuf A.
+Khan, Caroline M.R. Low, Kuba Perlin, Anna Potapenko, Pascal Savy, Sukhdeep Singh, Adrian
+Stecula, Ashok Thillaisundaram, Catherine Tong, Sergei Yakneen, Ellen D. Zhong, Michal
+Zielinski, Augustin Žídek, Victor Bapst, Pushmeet Kohli, Max Jaderberg, Demis Hassabis, and
+John M. Jumper. Accurate structure prediction of biomolecular interactions with alphafold 3.
+Nature, 630(8016):493–500, 2024.
+[19] David Ha and Jürgen Schmidhuber. World models. arXiv preprint arXiv:1803.10122, 2018.
+[20] Diederik P Kingma and Max Welling. Auto-encoding variational bayes. arXiv preprint
+arXiv:1312.6114, 2013.
+[21] Danijar Hafner, Timothy Lillicrap, Ian Fischer, Ruben Villegas, David Ha, Honglak Lee, and
+James Davidson. Learning latent dynamics for planning from pixels. InInternational conference
+on machine learning, pages 2555–2565. PMLR, 2019.
+[22] Beren Millidge, Tommaso Salvatori, Yuhang Song, Rafal Bogacz, and Thomas Lukasiewicz.
+Predictive coding: towards a future of deep learning beyond backpropagation? arXiv preprint
+arXiv:2202.09467, 2022.
+[23] Karl Friston, Francesco Rigoli, Dimitri Ognibene, Christoph Mathys, Thomas Fitzgerald, and
+Giovanni Pezzulo. Action and behavior: A free-energy formulation. Biological Cybernetics,
+102(3):227–260, 2010.
+[24] Beren Millidge. Applications of the free energy principle to machine learning and neuroscience.
+arXiv preprint arXiv:2107.00140, 2021.
+[25] Takuya Isomura, Kiyoshi Kotani, Yasuhiko Jimbo, and Karl J Friston. Experimental validation
+of the free-energy principle with in vitro neural networks. Nature Communications, 14(1):4547,
+2023.
+[26] Corrado Pezzato, Carlos Hernández Corbato, Stefan Bonhof, and Martijn Wisse. Active
+inference and behavior trees for reactive action planning and execution in robotics. IEEE
+Transactions on Robotics, 39(2):1050–1069, 2023.
+[27] Tim Schneider, Boris Belousov, Georgia Chalvatzaki, Diego Romeres, Devesh K Jha, and Jan
+Peters. Active exploration for robotic manipulation. In2022 IEEE/RSJ International Conference
+on Intelligent Robots and Systems (IROS), pages 9355–9362. IEEE, 2022.
+12
+[28] Yufei Huang, Yulin Li, Andrea Matta, and Mohsen Jafari. Navigating autonomous vehicle on
+unmarked roads with diffusion-based motion prediction and active inference. arXiv preprint
+arXiv:2406.00211, 2024.
+[29] Lancelot Da Costa, Pablo Lanillos, Noor Sajid, Karl Friston, and Shujhat Khan. How active
+inference could help revolutionise robotics. Entropy, 24(3):361, 2022.
+[30] Lancelot Da Costa, Noor Sajid, Thomas Parr, Karl Friston, and Ryan Smith. Reward maximiza-
+tion through discrete active inference. Neural Computation, 35(5):807–852, 2023.
+[31] Leslie Pack Kaelbling, Michael L Littman, and Anthony R Cassandra. Planning and acting in
+partially observable stochastic domains. Artificial intelligence, 101(1-2):99–134, 1998.
+[32] Aswin Paul, Noor Sajid, Lancelot Da Costa, and Adeel Razi. On efficient computation in active
+inference. arXiv preprint arXiv:2307.00504, 2023.
+[33] David M Blei, Alp Kucukelbir, and Jon D McAuliffe. Variational inference: A review for
+statisticians. Journal of the American statistical Association, 112(518):859–877, 2017.
+[34] Noor Sajid, Francesco Faccio, Lancelot Da Costa, Thomas Parr, Jürgen Schmidhuber, and Karl
+Friston. Bayesian brains and the rényi divergence. Neural Computation, 34(4):829–855, 2022.
+[35] Philipp Schwartenbeck, Johannes Passecker, Tobias U Hauser, Thomas HB FitzGerald, Martin
+Kronbichler, and Karl J Friston. Computational mechanisms of curiosity and goal-directed
+exploration. elife, 8:e41703, 2019.
+[36] Deepak Pathak, Pulkit Agrawal, Alexei A Efros, and Trevor Darrell. Curiosity-driven exploration
+by self-supervised prediction. In International conference on machine learning, pages 2778–
+2787. PMLR, 2017.
+[37] Yuri Burda, Harrison Edwards, Amos Storkey, and Oleg Klimov. Exploration by random
+network distillation. arXiv preprint arXiv:1810.12894, 2018.
+[38] Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft actor-critic: Off-
+policy maximum entropy deep reinforcement learning with a stochastic actor. In International
+conference on machine learning, pages 1861–1870. Pmlr, 2018.
+[39] Rémi Coulom. Efficient selectivity and backup operators in monte-carlo tree search. In
+International conference on computers and games, pages 72–83. Springer, 2006.
+[40] David Silver, Julian Schrittwieser, Karen Simonyan, Ioannis Antonoglou, Aja Huang, Arthur
+Guez, Thomas Hubert, Lucas Baker, Matthew Lai, Adrian Bolton, et al. Mastering the game of
+go without human knowledge. nature, 550(7676):354–359, 2017.
+[41] Julian Schrittwieser, Ioannis Antonoglou, Thomas Hubert, Karen Simonyan, Laurent Sifre, Si-
+mon Schmitt, Arthur Guez, Edward Lockhart, Demis Hassabis, Thore Graepel, et al. Mastering
+atari, go, chess and shogi by planning with a learned model. Nature, 588(7839):604–609, 2020.
+[42] Alexandre Piché, Valentin Thomas, Cyril Ibrahim, Yoshua Bengio, and Chris Pal. Probabilistic
+planning with sequential monte carlo methods. In International Conference on Learning
+Representations, 2018.
+[43] Joe Marino, Yisong Yue, and Stephan Mandt. Iterative amortized inference. In International
+Conference on Machine Learning, pages 3403–3412. PMLR, 2018.
+[44] Alexander Tschantz, Beren Millidge, Anil K Seth, and Christopher L Buckley. Control as
+hybrid inference. arXiv preprint arXiv:2007.05838, 2020.
+[45] Matthijs Van Der Meer, Zeb Kurth-Nelson, and A David Redish. Information processing in
+decision-making systems. The Neuroscientist, 18(4):342–359, 2012.
+[46] Weirui Ye, Shaohuai Liu, Thanard Kurutach, Pieter Abbeel, and Yang Gao. Mastering atari
+games with limited data. Advances in neural information processing systems, 34:25476–25488,
+2021.
+13
+[47] Samuel Gershman and Noah Goodman. Amortized inference in probabilistic reasoning. In
+Proceedings of the annual meeting of the cognitive science society, volume 36, 2014.
+[48] Charles C Margossian and David M Blei. Amortized variational inference: When and why?
+arXiv preprint arXiv:2307.11018, 2023.
+[49] Emilien Dupont, Hyunjik Kim, SM Eslami, Danilo Rezende, and Dan Rosenbaum. From
+data to functa: Your data point is a function and you can treat it like one. arXiv preprint
+arXiv:2201.12204, 2022.
+[50] Miltiadis Kofinas, Boris Knyazev, Yan Zhang, Yunlu Chen, Gertjan J Burghouts, Efstratios
+Gavves, Cees GM Snoek, and David W Zhang. Graph neural networks for learning equivariant
+representations of neural networks. arXiv preprint arXiv:2403.12143, 2024.
+[51] Yarin Gal and Zoubin Ghahramani. Dropout as a bayesian approximation: Representing model
+uncertainty in deep learning. Ininternational conference on machine learning, pages 1050–1059.
+PMLR, 2016.
+[52] Irina Higgins, Loic Matthey, Arka Pal, Christopher Burgess, Xavier Glorot, Matthew Botvinick,
+Shakir Mohamed, and Alexander Lerchner. beta-vae: Learning basic visual concepts with a
+constrained variational framework. In International conference on learning representations,
+2016.
+[53] Matthew Crosby, Benjamin Beyret, and Marta Halina. The animal-ai olympics. Nature Machine
+Intelligence, 1(5):257–257, 2019.
+[54] Pablo Lanillos, Cristian Meo, Corrado Pezzato, Ajith Anil Meera, Mohamed Baioumy, Wataru
+Ohata, Alexander Tschantz, Beren Millidge, Martijn Wisse, Christopher L Buckley, et al.
+Active inference in robotics and artificial agents: Survey and challenges. arXiv preprint
+arXiv:2112.01871, 2021.
+[55] Alberto Loffredo, Marvin Carl May, Louis Schäfer, Andrea Matta, and Gisela Lanza. Reinforce-
+ment learning for energy-efficient control of parallel and identical machines. CIRP Journal of
+Manufacturing Science and Technology, 44:91–103, 2023.
+[56] Alberto Loffredo, Nicla Frigerio, Ettore Lanzarone, and Andrea Matta. Energy-efficient control
+in multi-stage production lines with parallel machine workstations and production constraints.
+IISE Transactions, 56(1):69–83, 2024.
+[57] Alberto Loffredo, Marvin Carl May, Andrea Matta, and Gisela Lanza. Reinforcement learning
+for sustainability enhancement of production lines. Journal of Intelligent Manufacturing, pages
+1–17, 2023.
+[58] Sheldon M Ross. Introduction to probability models. Academic press, 2014.
+[59] Manzil Zaheer, Satwik Kottur, Siamak Ravanbakhsh, Barnabas Poczos, Russ R Salakhutdinov,
+and Alexander J Smola. Deep sets. Advances in neural information processing systems, 30,
+2017.
+[60] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
+Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information
+processing systems, 30, 2017.
+[61] Zongyi Li, Nikola Kovachki, Kamyar Azizzadenesheli, Burigede Liu, Kaushik Bhattacharya,
+Andrew Stuart, and Anima Anandkumar. Fourier neural operator for parametric partial differen-
+tial equations. arXiv preprint arXiv:2010.08895, 2020.
+[62] Lu Lu, Pengzhan Jin, Giovanni Pang, Zhiping Zhang, and George Karniadakis. Learning
+nonlinear operators via deeponet based on the universal approximation theorem of operators.
+Nature Machine Intelligence, 3(3):218–229, 2021.
+[63] Paolo Renna and Sergio Materi. A literature review of energy efficiency and sustainability in
+manufacturing systems. Applied Sciences, 11(16):7366, 2021.
+[64] John Frank Charles Kingman. Poisson processes, volume 3. Clarendon Press, 1992.
+14
+A Application
+A.1 Energy-Efficiency Control
+Energy-Efficiency Control (EEC) is attracting growing attention in both academia and industrial
+research within manufacturing systems. Acting at the component, machine, and production-system
+levels, EEC can deliver substantial energy savings. Fundamentally, it adjusts an asset’s power-
+consumption state to its operating context: equipment remains fully powered when its function
+is required and shifts to a low-power state when idle. Implementing this strategy is complicated
+by stochastic demand patterns and by the penalties incurred during state transitions—namely the
+production time lost while the asset adds no value and the energy consumed by the transition itself. A
+comprehensive, up-to-date survey of the field is provided in [63]. Motivated by these, we focus on a
+system that replicates the key characteristics of an actual automotive manufacturing line.
+A.2 System Description
+Following the benchmark set by Loffredo et al. (2023) [55]—and readily extensible to a multi-stage
+production line [56]—we study a stand-alone workstation comprising a finite-capacity upstream
+buffer B that feeds c identical, parallel machines (Fig. 5). Parts arrive stochastically and each machine
+may reside in one of five states: busy, idle, standby, startup, or failed. The corresponding power rates
+satisfy:
+wb > wsu > wid > wsb ≈ wf ≈ 0.
+Figure 5: Layout of parallel, identical machines in the workstation [55].
+All system processes are modeled as Poisson processes [64]; this pertains to the arrival rate (λ) to
+buffer B with capacity K, machine processing times (µ), startup times (δ), time between failures (ψ),
+and time to repair (ξ), all with expected values, independent and stationary. Table 2 summarizes the
+parameters used to replicate the real industrial case study reported in [55].
+Table 2: Parameters for replicating the industrial system [55].
+Parameter c K µ δ ψ ξ
+Value 6 10 0.012 0.033 0.001 0.033
+Parameter λ w b wid wsu wsb wf
+Value 0.050 15 kW 9.30 kW 10 kW 0 kW 0 kW
+Each machine processes a single part type under a first-come-first-served policy. Machines cannot be
+powered down while processing or during startup. If a machine is ready to work but the buffer B
+is empty, it becomes starved and enters the idle state. The central challenge of EEC in this system
+is to dynamically determine how many machines should remain active versus how many should be
+transitioned to low-power states. This decision must be made adaptively in response to the unfolding
+stochastic conditions, striking an optimal balance between reducing energy usage and maintaining
+high production rate (i.e., throughput).
+A.2.1 Modeling
+As machine state transitions and part arrivals are modeled as Poisson processes [64, 55], we adopt
+the event-driven scheme of Loffredo et al. (2023) [55, 57], where control decisions are triggered
+15
+immediately after each state change in the system rather than at fixed sampling intervals—an approach
+proven effective for managing active machines. In this way, the system itself requests decisions from
+the agent in a stochastic manner.
+This control task admits two different formulations [11]: (i) continuous-time stochastic control or
+(ii) a discrete-time Markov chain (DTMC) [ 58]. A continuous-time model must provide the raw
+inter-event interval∆t to the agent for every machine and subsequent observation, whereas the DTMC
+abstraction lets the agent infer transition probabilities directly from observed events. Because ∆t
+varies from event to event, a continuous-time formulation would have to align the predictorPθ(ot+H)
+with the reference observation ˜ot+H, which—although beneficial for planning—complicates the
+network architecture owing to state occupancy durations. Therefore, to keep the model simpler, we
+adopt the discrete-time, event-driven formulation.
+A.3 Preference Mapping
+In AIF, the agent acts to reach its preferred observation, akin to a setpoint in control theory [8, 22].
+This implies that the agent possesses an internal preference mapping Ψ, which quantifies how close
+its predicted observation is to a desired target. While conceptually related to reward functions in
+RL, this preference reflects a control-based objective rather than cumulative rewards in the Markov
+Decision Process framework [1].
+Building on the EEC framework introduced by Loffredo et al. [57], a generic preference or re-
+ward function for the multi-objective optimization of the system under study can include terms for
+production, energy consumption, and a weighted combination thereof [11]:
+Rproduction = Tcurrent
+Tmax
+, R energy = 1 − Eavg
+Emax
+, (7a)
+R = ϕ · Rproduction + (1 − ϕ) · Renergy, (7b)
+where ϕ ∈ [0, 1] is a weighting coefficient balancing the importance of production and energy
+efficiency.
+Loffredo et al. [57] computed the production term as the average throughput from the start of the
+interaction, and the energy term as the difference between consecutive time steps, followed by
+exponential transformations. In contrast, we employ a window-based approach [11], which better
+captures the stochastic performance of the system and aligns with the concept of a delayed and
+long-horizon control problem. Specifically, we evaluate average system performance over a fixed
+time span ts2, leading up to the current observation at time t. Accordingly:
+Tcurrent = NP (t) − NP (t − ts)
+ts
+,
+Eavg = C(t) − C(t − ts)
+ts
+,
+where NP (t) is the number of parts produced and C(t) is the total energy consumed up to time t.
+Tmax corresponds to the maximum achievable throughput under the ALL ON policy [57], and Emax
+denotes the theoretical peak energy consumption when all machines operate in the busy state.
+To encourage EEC, ϕ is typically set close to 1 to avoid excessive production loss. However, this
+linear formulation may overestimate performance in cases where energy savings are negligible—i.e.,
+the composite term remains high due to production alone, even when control is not applied. To
+address this, we adjust the preference function by applying a sigmoid transformation to the energy
+term:
+R = Rproduction · σ(crRenergy), (8)
+where σ(x) = 1
+1+e−x is the sigmoid function, and cr is a scalar hyperparameter controlling the
+sensitivity to energy savings. This formulation ensures that energy savings sharply amplify the
+preference, thereby enforcing a balanced focus on both productivity and energy saving. Notably, in
+the absence of any control actions (i.e., under the ALL ON policy), the energy term saturates near
+zero, and the composite term is naturally lower than that of the linear formulation in Equation 7.
+2Eight hours or one shift in our implementation.
+16
+B Agent
+B.1 Setup
+For the representation of the actor function, we adopted a simple approximating mapping Π, which
+concatenates the input with both the first hidden layer and the output values. In this way, the policy
+parameters are introduced within the generative model and optimized via gradient descent on the
+EFE, while the rest of the agent parameters are kept fixed. We adhere to the Monte Carlo sampling
+methodology for calculating the EFE as outlined by Fountas et al. (2020) [12]. We also achieved
+similar control performance by computing all EFE terms using single-loop forward passes of the
+generative model repeated multiple times, which was faster and less computationally demanding than
+the multi-loop scheme presented in the algorithm.
+Bernoulli and Gaussian distributions are employed to model the prediction and state distributions,
+respectively. We also regularize the state space by applying non-linear activation functions to both
+the encoder and transition networks. The outputs of these networks define the means and variances of
+Gaussian-distributed latent states. Specifically, we use the tangent hyperbolic (tanh) function for the
+means, and the sigmoid function, scaled by a factor λs ∈ [1, 2]3, for the variances. This combination
+enforces additional regularization and contributes to the stability of the latent state space, ensuring
+values remain bounded and well-suited to a normal distribution.
+B.1.1 Observation
+Given that the problem under study includes discrete and continuous elements (as we also include
+preference scores in the system states), it has a composite format; at each decision step t the agent
+observes o(t) =
+
+o(t)
+b , o(t)
+m , o(t)
+r
+
+, where o(t)
+b : discrete is one–hot buffer-occupancy indicator,
+o(t)
+m : discrete is one–hot machine-state indicators, and o(t)
+r : continuous real-valued preference
+scores, includes production, energy, composite terms. Similarly, the generative model outputs the
+corresponding prediction P(o(t)) = [Pb, Pm, Pr], with all components generated with Bernoulli
+parameters. As the preference elements contain a continuous component, during EFE computation we
+need the entropy of the predicted observation distribution. To keep the procedure analytically tractable
+and consistent with the binary part of the observation, we approximate these continuous preference
+outputs with Bernoulli-like parameters; i.e. we treat each scalar reward prediction Pr ∈ [0, 1] as if
+it were the mean of a Bernoulli variable when evaluating the entropy term. In practice, this is an
+approximation Pr already lies in [0, 1]—yet allows us to reuse the same closed-form binary-entropy
+expression for both discrete and continuous preference channels to ease the computation.
+When we calculate the third term of the EFE, we need to feed the prediction to the encoder. We
+sample4 the one-hot parts first and then apply them to the encoder. This differs from earlier AIF
+implementations such as Fountaset al. [12], which feed mean pixel intensities (i.e. predicted Bernoulli
+parameters in [0, 1]) straight back into the encoder. That works for images, but in our setting (one-hot
+vectors) it would (i) ignore the semantics of one-hot codes and (ii) treat each feature independently,
+discarding correlations.
+B.1.2 Reconstruction Loss
+Based on the format of the observation and the respective prediction, we need to distinguish the
+reconstruction loss. Accordingly, for a mini-batch of size N we compute
+BCEb = 1
+N
+NX
+i=1
+BCE
+ 
+P(i)
+b , o(i)
+b
+
+(9a)
+BCEm = 1
+N
+NX
+i=1
+BCE
+ 
+P(i)
+m , o(i)
+m
+
+(9b)
+3We set λs = 1.5 to ensure the variance output remains within the non-saturated domain of the sigmoid
+function, thereby preserving informative gradient flow during training.
+4For ease of calculation, we take the max for the states.
+17
+MAE(i)
+r =
+P(i)
+r − o(i)
+r
+ (9c)
+MSEr = 1
+N
+NX
+i=1
+h
+−log
+ 
+1 − MAE(i)
+r + ε
+i
+(9d)
+This combines binary cross-entropy (BCE) with an exponential-like term for the continuous elements.
+Given that preference is generally more important than the other elements, and that buffer level is
+more important than the machine state, we weight these elements. Finally, it is combined with the
+usual β-V AE regularization term and passed to the optimizer as:
+Lo = 2
+7 BCEb + 1
+7 BCEm + 4
+7 MSEr
+| {z }
+reconstruction
++ β ∗ DKL
+ 
+q(s) ∥N (0, I)
+
+| {z }
+β regularization
+. (10)
+C Experiments
+C.1 Code
+The code and data are available at https://github.com/YavarYeganeh/Deep_AIF.
+C.2 Training and Evaluation Procedure
+During each training epoch, an environment is initialized with the parameters of the industrial system,
+including stochastic processes. The system first undergoes a one-day warm-up period in simulation
+time using the ALL ON policy. The resulting profile from this warm-up is discarded. This is followed
+by another one-day simulation using a random policy to bring the system to a fully random and
+uncontrolled state. Then, the agent, equipped with experience replay, interacts with the system.
+During each epoch, the model is trained for several iterations, with updates both for the model and
+actor occurring every H steps, following sampling from the experience memory. After each epoch,
+the agent’s performance is validated on three independent and randomly instantiated environments
+that undergo the same warm-up and random initialization steps. These validation episodes span one
+day of simulation, during which no model learning or experience gathering occurs, except for gradient
+fine-tuning of the actor every H steps. The performance is then averaged, and the standard deviation
+is computed. While all previous performance metrics are based on the preference score, the best-
+performing agent during validation is retrieved and tested for 30 days of simulation on 10 independent
+and randomly instantiated environments. These environments follow the same initialization protocol,
+except for a 10-day warm-up to ensure consistency. Final performance of relative energy efficiency is
+averaged over the 10 environments, along with the computation of standard deviations.
+18

@@ -1,0 +1,725 @@
+Learning Policies for Continuous Control via
+Transition Models
+Justus Huebotter1[0000−0001−8354−0368], Serge Thill1[0000−0003−1177−4119],
+Marcel van Gerven1[0000−0002−2206−9098], and Pablo
+Lanillos1[0000−0001−9154−0798]
+Donders Institute, Radboud University, Nijmegen, The Netherlands
+justus.huebotter@donders.ru.nl
+Abstract. It is doubtful that animals have perfect inverse models of
+their limbs (e.g., what muscle contraction must be applied to every joint
+to reach a particular location in space). However, in robot control, mov-
+ing an arm’s end-eﬀector to a target position or along a target trajectory
+requires accurate forward and inverse models. Here we show that by
+learning the transition (forward) model from interaction, we can use it
+to drive the learning of an amortized policy. Hence, we revisit policy
+optimization in relation to the deep active inference framework and de-
+scribe a modular neural network architecture that simultaneously learns
+the system dynamics from prediction errors and the stochastic policy
+that generates suitable continuous control commands to reach a desired
+reference position. We evaluated the model by comparing it against the
+baseline of a linear quadratic regulator, and conclude with additional
+steps to take toward human-like motor control.
+Keywords: Continuous neural control · Policy optimization · Active
+Inference
+1 Introduction
+Using models for adaptive motor control in artiﬁcial agents inspired by neuro-
+science is a promising road to develop robots that might match human capabil-
+ities and ﬂexibility and provides a way to explicitly implement and test these
+models and its underlying assumptions.
+The use of prediction models in motor planning and control in biological
+agents has been extensively studied [12,15]. Active Inference (AIF) is a math-
+ematical framework that provides a speciﬁc explanation to the nature of these
+predictive models and is getting increased attention from both the neuroscience
+and machine learning research community, speciﬁcally in the domain of embod-
+ied artiﬁcial intelligence [13,5]. At the core of AIF lies the presence of a powerful
+generative model that drives perception, control, learning, and planning all based
+on the same principle of free energy minimization [7]. However, learning these
+generative models remains challenging. Recent computational implementations
+arXiv:2209.08033v1  [cs.RO]  16 Sep 2022
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+harness the power of neural networks (deep active inference) to solve a variety
+of tasks based on these principles [13].
+While the majority of the state of the art in deep AIF (dAIF) is focused on
+abstract decision making with discrete actions, in the context of robot control
+continuous action and state representations are essential, at least at the lowest
+level of a movement generating hierarchy. Continuous control implementations
+of AIF, based on the original work from Friston [7], is very well suited for adap-
+tation to external perturbations [21] but it computes suboptimal trajectories and
+enforcesthe stateestimation tobebiased tothepreference/target state[13].New
+planning algorithms based on optimizing the expected free energy [18] ﬁnally un-
+couple the action plan from the estimation but they suﬀer from complications
+to learn the generative model and the preferences, specially for generating the
+actions.
+In this paper, we revisit policy optimization using neural networks from the
+perspectiveofpredictivecontroltolearnalow-levelcontrollerforareachingtask.
+We show that by learning the transition (forward) model, during interaction, we
+can use it to drive the learning of an amortized policy. The proposed methods
+are not entirely novel, but instead combine aspects of various previous meth-
+ods for low-level continuous control, active inference, and (deep) reinforcement
+learning. This is an early state proof-of-concept study aimed at understanding
+how prediction networks can lead to successful action policies, speciﬁcally for
+motor control and robotic tasks.
+First, we summarize important related research and then go on to describe
+a modular neural network architecture that simultaneously learns the system
+dynamics from prediction errors and the stochastic policy that generates suitable
+continuous control commands to reach a desired reference position. Finally, we
+evaluated the model by comparing it against the baseline of a linear quadratic
+regulator (LQR) in a reaching task, and conclude with additional steps to take
+towards human-like motor control.
+2 Related Work
+This work revisits continuous control and motor learning in combination with
+system identiﬁcation, an active direction of research with many theoretical in-
+ﬂuences. As the body of literature covering this domain is extensive, a complete
+list of theoretical implications and implementation attempts goes beyond the
+scope of this paper. Instead, we want to highlight selected examples that either
+represent a branch of research well or have particularly relevant ideas.
+Motor learning and adaptation has been studied extensively in humans (for
+recent reviews please see [12,15]). Humans show highly adaptive behavior to per-
+turbations in simple reaching tasks and we aim to reproduce these capabilities
+in artiﬁcial agents. While simple motor control can be implemented via optimal
+control when the task dynamics are known [12], systems that both have learning
+from experience and adaptation to changes have had little attention [6,2]. How-
+ever, the assumption that the full forward and inverse model are given is not
+2
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+often met in practice and hence these have to be learned from experience [26].
+Initial experiments in reaching tasks for online learning of robot arm dynam-
+ics in spiking neural networks inspired by optimal control theory have shown
+promising results [10].
+Recently, the most dominant method for control of unspeciﬁed systems in
+machine learning is likely that of deep reinforcement learning (dRL) where con-
+trol is learned as amortized inference in neural networks which seek to maximize
+cumulative reward. The model of the agent and task dynamics is learned either
+implicitly (model-free) [14] or explicitly (model-based) [8,27] from experience.
+The advantage of an explicit generative world model is that it can be used for
+planning [22], related to model predictive control, or generating training data
+via imagining [8,27]. Learning and updating such world models, however, can
+be comparatively expensive and slow. Recently, there has been a development
+towards hybrid methods that combine the asymptotic performance of model-free
+with the planning capabilities of model-based approaches [23]. Finally, model-
+free online learning for fast motor adaptation when an internal model is inaccu-
+rate or unavailable [2] shows promising results that are in line with behavioral
+ﬁndings in human experiments and can account for previously inexplicable key
+phenomena.
+The idea of utilizing a generative model of the world is a core component
+of AIF, a framework unifying perception, planning, and action by jointly min-
+imizing the expected free energy (EFE) of the agent [1,7,13]. In fact, here this
+generative model entirely replaces the need for an inverse model (or policy model
+in RL terms), as the forward model within the hierarchical generative model can
+be inverted directly by the means of predictive coding. This understands action
+asaprocessofiterative,notamortized,inferenceandishenceastrongcontrastto
+optimal control theory, which requires both forward and inverse models [11]. Ad-
+ditionally, the notion of exploration across unseen states and actions is included
+naturally as the free energy notation includes surprise (entropy) minimization, a
+notion which is artiﬁcially added to many modern RL implementations [8,27,14].
+Also, AIF includes the notion of a global prior over preferred states which is ar-
+guably more ﬂexible than the reward seeking of RL agents, as it can be obtained
+via rewards as well as other methods such as expert imitation. Recently, the idea
+of unidirectional ﬂow of top-down predictions and bottom-up prediction errors
+has been challenged by new hybrid predictive coding, which extends these ideas
+by further adding bottom-up (amortized) inference to the mix [24], postulating
+a potential paradigm shift towards learned habitual inverse models of action.
+Recent proof-of-concept AIF implementations have shown that this frame-
+work is capable of adaptive control, e.g. in robotic arms [19] via predictive
+processing. In practice, most implementations of AIF by the machine learn-
+ing community use neural networks to learn approximations of the probabilistic
+quantities relevant in the minimization of the EFE, named deep active infer-
+ence. Using gradient decent based learning, these forward models can be used
+to directly propagate the gradients of desired states with respect to the control
+signals (or policy) [8,27,3,4,9,17]. Input to such policies is commonly given as
+3
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+either fully observable internal variables (related to proprioception) [25,3,4], vi-
+sual observations directly [14] or a learned latent representation of single [9,8,27]
+or mixed sensory input [16,21]. This, however, makes use of amortized infer-
+ence with bottom-up perception and top-down control [25,3,4,9,17] and is hence
+in some contrast to the predictive nature of the original AIF theory and more
+closely related to deep RL.
+In summary, AIF postulates a promising approach to biologically plausible
+motor control [7,1], speciﬁcally for robotic applications [5]. The minimization
+of an agent’s free energy is closely related to other neuroscientiﬁc theories such
+as the Bayesian brain hypothesis and predictive coding. Adaptive models can
+be readily implemented when system dynamics are known [20,6]. Unknown gen-
+erative models of (forward and, if needed, inverse) dynamics may be learned
+from various perceptive stimuli through experience in neural networks via back
+propagation or error [8,27,3,4,9,17,23] or alternative learning methods [25,24,10].
+This can be extended to also learn priors about preferred states and actions
+[8,27,14,23,9,3,4]. Generative models (and their priors) can then be utilized for
+perception, action, planning [9,22], and the generation of imagined training data
+[8,27].
+In this work, we draw inspiration from these recent works. We are learning
+a generative model for a low-level controller with unknown dynamics from fully
+observable states through interaction. One component learns the state transi-
+tions, which in turn, similar to [8,27], is used to generate imagined training data
+for an amortized policy network. The prior about preferred states is assumed to
+be given to this low-level model and hence no reward based learning is applied.
+3 Model
+We consider a fully observable but noisy system with unknown dynamics. We
+formalize this system as an Markov Decision Process (MDP) in discrete time
+t ∈Z. The state of the system as ann-dimensional vector of continuous vari-
+ables xt ∈Rn. Likewise, we can exertm-dimensional control on the system via
+continuous actionsut ∈Rm. We aim to learn a policy that can bring the system
+to a desired goal state˜x∈Rn, which is assumed to be provided by an external
+source. If the system dynamics were known, we could apply optimal control the-
+ory to ﬁndu∗
+t for each point in timet∈[0,∞). However, the system dynamics
+are unknown and have to be learned (system identiﬁcation). The dynamics of
+the system are learned via interaction and from prediction errors by a transition
+model υ. This transition model is used to train in parallel a policy modelπ
+to generate the control actions. Both models are schematically summarized in
+Figure 1.
+3.1 Transition Model
+The dynamics of the system are described by
+xt+1 = xt + f(xt, ut, ζt), (1)
+4
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+Fig. 1.Transition model (left) and policy model (right) workﬂow over three time steps.
+The policy network (orange) takes a statexand target˜xas input from external sources
+to generate a control actionu. The recurrent transition network (green) predicts the
+change to the next state∆xbased on statexand controlu. The gray box is a Gaussian
+sampling process.
+where ζ is some unknown process noise. Further, any observationy cannot be
+assumed to be noiseless and thus
+yt = xt + ξt, (2)
+where ξ is some unknown observation noise. Asf is unknown, we want to learn
+a functiong that can approximate it as
+g(yt, ut, φ) ≈f(xt, ut, ζt), (3)
+by optimizing the function parametersφ. We hence deﬁne a state estimateˆxas
+ˆxt ∼N(ˆµx
+t, ˆσx
+t), (4)
+where the superscriptx indicates not an exponent but association to the state
+estimate and
+ˆµx
+t = yt−1 + ˆµ∆x
+t . (5)
+In turn, both ˆµ∆x
+t and ˆσx
+t = ˆσ∆x
+t are outputs of a learned recurrent neural
+network (transition network) with parametersφ as
+ˆµ∆x
+t , ˆσ∆x
+t = g(yt−1, ut−1, φ). (6)
+Tomaintaindiﬀerentiabilitytothestateestimateweapplythereparametrization
+trick in Equation (4). Further, we summarize the steps from Equation (4) - 6
+(the transition modelυ, see Figure 1 left) as
+ˆxt = υ(yt−1, ut−1, φ). (7)
+Theoptimaltransitionfunctionparameters φ∗aregivenbyminimizingtheGaus-
+sian negative log-likelihood loss
+Lυ = 1
+2T
+T∑
+t=1
+(
+log (max(ˆσx
+t, ϵ)) + (ˆµx
+t −yt)2
+max(ˆσx
+t, ϵ)
+)
+, (8)
+5
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+and
+φ∗= argmin
+φ
+Lυ, (9)
+where ϵis a small constant to avoid division by zero and the added constant has
+been omitted.
+3.2 Policy Model
+The actor is given by the policyπθ that gives a control actionu for a given
+current statexand target or preferred state˜xas
+π(ut |xt, ˜xt,θ), (10)
+where xt can be either an observation from the environmentyt or an estimate
+from the transition networkˆxt and
+ut ∼N(µu
+t, σu
+t). (11)
+Here, µu and σu are given by a function approximator that is a neural network
+with parametersθ (see Figure 1 right). We aim to ﬁnd the optimal policyπ∗so
+that
+π∗= argmin
+u
+T∑
+t=1
+(xt −˜xt)2 . (12)
+However, asxt is non-diﬀerentiable with respect to the action, we instead use
+the transition model estimate ˆxt. This also allows to ﬁnd the gradient of the
+above loss with respect to the actionu by using backpropagation through the
+transition network and the reparametrization trick. Policy and transition net-
+work are optimized by two separate optimizers as to avoid that the policy loss
+pushes the transition network to predict states that are the target state, which
+would yield wrong results.
+While the above formulation in principle should ﬁnd a system that is able
+to minimize the distance between the current state estimateˆx and the target
+˜x, in practice there are some additional steps to be taken into account to learn
+a suitable policy. As the state contains information about position and velocity,
+so does the target state. If the target state is a ﬁxed position, the target veloc-
+ity is given as zero. However, optimizing the system in a matter where the loss
+increases as the system starts moving, there is a strong gradient towards per-
+forming no action at all, even if this means that the position error will remain
+large throughout the temporal trajectory. To overcome this issue, we introduce
+a target gain vector˜xg, which weighs the relevance of each preference state vari-
+able. For instance, when the velocity of the system is non-important we set to
+1 where x is a representing a position encoding and 0 for every velocity. The
+weighted policy loss becomes:
+Lπ = 1
+T
+T∑
+t=1
+˜xg(ˆxt −˜x)2 . (13)
+6
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+The oﬄine training procedure for both transition and policy networks is
+summarized in algorithm 1 below, as well as Algorithm 2 & B in the Appendix B
+and C.
+Algorithm 1Oﬄine training of transition and policy networks
+1: Input: a diﬀerentiable transition parametrizationυ(ˆx′|y,u,φ),
+2: a diﬀerentiable policy parametrizationπ(u|x,˜x,θ),
+3: a task environment providing(y′,˜x′|u)
+4: Initialize transition parametersφ∈Rd and policy parametersθ∈Rd′
+5: Initialize a memory buﬀer of capacityM
+6: loop for I iterations:
+7: Play out E episodes of lengthT by applyingu∼π(y,˜x,θ) at each step and
+save to memory
+8: Update transition network parameters for nυ batches of sizeNυ sampled from
+memory
+9: Update policy network parameters for nπ batches of size Nπ sampled from
+memory
+4 Results
+Fig. 2. Eight equidistant targets
+(blue) are presented to the agent in
+sequence, starting from the center
+position (red) each time.
+Here we summarize the key results of this re-
+search. For a more detailed description of the
+task please refer to appendix Appendix A.
+To evaluate the performance of the trained
+models in comparison to an LQR baseline we
+have established a reaching task inspired by
+experiments conducted in humans and robots
+in previous research [12,6]. The agent is pre-
+sented eight equidistant targets in sequence
+for T = 200steps, while starting at the cen-
+ter positionxt0 = [0,0,0,0]. Initially, each target is 0.7 units of distance removed
+from the center with oﬀsets of45◦(Figure 2). In one case these targets are sta-
+tionary, or alternatively rotate in a clockwise motion with an initial velocity of
+0.5 perpendicular to the center-pointing vector. To test agent performance under
+changed task dynamics, we oﬀset the rotation angleγ during some evaluations,
+which inﬂuences the direction of the acceleration as given by controlu (see
+Equation (24)). To quantify the performance of target reaching, we measure the
+Euclidean distance between the current position[x1,x2] and the target position
+[˜x1,˜x2] at each stept, so that performance is deﬁned as
+J = ∆t
+T∑
+t=1
+√
+(x1,t −˜x1,t)2 + (x2,t −˜x2,t)2 . (14)
+Results in Figure 3 show that both the transition model and policy model
+are able to quickly learn from the environment interactions. The task of reaching
+7
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+Fig. 3.Model performance improves during learning. The transition model shows bet-
+ter predictions when the target is stationary. The policy closely approaches but never
+reaches the LQR baseline scores for both stationary (red dotted line) and moving tar-
+gets (green dotted line).
+stationary targets only is easier to conduct with predicted state mean squared
+error lower and a higher evaluation task performance. For both tasks, the model
+performance approached but never fully reached the optimal control baseline
+of LQR – for implementation details of the baseline please refer to appendix
+Appendix D).
+Fig. 4.Auto-regressive transition model predictions (blue to yellow) for 100 time steps
+over the true state development (green) are poor at the beginning of training (left),
+but can closely follow the true state development at the end of the training (center).
+Perturbing the action with a rotation angleγ = 60◦induces a mismatch between state
+prediction and true trajectory (right).
+8
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+Figure 4 shows auto-regressive predictions of the transition model when pro-
+vided with some initial states and the future action trajectory. The model ini-
+tially failed to make sensible predictions, but the ﬁnal trained model closely
+predicts the true state development. When applying a rotational perturbation
+to the input control ofγ = 60◦(Figure 4(right)) these predictions start to diverge
+from the true state, as the model has capabilities for online adaptation.
+The policy model is initially unable to complete the reaching task, but has
+a strong directional bias of movement (data not shown). After just 20 iterations
+(200 played episodes and 600 policy weight updates) we observe that the policy
+model can partially solve target reaching for both stationary and moving targets
+(Figure 5 A & E respectively). At the end of training the model generated
+trajectories (B & F) closely match those of the LQR baseline (C & G). Applying
+perturbations results in non-optimal trajectories to the target (D & H). Once
+these perturbations become too large at aroundγ = ±90◦, neither LQR nor
+the learned models can solve the tasks. However, the learned models closely
+track the performance of the LQR. This failure is a result of both policy and
+transition model being learned entirely oﬄine and the inference being completely
+amortized. We believe that a more predictive coding based implementation of
+AIF as suggested by [1,7] and demonstrated by [20] would allow the system to
+recover from such perturbations. In future iterations of this research, we aim to
+extend both the transition and policy models by an adaptive component that
+can learn online from prediction errors to recover performance similar to [6,10]
+and match adaptation similar to that described in humans [12].
+A
+E
+B
+F
+C
+G
+D
+H
+Fig. 5.Example trajectory plots from the evaluation task for stationary targets (top
+row) and moving targets (bottom row) show the improvement during learning from
+iteration 20 (A & E) to iteration 150 (B & F). The LQR baseline performs the tar-
+get reaching optimally (C & D), but struggles when the control inputu is rotated by
+γ = 60◦(D & H). The graph on the right shows that both models learned on station-
+ary as well as moving targets perform close to the LQR under diﬀerent perturbation
+conditions, but no model can reach the targets when the rotation becomes larger than
+γ = 90◦.
+9
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+5 Conclusion
+Here, we show that a low-level motor controller and its state dynamics can be
+learned directly from prediction error via oﬄine learning. Furthermore, it has
+similar capabilities to LQR to absorb rototranslation perturbations. However,
+as neither model has any means of online adaptation, they fail to show the
+behavioral changes described in humans [12] or control approaches [6]. In future
+research, hope to take steps towards human-like online motor adaptation as
+described in [12,15]. AIF proposes a speciﬁc implementation of prediction error-
+driven motor action generation [7,1,20], but computational implementations in
+dRL and dAIF based on oﬄine learning in neural networks often lack these
+online adaptation capabilities. In future iterations of this research, we aim to
+address this gap . Speciﬁcally, we propose to combine the oﬄine learning of our
+model with model-free adaptation, such as e.g. presented in [2,6].
+Our implementation is based on some underlying assumptions. There are two
+kinds of input to the system that come from other components of a cognitive
+agent which we do not explicitly model. First, the position of the agent eﬀector in
+relation to some reference frame (e.g. its base joint) is provided to the low-level
+controller in Cartesian coordinates. This information would have to be obtained
+through an integration of visual, proprioceptive, and touch information. Second,
+the target position of this eﬀector is provided in the same coordinate system.
+This information would likely be generated by a motor planning area where
+abstract, discrete action priors (e.g. grasp an object) are broken down into a
+temporal sequence of target positions. Integrating our method with models of
+these particular systems is not part of this work but should be addressed in
+future research.
+Acknowledgements This research was partially funded by the Human Brain
+Project SGA3.
+10
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+References
+1. Adams, R.A., Shipp, S., Friston, K.J.: Predictions not commands: active in-
+ference in the motor system. Brain Structure and Function 218, 611–643 (5
+2013). https://doi.org/10.1007/s00429-012-0475-5 , http://link.springer.
+com/10.1007/s00429-012-0475-5
+2. Bian, T., Wolpert, D.M., Jiang, Z.P.: Model-free robust optimal feedback
+mechanisms of biological motor control. Neural computation 32, 562–595
+(3 2020). https://doi.org/10.1162/neco_a_01260, http://www.ncbi.nlm.nih.
+gov/pubmed/31951794
+3. Catal, O., Nauta, J., Verbelen, T., Simoens, P., Dhoedt, B.: Bayesian policy selec-
+tion using active inference (4 2019),http://arxiv.org/abs/1904.08149
+4. Catal, O., Verbelen, T., Nauta, J., Boom, C.D., Dhoedt, B.: Learning perception
+and planning with deep active inference. pp. 3952–3956. IEEE (5 2020).https://
+doi.org/10.1109/ICASSP40776.2020.9054364, https://ieeexplore.ieee.org/
+document/9054364/
+5. Costa, L.D., Lanillos, P., Sajid, N., Friston, K., Khan, S.: How active inference
+could help revolutionise robotics. Entropy24, 361 (3 2022). https://doi.org/
+10.3390/e24030361, https://www.mdpi.com/1099-4300/24/3/361
+6. DeWolf, T., Stewart, T.C., Slotine, J.J., Eliasmith, C.: A spiking neural model
+of adaptive arm control. Proceedings of the Royal Society B: Biological Sciences
+283, 20162134 (11 2016).https://doi.org/10.1098/rspb.2016.2134, https://
+royalsocietypublishing.org/doi/10.1098/rspb.2016.2134
+7. Friston, K.: What is optimal about motor control? Neuron 72, 488–498 (11
+2011). https://doi.org/10.1016/j.neuron.2011.10.018, https://linkinghub.
+elsevier.com/retrieve/pii/S0896627311009305
+8. Hafner,D.,Lillicrap,T.,Ba,J.,Norouzi,M.:DreamtoControl:LearningBehaviors
+by Latent Imagination. vol. 1, pp. 1–10. ICLR 2020 Conference (12 2019),http:
+//arxiv.org/abs/1912.01603
+9. van der Himst, O., Lanillos, P.: Deep active inference for partially observable
+mdps (2020). https://doi.org/10.1007/978-3-030-64919-7_8 , https://link.
+springer.com/10.1007/978-3-030-64919-7_8
+10. Iacob, S., Kwisthout, J., Thill, S.: From models of cognition to robot control
+and back using spiking neural networks (2020). https://doi.org/10.1007/
+978-3-030-64313-3_18 , http://dx.doi.org/10.1007/978-3-030-64313-3_
+18https://link.springer.com/10.1007/978-3-030-64313-3_18
+11. Kalman, R.E.: Contributions to the theory of optimal control. Bol. soc. mat. mex-
+icana 5(2), 102–119 (1960)
+12. Krakauer, J.W., Hadjiosif, A.M., Xu, J., Wong, A.L., Haith, A.M.: Motor learn-
+ing(32019). https://doi.org/10.1002/cphy.c170043,https://onlinelibrary.
+wiley.com/doi/10.1002/cphy.c170043
+13. Lanillos, P., Meo, C., Pezzato, C., Meera, A.A., Baioumy, M., Ohata, W., Tschantz,
+A., Millidge, B., Wisse, M., Buckley, C.L., Tani, J.: Active inference in robotics
+and artiﬁcial agents: Survey and challenges pp. 1–20 (12 2021),http://arxiv.
+org/abs/2112.01871
+14. Lee, A.X., Nagabandi, A., Abbeel, P., Levine, S.: Stochastic latent actor-
+critic: Deep reinforcement learning with a latent variable model. In: Ad-
+vances in Neural Information Processing Systems. vol. 33, pp. 741–752. Curran
+Associates, Inc. (2020), https://proceedings.neurips.cc/paper/2020/file/
+08058bf500242562c0d031ff830ad094-Paper.pdf
+11
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+15. McNamee, D., Wolpert, D.M.: Internal models in biological control. An-
+nual Review of Control, Robotics, and Autonomous Systems 2, 339–364 (5
+2019). https://doi.org/10.1146/annurev-control-060117-105206 , https://
+www.annualreviews.org/doi/10.1146/annurev-control-060117-105206
+16. Meo, C., Franzese, G., Pezzato, C., Spahn, M., Lanillos, P.: Adaptation through
+prediction: multisensory active inference torque control (12 2021),http://arxiv.
+org/abs/2112.06752
+17. Millidge, B.: Deep active inference as variational policy gradients. Journal
+of Mathematical Psychology 96, 102348 (6 2020). https://doi.org/10.
+1016/j.jmp.2020.102348, https://linkinghub.elsevier.com/retrieve/pii/
+S0022249620300298
+18. Millidge, B., Tschantz, A., Buckley, C.L.: Whence the expected free en-
+ergy? Neural Computation 33, 447–482 (2 2021). https://doi.org/10.
+1162/neco_a_01354, https://direct.mit.edu/neco/article/33/2/447/95645/
+Whence-the-Expected-Free-Energy
+19. Oliver, G., Lanillos, P., Cheng, G.: An empirical study of active inference on a
+humanoid robot. IEEE Transactions on Cognitive and Developmental Systems
+14, 462–471 (6 2022).https://doi.org/10.1109/TCDS.2021.3049907, https://
+ieeexplore.ieee.org/document/9316712/
+20. Pio-Lopez, L., Nizard, A., Friston, K., Pezzulo, G.: Active inference and
+robot control: a case study. Journal of The Royal Society Interface
+13, 20160616 (9 2016). https://doi.org/10.1098/rsif.2016.0616, https://
+royalsocietypublishing.org/doi/10.1098/rsif.2016.0616
+21. Sancaktar, C., van Gerven, M.A.J., Lanillos, P.: End-to-end pixel-based
+deep active inference for body perception and action. pp. 1–8. IEEE (10
+2020). https://doi.org/10.1109/ICDL-EpiRob48136.2020.9278105, https://
+ieeexplore.ieee.org/document/9278105/
+22. Traub, M., Butz, M.V., Legenstein, R., Otte, S.: Dynamic action infer-
+ence with recurrent spiking neural networks (2021). https://doi.org/
+10.1007/978-3-030-86383-8_19 , https://link.springer.com/10.1007/
+978-3-030-86383-8_19
+23. Tschantz, A., Millidge, B., Seth, A.K., Buckley, C.L.: Control as hybrid inference
+(7 2020),http://arxiv.org/abs/2007.05838
+24. Tschantz, A., Millidge, B., Seth, A.K., Buckley, C.L.: Hybrid predictive coding:
+Inferring, fast and slow (4 2022),http://arxiv.org/abs/2204.02169
+25. Ueltzhöﬀer, K.: Deep active inference. Biological Cybernetics112, 547–573 (12
+2018). https://doi.org/10.1007/s00422-018-0785-7 , http://link.springer.
+com/10.1007/s00422-018-0785-7
+26. Wolpert, D., Kawato, M.: Multiple paired forward and inverse mod-
+els for motor control. Neural Networks 11(7-8), 1317–1329 (10 1998).
+https://doi.org/10.1016/S0893-6080(98)00066-5, https://linkinghub.
+elsevier.com/retrieve/pii/S0893608098000665
+27. Wu, P., Escontrela, A., Hafner, D., Goldberg, K., Abbeel, P.: DayDreamer: World
+Models for Physical Robot Learning (c), 1–15 (6 2022),http://arxiv.org/abs/
+2206.14176
+12
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+Appendix
+A Task Description
+The state of the 2d plane environment is given as
+x= [x1,x2, ˙x1, ˙x2]. (15)
+Further, the desired target state is given as
+˜x= [˜x1,˜x2,˜˙x1,˜˙x2]. (16)
+When we only care about the ﬁnal position in the state, then the target gain is
+˜xg = [˜xg1,˜xg2,˜˙xg1,˜˙xg2] = [1,1,0,0]. (17)
+The desired target state as well as it’s target gain are currently provided
+by the task itself, but later should be provided by some higher level cognitive
+mechanism.
+Further, the action inﬂuences the state by
+u= [u1, u2] ∝[¨x1,¨x2], (18)
+where ui ∈[−umax,umax].
+Following the forward Euler for discrete time steps with step size∆twe also
+get the environment dynamics as
+ˆxi,t+1 ∼N(xi,t + ∆t˙xi,t, ζx), (19)
+and then clip the computed value based on the constrains
+xi,t+1 =
+
+
+
+xmax ifˆxi,t+1 >xmax
+ˆxi,t+1 ifxmax > ˆxi,t+1 >xmin
+xmin ifˆxi,t+1 <xmin
+(20)
+Doing the same for velocity and acceleration we get
+ˆ˙xi,t+1 ∼N( ˙xi,t + ∆t¨xi,t, ζ˙x), (21)
+and
+˙xi,t+1 =
+
+
+
+˙xmax ifˆ˙xi,t+1 > ˙xmax
+ˆ˙xi,t+1 if ˙xmax > ˆ˙xi,t+1 > ˙xmin
+˙xmin ifˆ˙xi,t+1 < ˙xmin
+(22)
+as well as
+ˆ¨xi,t+1 ∼N(κu′
+i,t, ζ¨x), (23)
+where κ is some real valued action gain andu′may be subject to a rotation by
+the angleγ as
+u′ = u∗
+[cos γ,−sin γ
+sin γ,cos γ
+]
+. (24)
+13
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+Finally,
+¨xi,t+1 =
+
+
+
+¨xmax ifˆ¨xi,t+1 > ¨xmax
+ˆ¨xi,t+1 if¨xmax > ˆ¨xi,t+1 > ¨xmin
+¨xmin ifˆ¨xi,t+1 < ¨xmin
+(25)
+where ζ= [ζx, ζ˙x, ζ¨x] is some Gaussian process noise parameter and the maxi-
+mum and minimum values are the boundaries of space, velocity, and acceleration
+respectively. In the normal caseζ = [0, 0, 0], so that there is no process noise
+unless explicitly mentioned otherwise. Here, we can see that updating the state
+xby following Equation (19) to Equation (23) in this order, it takes three steps
+for any control signal to have an eﬀect on the position of the agent itself. This
+is why it is necessary to use a RNN as the transition model to grasp the full
+relationship between control input and state dynamics.
+Finally, the environment adds some observation noiseξ= [ξx, ξ˙x] to the state
+before providing it back to the controller, as mentioned in Equation (2), so that
+y= [y1,y2, ˙y1, ˙y2], (26)
+with
+yi,t ∼N(xi,t, ξx), (27)
+˙yi,t ∼N( ˙xi,t, ξ˙x). (28)
+14
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+B Training Algorithms
+The following two algorithms describe in more detail the oﬄine learning of the
+transition network (algorithm 2) and policy network (algorithm 3) that corre-
+spond to lines 8 and 9 of algorithm 1 respectively. For a summary please refer
+to Figure 6).
+Fig. 6.Transition model learning (left) and policy model learning (right) use diﬀerent
+algorithms. The transition model directly tries to predict the change in state and the
+gradients (red arrows) can directly ﬂow from the loss computation (red) through the
+sampling step (gray) and to the recurrent model parameters (green). In case of the
+policy model update, the procedure is more involved. In order to obtain gradients with
+respect to the action, the models jointly roll out an imagined state and action sequence
+in an auto-regressive manner. The gradients have to ﬂow from its own loss function
+(purple) through the transition model to reach the policy parameters (orange). This
+assumes that the transition model is suﬃciently good at approximating the system
+dynamics.
+15
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+Algorithm 2Updating of transition network parameters
+1: Input: a diﬀerentiable transition parametrizationυ(ˆx′|y,u,φ),
+2: a memory buﬀer object containing episodes,
+3: a loss functionLυ,
+4: a learning rateαυ
+5: loop for nυ batches:
+6: Sample Nυ episodes of lengthT from memory
+7: L←0
+8: loop for every episodee in sample (this is done in parallel):
+9: loop for every step(y,u,y′) in e:
+10: Predict next state ˆx′= υ(y,u,φ)
+11: Evaluate prediction and update loss L←L+ Lυ(ˆx′,y′)
+12: φ←φ+ αυ∇φ L
+TN (using Adam optimizer)
+13: Return: φ
+Algorithm 3Updating of policy network parameters
+1: Input: a diﬀerentiable transition parametrizationυ(ˆx′|y,u,φ),
+2: a diﬀerentiable policy parametrizationπ(u|x,˜x,θ),
+3: a memory buﬀer object containing episodes,
+4: a loss functionLπ,
+5: a learning rateαπ,
+6: a number of warm-up stepsw and unroll stepr
+7: loop for nπ batches:
+8: Sample Nπ episodes of lengthT from memory
+9: L←0
+10: nrollouts ←⌊T
+w⌋
+11: loop for every episodee in sample (this is done in parallel):
+12: loop for every rollout innrollouts:
+13: Reset hidden state of transition and policy networks
+14: Warm up both models by providing the next w steps (y,˜x,u,y′) from
+e
+15: Predict next state ˆx′= υ(y,u,φ)
+16: loop for r steps:
+17: Predict next hypothetical action ˆu= π(ˆx′,˜x,θ)
+18: Predict next hypothetical state ˆx′= υ(y,ˆu,φ)
+19: Evaluate hypothetical trajectory and update loss L←L+ Lπ(ˆx′,˜x)
+20: θ←θ+ απ∇θ L
+Nrnrollouts
+(using Adam optimizer)
+21: Return: θ
+16
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+C Training Parameters
+The parameters to reproduce the experiments are summarized in Table 1. Train-
+ing was conducted continuously over 1,500 episodes of 4s each, making the total
+exposure to the dynamics to be learned 300,000 steps or 100 minutes. During
+this process, both models were updated a total of 4,500 times.
+Table 1.Hyperparamters used to obtain data shown in results section.
+Parameter Value
+Task
+episode stepsT 200
+episodes per iterationE 10
+iterations I 150
+time step [s]∆t 0.02
+memory sizeM 1500
+rotation angle [deg]γ 0.0
+acceleration constantκ 5.0
+process noise std.ζ 0.001
+observation noise std.ξ 0.001
+position rangexmax 1.0
+velocity range ˙xmax 1.0
+control rangeumax 1.0
+Transition model
+hidden layer size (MLP) 256
+learning rateαυ 0.0005
+batches per iterationnυ 30
+batch sizeNυ 1024
+Policy model
+hidden layer size (GRU) 256
+learning rateαπ 0.0005
+batches per iterationnπ 30
+batch sizeNπ 1024
+warmup stepsw 30
+unroll stepsr 20
+17
+Accepted at 3rd International Workshop on Active Inference (IWAI2022)
+D LQR Baseline
+To compare the learned model with an optimal control theory-based approach,
+we implemented and hand-tuned a linear quadratic regulator (LQR) [11]. We
+used the Python 3 control library for the implementation. The input matrices
+describe system dynamics A, control inﬂuenceB, as well as state costQ and
+control costR and were speciﬁed as follows:
+A=
+
+
+0 0 1 0
+0 0 0 1
+0 0 0 0
+0 0 0 0
+
+, B=
+
+
+0 0
+0 0
+κ 0
+0 κ
+
+,
+(29)
+Q=
+
+
+1 0 0 0
+0 1 0 0
+0 0 0 .1 0
+0 0 0 0 .1
+
+,
+R=
+[0.1 0
+0 0 .1
+]
+.
+This results in the control gain matrixK as
+K=
+[3.16227766 0 . 1.50496215 0 .
+0. 3.16227766 0 . 1.50496215
+]
+. (30)
+Controlling the task described in Appendix A to go from the initial state
+x = [−0.5,0.5,0,0] to the target state˜x = [0.5,−0.5,0,0] results in the state
+evolution as shown in Figure 7.
+Fig. 7.State dynamics under LQR control show that initially, velocity is increased
+towards the target at the maximum rate, before it plateaus and declines at the same
+maximum rate. The tuned controller only has minimal overshoot at the target position.
+18

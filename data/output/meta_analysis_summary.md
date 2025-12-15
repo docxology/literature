@@ -1,58 +1,71 @@
 # Meta-Analysis Summary Report
 
-**Generated**: 2025-12-15T10:44:56.223537
+**Generated**: 2025-12-15T11:03:45.011979
 
 ---
 
 ## Executive Summary
 
-- **Total Papers Analyzed**: 3
-- **Year Range**: 2020 - 2022
-- **Average Publications per Year**: 1.00
+- **Total Papers Analyzed**: 361
+- **Year Range**: 2006 - 2025
+- **Average Publications per Year**: 18.05
 
 ---
 
 ## Temporal Trends
 
-- **Peak Publication Year**: 2020 (2 papers)
+- **Peak Publication Year**: 2025 (83 papers)
 
 ### Publications by Year
 
 | Year | Count |
 |------|-------|
-| 2020 | 2 |
-| 2022 | 1 |
+| 2006 | 1 |
+| 2011 | 1 |
+| 2012 | 2 |
+| 2014 | 3 |
+| 2015 | 3 |
+| 2016 | 2 |
+| 2017 | 7 |
+| 2018 | 14 |
+| 2019 | 16 |
+| 2020 | 33 |
+| 2021 | 42 |
+| 2022 | 45 |
+| 2023 | 49 |
+| 2024 | 60 |
+| 2025 | 83 |
 
 ---
 
 ## Keyword Analysis
 
-- **Total Unique Keywords**: 212
+- **Total Unique Keywords**: 5607
 
 ### Top Keywords
 
 | Rank | Keyword | Frequency |
 |------|---------|-----------|
-| 1 | principle | 6 |
-| 2 | energy | 6 |
-| 3 | free | 6 |
-| 4 | some | 5 |
-| 5 | systems | 3 |
-| 6 | technical | 3 |
-| 7 | global | 2 |
-| 8 | ignorance | 2 |
-| 9 | show | 2 |
-| 10 | only | 2 |
-| 11 | assumptions | 2 |
-| 12 | observations | 2 |
-| 13 | interesting | 2 |
-| 14 | inference | 2 |
-| 15 | blanket | 2 |
-| 16 | various | 2 |
-| 17 | markov | 2 |
-| 18 | formulation | 2 |
-| 19 | bayesian | 2 |
-| 20 | fruits | 1 |
+| 1 | inference | 557 |
+| 2 | active | 544 |
+| 3 | model | 253 |
+| 4 | learning | 205 |
+| 5 | based | 186 |
+| 6 | free | 173 |
+| 7 | energy | 169 |
+| 8 | framework | 162 |
+| 9 | using | 149 |
+| 10 | models | 149 |
+| 11 | approach | 133 |
+| 12 | agents | 132 |
+| 13 | agent | 129 |
+| 14 | paper | 129 |
+| 15 | action | 123 |
+| 16 | control | 122 |
+| 17 | show | 114 |
+| 18 | such | 113 |
+| 19 | systems | 108 |
+| 20 | between | 107 |
 
 ---
 
@@ -66,33 +79,37 @@
 
 | Rank | Venue | Publications |
 |------|-------|--------------|
-| 1 | arXiv | 3 |
+| 1 | arXiv | 361 |
 
 ### Authors
 
-- **Total Unique Authors**: 7
+- **Total Unique Authors**: 838
 
 #### Top Authors
 
 | Rank | Author | Publications |
 |------|--------|--------------|
-| 1 | Cailleteau Thomas | 1 |
-| 2 | Karl Friston | 1 |
-| 3 | Lancelot Da Costa | 1 |
-| 4 | Thomas Parr | 1 |
-| 5 | Martin Biehl | 1 |
-| 6 | Felix A. Pollock | 1 |
-| 7 | Ryota Kanai | 1 |
+| 1 | Tim Verbelen | 30 |
+| 2 | Karl Friston | 28 |
+| 3 | Bart Dhoedt | 21 |
+| 4 | Pablo Lanillos | 15 |
+| 5 | Christopher L. Buckley | 14 |
+| 6 | Toon Van de Maele | 13 |
+| 7 | Beren Millidge | 13 |
+| 8 | Mahault Albarracin | 12 |
+| 9 | Manuel Baltieri | 12 |
+| 10 | Lancelot Da Costa | 12 |
 
 ### Data Availability
 
-- **Papers with DOI**: 1 (33.3%)
-- **Papers with PDF**: 3 (100.0%)
+- **Papers with DOI**: 85 (23.5%)
+- **Papers with PDF**: 359 (99.4%)
 ---
 
 ## Key Observations
 
-- Peak publication activity occurred in 2020 with 2 papers.
-- Most frequent keyword: 'principle' (appears 6 times).
+- Peak publication activity occurred in 2025 with 83 papers.
+- Strong publication activity with an average of 18.1 papers per year.
+- Most frequent keyword: 'inference' (appears 557 times).
 
 ---

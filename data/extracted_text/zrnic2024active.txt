@@ -1,0 +1,1573 @@
+Active Statistical Inference
+Tijana Zrnic∗ Emmanuel J. Cand` es†
+{tijana.zrnic,candes}@stanford.edu
+∗Department of Statistics and Stanford Data Science
+†Department of Statistics and Department of Mathematics
+Stanford University
+Abstract
+Inspired by the concept of active learning, we propose active inference—a methodology for statistical
+inference with machine-learning-assisted data collection. Assuming a budget on the number of labels that
+can be collected, the methodology uses a machine learning model to identify which data points would
+be most beneficial to label, thus effectively utilizing the budget. It operates on a simple yet powerful
+intuition: prioritize the collection of labels for data points where the model exhibits uncertainty, and rely
+on the model’s predictions where it is confident. Active inference constructs provably valid confidence
+intervals and hypothesis tests while leveraging any black-box machine learning model and handling any
+data distribution. The key point is that it achieves the same level of accuracy with far fewer samples
+than existing baselines relying on non-adaptively-collected data. This means that for the same number
+of collected samples, active inference enables smaller confidence intervals and more powerful p-values.
+We evaluate active inference on datasets from public opinion research, census analysis, and proteomics.
+1 Introduction
+In the realm of data-driven research, collecting high-quality labeled data is a continuing impediment. The
+impediment is particularly acute when operating under stringent labeling budgets, where the cost and effort
+of obtaining each label can be substantial. Recognizing these limitations, many have turned to machine
+learning as a pragmatic solution, leveraging it to predict unobserved labels across various fields. In remote
+sensing, machine learning assists in annotating and interpreting satellite imagery [24, 43, 55]; in proteomics,
+tools like AlphaFold [26] are revolutionizing our understanding of protein structures; even in the realm of
+elections—including most major US elections—technologies combining scanners and predictive models are
+used as efficient tools for vote counting [56]. These applications reflect a growing reliance on machine learning
+for extracting information and knowledge from unlabeled datasets.
+However, this reliance on machine learning is not without its pitfalls. The core issue lies in the inherent
+biases of these models. No matter how sophisticated, predictions lead to dubious conclusions; as such, predic-
+tions cannot fully substitute for traditional data sources such as gold-standard experimental measurements,
+high-quality surveys, and expert annotations. This begs the question: is there a way to effectively leverage
+the predictive power of machine learning while still ensuring the integrity of our inferences?
+Drawing inspiration from the concept of active learning, we propose active inference—a novel methodol-
+ogy for statistical inference that harnesses machine learning not as a replacement for data collection but as
+a strategic guide to it. The methodology uses a machine learning model to identify which data points would
+be most beneficial to label, thus effectively utilizing the labeling budget. It operates on a simple yet pow-
+erful intuition: prioritize the collection of labels for data points where the model exhibits uncertainty, and
+rely on the model’s predictions where it is confident. Active inference constructs provably valid confidence
+intervals and hypothesis tests for any black-box machine learning model and any data distribution. The
+key takeaway is that it achieves the same level of accuracy with far fewer samples than existing baselines
+1
+arXiv:2403.03208v2  [stat.ML]  29 May 2024
+relying on non-adaptively-collected data. Put differently, this means that for the same number of collected
+samples, active inference enables smaller confidence intervals and more powerful p-values. We will show in
+our experiments that active inference can save over 80% of the sample budget required by classical inference
+methods (see Figure 4).
+Although quite different in scope, our work is inspired by the recent framework of prediction-powered
+inference (PPI) [1]. PPI assumes access to a small labeled dataset and a large unlabeled dataset, drawn
+i.i.d. from the population of interest. It then asks how one can use machine learning and the unlabeled
+dataset to sharpen inference about population parameters depending on the distribution of labels. Our
+objective in this paper is different since the core of our contribution is (1) designing strategic data collection
+approaches that enable more powerful inferences than collecting labels in an i.i.d. manner, and (2) showing
+how to perform inference with such strategically collected data. That said, we will see that prediction-
+powered inference can be seen as a special case of our methodology: while PPI ignores the issue of strategic
+data collection and instead uses a trivial, uniform data collection strategy, it leverages machine learning to
+enhance inference in a similar way to our method. We provide a further discussion of prior work in Section 3.
+2 Problem description
+We introduce the formal problem setting. We observe unlabeled instances X1, . . . , Xn, drawn i.i.d. from
+a distribution PX. The labels Yi are unobserved, and we shall use ( X, Y) ∼ P = PX × PY |X to denote
+a generic feature–label pair drawn from the underlying data distribution. We are interested in performing
+inference—conducting a hypothesis test or forming a confidence interval—for a parameterθ∗ that depends on
+the distribution of the unobserved labels; that is, the parameter is a functional of PX × PY |X. For example,
+we might be interested in forming a confidence interval for the mean label, θ∗ = E[Yi], where Yi is the label
+corresponding to Xi. Although we will primarily focus on forming confidence intervals, the standard duality
+between confidence intervals and hypothesis tests makes our results directly applicable to testing as well.
+We have no collected labels a priori. Rather, the goal is to efficiently and strategically acquire labels for
+certain points Xi, so that inference is as powerful as possible for a given collection budget—more so than
+if labels were collected uniformly at random—while also remaining valid. We denote by nlab the number
+of collected labels. We assume that we are constrained to collect, on average, E[nlab] ≤ nb labels, for some
+budget nb. (For simplicity we bound E[nlab], however the budget can be met with high probability, since
+nlab concentrates around nb at a fast rate.) Typically, nb ≪ n.
+To guide the choice of which instances to label, we will make use of a predictive model f. Typically this
+will be a black-box machine learning model, but it could also be a hand-designed decision rule based on
+expert knowledge. This is the key component that will enable us to get a significant boost in power. We
+do not assume any knowledge of the predictive performance of f, or any parametric form for it. Our key
+takeaway is that, if we have a reasonably good model for predicting the labels Yi based on Xi, then we can
+achieve a significant boost in power compared to labeling a uniformly-at-random chosen set of instances.
+We will consider two settings, depending on whether or not we update the predictive model f as we
+gather more labels.
+• The first is a batch setting, where we simultaneously make decisions of whether or not to collect the
+corresponding label for all unlabeled points at once. In this setting, the model f is pre-trained and
+remains fixed during the label collection. The batch setting is simpler and arguably more practical if
+we already have a good off-the-shelf predictor.
+• The second setting is sequential: we go through the unlabeled points one by one and update the
+predictive model as we collect more data. The benefit of the second approach is that it is applicable
+even when we do not have access to a pre-trained model, but we have to train a model from scratch.
+Our proposed active inference strategy will be applicable to all convex M-estimation problems. This
+2
+means that it handles all targets of inference θ∗ that can be written as:
+θ∗ = arg min
+θ
+E[ℓθ(X, Y)], where (X, Y) ∼ P,
+for a loss function ℓθ that is convex in θ. We denote L(θ) = E[ℓθ(X, Y)] for brevity. M-estimation captures
+many relevant targets, such as the mean label, quantiles of the label, and regression coefficients.
+Example 1 (Mean label). If ℓθ(x, y) = 1
+2 (y − θ)2, then the target is the mean label, θ∗ = E[Y ]. Note that
+this loss has no dependence on the features.
+Example 2 (Linear regression). If ℓθ(x, y) = 1
+2 (y − x⊤θ)2, then θ∗ is the vector of linear regression coeffi-
+cients obtained by regressing y on x, that is, the “effect” of x on y.
+Example 3 (Label quantile). For a given q ∈ (0, 1), let ℓθ(x, y) = q(y −θ)1{y > θ}+ (1−q)(θ −y)1{y ≤ θ}
+be the “pinball” loss. Then, θ∗ is equal to the q-quantile of the label distribution: θ∗ = inf{θ : P(Y ≤ θ) ≥ q}.
+3 Related work
+Our work is most closely related to prediction-powered inference (PPI) and other recent works on inference
+with machine learning predictions [1, 3, 19, 33, 34, 61]. This recent literature in turn relates to classical work
+on inference with missing data and semiparametric statistics [13, 41, 42, 44, 45, 46], as well as semi-supervised
+inference [5, 57, 60]. We consider the same set of inferential targets as in [1, 3, 61], building on classical
+M-estimation theory [52] to enable inference. While PPI assumes access to a small labeled dataset and a
+large unlabeled dataset, which are drawn i.i.d., our work is different in that it leverages machine learning in
+order to design adaptive label collection strategies, which breaks the i.i.d. structure between the labeled and
+the unlabeled data. That said, we shall however see that our active inference estimator will reduce to the
+prediction-powered estimator when we apply a trivial, uniform label collection strategy. We will demonstrate
+empirically that the adaptivity in label collection enables significant improvements in statistical power.
+There is a growing literature on inference from adaptively collected data [14, 29, 59], often focusing on
+data collected via a bandit algorithm. These papers typically focus on average treatment effect estimation.
+In contrast to our work, these works generally do not focus on how to set the data-collection policy as
+to achieve good statistical power, but their main focus is on providing valid inferences given a fixed data-
+collection policy. Notably, Zhang et al. [59] study inference for M-estimators from bandit data. However,
+their estimators do not leverage machine learning, which is central to our work.
+A substantial line of work studies adaptive experiment design [8, 10, 20, 21, 23, 28, 31, 32, 40], often with
+the goal of maximizing welfare during the experiment or identifying the best treatment. Most related to our
+motivation, a subset of these works [10, 21, 32] study adaptive design with the goal of efficiently estimating
+average treatment effects. While our motivation is not necessarily treatment effect estimation, we continue
+in a similar vein—collecting data adaptively with the goal of improved efficiency—with a focus on using
+modern, black-box machine learning to produce uncertainty estimates that can be turned into efficient label
+collection methods. Related variance-reduction ideas appear in stratified survey sampling [27, 30, 35, 48].
+Our proposal can be seen as stratifying the population of interest based on the certainty of a black-box
+machine learning model.
+Finally, our work draws inspiration from active learning, which is a subarea of machine learning centered
+around the observation that a machine learning model can enhance its predictive capabilities if it is allowed
+to choose the data points from which it learns. In particular, our setup is analogous to pool-based active
+learning [50]. Sampling according to a measure of predictive uncertainty is a central idea in active learning [4,
+6, 18, 22, 25, 39, 49, 51]. Since our goal is statistical inference, rather than training a good predictor, our
+sampling rules are different and adapt to the inferential question at hand. More generally, we note that
+there is a large body of work studying ways to efficiently collect gold-standard labels, often under a budget
+constraint [12, 53, 58].
+3
+4 Warm-up: active inference for mean estimation
+We first focus on the special case of estimating the mean label, θ∗ = E[Y ], in the batch setting. The intuition
+derived from this example carries over to all other problems.
+Recall the setup: we observe n i.i.d. unlabeled instances X1, . . . , Xn, and we can collect labels for at most
+nb of them (on average). Consider first a “classical” solution, which does not leverage machine learning.
+Given a budget nb, we can simply label any arbitrarily chosen nb points. Since the instances are i.i.d.,
+without loss of generality we can choose to label instances {1, . . . , nb} and compute:
+ˆθnoML = 1
+nb
+nbX
+i=1
+Yi.
+The estimator ˆθnoML is clearly unbiased. It is an average over nb terms, and thus its variance is equal to
+Var(ˆθnoML) = 1
+nb
+Var(Y ).
+Now, suppose that we are given a machine learning model f(X), which predicts the label Y ∈ R from
+observed covariates X ∈ X.1 The idea behind our active inference strategy is to increase the effective
+sample size by using the model’s predictions on points X where the model is confident and focusing the
+labeling budget on the points X where the model is uncertain. To implement this idea, we design a sampling
+rule π : X →[0, 1] and collect label Yi with probability π(Xi). The sampling rule is derived from f, by
+appropriately measuring its uncertainty. The hope is that π(x) ≈ 1 signals that the model f is very uncertain
+about instance x, whereas π(x) ≈ 0 indicates that the model f should be very certain about instance x.
+Let ξi ∼ Bern(π(Xi)) denote the indicator of whether we collect the label for point i. By definition, nlab =Pn
+i=1 ξi. The rule π will be carefully rescaled to meet the budget constraint: E[nlab] = E[π(X)] · n ≤ nb.
+Our active estimator of the mean θ∗ is given by:
+ˆθπ = 1
+n
+nX
+i=1
+
+f(Xi) + (Yi − f(Xi)) ξi
+π(Xi)
+
+. (1)
+This is essentially the augmented inverse propensity weighting (AIPW) estimator [42], with a particular
+choice of propensities π(Xi) based on the certainty of the machine learning model that predicts the missing
+labels. When the sampling rule is uniform, i.e. π(x) = nb/n for all x, ˆθπ is equal to the prediction-powered
+mean estimator [1].
+It is not hard to see that ˆθπ is unbiased: E[ˆθπ] = θ∗. A short calculation shows that its variance equals
+Var(ˆθπ) = 1
+n
+
+Var(Y ) + E
+
+(Y − f(X))2
+ 1
+π(X) − 1
+
+. (2)
+If the model is highly accurate for all x, i.e. f(X) ≈ Y , then Var(ˆθπ) ≈ 1
+n Var(Y ), which is far smaller than
+Var(ˆθnoML) since nb ≪ n. Of course, f will never be perfect and accurate for all instances x. For this reason,
+we will aim to choose π such that π is small when f(X) ≈ Y and large otherwise, so that the relevant
+term (Y − f(X))2  
+π−1(X) − 1
+
+is always small (of course, subject to the sampling budget constraint). For
+example, for instances for which the predictor is correct, i.e. f(X) = Y , we would ideally like to setπ(X) = 0
+as this incurs no additional variance.
+We note that the variance reduction of active inference compared to the “classical” solution also implies
+that the resulting confidence intervals get smaller. This follows because interval width scales with the
+standard deviation for most standard intervals (e.g., those derived from the central limit theorem).
+Finally, we explain how to set the sampling rule π. The rule will be derived from a measure of model
+uncertainty u(x) and we shall provide different choices of u(x) in the following paragraphs. At a high level,
+1X is the set of values the covariates can take on, e.g.Rd.
+4
+one can think of u(Xi) as the model’s best guess of |Yi − f(Xi)|. We will choose π(x) proportional to u(x),
+that is, π(x) ∝ u(x), normalized to meet the budget constraint. Intuitively, this means that we want to focus
+our data collection budget on parts of the covariate space where the model is expected to make the largest
+errors. Roughly speaking, we will set π(x) = u(x)
+E[u(X)] · nb
+n ; this implies E[nlab] = E[π(X)] ·n ≤ nb. (This is an
+idealized form of π(x) because E[u(X)] cannot be known exactly, though it can be estimated very accurately
+from the unlabeled data; we will formalize this in the following section.)
+We will take two different approaches for choosing the uncertainty u(x), depending on whether we are in
+a regression or a classification setting.
+Regression uncertainty In regression, we explicitly train a model u(x) to predict |f(Xi) − Yi| from Xi.
+We note that we aim to predict only the magnitude of the error and not the directionality. In the batch
+setting, we typically have historical data of ( X, Y) pairs that are used to train the model f. We thus train
+u(x) on this historical data, by setting |f(X) −Y | as the target label for instance X. The data used to train
+u should ideally be disjoint from the data used to train f to avoid overoptimistic estimates of uncertainty.
+We will typically use data splitting to avoid this issue, though there are more data efficient solutions such
+as cross-fitting. Notice that access to historical data will only be important in the batch setting, as assumed
+in this section. In the sequential setting we will be able to train u(x) gradually on the collected data.
+Classification uncertainty Next we look at classification, where Y is supported on a discrete set of
+values. Our main focus will be on binary classification, where Y ∈ {0, 1}. In such cases, our target is
+θ∗ = P(Y = 1). We might care about E[Y ] more generally when Y takes on K distinct values (e.g., K
+distinct ratings in a survey, K distinct qualification levels, etc).
+In classification, f(x) is usually obtained as the “most likely” class. If K is the number of classes,
+we have f(x) = arg maxi∈[K] pi(x), for some probabilistic output p(x) = ( p1(x), . . . , pK(x)) which satisfiesPK
+i=1 pi(x) = 1. For example, p(x) could be the softmax output of a neural network given input x. We will
+measure the uncertainty as:
+u(x) = K
+K − 1 ·
+
+1 − max
+i∈[K]
+pi(x)
+
+. (3)
+In binary classification, this reduces to u(x) = 2 min{p(x), 1 − p(x)}, where we use p(x) to denote the raw
+classifier output in [0 , 1]. Therefore, u(x) is large when p(x) is close to uniform, i.e. max i pi(x) ≈ 1/K. On
+the other hand, if the model is confident, i.e. max i pi(x) ≈ 1, the uncertainty is close to zero.
+5 Batch active inference
+Building on the discussion from Section 4, we provide formal results for active inference in the batch setting.
+Recall that in the batch setting we observe i.i.d. unlabeled points X1, . . . , Xn, all at once. We consider a
+family of sampling rules πη(x) = η u(x), where u(x) is the chosen uncertainty measure and η ∈ H ⊆R+ is a
+tuning parameter. We will discuss ways of choosing u(x) in Section 7. The role of the tuning parameter is
+to scale the sampling rule to the sampling budget. We choose
+ˆη = max
+(
+η ∈ H: η
+nX
+i=1
+u(Xi) ≤ nb
+)
+, (4)
+and deploy πˆη as the sampling rule. With this choice, we have
+E[nlab] = E
+" nX
+i=1
+ˆη u(Xi)
+#
+≤ nb;
+therefore, πˆη meets the label collection budget. We denote ˆθη ≡ ˆθπη .
+5
+Mean estimation We first explain how to perform inference for mean estimation in Proposition 1. Recall
+the active mean estimator:
+ˆθˆη = 1
+n
+nX
+i=1
+
+f(Xi) + (Yi − f(Xi)) ξi
+πˆη(Xi)
+
+, (5)
+where ξi ∼ Bern(πˆη(Xi)). Following standard notation, zq below denotes the qth quantile of the standard
+normal distribution.
+Proposition 1. Suppose that there exists η∗ ∈ Hsuch that P(ˆη ̸= η∗) → 0. Then
+√n(ˆθˆη − θ∗)
+d
+→ N(0, σ2
+∗),
+where σ2
+∗ = Var(f(X) + (Y − f(X)) ξη∗
+πη∗ (X) ) and ξη∗
+∼ Bern(πη∗ (X)). Consequently, for any ˆσ2 p
+→ σ2
+∗,
+Cα = (ˆθˆη ± z1−α/2
+ˆσ√n ) is a valid (1 − α)-confidence interval:
+lim
+n→∞
+P(θ∗ ∈ Cα) = 1 − α.
+A few remarks about Proposition 1 are in order: first, the consistency condition P(ˆη ̸= η∗) → 0 is easily
+ensured if nb/n has a limit p ∈ (0, 1), that is, if nb is asymptotically proportional to n. Then, as long as
+the space of tuning parameters H is discrete and there is no η ∈ Hsuch that η E[u(X)] = p exactly, the
+consistency condition is met. Second, obtaining a consistent variance estimate ˆσ2 is straightforward, as one
+can simply take the empirical variance of the increments in the estimator (5).
+We note that, while our main results will all focus on asymptotic confidence intervals, some of our results
+have direct non-asymptotic and time-uniform analogues; see Section C.
+General M-estimation Next, we turn to general convex M-estimation. Recall this means that we can
+write θ∗ = arg minθ L(θ) = arg min θ E[ℓθ(X, Y)], for a convex loss ℓθ. To simplify notation, let ℓθ,i =
+ℓθ(Xi, Yi), ℓf
+θ,i = ℓθ(Xi, f(Xi)). We similarly use ∇ℓθ,i and ∇ℓf
+θ,i. For a general sampling rule π, our active
+estimator is defined as
+ˆθπ = arg min
+θ
+Lπ(θ), where Lπ(θ) = 1
+n
+nX
+i=1
+
+ℓf
+θ,i + (ℓθ,i − ℓf
+θ,i) ξi
+π(Xi)
+
+. (6)
+As before, ξi ∼ Bern(π(Xi)). When π is the uniform rule, π(x) = nb/n, the estimator (6) equals the general
+prediction-powered estimator from [3]. Notice that the loss estimate Lπ(θ) is unbiased: E[Lπ(θ)] = L(θ).
+We again scale the sampling rule πη(x) = η u(x) according to the sampling budget, as in Eq. (4).
+We next show asymptotic normality of ˆθˆη for general targets θ∗ which, in turn, enables inference. The
+result essentially follows from the usual asymptotic normality for M-estimators [52, Ch. 5], with some nec-
+essary modifications to account for the data-driven selection of ˆ η. We require standard, mild smoothness
+assumptions on the loss ℓθ, formally stated in Ass. 1 in the Appendix.
+Theorem 1 (CLT for batch active inference) . Assume the loss is smooth (Ass. 1) and define the Hessian
+Hθ∗ = ∇2E[ℓθ∗ (X, Y)]. Suppose that there exists η∗ ∈ Hsuch that P(ˆη ̸= η∗) → 0. Then, if ˆθη∗ p
+→ θ∗, we
+have √n(ˆθˆη − θ∗)
+d
+→ N(0, Σ∗), where
+Σ∗ = H−1
+θ∗ Var
+
+∇ℓf
+θ∗,i +
+
+∇ℓθ∗,i − ∇ℓf
+θ∗,i
+
+ξη∗
+πη∗ (X)
+
+H−1
+θ∗ . Consequently, for any ˆΣ
+p
+→ Σ∗, Cα = ( ˆθˆη
+j ±
+z1−α/2
+q
+ˆΣjj
+n ) is a valid (1 − α)-confidence interval for θ∗
+j :
+lim
+n→∞
+P(θ∗
+j ∈ Cα) = 1 − α.
+6
+The remarks following Proposition 1 again apply: the consistency condition on ˆ η is easily ensured if
+nb/n has a limit, and ˆΣ admits a simple plug-in estimate by replacing all quantities with their empirical
+counterparts. The consistency condition on ˆθη∗
+is a standard requirement for analyzing M-estimators [see
+52, Ch. 5]; it is studied and justified at length in the literature and we shall therefore not discuss it in close
+detail. We however remark that it can be deduced if the empirical loss Lπ(θ) is almost surely convex or if the
+parameter space is compact. The empirical loss Lπ(θ) is convex in a number of cases of interest, including
+means and generalized linear models; for the proof, see [3].
+6 Sequential active inference
+In the batch setting we observe all data points X1, . . . , Xn at once and fix a predictive model f and sampling
+rule π that guide our choice of which labels to collect. An arguably more natural data collection strategy
+would operate in an online manner: as we collect more labels, we iteratively update the model and our
+strategy for which labels to collect next. This allows for further efficiency gains over using a fixed model
+throughout, as the latter ignores knowledge acquired during the data collection. For example, if we are
+conducting a survey and we collect responses from members of a certain demographic group, it is only
+natural that we update our sampling rule to reflect the fact that we have more knowledge and certainty
+about that demographic group.
+Formally, instead of having a fixed model f and rule π, we go through our data sequentially. At step
+t ∈ {1, . . . , n}, we observe data point Xt and collect its label with probability πt(Xt), where πt(·) is based
+on the uncertainty of model ft. The model ft can be fine-tuned on all information observed up to time t;
+formally, we require thatft, πt ∈ Ft−1, where Ft is the σ-algebra generated by the firstt points Xs, 1 ≤ s ≤ t,
+their labeling decisions ξs, and their labels Ys, if observed: Ft = σ((X1, Y1ξ1, ξ1), . . . ,(Xt, Ytξt, ξt)). (Note
+that Ytξt = Yt if and only if ξt = 1; otherwise, Ytξt = ξt = 0.) We will again calibrate our decisions of
+whether to collect a label according to a budget on the sample size nb. We denote by nlab,t the number of
+labels collected up to time t.
+Inference in the sequential setting is more challenging than batch inference because the data points
+(Xt, Yt, ξt), t∈ [n], are dependent; indeed, the purpose of the sequential setting is to leverage previous obser-
+vations when deciding on future labeling decisions. We will construct estimators that respect a martingale
+structure, which will enable tractable inference via the martingale central limit theorem [17]. This resembles
+the approach taken by Zhang et al. [59] (though our estimators are quite different due to the use of machine
+learning predictions).
+Mean estimation We begin by focusing on the mean. If we take ℓθ to be the squared loss as in Example 1,
+we obtain the sequential active mean estimator:
+ˆθ
+# »π = 1
+n
+nX
+t=1
+∆t, ∆t = ft(Xt) + (Yt − ft(Xt)) ξt
+πt(Xt).
+We note that ∆ t are martingale increments ; they share a common conditional mean E[∆t|Ft−1] = θ∗, and
+they are Ft-measurable, ∆t ∈ Ft. We let σ2
+t = V (ft, πt) = Var(∆t|ft, πt) denote the conditional variance of
+the increments.
+To show asymptotic normality of ˆθ
+# »π , we shall require the Lindeberg condition, whose statement we defer
+to the Appendix. It is a standard assumption for proving central limit theorems when the increments are
+not i.i.d.. Roughly speaking, the Lindeberg condition requires that the increments do not have very heavy
+tails; it prevents any increment from having a disproportionately large contribution to the overall variance.
+Proposition 2. Suppose 1
+n
+Pn
+t=1 σ2
+t
+p
+→ σ2
+∗ = V (f∗, π∗), for some fixed model–rule pair (f∗, π∗), and that the
+increments ∆t satisfy the Lindeberg condition (Ass. 2). Then
+√n(ˆθ
+# »π − θ∗)
+d
+→ N(0, σ2
+∗).
+7
+Consequently, for any ˆσ2 p
+→ σ2
+∗, Cα = (ˆθ
+# »π ± z1−α/2
+ˆσ√n ) is a valid (1 − α)-confidence interval:
+lim
+n→∞
+P(θ∗ ∈ Cα) = 1 − α.
+Intuitively, Proposition 2 requires that the model ft and sampling rule πt converge. For example, a
+sufficient condition for 1
+n
+Pn
+t=1 σ2
+t
+p
+→ σ2
+∗ is V (fn, πn)
+L1
+→ V (f∗, π∗). Since the sampling rule is typically based
+on the model, it makes sense that it would converge if ft converges. At the same time, it makes sense for ft
+to gradually stop updating after sufficient accuracy is achieved.
+General M-estimation We generalize Proposition 2 to all convex M-estimation problems. The general
+version of our sequential active estimator takes the form
+ˆθ
+# »π = arg min
+θ
+L
+# »π (θ), where L
+# »π (θ) = 1
+n
+nX
+t=1
+Lt(θ), L t(θ) = ℓft
+θ,t + (ℓθ,t − ℓft
+θ,t) ξt
+πt(Xt). (7)
+Let Vθ,t = Vθ(ft, πt) = Var (∇Lt(θ)|ft, πt). We will again require that ( ft, πt) converge in an appropriate
+sense.
+Theorem 2 (CLT for sequential active inference). Assume the loss is smooth (Ass. 1) and define the Hessian
+Hθ∗ = ∇2E[ℓθ∗ (X, Y)]. Suppose also that 1
+n
+Pn
+t=1 Vθ∗,t
+p
+→ V∗ = Vθ∗ (f∗, π∗) entry-wise for some fixed model–
+rule pair (f∗, π∗), and that the increments Lt(θ) satisfy the Lindeberg condition (Ass. 3). Then, if ˆθ
+# »π p
+→ θ∗,
+we have √n(ˆθ
+# »π − θ∗)
+d
+→ N(0, Σ∗),
+where Σ∗ = H−1
+θ∗ V∗H−1
+θ∗ . Consequently, for any ˆΣ
+p
+→ Σ∗, Cα = ( ˆθ
+# »π
+j ± z1−α/2
+q
+ˆΣjj
+n ) is a valid (1 − α)-
+confidence interval for θ∗
+j :
+lim
+n→∞
+P(θ∗
+j ∈ Cα) = 1 − α.
+The conditions of Theorem 2 are largely the same as in Theorem 1; the main difference is the requirement
+of convergence of the model–sampling rule pairs, which is similar to the analogous condition of Proposition 2.
+Proposition 2 and Theorem 2 apply to any sampling rule πt, as long as the variance convergence require-
+ment is met. We discuss ways to set πt so that the sampling budget nb is met. Our default will be to “spread
+out” the budget nb over the n observations. We will do so by having an “imaginary” budget for the expected
+number of collected labels by step t, equal to nb,t = tnb/n. Let n∆,t = nb,t − nlab,t−1 denote the remaining
+budget at step t. We derive a measure of uncertainty ut from model ft, as before, and let
+πt(x) = min {ηt ut(x), n∆,t}[0,1] , (8)
+where ηt normalizes ut(x) and the subscript [0, 1] denotes clipping to [0, 1]. The normalizing constant ηt can
+be arbitrary, but we find it helpful to set it roughly as ηt = nb/(n E[ut(X)]) and this is what we do in our
+experiments, with the proviso that we substitute E[ut(X)] with its empirical approximation. In words, the
+sampling probability is high if the uncertainty is high and we have not used up too much of the sampling
+budget thus far. Of course, if the model consistently estimates low uncertainty ut(x) throughout, the budget
+will be underutilized. For this reason, to make sure we use up the budget in practice, we occasionally
+set πt(x) = ( n∆,t)[0,1] regardless of the reported uncertainty. This periodic deviation from the rule (8) is
+consistent with the variance convergence conditions required for Proposition 2 and Theorem 2 to hold.
+7 Choosing the sampling rule
+We have seen how to perform inference given an abstract sampling rule, and argued that, intuitively, the
+sampling rule should be calibrated to the uncertainty of the model’s predictions. Here we argue that this
+8
+is in fact the optimal strategy. In particular, we derive an “oracle” rule, which optimally sets the sampling
+probabilities so that the variance of ˆθπ is minimized. While the oracle rule cannot be implemented since it
+depends on unobserved information, it provides an ideal that our algorithms will try to approximate. We
+discuss ways of tuning the approximations to make them practical and powerful.
+7.1 Oracle sampling rules
+We begin with the optimal sampling rule for mean estimation. We then state the optimal rule for general
+M-estimation and instantiate it for generalized linear models.
+Mean estimation Recall the expression for Var( ˆθπ) (2). Given that E
+
+π−1(X)(Y − f(X))2
+is the only
+term that depends on π, we define the oracle rule as the solution to:
+min
+π
+E
+ 1
+π(X)(Y − f(X))2
+
+s.t. E[π(X)] ≤ nb
+n . (9)
+The optimization problem (9) appears in a number of other topics, including importance sampling [37,
+Ch. 9], constrained utility optimization [7], and, relatedly to our work, survey sampling [47]. The optimality
+conditions of (9) show that its solution πopt satisfies:
+πopt(X) ∝
+p
+E[(Y − f(X))2|X],
+where ∝ ignores the normalizing constant required to make E[πopt(X)] ≤ nb/n. Therefore, the optimal
+sampling rule is one that samples data points according to the expected magnitude of the model error: the
+larger the model error, the higher the probability of sampling should be. Of course, E[(Y −f(X))2|X] cannot
+be known since the label distribution is unknown, and that is why we call πopt an oracle.
+To develop intuition, it is instructive to consider an even more powerful oracle ˜πopt(X, Y) that is allowed
+to depend on Y . To be clear, we would commit to the same functional form as in (1) and would seek to
+minimize Var(ˆθπ) while allowing the sampling probabilities to depend on both X and Y . In this case, by
+the same argument we conclude that
+˜πopt(X, Y) ∝ |Y − f(X)|. (10)
+The perspective of allowing the oracle to depend on both X and Y is directly prescriptive: a natural way
+to approximate the rule ˜πopt is to train an arbitrary black-box model u on historical (X, Y) pairs to predict
+|Y − f(X)| from X. We provide further practical guidelines for sampling rules at the end of this section.
+General M-estimation In the case of general M-estimation, we cannot hope to minimize the variance
+of ˆθπ at a fixed sample size n since the finite-sample distribution of ˆθπ is not tractable. However, we can
+find a sampling rule that minimizes the asymptotic variance of ˆθπ. Since the estimator is potentially multi-
+dimensional, to make the problem well-posed we assume that we want to minimize the asymptotic variance of
+a single coordinate ˆθπ
+j (for example, one coefficient in a multi-dimensional regression). Recall the expression
+for the asympotic covariance Σ ∗ from Theorem 1. A short derivation shows that
+Σ∗,jj = E
+"
+∇ℓθ∗,i − ∇ℓf
+θ∗,i
+⊤
+h(j)
+2
+· 1
+π(X)
+#
++ C,
+where h(j) is the j-th column of H−1
+θ∗ and C is a term that has no dependence on the sampling rule π.
+Therefore, by the same theory as for mean estimation, the ideal rule πopt(X) would be
+πopt(X) ∝
+q
+E[((∇ℓθ∗ (X, Y) − ∇ℓθ∗ (X, f(X)))⊤ h(j))2|X].
+This recovers πopt for the mean, since ∇ℓθ∗ (x, y) = θ∗ − y and h(j) = 1 for the squared loss. Our measure of
+uncertainty u(x) should therefore approximate the errors of the predicted gradients along the h(j) direction.
+9
+Generalized linear models (GLMs) We simplify the general solution πopt in the case of generalized
+linear models (GLMs). We define GLMs as M-estimators whose loss function takes the form
+ℓθ(x, y) = −log pθ(y|x) = −yx⊤θ + ψ(x⊤θ),
+for some convex log-partition function ψ. This definition recovers linear regression by taking ψ(s) = 1
+2 s2 and
+logistic regression by taking ψ(s) = log(1 + es). By the definition of the GLM loss, we have ∇ℓθ∗ (x, y) −
+∇ℓθ∗ (x, f(x)) = (f(x) − y)x and, therefore,
+πopt(X) ∝
+p
+E[(f(X) − Y )2|X] · |X⊤h(j)|,
+where the Hessian is equal to Hθ∗ = E[ψ′′(X⊤θ∗)XX ⊤] and h(j) is the j-th column of H−1
+θ∗ . In linear
+regression, for instance, Hθ∗ = E[XX ⊤]. Again, we see that the model errors play a role in determining the
+optimal sampling. In particular, again considering the more powerful oracle ˜ πopt(X, Y) that is allowed to
+set the sampling probabilities according to both X and Y , we get
+˜πopt(X, Y) ∝ |f(X) − Y | · |X⊤h(j)|. (11)
+Therefore, as in the case of the mean, our measure of uncertainty will aim to predict |f(X) − Y | from X
+and plug those predictions into the above rule.
+7.2 Practical sampling rules
+As explained in Section 5 and Section 6, our sampling rule π(x) will be derived from a measure of un-
+certainty u(x). As clear from the preceding discussion, the right notion of uncertainty should measure a
+notion of error dependent on the estimation problem at hand. In particular, we hope to have u(X) ≈
+|(∇ℓθ∗ (X, Y) − ∇ℓθ∗ (X, f(X)))⊤ h(j)|. For GLMs and means, in light of Eq. (10) and Eq. (11), this often
+boils down to training a predictor of |f(X) − Y | from X and, in the case of GLMs, using a plug-in estimate
+of the Hessian. This is what we do in our experiments (except in the case of binary classification where we
+simply use the uncertainty from Eq. (3)).
+Of course, the learned predictor of model errors cannot be perfect; as a result, π(x) ∝ u(x) cannot naively
+be treated as the oracle rule πopt. For example, the model might mistakenly estimate (near-)zero uncertainty
+(u(X) ≈ 0) when |f(X) −Y | is large, which would blow up the estimator variance. To fix this issue, we find
+that it helps to stabilize the rule π(x) ∝ u(x) by mixing it with a uniform rule.
+Denote the uniform rule by πunif(x) = nb/n. Clearly the uniform rule meets the budget constraint, since
+n E[πunif(X)] = nb. For a fixed τ ∈ [0, 1] and π(x) ∝ u(x), we define the τ-mixed rule as
+π(τ)(x) = (1 − τ) · π(x) + τ · πunif(x).
+Any positive value of τ ensures that π(τ)(x) > 0 for all x, avoiding instability due to small uncertainty
+estimates u(x). When historical data is available, one can tune τ by optimizing the empirical estimate of
+the (asymptotic) variance of ˆθπ(τ)
+given by Theorem 1. For example, in the case of mean estimation, this
+would correspond to solving:
+ˆτ = arg min
+τ∈[0,1]
+nhX
+i=1
+1
+π(τ)(Xh
+i )(Y h
+i − f(Xh
+i ))2, (12)
+where ( Xh
+i , Yh
+i ), . . . ,(Xh
+nn, Yh
+nh) are the historical data points. Otherwise, one can set τ to be any user-
+specified constant. In our experiments, in the batch setting we tune τ on historical data when such data is
+available. In the sequential setting we simply set τ = 0.5 as the default.
+8 Experiments
+We evaluate active inference on several problems and compare it to two baselines.
+10
+Algorithm 1 Batch active inference
+Input: unlabeled data X1, . . . , Xn, sampling budget nb, predictive model f, error level α ∈ (0, 1)
+1: Choose uncertainty measure u(x) based on f
+2: Let π(x) = ˆη u(x), where ˆη = nb
+nˆE[u(X)] ; let πunif = nb
+n
+3: Select τ ∈ (0, 1) and choose sampling rule π(τ)(x) = (1 − τ) · π(x) + τ · πunif
+4: Sample labeling decisions ξi ∼ Bern(π(τ)(Xi)), i∈ [n]
+5: Collect labels {Yi : ξi = 1}
+6: Compute batch active estimator ˆθπ(τ)
+(Eq. (6))
+Algorithm 2 Sequential active inference
+Input: unlabeled data X1, . . . , Xn, sampling budget nb, initial predictive model f1, error level α ∈ (0, 1),
+fine-tuning batch size B
+1: Set Dtune ← ∅
+2: for t = 1, . . . , ndo
+3: Choose uncertainty measure ut(x) for ft
+4: Set πt(x) as in Eq. (8) with ηt = nb
+nˆE[ut(X)] ; let πunif = nb
+n
+5: Select τ ∈ (0, 1) and choose sampling rule π(τ)
+t (x) = (1 − τ) · πt(x) + τ · πunif
+6: Sample labeling decision ξt ∼ Bern(π(τ)
+t (Xt))
+7: if ξt = 1 then
+8: Collect label Yt
+9: Dtune ← Dtune ∪ {(Xt, Yt)}
+10: if |Dtune| = B then
+11: Fine-tune model on Dtune: ft+1 = finetune(ft, Dtune)
+12: Set Dtune ← ∅
+13: else
+14: ft+1 ← ft
+15: else
+16: ft+1 ← ft
+17: Compute sequential active estimator ˆθ
+# »π (τ)
+(Eq. (7))
+The first baseline replaces active sampling with the uniformly random sampling rule πunif. Importantly,
+this baseline still uses machine learning predictions f(Xi) and corresponds to prediction-powered inference
+(PPI) [1]. Formally, the prediction-powered estimator is given by
+ˆθPPI = arg min
+θ
+LPPI(θ), where LPPI(θ) = 1
+n
+nX
+i=1
+ℓθ(Xi, f(Xi)) + 1
+nb
+nX
+i=1
+(ℓθ(Xi, Yi) − ℓθ(Xi, f(Xi))) ξi,
+where ξi ∼ Bern(nb
+n ). This estimator can be recovered as a special case of estimator (6). The purpose of this
+comparison is to quantify the benefits of machine-learning-driven data collection. In the rest of this section
+we refer to this baseline as the “uniform” baseline because the only difference from our estimator is that it
+replaces active sampling with uniform sampling.
+The second baseline removes machine learning altogether and computes the “classical” estimate based
+on uniformly random sampling,
+ˆθnoML = arg min
+θ
+1
+nb
+nX
+i=1
+ℓθ(Xi, Yi)ξi,
+where ξi ∼ Bern(nb
+n ). This baseline serves to evaluate the cumulative benefits of machine learning for data
+collection and inference combined. We refer to this baseline as the “classical” baseline, or classical inference,
+in the rest of this section.
+For all methods we compute standard confidence intervals based on asymptotic normality. The target
+11
+0.5 0.6 0.7 0.8
+approval rate
+220 304 418 576 792
+nb
+0.04
+0.05
+0.08
+0.12
+0.18interval width
+221 364 507 650 793
+nb
+0.6
+0.7
+0.8
+0.9
+1.0coverage
+active
+uniform
+classical
+0.2 0.3 0.4
+approval rate
+222 305 420 577 795
+nb
+0.04
+0.05
+0.07
+0.09
+0.12interval width
+222 365 508 651 795
+nb
+0.6
+0.7
+0.8
+0.9
+1.0coverage
+active
+uniform
+classical
+Figure 1: Post-election survey research. Example intervals in five randomly chosen trials (left), average
+confidence interval width (middle), and coverage (right) for the average approval of Joe Biden’s (top) and
+Donald Trump’s (bottom) political messaging to the country following the 2020 US presidential election.
+error level is α = 0.1 throughout. We report the average interval width and coverage for varying sample sizes
+nb, averaged over 1000 and 100 trials for the batch and sequential settings, respectively. We plot the interval
+width on a log–log scale. We also report the percentage of budget saved by active inference relative to the
+baselines when the methods are matched to be equally accurate. More precisely, for varying nb we compute
+the average interval width achieved by the uniform and classical baselines; then, we look for the budget size
+nactive
+b for which active inference achieves the same average interval width, and report (nb −nactive
+b )/nb ·100%
+as the percentage of budget saved.
+The batch and sequential active inference methods used in our experiments are outlined in Algorithm 1
+and Algorithm 2, respectively. Each application will specify the general parameters from the algorithm state-
+ments. We defer some experimental details, such as the choices of τ, to Appendix B. Code for reproducing
+the experiments is available at https://github.com/tijana-zrnic/active-inference.
+8.1 Post-election survey research
+We apply active inference to survey data collected by the Pew Research Center following the 2020 United
+States presidential election [38]. We focus on one specific question in the survey, aimed at gauging people’s
+approval of the presidential candidates’ political messaging following the election. The target of inference
+is the average approval rate of Joe Biden’s (Donald Trump’s, respectively) political messaging. Approval is
+encoded as a binary response, Yi ∈ {0, 1}.
+The respondents—a nationally representative pool of US adults—provide background information such
+as age, gender, education, political affiliation, etc. We show that, by training a machine learning model to
+predict people’s approval from their background information and measuring the model’s uncertainty, we can
+allocate the per-question budget in a way that achieves higher statistical power than uniform allocation.
+Careful budget allocation is important, because Pew pays each respondent proportionally to the number of
+questions they answer.
+We use half of all available data for the analysis; for the purpose of evaluating coverage, we take the
+average approval on all available data as the ground truth θ∗. To obtain the predictive model f, we train an
+XGBoost model [11] on the half of the data not used for the analysis. Since approval is encoded as a binary
+response, we use the measure of uncertainty from Eq. (3).
+12
+800 1000 1200 1400
+regression coefficient
+189 444 1040 2435 5701
+nb
+69
+127
+236
+437
+809interval width
+190 1567 2945 4323 5701
+nb
+0.6
+0.7
+0.8
+0.9
+1.0coverage
+active
+uniform
+classical
+Figure 2: Census data analysis. Example intervals in five randomly chosen trials (left), average confidence
+interval width (middle), and coverage (right) for the linear regression coefficient quantifying the relationship
+between age and income, controlling for sex, in US Census data.
+2 4 6
+odds ratio
+108 228 482 1021 2159
+nb
+0.57
+1.09
+2.08
+3.99
+7.64interval width
+108 621 1134 1647 2160
+nb
+0.6
+0.7
+0.8
+0.9
+1.0coverage
+active
+uniform
+classical
+Figure 3: AlphaFold-assisted proteomics research. Example intervals in five randomly chosen trials
+(left), average confidence interval width (middle), and coverage (right) for the odds ratio between phospho-
+rylation and being part of an IDR.
+In Figure 1 we compare active inference to the uniform (PPI) and classical baselines. All methods meet
+the coverage requirement. Across different values of the budget nb, active sampling reduces the confidence
+interval width of the uniform baseline (PPI) by a significant margin (at least ∼ 10%). Classical inference is
+highly suboptimal compared to both alternatives. In Figure 4 we report the percentage of budget saved due
+to active sampling. For estimating Biden’s approval, we observe an over 85% save in budget over classical
+inference and around 25% save over the uniform baseline. For estimating Trump’s approval, we observe an
+over 70% save in budget over classical inference and around 25% save over the uniform baseline.
+8.2 Census data analysis
+Next, we study the American Community Survey (ACS) Public Use Microdata Sample (PUMS) collected
+by the US Census Bureau. ACS PUMS is an annual survey that collects information about citizenship,
+education, income, employment, and other factors previously contained only in the long form of the decennial
+census. We use the Folktables [15] interface to download the data. We investigate the relationship between
+age and income in survey data collected in California in 2019, controlling for sex. Specifically, we target the
+linear regression coefficient when regressing income on age and sex (that is, its age coordinate).
+Analogously to the previous application, we use half of all available data for the analysis and train an
+XGBoost model [11] of a person’s income from the available demographic covariates on the other half. As
+the ground-truth value of the target θ∗, we take the corresponding linear regression coefficient computed on
+all available data. To quantify the model’s uncertainty, we use the strategy described in Section 4, training a
+separate XGBoost model e(·) to predict |f(X)−Y | from X. Then, we set the uncertainty u(x) as prescribed
+in Eq. (11), replacing |f(X) − Y | by e(X).
+The interval widths and coverage are shown in Figure 2. As in the previous application, all methods
+approximately achieve the target coverage, however this time we observe more extreme gains over the uniform
+baseline (PPI): the interval widths almost double when going from active sampling to uniform sampling. Of
+13
+250 500 750 1000 1250
+nb
+0
+25
+50
+75
+100
+budget save
+ over classical (%)
+Post-election research
+Biden
+Trump
+250 500 750 1000 1250
+nb
+0
+25
+50
+75
+100
+budget save
+ over uniform (%)
+Biden
+Trump
+2000 3000 4000 5000
+nb
+0
+25
+50
+75
+100
+ Census analysis
+2000 3000 4000 5000
+nb
+0
+25
+50
+75
+100
+500 1000 1500 2000
+nb
+0
+25
+50
+75
+100
+ AlphaFold
+500 1000 1500 2000
+nb
+0
+25
+50
+75
+100
+Figure 4: Save in sample budget due to active inference. Reduction in sample size required to achieve
+the same confidence interval width with active inference and (top) classical inference and (bottom) uniform
+sampling, respectively, across the applications shown in Figures 1-3.
+course, the improvement of active inference over classical inference is even more substantial. The large gains
+of active sampling can also be seen in Figure 4: we save around 80% of the budget over classical inference
+and over 60% over the uniform baseline.
+8.3 AlphaFold-assisted proteomics research
+Inspired by the findings of Bludau et al. [9] and the subsequent analysis of Angelopoulos et al. [1], we
+study the odds ratio of a protein being phosphorylated, a functional property of a protein, and being part
+of an intrinsically disordered region (IDR), a structural property. The latter can only be obtained from
+knowledge about the protein structure, which can in turn be measured to a high accuracy only via expensive
+experimental techniques. To overcome this challenge, Bludau et al. used AlphaFold predictions [26] to
+estimate the odds ratio. AlphaFold is a machine learning model that predicts a protein’s structure from
+its amino acid sequence. Angelopoulos et al. [1] showed that forming a classical confidence interval around
+the odds ratio based on AlphaFold predictions is not valid given that the predictions are imperfect. They
+provide a valid alternative assuming access to a small subset of proteins with true structure measurements,
+uniformly sampled from the larger population of proteins of interest.
+We show that, by strategically choosing which protein structures to experimentally measure, active infer-
+ence allows for intervals that retain validity and are tighter than intervals based on uniform sampling. Natu-
+rally, for the purpose of evaluating validity, we restrict the analysis to proteins where we have gold-standard
+structure measurements; we use the post-processed AlphaFold outputs made available by Angelopoulos et al.
+[1], which predict the IDR property based on the raw AlphaFold output. We leverage the predictions to
+guide the choice of which structures to experimentally derive, subject to a budget constraint. The odds ratio
+we aim to estimate is defined as:
+θ∗ = µ1/(1 − µ1)
+µ0/(1 − µ0),
+where µ1 = P(Y = 1|Xph = 1) and µ0 = P(Y = 1|Xph = 0); Y is a binary indicator of disorder and Xph is
+a binary indicator of phosphorylation. While the odds ratio is not a solution to an M-estimation problem,
+it is a function of two means, µ1 and µ0 (see also [1, 3]). Confidence intervals can thus be computed by
+applying the delta method to the asymptotic normality result for the mean. Since Y is binary, we use the
+measure of uncertainty from Eq. (3) to estimate µ1 and µ0. For the purpose of evaluating coverage, we take
+the empirical odds ratio computed on the whole dataset as the ground-truth value of θ∗.
+Figure 3 shows the interval widths and coverage for the three methods, and Figure 4 shows the percentage
+of budget saved due to adaptive data collection. The gains are substantial: over 75% of the budget is saved
+in comparison to classical inference, and around 20 − 25% is saved in comparison to the uniform baseline
+14
+0.68 0.70 0.72
+approval rate
+1855 2370 3029 3871 4946
+nb
+0.019
+0.022
+0.026
+0.031
+0.038interval width
+1855 2628 3401 4174 4947
+nb
+0.6
+0.7
+0.8
+0.9
+1.0coverage
+active (w/ fine-tuning)
+active (no fine-tuning)
+uniform
+0.28 0.30 0.32
+approval rate
+1860 2376 3037 3881 4961
+nb
+0.018
+0.022
+0.027
+0.032
+0.039interval width
+1860 2635 3410 4185 4961
+nb
+0.6
+0.7
+0.8
+0.9
+1.0coverage
+active (w/ fine-tuning)
+active (no fine-tuning)
+uniform
+Figure 5: Post-election survey research with fine-tuning. Example intervals in five randomly chosen
+trials (left), average confidence interval width (middle), and coverage (right) for the average approval of
+Joe Biden’s (top) and Donald Trump’s (bottom) political messaging to the country following the 2020 US
+presidential election. Active inference with no fine-tuning and inference with uniformly sampled data use
+the same model.
+(PPI). Given the cost of experimental measurement techniques in proteomics, this save in sample size would
+imply a massive save in cost.
+8.4 Post-election survey research with fine-tuning
+We return to the example from Section 8.1, this time evaluating the benefits of sequential fine-tuning. We
+compare active inference, with and without fine-tuning, and PPI, which relies on uniform sampling. We
+show that active inference with no fine-tuning can hurt compared to PPI if the former uses a poorly trained
+model; fine-tuning, on the other hand, remedies this issue. The predictive model may be poorly trained due
+to little or no historical data; sequential fine-tuning is necessary in such cases.
+We train an XGBoost model on only 10 labeled examples and use this model for active inference with
+no fine-tuning and PPI. The latter is similar to the former in the sense that it only replaces active with
+uniform sampling. Active inference with fine-tuning continues to fine-tune the model with every B = 100
+new survey responses, also updating the sampling rule via update (8). The uncertainty measure ut(x) is
+given by Eq. (3), as before. As discussed in Section 6, we also periodically use up the remaining budget
+regardless of the computed uncertainty in order to avoid underutilizing the budget (in particular, every
+100n/nb steps). We fine-tune the model using the training continuation feature of XGBoost.
+The interval widths and coverage are reported in Figure 5. We find that fine-tuning substantially improves
+inferential power and retains correct coverage. In Figure 7 we show the save in sample size budget over active
+inference with no fine-tuning and inference based on uniform sampling, i.e. PPI. For estimating Biden’s
+approval, we observe a gain of around 40% and 30% relative to active inference without fine-tuning and PPI,
+respectively. For Trump’s approval, we observe even larger gains around 45% and 35%, respectively.
+8.5 Census data analysis with fine-tuning
+We similarly evaluate the benefits of sequential fine-tuning in the problem setting from Section 8.2. We
+again compare active inference, with and without fine-tuning, and PPI, i.e., active inference with a trivial,
+uniform sampling rule. Recall that in Section 8.2 we trained a separate model e to predict the prediction
+errors, which we in turn used to form the uncertainty u(x) according to Eq. (11). This time we fine-tune
+both the prediction model, ft, and the error model, et.
+15
+900 1000 1100 1200
+regression coefficient
+3799 4999 6580 8660 11399
+nb
+70
+88
+110
+138
+173interval width
+3799 5699 7599 9499 11399
+nb
+0.6
+0.7
+0.8
+0.9
+1.0coverage
+active (w/ fine-tuning)
+active (no fine-tuning)
+uniform
+Figure 6: Census data analysis with fine-tuning. Example intervals in five randomly chosen trials
+(left), average confidence interval width (middle), and coverage (right) for the linear regression coefficient
+quantifying the relationship between age and income, controlling for sex, in US Census data. Active inference
+with no fine-tuning and inference with uniformly sampled data use the same model.
+4000 4500 5000
+nb
+0
+25
+50
+75
+100
+budget save over
+ no fine-tuning (%)
+Post-election research
+Biden
+Trump
+3500 4000 4500 5000
+nb
+0
+25
+50
+75
+100
+budget save
+ over uniform (%)
+Biden
+Trump
+8000 9000 10000 11000
+nb
+0
+25
+50
+75
+100
+ Census analysis
+7000 8000 9000 10000 11000
+nb
+0
+25
+50
+75
+100
+Figure 7: Save in sample size budget due to fine-tuning. Reduction in sample size required to achieve
+the same confidence interval width with active inference with fine-tuning and (top) active inference with no
+fine-tuning and (bottom) the uniform baseline (PPI), respectively, in the applications shown in Figure 5 and
+Figure 6.
+We train initial XGBoost models f1 and e1 on 100 labeled examples. We use f1 for PPI and both f1 and
+e1 for active inference with no fine-tuning. Active inference with fine-tuning continues to fine-tune the two
+models with every B = 1000 new survey responses, also updating the model uncertainty via update (8). We
+fine-tune the models using the training continuation feature of XGBoost. We compute ut from et based on
+Eq. (11). As discussed earlier, we also periodically use up the remaining budget regardless of the computed
+uncertainty in order to avoid underutilizing the budget (in particular, every 500 n/nb steps).
+We show the interval widths and coverage in Figure 6. We see that the gains of fine-tuning are significant
+and increase as nb increases. In Figure 7 we show the save in sample size budget. Fine-tuning saves around
+32 − 40% over the baseline with no fine-tuning and around 20 − 30% over the uniform baseline. Moreover,
+the save increases as the sample budget grows because the prediction problem is difficult and the model’s
+performance keeps improving even after 10000 training examples.
+Acknowledgements
+We thank Lihua Lei, Jann Spiess, and Stefan Wager for many insightful comments and pointers to relevant
+work. T.Z. was supported by Stanford Data Science through the Fellowship program. E.J.C. was supported
+by the Office of Naval Research grant N00014-20-1-2157, the National Science Foundation grant DMS-
+2032014, the Simons Foundation under award 814641, and the ARO grant 2003514594.
+16
+References
+[1] Anastasios N Angelopoulos, Stephen Bates, Clara Fannjiang, Michael I Jordan, and Tijana Zrnic.
+Prediction-powered inference. Science, 382(6671):669–674, 2023.
+[2] Anastasios N Angelopoulos, Stephen Bates, Clara Fannjiang, Michael I Jordan, and Tijana Zrnic.
+Prediction-powered inference: Data sets, 2023. URL https://doi.org/10.5281/zenodo.8397451.
+[3] Anastasios N Angelopoulos, John C Duchi, and Tijana Zrnic. PPI++: Efficient prediction-powered
+inference. arXiv preprint arXiv:2311.01453 , 2023.
+[4] Jordan T Ash, Chicheng Zhang, Akshay Krishnamurthy, John Langford, and Alekh Agarwal. Deep
+batch active learning by diverse, uncertain gradient lower bounds. arXiv preprint arXiv:1906.03671 ,
+2019.
+[5] David Azriel, Lawrence D Brown, Michael Sklar, Richard Berk, Andreas Buja, and Linda Zhao. Semi-
+supervised linear regression. Journal of the American Statistical Association, 117(540):2238–2251, 2022.
+[6] Maria-Florina Balcan, Alina Beygelzimer, and John Langford. Agnostic active learning. In Proceedings
+of the 23rd international conference on Machine learning , pages 65–72, 2006.
+[7] Maria-Florina Balcan, Amit Daniely, Ruta Mehta, Ruth Urner, and Vijay V Vazirani. Learning economic
+parameters from revealed preferences. In Web and Internet Economics: 10th International Conference,
+WINE 2014, Beijing, China, December 14-17, 2014. Proceedings 10 , pages 338–353. Springer, 2014.
+[8] Debopam Bhattacharya and Pascaline Dupas. Inferring welfare maximizing treatment assignment under
+budget constraints. Journal of Econometrics , 167(1):168–196, 2012.
+[9] Isabell Bludau, Sander Willems, Wen-Feng Zeng, Maximilian T Strauss, Fynn M Hansen, Maria C
+Tanzer, Ozge Karayel, Brenda A Schulman, and Matthias Mann. The structural context of posttrans-
+lational modifications at a proteome-wide scale. PLoS biology, 20(5):e3001636, 2022.
+[10] Yash Chandak, Shiv Shankar, Vasilis Syrgkanis, and Emma Brunskill. Adaptive instrument design for
+indirect experiments. arXiv preprint arXiv:2312.02438 , 2023.
+[11] Tianqi Chen and Carlos Guestrin. Xgboost: A scalable tree boosting system. In Proceedings of the 22nd
+acm sigkdd international conference on knowledge discovery and data mining , pages 785–794, 2016.
+[12] Chen Cheng, Hilal Asi, and John Duchi. How many labelers do you have? a closer look at gold-standard
+labels. arXiv preprint arXiv:2206.12041 , 2022.
+[13] Victor Chernozhukov, Denis Chetverikov, Mert Demirer, Esther Duflo, Christian Hansen, Whitney
+Newey, and James Robins. Double/debiased machine learning for treatment and structural parameters,
+2018.
+[14] Thomas Cook, Alan Mishler, and Aaditya Ramdas. Semiparametric efficient inference in adaptive
+experiments. arXiv preprint arXiv:2311.18274 , 2023.
+[15] Frances Ding, Moritz Hardt, John Miller, and Ludwig Schmidt. Retiring adult: New datasets for fair
+machine learning. Advances in neural information processing systems , 34:6478–6490, 2021.
+[16] Rick Durrett. Probability: theory and examples , volume 49. Cambridge university press, 2019.
+[17] Aryeh Dvoretzky. Asymptotic normality for sums of dependent random variables. In Proceedings of the
+Sixth Berkeley Symposium on Mathematical Statistics and Probability, Volume 2: Probability Theory ,
+volume 6, pages 513–536. University of California Press, 1972.
+[18] Yarin Gal, Riashat Islam, and Zoubin Ghahramani. Deep Bayesian active learning with image data. In
+International conference on machine learning , pages 1183–1192. PMLR, 2017.
+17
+[19] Feng Gan and Wanfeng Liang. Prediction de-correlated inference. arXiv preprint arXiv:2312.06478 ,
+2023.
+[20] Vitor Hadad, David A Hirshberg, Ruohan Zhan, Stefan Wager, and Susan Athey. Confidence intervals
+for policy evaluation in adaptive experiments. Proceedings of the national academy of sciences, 118(15):
+e2014602118, 2021.
+[21] Jinyong Hahn, Keisuke Hirano, and Dean Karlan. Adaptive experimental design using the propensity
+score. Journal of Business & Economic Statistics , 29(1):96–108, 2011.
+[22] Steve Hanneke et al. Theory of disagreement-based active learning. Foundations and Trends ® in
+Machine Learning, 7(2-3):131–309, 2014.
+[23] Feifang Hu and William F Rosenberger. The theory of response-adaptive randomization in clinical trials.
+John Wiley & Sons, 2006.
+[24] Neal Jean, Marshall Burke, Michael Xie, W Matthew Davis, David B Lobell, and Stefano Ermon.
+Combining satellite imagery and machine learning to predict poverty. Science, 353(6301):790–794,
+2016.
+[25] Ajay J Joshi, Fatih Porikli, and Nikolaos Papanikolopoulos. Multi-class active learning for image clas-
+sification. In 2009 ieee conference on computer vision and pattern recognition , pages 2372–2379. IEEE,
+2009.
+[26] John Jumper, Richard Evans, Alexander Pritzel, Tim Green, Michael Figurnov, Olaf Ronneberger,
+Kathryn Tunyasuvunakool, Russ Bates, AugustinˇZ´ ıdek, Anna Potapenko, et al. Highly accurate protein
+structure prediction with alphafold. Nature, 596(7873):583–589, 2021.
+[27] Graham Kalton. Introduction to survey sampling . Number 35. Sage Publications, 2020.
+[28] Maximilian Kasy and Anja Sautmann. Adaptive treatment assignment in experiments for policy choice.
+Econometrica, 89(1):113–132, 2021.
+[29] Masahiro Kato, Takuya Ishihara, Junya Honda, and Yusuke Narita. Efficient adaptive experimental
+design for average treatment effect estimation. arXiv preprint arXiv:2002.05308 , 2020.
+[30] Mohammad GM Khan, Karuna G Reddy, and Dinesh K Rao. Designing stratified sampling in economic
+and business surveys. Journal of applied statistics , 42(10):2080–2099, 2015.
+[31] Tze Leung Lai and Herbert Robbins. Asymptotically efficient adaptive allocation rules. Advances in
+applied mathematics, 6(1):4–22, 1985.
+[32] John A List, Sally Sadoff, and Mathis Wagner. So you want to run an experiment, now what? some
+simple rules of thumb for optimal experimental design. Experimental Economics, 14:439–457, 2011.
+[33] Jiacheng Miao, Xinran Miao, Yixuan Wu, Jiwei Zhao, and Qiongshi Lu. Assumption-lean and data-
+adaptive post-prediction inference. arXiv preprint arXiv:2311.14220 , 2023.
+[34] Keshav Motwani and Daniela Witten. Valid inference after prediction. arXiv preprint arXiv:2306.13746,
+2023.
+[35] Dankit K Nassiuma. Survey sampling: Theory and methods, 2001.
+[36] Francesco Orabona and Kwang-Sung Jun. Tight concentrations and confidence sequences from the
+regret of universal portfolio. IEEE Transactions on Information Theory , 2023.
+[37] Art B. Owen. Monte Carlo theory, methods and examples . https://artowen.su.domains/mc/, 2013.
+[38] Pew. American trends panel (ATP) wave 79, 2020. URL https://www.pewresearch.org/science/
+dataset/american-trends-panel-wave-79/ .
+18
+[39] Pengzhen Ren, Yun Xiao, Xiaojun Chang, Po-Yao Huang, Zhihui Li, Brij B Gupta, Xiaojiang Chen,
+and Xin Wang. A survey of deep active learning. ACM computing surveys (CSUR) , 54(9):1–40, 2021.
+[40] Herbert Robbins. Some aspects of the sequential design of experiments. 1952.
+[41] James M Robins and Andrea Rotnitzky. Semiparametric efficiency in multivariate regression models
+with missing data. Journal of the American Statistical Association , 90(429):122–129, 1995.
+[42] James M Robins, Andrea Rotnitzky, and Lue Ping Zhao. Estimation of regression coefficients when some
+regressors are not always observed. Journal of the American statistical Association , 89(427):846–866,
+1994.
+[43] Esther Rolf, Jonathan Proctor, Tamma Carleton, Ian Bolliger, Vaishaal Shankar, Miyabi Ishihara,
+Benjamin Recht, and Solomon Hsiang. A generalizable and accessible approach to machine learning
+with global satellite imagery. Nature communications, 12(1):4392, 2021.
+[44] D Rubin. Multiple imputation for nonresponse in surveys. Wiley Series in Probability and Statistics ,
+page 1, 1987.
+[45] Donald B Rubin. Inference and missing data. Biometrika, 63(3):581–592, 1976.
+[46] Donald B Rubin. Multiple imputation after 18+ years. Journal of the American statistical Association ,
+91(434):473–489, 1996.
+[47] Carl Erik S¨ arndal. Onπ-inverse weighting versus best linear unbiased weighting in probability sampling.
+Biometrika, 67(3):639–650, 1980.
+[48] Carl-Erik S¨ arndal, Bengt Swensson, and Jan Wretman.Model assisted survey sampling. Springer Science
+& Business Media, 2003.
+[49] Greg Schohn and David Cohn. Less is more: Active learning with support vector machines. In ICML,
+volume 2, page 6, 2000.
+[50] Burr Settles. Active learning literature survey. Department of Computer Sciences, University of
+Wisconsin-Madison, 2009.
+[51] Simon Tong and Daphne Koller. Support vector machine active learning with applications to text
+classification. Journal of machine learning research , 2(Nov):45–66, 2001.
+[52] Aad W Van der Vaart. Asymptotic statistics, volume 3. Cambridge university press, 2000.
+[53] Harit Vishwakarma, Heguang Lin, Frederic Sala, and Ramya Korlakai Vinayak. Promises and pitfalls
+of threshold-based auto-labeling. Advances in Neural Information Processing Systems , 36, 2023.
+[54] Ian Waudby-Smith and Aaditya Ramdas. Estimating means of bounded random variables by betting.
+Journal of the Royal Statistical Society Series B: Statistical Methodology , 86(1):1–27, 2024.
+[55] Michael Xie, Neal Jean, Marshall Burke, David Lobell, and Stefano Ermon. Transfer learning from deep
+features for remote sensing and poverty mapping. In Proceedings of the AAAI conference on artificial
+intelligence, volume 30, 2016.
+[56] Matt Zdun. Machine politics: How America casts and counts its votes. Reuters, 2022.
+[57] Anru Zhang, Lawrence D Brown, and T Tony Cai. Semi-supervised inference: General theory and
+estimation of means. Annals of Statistics , 47(5):2538–2566, 2019.
+[58] Jiaqi Zhang, Louis Cammarata, Chandler Squires, Themistoklis P Sapsis, and Caroline Uhler. Active
+learning for optimal intervention design in causal models. Nature Machine Intelligence , pages 1–10,
+2023.
+[59] Kelly Zhang, Lucas Janson, and Susan Murphy. Statistical inference with M-estimators on adaptively
+collected data. Advances in neural information processing systems , 34:7460–7471, 2021.
+19
+[60] Yuqian Zhang and Jelena Bradic. High-dimensional semi-supervised learning: in search of optimal
+inference of the mean. Biometrika, 109(2):387–403, 2022.
+[61] Tijana Zrnic and Emmanuel J Cand` es. Cross-prediction-powered inference.Proceedings of the National
+Academy of Sciences, 121(15):e2322083121, 2024.
+20
+A Proofs
+A.1 Proof of Proposition 1
+Recall that ξi ∼ Bern(πˆη(Xi)). For any η ∈ H, we define
+ξη
+i = 1{πη(Xi) ≤ πˆη(Xi)}ξi(1 − ξ≤
+i ) + 1{πη(Xi) > πˆη(Xi)}(ξi + (1 − ξi)ξ>
+i ), (13)
+where ξ≤
+i ∼ Bern(πˆη(Xi)−πη(Xi)
+πˆη(Xi) ) and ξ>
+i ∼ Bern(πη(Xi)−πˆη(Xi)
+1−πˆη(Xi) ) are drawn independently of ξi. This defini-
+tion couples ξη∗
+i with ξi, while ensuring that ξη∗
+i ∼ Bern(πη∗ (Xi)). Let
+ˆθη∗
+= 1
+n
+nX
+i=1
+ 
+f(Xi) + (Yi − f(Xi)) ξη∗
+i
+πη∗ (Xi)
+!
+.
+By the central limit theorem, we know that
+√n(ˆθη∗
+− θ∗)
+d
+→ N(0, σ2
+∗), (14)
+where σ2
+∗ = Var
+
+f(X) + (Y − f(X)) ξη∗
+πη∗ (X)
+
+. On the other hand, we have
+√n(ˆθˆη − θ∗) = √n(ˆθη∗
+− θ∗) + √n(ˆθˆη − ˆθη∗
+).
+For any ϵ >0, we have P(|√n(ˆθˆη − ˆθη∗
+)| ≥ϵ) ≤ P(ˆη ̸= η∗) → 0; therefore, √n(ˆθˆη − ˆθη∗
+)
+p
+→ 0. Putting this
+fact together with Eq. (14), we conclude that √n(ˆθˆη − θ∗)
+d
+→ N(0, σ2
+∗) by Slutsky’s theorem.
+A.2 Proof of Theorem 1
+The proof follows a similar argument as the classical proof of asymptotic normality for M-estimation; see [52,
+Thm. 5.23]. A similar proof is also given for the prediction-powered estimator [3], which is closely related
+to our active inference estimator. The main difference between our proof and the classical proof is that ˆ η is
+tuned in a data-adaptive fashion, so the increments in the empirical loss Lπˆη (θ) are not independent. We
+begin by formally stating the required smoothness assumption.
+Assumption 1 (Smoothness). The loss ℓ is smooth if:
+• ℓθ(x, y) is differentiable at θ∗ for all (x, y);
+• ℓθ is locally Lipschitz around θ∗: there is a neighborhood of θ∗ such that ℓθ(x, y) is C(x, y)-Lipschitz
+and ℓθ(x, f(x)) is C(x)-Lipschitz in θ, where E[C(X, Y)2] < ∞, E[C(X)2] < ∞;
+• L(θ) = E[ℓθ(X, Y)] and Lf (θ) = E[ℓθ(X, f(X))] have Hessians, and Hθ∗ = ∇2L(θ∗) ≻ 0.
+Using the same definition ofξη
+i as in Eq. (13), let Lη
+θ,i = ℓθ(Xi, f(Xi))+(ℓθ(Xi, Yi) − ℓθ(Xi, f(Xi))) ξη
+i
+πη(Xi) .
+We define ∇Lη
+θ,i analogously, replacing the losses with their gradients. Given a function g, let
+Gn[g(Lη
+θ)] := 1√n
+nX
+i=1
+
+g(Lη
+θ,i) − E[g(Lη
+θ,i)]
+
+; En[g(Lη
+θ)] := 1
+n
+nX
+i=1
+g(Lη
+θ,i).
+We similarly use Gn[g(∇Lη
+θ)], En[g(∇Lη
+θ)], etc. Notice that En[Lˆη
+θ] = Lπˆη (θ).
+By the differentiability and local Lipschitzness of the loss, for any hn = OP (1) we have
+Gn[√n(Lη∗
+θ∗+hn/√n − Lη∗
+θ∗ ) − h⊤
+n ∇Lη∗
+θ∗ ]
+p
+→ 0.
+21
+By definition, this is equivalent to
+nEn[Lη∗
+θ∗+hn/√n − Lη∗
+θ∗ ] = n(L(θ∗ + hn/√n) − L(θ∗)) + h⊤
+n Gn[∇Lη∗
+θ∗ ] + oP (1),
+where L(θ) = E[ℓθ(X, Y)] is the population loss. A second-order Taylor expansion now implies
+nEn[Lη∗
+θ∗+hn/√n − Lη∗
+θ∗ ] = 1
+2h⊤
+n Hθ∗ hn + h⊤
+n Gn[∇Lη∗
+θ∗ ] + oP (1).
+At the same time, since P(ˆη ̸= η∗) → 0, we have
+nEn[Lˆη
+θ∗+hn/√n − Lˆη
+θ∗ ] = nEn[Lη∗
+θ∗+hn/√n − Lη∗
+θ∗ ] + oP (1).
+Putting everything together, we have shown
+nEn[Lˆη
+θ∗+hn/√n − Lˆη
+θ∗ ] = 1
+2h⊤
+n Hθ∗ hn + h⊤
+n Gn[∇Lη∗
+θ∗ ] + oP (1).
+The rest of the proof is standard. We apply the previous display with hn = ˆhn := √n(ˆθˆη − θ∗) (which is
+OP (1) by the consistency of ˆθη∗
+; see [52, Thm. 5.23]) and hn = ˜hn := −H−1
+θ∗ Gn[∇Lη∗
+θ∗ ]:
+nEn[Lˆη
+ˆθˆη − Lˆη
+θ∗ ] = 1
+2
+ˆh⊤
+n Hθ∗ ˆhn + ˆh⊤
+n Gn[∇Lη∗
+θ∗ ] + oP (1);
+nEn[Lˆη
+θ∗+˜hn/√n − Lˆη
+θ∗ ] = 1
+2
+˜h⊤
+n Hθ∗ ˜hn + ˜h⊤
+n Gn[∇Lη∗
+θ∗ ] + oP (1).
+By the definition of ˆθˆη, the left-hand side of the first equation is smaller than the left-hand side of the second
+equation. Therefore, the same must be true of the right-hand sides of the equations. If we take the difference
+between the equations and complete the square, we get
+1
+2
+√n(ˆθˆη − θ∗) − ˜hn
+⊤
+Hθ∗
+√n(ˆθˆη − θ∗) − ˜hn
+
++ oP (1) ≤ 0.
+Since the Hessian Hθ∗ is positive-definite, it must be the case that √n(ˆθˆη − θ∗) − ˜hn
+p
+→ 0. By the central
+limit theorem, ˜hn = −H−1
+θ∗ Gn[∇Lη∗
+θ∗ ] converges to N(0, Σ∗) in distribution, where
+Σ∗ = H−1
+θ∗ Var
+
+∇ℓθ∗ (X, f(X)) + (∇ℓθ∗ (X, Y) − ∇ℓθ∗ (X, f(X))) ξη∗
+πη∗ (X)
+
+H−1
+θ∗ .
+The final statement thus follows by Slutsky’s theorem.
+A.3 Proof of Proposition 2
+We prove the result by an application of the martingale central limit theorem (see Theorem 8.2.4. in [16]).
+Let ¯∆t denote the increments ∆ t with their mean subtracted out, i.e. ¯∆t = ∆ t − θ∗. To apply the
+theorem, we first need to verify that the increments ¯∆t = ∆t − θ∗ are martingale increments; this follows
+because
+E[ ¯∆t|Ft−1] = E[ ¯∆t|ft, πt] = E[ft(Xt)|ft, πt] + E[Yt − ft(Xt)|ft, πt]E
+ ξt
+πt(Xt)|ft, πt
+
+− θ∗ = 0,
+together with the fact that ¯∆t ∈ Ft.
+The martingale central limit theorem is now applicable given two regularity conditions. The first is
+that 1
+n
+Pn
+t=1 σ2
+t converges in probability, which holds by assumption. The second condition is the so-called
+Lindeberg condition, stated below.
+22
+Assumption 2. Let ¯∆t = ∆t − θ∗. We say that ∆t satisfy the Lindeberg condition if for all ϵ >0,
+1
+n
+nX
+t=1
+E[ ¯∆2
+t 1{|¯∆t| > ϵ√n}|Ft−1]
+p
+→ 0.
+Since this condition holds by assumption, we can apply the central limit theorem to conclude √n(ˆθ
+# »π −θ∗) =
+1√n
+Pn
+t=1 ¯∆t
+d
+→ N(0, σ2
+∗).
+A.4 Proof of Theorem 2
+We follow a similar approach as in the proof of Theorem 1, which is in turn similar to the classical argument
+for M-estimation [52, Thm. 5.23]. In this case, the main difference to the classical proof is that the empirical
+loss L
+# »π (θ) comprises martingale, rather than i.i.d. increments. We explain the differences relative to the
+proof of Theorem 1.
+We define Lθ,i = ℓθ(Xi, fi(Xi)) + (ℓθ(Xi, Yi) − ℓθ(Xi, fi(Xi))) ξi
+πi(Xi) , and ∇Lθ,i is defined analogously.
+We again use the notation Gn[g(Lθ)], En[g(Lθ)], Gn[g(∇Lθ)], En[g(∇Lθ)], etc.
+As in the classical argument, for any hn = OP (1) we have Gn[√n(Lθ∗+hn/√n − Lθ∗ ) − h⊤
+n ∇Lθ∗ ]
+p
+→ 0.
+This can be concluded from the martingale central limit theorem, since the variance of the increments
+tends to zero. Specifically, define the triangular array Ln,i = √n(Lθ∗+hn/√n,i − Lθ∗,i) − h⊤
+n ∇Lθ∗,i, and let
+Vn,i = Var(Ln,i|Fi−1). We have | 1√n
+Pn
+i=1 Ln,i| ≤maxi
+p
+Vn,i| 1√n
+Pn
+i=1
+Ln,i√
+Vn,i
+|. By the martingale central
+limit theorem, 1√n
+Pn
+i=1
+Ln,i√
+Vn,i
+d
+→ N(0, 1) and, since max i
+p
+Vn,i
+p
+→ 0, we conclude by Slutsky’s theorem
+that Gn[√n(Lθ∗+hn/√n − Lθ∗ ) − h⊤
+n ∇Lθ∗ ]
+p
+→ 0.
+The following steps are the same as in the proof of Theorem 1; we conclude that √n(ˆθ
+# »π − θ∗) − ˜hn
+p
+→ 0,
+where ˜hn = −H−1
+θ∗ Gn[∇Lθ∗ ]. Finally, we argue that ˜hn converges to N(0, Σ∗) in distribution. To see this,
+first note that all one-dimensional projections v⊤˜hn converge to v⊤Z, Z ∼ N(0, Σ∗), by the martingale
+central limit theorem, which is applicable because the Lindeberg condition holds by assumption (see below
+for statement) and the variance process Vθ∗,n converges to V∗. Once we have the convergence of all one-
+dimensional projections, convergence of ˜hn follows by the Cram´ er-Wold theorem.
+Assumption 3. We say that the increments satisfy the Lindeberg condition if, for all v ∈ Sd−1 and ϵ >0,
+1
+n
+nX
+t=1
+E[(v⊤∇Lθ∗,t)21{|v⊤∇Lθ∗,t| > ϵ√n}|Ft−1]
+p
+→ 0.
+B Experimental details
+In all our experiments, we have a labeled dataset of n examples. We treat the solution on the full dataset
+as the ground-truth θ∗ for the purpose of evaluating coverage. In each trial, the underlying data points
+(Xi, Yi) are fixed and the randomness comes from the labeling decisions ξi. In the sequential experiments,
+we additionally randomly permute the data points at the beginning of each trial. The experiments in the
+batch setting average the results over 1000 trials and the experiments in the sequential setting average
+the results over 100 trials. The Pew dataset is available at [38]; the census dataset is available through
+Folktables [15]; the Alphafold dataset is available at [2].
+As discussed in Section 7.2, to avoid values of π(x) that are close to zero we mix the “standard” sampling
+rule based on the uncertainty u(x) with a uniform rule πunif = nb
+n according to a parameter τ ∈ (0, 1). In
+post-election survey research, we have training data for the prediction model and we use the same data to
+select τ so as to minimize an empirical approximation of the variance Var( ˆθπ(τ)
+), as in Eq. (12). In the
+23
+AlphaFold example and both problems with model fine-tuning we set τ = 0.5 for simplicity. In the census
+example, the trained predictor of model error e(x) rarely gives very small values, and so we set τ = 0.001.
+In each experiment, we vary nb over a grid of uniformly spaced values. We take 20 grid values for the
+batch experiments and 10 grid values for the sequential experiments. The plots of interval width and coverage
+linearly interpolate between the respective values obtained at the grid points. There linearly interpolated
+values are used to produce the plots of budget save: for all values of nb from the grid, we look for n′
+b such
+that the (linearly interpolated) width of active inference at sample size n′
+b matches the interval width of
+classical (resp. uniform) inference at sample size nb. For the leftmost plot in Figures 1-3 and Figures 5-6,
+we uniformly sample five trials for a fixed nb and show the intervals for all methods in those same five trials.
+We arbitrarily select nb to be the fourth largest value in the grid of budget sizes for all experiments.
+C Non-asymptotic results
+While our results focus on asymptotic confidence intervals based on the central limit theorem, some of
+them—in particular, those for mean estimation—have direct non-asymptotic and time-uniform analogues.
+We explain this extension for the sequential algorithm, as it subsumes the extension for the batch setting.
+Let ∆t = ft(Xt) + (Yt − ft(Xt)) ξt
+πt(Xt) . As explained in Section 6, ∆ t have a common conditional mean:
+E[∆t|∆1, . . . ,∆t−1] = θ∗. Moreover, if Yt and ft(Xt) are almost surely bounded, and πt(Xt) is almost surely
+bounded from below, then ∆ t are bounded as well. (Given that we construct πt by “τ-mixing” it with a
+uniform rule, as explained in Section 7.2, in our applications πt(Xt) is always bounded from below since
+πt(x) ≥ τ nb
+n .) Therefore, given that we have bounded observations (with a known bound) having a common
+conditional mean, we can apply the recent betting-based methods [36, 54] for constructing non-asymptotic
+confidence intervals and time-uniform confidence sequences satisfying P(θ∗ ∈ Ct, ∀t) ≥ 1 − α.
+We demonstrate the non-asymptotic extension in the problem of post-election survey analysis from Sec-
+tion 8.1. Figure 8 provides a non-asymptotic analogue of the corresponding batch results from Figure 1,
+applying the method from Theorem 3 of Waudby-Smith and Ramdas [54] to form a non-asymptotic con-
+fidence interval. Qualitatively we observe a similar comparison as before—active inference outperforms
+both uniform sampling and classical inference—though the methods naturally overcover as a result of using
+non-asymptotic intervals that do not have exact coverage.
+0.6 0.7 0.8
+Biden's approval rate
+247 331 445 598 803
+nb
+0.04
+0.06
+0.09
+0.14
+0.21interval width
+247 386 525 664 804
+nb
+0.6
+0.7
+0.8
+0.9
+1.0coverage
+active
+uniform
+classical
+0.25 0.30 0.35 0.40
+Trump's approval rate
+248 332 447 600 806
+nb
+0.04
+0.06
+0.08
+0.10
+0.14interval width
+248 387 527 666 806
+nb
+0.6
+0.7
+0.8
+0.9
+1.0coverage
+active
+uniform
+classical
+Figure 8: Non-asymptotic experiments. Example intervals in five randomly chosen trials (left), average
+confidence interval width (middle), and coverage (right) in post-election survey research with non-asymptotic
+confidence intervals.
+24

@@ -1,0 +1,1070 @@
+arXiv:2506.13322v1  [cs.CV]  16 Jun 2025
+Active Multimodal Distillation for Few-shot Action Recognition
+Weijia Feng1 , Yichen Zhu1 , Ruojia Zhang1 , Chenyang Wang2,3∗ ,
+Fei Ma3 , Xiaobao Wang4 and Xiaobai Li5,6
+1College of Computer and Information Engineering, Tianjin Normal University, Tianjin, China
+2College of Computer Science and Software Engineering, Shenzhen University, Shenzhen, China
+3Guangdong Laboratory of Artificial Intelligence and Digital Economy (SZ), Shenzhen, China
+4College of Intelligence and Computing, Tianjin University, Tianjin, China
+5The State Key Laboratory of Blockchain and Data Security, Zhejiang University, Hangzhou, China
+6Hangzhou High-Tech Zone (Binjiang) Institute of Blockchain and Data Security, Hangzhou, China
+weijiafeng@tjnu.edu.cn, {zhuyiiichen, zrj20001127}@163.com, chenyangwang@ieee.org,
+mafei@gml.ac.cn, wangxiaobao@tju.edu.cn, xiaobai.li@zju.edu.cn
+Abstract
+Owing to its rapid progress and broad application
+prospects, few-shot action recognition has attracted
+considerable interest. However, current methods
+are predominantly based on limited single-modal
+data, which does not fully exploit the potential
+of multimodal information. This paper presents
+a novel framework that actively identifies reliable
+modalities for each sample using task-specific con-
+textual cues, thus significantly improving recog-
+nition performance. Our framework integrates an
+Active Sample Inference (ASI) module, which uti-
+lizes active inference to predict reliable modalities
+based on posterior distributions and subsequently
+organizes them accordingly. Unlike reinforcement
+learning, active inference replaces rewards with
+evidence-based preferences, making more stable
+predictions. Additionally, we introduce an active
+mutual distillation module that enhances the rep-
+resentation learning of less reliable modalities by
+transferring knowledge from more reliable ones.
+Adaptive multimodal inference is employed during
+the meta-test to assign higher weights to reliable
+modalities. Extensive experiments across multiple
+benchmarks demonstrate that our method signifi-
+cantly outperforms existing approaches.
+1 Introduction
+Over the past few years, video action recognition has wit-
+nessed substantial advancements, largely due to the rapid de-
+velopment of deep learning technologies. Although tradi-
+tional approaches, including 2D and 3D Convolutional Neu-
+ral Networks (CNNs), have shown remarkable proficiency in
+capturing both spatial and temporal features within videos,
+they typically demand extensive labeled data for effective
+training. The acquisition of such large-scale labeled datasets
+∗Corresponding author: Chenyang Wang.
+is often costly and time-intensive, especially for practical ac-
+tion recognition applications. To address this issue, recent
+research [Yang et al., 2023] has focused on enhancing the ef-
+ficiency of video understanding through lightweight models
+that can process temporal information efficiently while mini-
+mizing few-shot action recognition costs.
+The existing methods [Feng et al. , 2024; Wang et al. ,
+2024a] have shown significant performance. They mainly
+rely on single-modal data (such as RGB frames), and human
+actions comprise modalities such as RGB, optical flow, skele-
+tal nodes, and depth information. These methods cannot cap-
+ture the global information of human actions, and their per-
+formance will decrease to a certain extent when encountering
+complex actions. Due to the limitations inherent in single-
+modality approaches [Ma et al., 2024a], the potential of mul-
+tiple modalities has attracted extensive scholarly attention and
+been empirically validated as effective [Xue et al. , 2024;
+Ma et al. , 2024b ]. Several state-of-the-art methods have
+begun to combine multiple modalities [Wu et al. , 2025;
+Wang et al., 2025; Ma et al., 2024c], such as visual data, op-
+tical flow, and audio, to provide complementary recognition.
+However, these methods cannot identify which modality is
+important and which other modalities are not important in the
+current sample. These methods may assign extremely high
+weights to unimportant modalities when recognizing actions,
+resulting in unsatisfactory recognition results.
+Inspired by Active Inference [Tschantz et al., 2020], this
+paper proposes an Active Multimodal Few-Shot Inference for
+Action Recognition (AMFIR) to address the limitations of
+single-modal data in few-shot action recognition. The pro-
+posed AMFIR significantly improves the accuracy and effi-
+ciency of inference by actively identifying the most domi-
+nant modality of each query sample. This framework adopts
+a meta-learning paradigm, where each learning unit consists
+of labeled support samples and unlabeled query samples. In
+the meta-training phase, we use a modality-specific backbone
+network to extract feature representations based on active in-
+ference, and divide the query samples into an RGB domi-
+nant group and an optical-flow dominant group. We further
+designed a bidirectional distillation mechanism to guide the
+learning of unreliable modes through reliable modes. In the
+meta-test phase, Active Multimodal Inference (AMI) dynam-
+ically fuses posterior distributions of different modalities, as-
+signing higher weights to more reliable modalities to opti-
+mize inference results. Overall, the main contributions of this
+article can be summarized as follows:
+• This article utilizes the natural complementarity be-
+tween different modalities to select the most dominant
+modality for each query sample through active infer-
+ence, thereby significantly improving the performance
+of few-shot action recognition.
+• A mutual refinement strategy has been proposed to
+transfer task-related knowledge learned from reliable
+modes to representation learning of unreliable modali-
+ties, leveraging the complementarity of multiple modal-
+ities to enhance the ability to identify unreliable modal-
+ities.
+• We have designed an adaptive multimodal few-sample
+inference method that combines the results of specific
+modalities and assigns higher weights to more reliable
+modalities to optimize recognition performance further.
+2 Related Work
+2.1 Few-shot Learning
+Few-shot learning (FSL) focuses on recognizing novel con-
+cepts with minimal labeled training data. In recent years,
+few-shot learning (FSL) has made significant strides in var-
+ious traditional domains, such as image classification [Bateni
+et al. , 2020 ], object detection [Fan et al. , 2020; Ma et al. ,
+2024c], and segmentation[Liu et al., 2020; Fenget al., 2025].
+Despite these achievements, most existing FSL methods pri-
+marily concentrate on single-modality data, with relatively
+limited exploration of multimodal approaches. For instance,
+some techniques [Pahde et al., 2019] enhance low-shot visual
+embeddings by incorporating auxiliary text data during train-
+ing, thereby boosting performance in few-shot image classi-
+fication. Others [Dong et al., 2018] focus on modeling the
+interplay between visual and textual information to address
+tasks like few-shot image description and visual question an-
+swering. Similarly, [Tsimpoukelli et al. , 2021 ] leverages
+pre-trained language models to extend few-shot learning ca-
+pabilities to downstream multimodal tasks, including visual
+question answering. Collectively, these studies highlight the
+potential of multimodal data to address the limitations inher-
+ent in unimodal FSL methods.
+2.2 Few-shot Action Recognition
+Two promising few-shot action recognition techniques have
+been proposed in the study. The first type utilizes data aug-
+mentation to support robust representation learning by cre-
+ating supplementary training data [Kumar Dwivedi et al. ,
+2019], self-supervised cues [Zhang et al. , 2020 ], or auxil-
+iary information [Fu et al., 2020; Wu et al., 2022]. Premier
+TACO[Zheng et al., 2024] has improved the efficiency of the
+few-shot learning strategy through multi-task feature repre-
+sentation and negative sample selection mechanism, demon-
+strating significant performance. The second method focuses
+on alignment and strives to evaluate the similarity between
+query samples and support samples through synchronization
+frames or periods in the temporal or spatial domain [Cao et
+al., 2020; Wang et al., 2022; Wu et al., 2022]. The M2-CLIP
+framework [Wang et al., 2024b] utilizes multimodal adapters
+and multitasking decoders to improve video action recogni-
+tion while maintaining a strong zero sample generalization
+ability.
+2.3 Active Inference
+Active Inference (AIF) is a Bayesian framework explaining
+how organisms minimize uncertainty and surprise by predict-
+ing and evaluating sensory inputs. It originates from Karl
+Friston’s Free Energy Principle (FEP) and emphasizes how
+organisms predict future states and adjust behavior to achieve
+goals through generative models during environmental inter-
+actions. For example, [Sedlak et al., 2024] explored the ap-
+plication of active reasoning in edge computing, demonstrat-
+ing its potential in adaptive flow processing to meet service
+level objectives (SLOs) and real-time system management.
+Similarly, [Pezzulo et al. , 2023 ] highlighted the close re-
+lationship between active reasoning and Generative AI, em-
+phasizing its role in achieving higher-level intelligence and
+understanding through active perception and action. These
+advancements suggest that active reasoning provides a novel
+perspective for designing and implementing artificial intel-
+ligence, fostering progress in related fields. Furthermore,
+in hyperspectral image classification (HSIC), the Active In-
+ference Transfer Convolutional Fusion Network (AI-TFNet)
+proposed by [Wang et al., 2023] utilizes a pseudo-label prop-
+agation algorithm to enhance the availability of training sam-
+ples and optimize classification performance.
+2.4 Knowledge Distillation
+Knowledge distillation serves as an effective knowledge
+transfer technique, extracting information from teacher net-
+works and conveying it to student models. Recent re-
+search [Hinton, 2015; Parket al., 2019; Tung and Mori, 2019]
+has highlighted its potential in cross-modal tasks. For in-
+stance, [Gupta et al. , 2016 ] developed a method to trans-
+fer supervision across different modalities, using represen-
+tations learned from well-labeled modalities as guidance for
+training new, unlabeled modalities. Similarly, [Garcia et al.,
+2018] proposed a technique for training multimodal video ac-
+tion recognition models using both depth and RGB data, ad-
+dressing challenges such as noise and missing modalities dur-
+ing tests. The MARS framework [Crasto et al., 2019] simu-
+lates optical flow through RGB frame training, avoiding op-
+tical flow computation at test time. It integrates appearance
+and motion information by combining feature loss and cross-
+entropy loss. Additionally, [Dai et al., 2021 ] introduced a
+knowledge distillation framework for action detection, en-
+hancing RGB representations by leveraging knowledge from
+other modalities like optical flow and 3D pose. This approach
+achieves performance comparable to dual-stream networks
+using only RGB data during the test.
+Figure 1: Illustration of our proposed framework in the 3-way 3-shot setting.
+3 Method
+3.1 Problem Definition
+This paper employs a meta-learning framework for few-shot
+multimodal action recognition, which includes two primary
+phases: meta-training and meta-test. In the meta-training
+phase, we utilize a multimodal video dataset Dtrain that en-
+compasses base action classes Ctrain. We construct multi-
+ple meta-tasks (often termed episodes) from Dtrain to train
+a meta-learner capable of generalizing to new action classes.
+Each meta-task τ consists of a query set Q ⊂ Dtrain and a
+support set S ⊂ Dtrain. Within the N −way K−shot meta-
+learning setting, the query setQ = {(xr
+i , xf
+i , yi)}M
+i=1 includes
+M multimodal query samples. Here, xr
+i and xf
+i represent two
+modalities (RGB and optical flow) of thei−th query sample,
+and yi ∈ {1, 2, ··· , N} denotes the class label of the i − th
+query sample. The support set S = {(xr
+i , xf
+i , yi)}M+NK
+i=M+1
+contains K multimodal samples for each of the N classes. In
+the meta-test phase, we employ a multimodal dataset Dtest,
+which includes novel action classes Ctest that are disjoint
+from the training classes (Ctest ∩Ctrain = ⊘). Similar to the
+meta-training phase, the support and query sets for each test
+task are constructed in the same manner. A key point to high-
+light is that the class labels of the query samples are concealed
+during the meta-test. The meta-learner must accurately clas-
+sify each sample in the query set, relying exclusively on the
+labeled samples provided in the support set.
+3.2 Overview
+The overall architecture of the proposed AFMIR is depicted
+in Figure 1. For each episode, we utilize a backbone network
+ϕm(Q, S; θm), m∈ (r, f) to extract the feature representa-
+tions of query samples{qm
+i }M
+i=1 and the prototypes of support
+samples {tm
+i }N
+k=1 for each modality. Subsequently, we cal-
+culate the modality-specific posterior distributions for each
+query sample based on the distances between query samples
+and prototypes in the modality-specific feature space. Dur-
+ing the meta-training phase, we introduce an Active Sample
+Inference (ASI) module, which takes the modality-specific
+posterior distributions as inputs and performs reliability in-
+ference to assess the reliability of each modality (RGB and
+optical flow) for each query sample. This process categorizes
+the samples into two groups: the optical flow dominant group
+Gf and RGB dominant group Gr. For the selected samples in
+Gf and Gr, we implement Active Mutual Distillation to trans-
+fer task-specific knowledge from reliable modalities to unreli-
+able ones via a bidirectional distillation mechanism, thereby
+enhancing the representation learning of the less dominant
+modality. In the meta-test phase, we employ adaptive multi-
+modal inference, which leverages modality-specific posterior
+distributions to make adaptive fusion decisions, prioritizing
+the more reliable modalities.
+3.3 Active Sample Inference
+In this module, we use the idea of AIF to actively predict the
+most dominant modality of each sample, and this predicted
+modality will be considered as the sample-specific dominant
+modality of the corresponding sample. Before introducing
+this module, we first need to review the method of AIF, which
+aims to maximize the Bayesian model evidence for an agent’s
+generative model in the context of Partially Observed Markov
+Decision Processes (POMDP). Formally, a POMDP is de-
+fined by a tuple ⟨S, A, O, P, Θ⟩, where S denotes the true
+state of the environment and A denote agent’s action space.
+During each time step t, the agent transitions to a new state
+st, which is calculated through P(st|st−1, at−1), where the
+transition is informed by st−1 ∈ Sand at−1 ∈ Aexecuted at
+the preceding time step t − 1. Agents might not have direct
+access to the actual state of the environment. Instead, they re-
+ceive observations, denoted asot, sampled from a distribution
+P(ot | st) that depends on the true environmental state st.
+Given this limitation, agents must base their operations on an
+inferred belief about the true state, ˆst, representing their esti-
+mation of st based on the received observations. Within the
+framework of a specified generative model, agents perform
+approximate Bayesian inference through the encoding of an
+arbitrary probability distribution q(s, θ), which is optimized
+through the minimization of variational free energy ˜F:
+˜F = DKL
+ 
+q(s, θ)∥pΦ(o, s, θ)
+
+, (1)
+where o ∈ Odenotes the agent’s observations and θ ∈ Θ
+represents model parameters.
+To establish the active inference model, we input the rep-
+resentations of query samples {qm
+i }M
+i=1 and the prototypes of
+support samples {tm
+k }N
+k=1 into the module. We consider the
+dominant modality for each query sample as the one that can
+reflect more task-specific discriminative features. However,
+the dominant modality for each query sample is not fixed, as
+the contribution of a specific modality largely depends on the
+contextual information of the query and support samples in
+each task. To address this, we propose to infer the reliability
+of different modalities based on modality-specific posterior
+distributions. This approach aligns with the core principles
+of active inference, where the model dynamically assesses the
+reliability of different modalities to optimize its predictive ca-
+pabilities. For each query sample, the modality-specific pos-
+terior distribution pm
+i can be formulated as:
+pm
+i (k|xm
+i ) = e−ψ(qm
+i ,tm
+k )
+PN
+k′=1 e−ψ(qm
+i ,tm
+k′ ) , (2)
+where k ∈ {1, . . . , N}, m∈ {r, f}, and qm
+i denotes the
+modality-specific representation of the i-th query sample, tm
+k
+denotes the prototype of the k-th class, and ψ is a distance
+measurement function (e.g., Euclidean distance in this work).
+The posterior distribution reflects the model’s belief in the
+class labels given the specific modality, consistent with mini-
+mizing prediction errors to optimize beliefs. By dynamically
+evaluating the reliability of each modality in the context of
+the current task, the model can select the most informative
+modality to reduce prediction errors.
+After obtaining the modal-specific posterior distribution
+pm
+i for the ith query sample, we use it as input to construct
+the observation space O and the state space S. The relia-
+bility of each modality for a given sample can be assessed
+by the free energy derived from Eq. (1). To elaborate, the
+modality with the lower free energy value would be consid-
+ered more reliable according to the calculations based on the
+provided formula. This approach enables a quantitative com-
+parison between different modalities, facilitating a more ac-
+curate determination of their respective reliabilities. In order
+to systematically investigate the cross-modal complementar-
+ity, a selection criterion is established based on the significant
+discrepancy in reliability between the two modalities. Con-
+sequently, the queried samples are meticulously categorized
+into the following distinct groups:
+Gm = {(xr
+i , xf
+i ) | (xr
+i , xf
+i ) ∈ G, Fm
+i > Fn
+i }, (3)
+where m, n∈ {r, f}, m ̸= n, and Gm denotes the group
+dominated by modality m, comprising query samples for
+which the modality m exhibits higher certainty than modality
+n in the few-shot task. Specifically, when m = f, Gm rep-
+resents the Flow-dominant group. Conversely, when m = r,
+Gm corresponds to the RGB-dominant group, indicating that
+the RGB modality is more reliable for distinguishing between
+query samples.
+3.4 Active Mutual Distillation
+In this section, we first introduce an active mutual distilla-
+tion method, which enhances the representation learning of
+less reliable modes by utilizing task-specific discriminative
+knowledge from more reliable modes. Traditional knowl-
+edge extraction methods typically involve using well-trained
+teacher models to guide student model learning through con-
+sistency constraints, such as KL divergence calculated based
+on logits:
+DKL(pt∥ps) =
+NX
+i=1
+pt
+i
+ 
+log pt
+i − log ps
+i
+
+, (4)
+where pt and ps represent the logits produced by the teacher
+and student models, respectively. In conventional methods,
+teacher-student distillation is consistently applied to individ-
+ual samples.
+Based on this, we define the absolute certainty cm
+i as the
+maximum value of the modality-specific posterior distribu-
+tion, which quantifies the model’s highest confidence in any
+class prediction for modality m:
+cm
+i = max
+k
+pm
+i (k|xm
+i ), (5)
+where pm
+i (k|xm
+i ) denotes the posterior distribution over
+classes for the i-th query sample in modality m. Absolute
+certainty cm
+i reflects the highest belief of the model in its pre-
+diction for that modality. This dynamic assessment allows
+us to adaptively evaluate the reliability of different modali-
+ties based on contextual information in each task, thus better
+accommodating the specific demands of different tasks.
+To exploit the complementarity between different modal-
+ities and improve few-shot action recognition, we refine the
+approach by treating models trained on one modality as teach-
+ers and those trained on another modality as students. How-
+ever, determining which modality should act as the teacher is
+challenging, as the contribution of each modality varies be-
+tween samples and depends heavily on the contextual infor-
+mation of the few-shot task. To address this, we previously
+introduced active inference to dynamically infer the impor-
+tance of different modalities for each sample. We actively
+assign more reliable modalities as teachers to transfer knowl-
+edge. Specifically, we constrain the learning of two modality-
+specific models by actively transferring query-to-prototype
+relationship knowledge between different modalities:
+Lm→n(θn) = 1P
+(xn
+i ,xm
+i ) cm
+i
+X
+(xn
+i ,xm
+i )
+cm
+i DKL(pm
+i , pn
+i ), (6)
+where pm
+i denotes the modality-specific posterior distribution
+for the i-th query sample in modality m, as defined in Eq.(2),
+cm
+i represents the absolute certainty for the i-th query sample
+in modality m, as defined in Eq. (5), and m, n∈ {r, f} with
+m ̸= n.
+3.5 Active Multimodal Inference
+In the first two sub-sections, we explored how different
+modalities of each sample contribute to meta-training and dis-
+cussed their role in the meta-test phase. Specifically, we intro-
+duce a method for adaptively integrating multimodal predic-
+tions to form the final decision in few-shot inference. Given
+the varying reliability of modalities for each query sample,
+we design an adaptive multimodal fusion strategy as follows:
+P(k|xm
+i ) = e−αr
+i ψ(qr
+i ,tr
+k)−αf
+i ψ(qf
+i ,tf
+k)
+PN
+k′=1 e−αr
+i ψ(qr
+i ,tr
+k′ )−αf
+i ψ(qf
+i ,tf
+k′ )
+, (7)
+where ψ(·) represents the Euclidean distance function, and
+αr
+i and αf
+i are the adaptive fusion weights for the RGB and
+optical flow modalities of the i-th query sample, respectively.
+Since modality-specific posterior distributions may not al-
+ways be accurate during meta-tests, and relative certainty
+does not directly reflect the similarity between query samples
+and class prototypes, we use the absolute certainty values cm
+i
+to compute the adaptive fusion weights:
+αm
+i = cm
+i
+cr
+i + cf
+i
+, (8)
+where m ∈ {r, f} indicates the modality, where r represents
+the RGB modality and f represents the optical flow modality.
+3.6 Optimization
+The proposed AFMIR can be optimized with the following
+function:
+L =
+X
+m∈{r,f}
+Lm
+ce(θm) +λ
+X
+m̸=n∈{r,f}
+Lm → Ln(θn), (9)
+where Lm
+ce(θm) denotes the cross-entropy loss for modality
+m, and Lm → Ln(θn) represents the knowledge distilla-
+tion loss from modality m to modality n. The parameter λ
+balances the contribution of the distillation losses. Besides,
+the Lm
+ce(θm) is further used to constrain the modality-specific
+predictions, i.e.,
+Lm
+ce(θm) =
+MX
+i=1
+NX
+k=1
+pm
+i (k) logpm
+i (k), (10)
+where m ∈ {r, f} indicates the modality, r represents the
+RGB modality and f represents the optical flow modality.
+The cross-entropy loss Lm
+ce(θm) is computed for each modal-
+ity based on the predicted probabilities pm
+i (k) of the query
+samples belonging to each class k.
+The parameters of the modality-specific backbone net-
+works θm, m∈ {r, f} are optimized via distinct weighted
+combinations of their corresponding losses:
+θm ← θm − γ∇θm (Lm
+ce(θm) +λ
+X
+n̸=m∈{r,f}
+Ln → Lm(θm)).
+(11)
+The parameter update for each modality θm is performed by
+minimizing the cross-entropy loss Lm
+ce(θm) and the knowl-
+edge distillation loss from the other modality n ̸= m. The
+learning rate is denoted by γ, and λ balances the contribution
+of the distillation losses.
+4 Experiments
+4.1 Validation Protocol
+Datasets. We assess our proposed method on four prominent
+and challenging benchmarks for few-shot action recogni-
+tion: Kinetics-400 [Kay et al., 2017], Something-Something
+V2 [Goyal et al., 2017], HMDB51 [Wang et al., 2015], and
+UCF101 [Peng et al., 2018]. These datasets are augmented
+to include multi-modal data by generating optical flow frame
+sequences from the original videos using a dense optical flow
+algorithm.
+Modality-specific Backbones. For the RGB modality, a
+pre-trained ResNet-50 backbone is employed to extract visual
+features at the frame level. For the optical flow modality, an
+I3D model pre-trained on the Charades dataset is used to cap-
+ture motion features from individual frames. Subsequently,
+video-level features for both modalities are derived by ag-
+gregating these enhanced frame-level features. Ultimately,
+the query-specific prototype is generated by consolidating the
+video-level features from the support samples of the corre-
+sponding action class.
+Parameters. In the meta-training phase, the balance
+weight (λ, specified in Eq. 9) is uniformly set to 1.0 across
+all benchmarks. Training is conducted using the SGD op-
+timizer. For both RGB and optical flow modalities, the re-
+spective networks are iteratively updated by minimizing a
+combined weighted loss function, which includes both cross-
+entropy and distillation losses, until convergence is achieved.
+The learning rate γ is set as 10−3.
+(a) SSv2
+ (b) Kinetics-400
+Figure 2: The change of free energy.
+4.2 Free Energy
+The experimental results show that, on the SSv2 and Kinetics-
+400 datasets, there is a significant fluctuation in the initial free
+Modality Method Kinetics
+1-shot 5-shot
+SSv2
+1-shot 5-shot
+HMDB51
+1-shot 5-shot
+UCF101
+1-shot 5-shot
+RGB
+Matching Net
+TRX
+HyRSM
+STRM
+53.3
+63.6
+73.7
+-
+78.9
+85.9
+86.1
+86.7
+-
+42.0
+54.3
+-
+-
+64.6
+69.0
+68.1
+-
+-
+60.3
+-
+-
+75.6
+78.0
+77.3
+-
+-
+83.9
+-
+-
+96.1
+94.7
+96.9
+Flow
+ProtoNet-F
+TRX-F
+STRM-F
+45.2
+44.8
+47.8
+69.5
+69.7
+69.7
+32.9
+30.7
+36.3
+51.1
+52.4
+55.7
+43.7
+43.0
+52.2
+65.0
+67.6
+67.9
+69.7
+65.6
+79.7
+89.6
+90.6
+91.6
+Multimodal
+ProtoNet-EC
+ProtoNet-EA
+STRM-EC
+AFMAR
+AFMIR(ours)
+63.8
+61.7
+68.3
+80.1
+82.8
+84.1
+83.9
+87.4
+92.6
+96.1
+33.0
+31.1
+45.5
+61.7
+70.6
+49.5
+50.5
+66.7
+79.5
+92.3
+56.9
+53.2
+59.3
+73.9
+83.7
+73.8
+46.3
+78.3
+87.8
+90.0
+78.3
+76.7
+87.4
+91.2
+94.9
+93.9
+94.3
+96.3
+99.0
+99.1
+Table 1. Comparison with state-of-the-art few-shot action recognition methods. The best results are in bold. For multi-modal methods
+extended from existing unimodal methods, “EC” represents cascaded early fusion schemes, “EA” represents collaborative attention early
+fusion. The ‘-’ indicates that the result is not available in published works.
+energy during training. However, as training progresses, the
+free energy gradually decreases and tends to stabilize, even-
+tually converging to around -4.0 on both datasets (as shown
+in Figure 2). This trend indicates that the model dynamically
+evaluates modal reliability through active inference modules,
+prioritizing the selection of modes with lower free energy for
+inference, which significantly optimizes the modal selection
+strategy. In addition, the knowledge distillation and dynamic
+weighting mechanisms between multiple modalities further
+reduce the uncertainty of modal selection, enhance task adap-
+tation capability, and improve the stability of cross-modal in-
+ference. These results validate the crucial role of active infer-
+ence and multimodal interaction in few-shot action recogni-
+tion, enabling the model to more efficiently and reliably uti-
+lize modal information to complete tasks.
+4.3 Comparative Experiments
+We selected four RGB-based algorithms: Matching Net [Zhu
+and Yang, 2018], TRX [Perrett et al., 2021], HyRSM [Wang
+et al., 2022], and STRM[Thatipelli et al., 2022]. These meth-
+ods leverage metric learning, temporal relationships, spa-
+tiotemporal modeling, and hybrid relationships to advance
+few-shot action recognition. We retrained vision-based meth-
+ods like TRX-F and STRM-F for optical flow data due to
+the lack of existing methods. We extended visual methods
+for multimodal baselines via early fusion (EC, EA) and late
+fusion (LF). Additionally, the chosen AFMAR [Wanyan et
+al., 2023 ] algorithm enhances few-shot recognition by ac-
+tively selecting reliable modalities, distilling knowledge bidi-
+rectionally, and adaptively fusing multimodal data.
+As shown in Table 1, our AMFIR framework signifi-
+cantly outperforms existing methods in Few Shot Action
+Recognition tasks on datasets such as SSv2, HMDB51,
+UCF101, and Kinetics-400. The accuracy of 1-shot and
+5-shot tasks reaches 70.6% and 92.3% (SSv2), 83.7% and
+90.0% (HMDB51), 94.9% and 99.1% (UCF101), and 82.8%
+and 96.1% (Kinetics-400), respectively. This outstanding per-
+formance is attributed to the active sample inference module
+(ASI) in the framework, which dynamically selects the most
+reliable mode to reduce uncertainty, the active mutual dis-
+tillation module (AMD) improves the representation ability
+of unreliable modes through bidirectional knowledge distil-
+lation, and the Active Multimodal Inference module (AMI)
+optimizing the complementarity of modes through adaptive
+fusion, thus fully utilizing the potential of multimodal data.
+ASI AMD AMI Kinetics SSv2
+RD FD 1-shot 5-shot 1-shot 5-shot
+× ✓ ✓ ✓ 64.10 68.94 58.03 66.81
+✓ × ✓ ✓ 59.63 75.27 62.91 66.06
+✓ ✓ × ✓ 71.64 89.05 61.81 83.37
+✓ ✓ ✓ × 59.34 65.78 62.59 85.33
+✓ ✓ ✓ ✓ 82.85 96.11 70.59 92.32
+Table 2. Comparison of results across different configurations. The
+best are in bold.
+4.4 Ablation Study
+The impact of key components. The experimental results in
+Table 2 have been validated through ablation studies, demon-
+strating that the complete framework has achieved state-of-
+the-art performance on both Kinetics and SSv2. When the
+ASI module uses only RGB as the dominant modality (RD)
+or only optical flow as the dominant modality, the accuracy
+will significantly decrease. Removing AMD will reduce the
+thermal accuracy of Kinetics 5 by 7.06%. Compared with dy-
+namics, disabling AMI resulted in a greater decrease in SSv2,
+indicating the necessity of time-sensitive adaptive fusion.
+4.5 Further Remarks
+Performance with Different Numbers of Support Sam-
+ples. The experimental results in Figure 3 show that the
+performance of AMFIR steadily improves as the number of
+support samples changes from 1-shot to 5-shot. The accu-
+racy on the SSv2 and Kinetics datasets increases from about
+70% and 82% to about 92% and 96%, respectively, which
+is significantly better than other methods, especially under
+few-shot conditions. The reason for these results is that the
+ASI module reduces uncertainty by dynamically selecting
+reliable modalities, enabling the model to have high initial
+performance at 1-shot. The AMD module utilizes bidirec-
+tional knowledge distillation to enhance the collaborative ef-
+fect between modalities, supporting further performance im-
+provement as the sample size increases. The AMI module
+adaptively adjusts modal weights and optimizes the integra-
+tion strategy of multimodal data. The synergistic effect of
+these modules fully utilizes the complementarity of multi-
+modal data, resulting in the excellent performance of AMFIR
+in both few-shot and multi-sample scenarios.
+(a) SSv2
+ (b) Kinetics
+Figure 3: Comparison results with different numbers of support
+samples in 5-way K-shot setting.
+Influence of Different Distillation Strategies. The exper-
+imental results in Figure 4 show that the bidirectional distil-
+lation strategy (AMFIR) achieved accuracies of 70.6% and
+82.8% in the 5-way 1-shot task on the SSv2 and Kinetics-400
+datasets, respectively, significantly outperforming the unidi-
+rectional distillation strategy (T-RGB and T-Flow) and the no-
+distillation strategy (No Distillation). The reason is that bidi-
+rectional distillation effectively transmits task-related knowl-
+edge of reliable modalities through the mechanism of mu-
+tual teaching, enhances the representation ability of unreli-
+able modalities, and further optimizes the learning effect of
+reliable modalities. In addition, this strategy fully utilizes
+the complementarity between RGB and optical flow modal-
+ities and combines active inference to dynamically evaluate
+the modal reliability, flexibly optimizing the distillation pro-
+cess. This design demonstrates the significant advantages of
+bidirectional distillation in few-shot multimodal learning.
+N-way Few-Shot Classification. In the N-way Few-Shot
+Classification task, the AMFIR framework significantly out-
+performs existing methods such as STRM, STRM-F, STRM-
+LF, and AMFAR on the SSv2 and Kinetics datasets, achieving
+the best accuracy in 5-way to 10-way classification tasks. The
+experimental results are shown in Figure 5. In the 5-way task
+of the SSv2 dataset, AMFIR achieved an accuracy of around
+70%, while other methods were below 60%. In the Kinet-
+ics dataset, AMFIR still achieved an accuracy of around 70%
+in the 10-way task, significantly ahead of other methods. Its
+advantages are mainly due to the complementarity between
+RGB and optical flow modalities, the dynamic adaptive ad-
+justment of the active inference module, and the enhancement
+of the representation of unreliable modalities by the bidirec-
+tional distillation strategy. This enables the framework to still
+(a) SSv2
+ (b) Kinetics-400
+Figure 4: Comparison with conventional distillation strategies in a 5-
+way 1-shot setting. T-RGB (or T-Flow) denotes distillation, whereas
+RGB (optical flow) is consistently regarded as the teacher.
+exhibit strong robustness and generalization, even when task
+complexity increases, verifying its excellent performance in
+small-sample multi-classification tasks.
+(a) SSv2
+ (b) Kinetics
+Figure 5: N-way 1-shot performance on SSv2 and Kinetics.
+5 Conclusion
+We have proposed the Active Multimodal Few-Shot Infer-
+ence for Action Recognition (AMFIR) framework that sig-
+nificantly enhances few-shot action recognition by actively
+identifying and utilizing the most reliable modalities for each
+sample. By integrating active mutual distillation and adaptive
+multimodal inference, AMFIR effectively improves the rep-
+resentation learning of unreliable modalities and outperforms
+existing methods across multiple benchmarks. This frame-
+work highlights the potential of active inference and knowl-
+edge distillation in advancing multimodal few-shot learning
+through uncertainty-driven modality selection, bidirectional
+knowledge transfer, and context-aware fusion. Extensive ex-
+periments validate its robustness in handling sensor noise,
+motion ambiguity, and extreme data scarcity while maintain-
+ing computational efficiency.
+Acknowledgements
+This study is funded in part by the National Key Research
+and Development Plan: 2019YFB2101900, NSFC (Natu-
+ral Science Foundation of China): 61602345, 62002263,
+62302333, TianKai Higher Education Innovation Park En-
+terprise R&D Special Project: 23YFZXYC00046, and 2024
+China University Industry-Academia-Research Innovation
+Fund: 2024HY015.
+References
+[Bateni et al., 2020] Peyman Bateni, Raghav Goyal, Vaden
+Masrani, Frank Wood, and Leonid Sigal. Improved few-
+shot visual classification. In Proceedings of the IEEE/CVF
+conference on computer vision and pattern recognition ,
+pages 14493–14502, 2020.
+[Cao et al., 2020] Kaidi Cao, Jingwei Ji, Zhangjie Cao,
+Chien-Yi Chang, and Juan Carlos Niebles. Few-shot video
+classification via temporal alignment. In Proceedings of
+the IEEE/CVF conference on computer vision and pattern
+recognition, pages 10618–10627, 2020.
+[Crasto et al., 2019] Nieves Crasto, Philippe Weinzaepfel,
+Karteek Alahari, and Cordelia Schmid. Mars: Motion-
+augmented rgb stream for action recognition. In Proceed-
+ings of the IEEE/CVF conference on computer vision and
+pattern recognition, pages 7882–7891, 2019.
+[Dai et al., 2021] Rui Dai, Srijan Das, and Franc ¸ois Bre-
+mond. Learning an augmented rgb representation with
+cross-modal knowledge distillation for action detection.
+In Proceedings of the IEEE/CVF International Conference
+on Computer Vision, pages 13053–13064, 2021.
+[Dong et al., 2018] Xuanyi Dong, Linchao Zhu, De Zhang,
+Yi Yang, and Fei Wu. Fast parameter adaptation for few-
+shot image captioning and visual question answering. In
+Proceedings of the 26th ACM international conference on
+Multimedia, pages 54–62, 2018.
+[Fan et al., 2020] Qi Fan, Wei Zhuo, Chi-Keung Tang, and
+Yu-Wing Tai. Few-shot object detection with attention-
+rpn and multi-relation detector. In Proceedings of the
+IEEE/CVF conference on computer vision and pattern
+recognition, pages 4013–4022, 2020.
+[Feng et al., 2024] Weijia Feng, Ruojia Zhang, Yichen Zhu,
+Chenyang Wang, Chuan Sun, Xiaoqiang Zhu, Xiang Li,
+and Tarik Taleb. Exploring collaborative diffusion model
+inferring for aigc-enabled edge services. IEEE Trans-
+actions on Cognitive Communications and Networking ,
+2024.
+[Feng et al., 2025] Weijia Feng, Xinyu Zuo, Ruojia Zhang,
+Yichen Zhu, Chenyang Wang, Jia Guo, and Chuan Sun.
+Federated deep reinforcement learning for multimodal
+content caching in edge-cloud networks. IEEE Transac-
+tions on Network Science and Engineering, 2025.
+[Fu et al., 2020] Yuqian Fu, Li Zhang, Junke Wang, Yanwei
+Fu, and Yu-Gang Jiang. Depth guided adaptive meta-
+fusion network for few-shot video recognition. In Pro-
+ceedings of the 28th ACM International Conference on
+Multimedia, pages 1142–1151, 2020.
+[Garcia et al., 2018] Nuno C Garcia, Pietro Morerio, and
+Vittorio Murino. Modality distillation with multiple
+stream networks for action recognition. In Proceedings
+of the European Conference on Computer Vision (ECCV),
+pages 103–118, 2018.
+[Goyal et al., 2017] Raghav Goyal, Samira Ebrahimi Kahou,
+Vincent Michalski, Joanna Materzynska, Susanne West-
+phal, Heuna Kim, Valentin Haenel, Ingo Fruend, Peter
+Yianilos, Moritz Mueller-Freitag, et al. The” something
+something” video database for learning and evaluating vi-
+sual common sense. In Proceedings of the IEEE interna-
+tional conference on computer vision , pages 5842–5850,
+2017.
+[Gupta et al., 2016] Saurabh Gupta, Judy Hoffman, and Ji-
+tendra Malik. Cross modal distillation for supervision
+transfer. In Proceedings of the IEEE conference on com-
+puter vision and pattern recognition , pages 2827–2836,
+2016.
+[Hinton, 2015] Geoffrey Hinton. Distilling the knowledge in
+a neural network. arXiv preprint arXiv:1503.02531, 2015.
+[Kay et al., 2017] Will Kay, Joao Carreira, Karen Si-
+monyan, Brian Zhang, Chloe Hillier, Sudheendra Vijaya-
+narasimhan, Fabio Viola, Tim Green, Trevor Back, Paul
+Natsev, et al. The kinetics human action video dataset.
+arXiv preprint arXiv:1705.06950, 2017.
+[Kumar Dwivedi et al., 2019] Sai Kumar Dwivedi, Vikram
+Gupta, Rahul Mitra, Shuaib Ahmed, and Arjun Jain. Pro-
+togan: Towards few shot learning for action recognition.
+In Proceedings of the IEEE/CVF international conference
+on computer vision workshops, pages 0–0, 2019.
+[Liu et al., 2020] Weide Liu, Chi Zhang, Guosheng Lin, and
+Fayao Liu. Crnet: Cross-reference networks for few-shot
+segmentation. In Proceedings of the IEEE/CVF conference
+on computer vision and pattern recognition , pages 4165–
+4173, 2020.
+[Ma et al., 2024a] Fei Ma, Yukan Li, Yifan Xie, Ying He,
+Yi Zhang, Hongwei Ren, Zhou Liu, Wei Yao, Fuji Ren,
+Fei Richard Yu, et al. A review of human emotion syn-
+thesis based on generative technology. arXiv preprint
+arXiv:2412.07116, 2024.
+[Ma et al., 2024b] Fei Ma, Yucheng Yuan, Yifan Xie, Hong-
+wei Ren, Ivan Liu, Ying He, Fuji Ren, Fei Richard Yu,
+and Shiguang Ni. Generative technology for human emo-
+tion recognition: A scoping review. Information Fusion,
+page 102753, 2024.
+[Ma et al., 2024c] Huiying Ma, Dongxiao He, Xiaobao
+Wang, Di Jin, Meng Ge, and Longbiao Wang. Multi-modal
+sarcasm detection based on dual generative processes. In
+Proceedings of the Thirty-Third International Joint Con-
+ference on Artificial Intelligence, pages 2279–2287, 2024.
+[Pahde et al., 2019] Frederik Pahde, Oleksiy Ostapenko,
+Patrick J¨a Hnichen, Tassilo Klein, and Moin Nabi. Self-
+paced adversarial training for multimodal few-shot learn-
+ing. In 2019 IEEE Winter Conference on Applications of
+Computer Vision (WACV), pages 218–226. IEEE, 2019.
+[Park et al., 2019] Wonpyo Park, Dongju Kim, Yan Lu, and
+Minsu Cho. Relational knowledge distillation. InProceed-
+ings of the IEEE/CVF conference on computer vision and
+pattern recognition, pages 3967–3976, 2019.
+[Peng et al., 2018] Yuxin Peng, Yunzhen Zhao, and Junchao
+Zhang. Two-stream collaborative learning with spatial-
+temporal attention for video classification. IEEE Trans-
+actions on Circuits and Systems for Video Technology ,
+29(3):773–786, 2018.
+[Perrett et al., 2021] Toby Perrett, Alessandro Masullo, Tilo
+Burghardt, Majid Mirmehdi, and Dima Damen. Temporal-
+relational crosstransformers for few-shot action recogni-
+tion. In Proceedings of the IEEE/CVF conference on
+computer vision and pattern recognition , pages 475–484,
+2021.
+[Pezzulo et al., 2023] Giovanni Pezzulo, Thomas Parr, Paul
+Cisek, Andy Clark, and Karl Friston. Generating mean-
+ing: Active inference and generative ai. PsyArXiv. June, 8,
+2023.
+[Sedlak et al., 2024] Boris Sedlak, Victor Casamayor Pu-
+jol, Andrea Morichetta, Praveen Kumar Donta, and
+Schahram Dustdar. Adaptive stream processing on
+edge devices through active inference. arXiv preprint
+arXiv:2409.17937, 2024.
+[Thatipelli et al., 2022] Anirudh Thatipelli, Sanath Narayan,
+Salman Khan, Rao Muhammad Anwer, Fahad Shahbaz
+Khan, and Bernard Ghanem. Spatio-temporal relation
+modeling for few-shot action recognition. In Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pat-
+tern Recognition, pages 19958–19967, 2022.
+[Tschantz et al., 2020] Alexander Tschantz, Beren Millidge,
+Anil K Seth, and Christopher L Buckley. Reinforce-
+ment learning through active inference. arXiv preprint
+arXiv:2002.12636, 2020.
+[Tsimpoukelli et al., 2021] Maria Tsimpoukelli, Jacob L
+Menick, Serkan Cabi, SM Eslami, Oriol Vinyals, and Felix
+Hill. Multimodal few-shot learning with frozen language
+models. Advances in Neural Information Processing Sys-
+tems, 34:200–212, 2021.
+[Tung and Mori, 2019] Frederick Tung and Greg Mori.
+Similarity-preserving knowledge distillation. In Proceed-
+ings of the IEEE/CVF international conference on com-
+puter vision, pages 1365–1374, 2019.
+[Wang et al., 2015] Limin Wang, Yu Qiao, and Xiaoou
+Tang. Action recognition with trajectory-pooled deep-
+convolutional descriptors. InProceedings of the IEEE con-
+ference on computer vision and pattern recognition, pages
+4305–4314, 2015.
+[Wang et al., 2022] Xiang Wang, Shiwei Zhang, Zhiwu
+Qing, Mingqian Tang, Zhengrong Zuo, Changxin Gao,
+Rong Jin, and Nong Sang. Hybrid relation guided set
+matching for few-shot action recognition. In Proceedings
+of the IEEE/CVF conference on computer vision and pat-
+tern recognition, pages 19948–19957, 2022.
+[Wang et al., 2023] Jianing Wang, Linhao Li, Yichen Liu,
+Jinyu Hu, Xiao Xiao, and Bo Liu. Ai-tfnet: Active in-
+ference transfer convolutional fusion network for hyper-
+spectral image classification. Remote Sensing, 15(5):1292,
+2023.
+[Wang et al., 2024a] Chenyang Wang, Hao Yu, Xiuhua Li,
+Fei Ma, Xiaofei Wang, Tarik Taleb, and Victor CM Le-
+ung. Dependency-aware microservice deployment for
+edge computing: A deep reinforcement learning approach
+with network representation. IEEE Transactions on Mo-
+bile Computing, 2024.
+[Wang et al., 2024b] Mengmeng Wang, Jiazheng Xing,
+Boyuan Jiang, Jun Chen, Jianbiao Mei, Xingxing Zuo,
+Guang Dai, Jingdong Wang, and Yong Liu. A multimodal,
+multi-task adapting framework for video action recogni-
+tion. In Proceedings of the AAAI Conference on Artificial
+Intelligence, volume 38, pages 5517–5525, 2024.
+[Wang et al., 2025] Xiaobao Wang, Yujing Wang, Dongxiao
+He, Zhe Yu, Yawen Li, Longbiao Wang, Jianwu Dang, and
+Di Jin. Elevating knowledge-enhanced entity and relation-
+ship understanding for sarcasm detection. IEEE Transac-
+tions on Knowledge and Data Engineering, 2025.
+[Wanyan et al., 2023] Yuyang Wanyan, Xiaoshan Yang,
+Chaofan Chen, and Changsheng Xu. Active exploration
+of multimodal complementarity for few-shot action recog-
+nition. In Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition , pages 6492–
+6502, 2023.
+[Wu et al., 2022] Jiamin Wu, Tianzhu Zhang, Zhe Zhang,
+Feng Wu, and Yongdong Zhang. Motion-modulated tem-
+poral fragment alignment network for few-shot action
+recognition. In Proceedings of the IEEE/CVF Conference
+on Computer Vision and Pattern Recognition, pages 9151–
+9160, 2022.
+[Wu et al., 2025] Sheng Wu, Dongxiao He, Xiaobao Wang,
+Longbiao Wang, and Jianwu Dang. Enriching multimodal
+sentiment analysis through textual emotional descriptions
+of visual-audio content. In Proceedings of the AAAI Con-
+ference on Artificial Intelligence, volume 39, pages 1601–
+1609, 2025.
+[Xue et al., 2024] Haiwei Xue, Xiangyang Luo, Zhanghao
+Hu, Xin Zhang, Xunzhi Xiang, Yuqin Dai, Jianzhuang Liu,
+Zhensong Zhang, Minglei Li, Jian Yang, et al. Human mo-
+tion video generation: A survey.Authorea Preprints, 2024.
+[Yang et al., 2023] Taojiannan Yang, Yi Zhu, Yusheng Xie,
+Aston Zhang, Chen Chen, and Mu Li. Aim: Adapting
+image models for efficient video action recognition. arXiv
+preprint arXiv:2302.03024, 2023.
+[Zhang et al., 2020] Hongguang Zhang, Li Zhang, Xiaojuan
+Qi, Hongdong Li, Philip HS Torr, and Piotr Koniusz. Few-
+shot action recognition with permutation-invariant atten-
+tion. In Computer Vision–ECCV 2020: 16th European
+Conference, Glasgow, UK, August 23–28, 2020, Proceed-
+ings, Part V 16, pages 525–542. Springer, 2020.
+[Zheng et al., 2024] Ruijie Zheng, Yongyuan Liang, Xiyao
+Wang, Shuang Ma, Hal Daum ´e III, Huazhe Xu, John
+Langford, Praveen Palanisamy, Kalyan Shankar Basu, and
+Furong Huang. Premier-taco is a few-shot policy learner:
+Pretraining multitask representation via temporal action-
+driven contrastive loss. In Forty-first International Con-
+ference on Machine Learning, 2024.
+[Zhu and Yang, 2018] Linchao Zhu and Yi Yang. Compound
+memory networks for few-shot video classification. In
+Proceedings of the European conference on computer vi-
+sion (ECCV), pages 751–766, 2018.

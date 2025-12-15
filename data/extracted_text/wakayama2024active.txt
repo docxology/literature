@@ -1,0 +1,1276 @@
+IEEE TRANS. ROBOTICS, VOL. V , NO. N, NOVEMBER 2024 1
+Active Inference in Contextual Multi-Armed
+Bandits for Autonomous Robotic Exploration
+Shohei Wakayama1, Alberto Candela 2, Paul Hayne 3, and Nisar Ahmed 1
+Abstract—Autonomous selection of optimal options for data
+collection from multiple alternatives is challenging in uncertain
+environments. When secondary information about options is ac-
+cessible, such problems can be framed as contextual multi-armed
+bandits (CMABs). Neuro-inspired active inference has gained
+interest for its ability to balance exploration and exploitation
+using the expected free energy objective function. Unlike previous
+studies that showed the effectiveness of active inference based
+strategy for CMABs using synthetic data, this study aims to apply
+active inference to realistic scenarios, using a simulated miner-
+alogical survey site selection problem. Hyperspectral data from
+A VIRIS-NG at Cuprite, Nevada, serves as contextual information
+for predicting outcome probabilities, while geologists’ mineral
+labels represent outcomes. Monte Carlo simulations assess the
+robustness of active inference against changing expert prefer-
+ences. Results show active inference requires fewer iterations than
+standard bandit approaches with real-world noisy and biased
+data, and performs better when outcome preferences vary online
+by adapting the selection strategy to align with expert shifts.
+Index Terms—Active inference, contextual multi-armed ban-
+dits, robotic exploration.
+I. I NTRODUCTION
+For robotic exploration of uncertain environments such as
+outer solar system planets, disaster sites, and geologically
+intriguing areas on Earth, it is often crucial to optimally select
+among multiple alternative options to enable autonomous data
+collection (e.g. selecting a mineral rock specimen for detailed
+chemical analysis and landing site selection for a planetary
+rover) [1]. Such decision making has been mostly performed
+by human domain experts, such as scientists and engineers [2],
+since this mitigates the possible dangers posed to exploration
+robots which are costly and difficult to replace. However,
+this approach leads to significant mental workload on humans
+[3], [4]. Additionally, due to the difficulty of interpreting
+low-quality data sent from the robots, there is a risk that
+humans might overlook optimal options and make suboptimal
+decisions, ultimately decreasing mission efficiency. Moreover,
+for highly remote and underexplored uncertain environments
+(e.g. icy moons of Jupiter and disaster sites at a nuclear power
+plant), it is not possible to rely on frequent and information-
+rich human-robot interaction because of the significant dis-
+1S. Wakayama and N. Ahmed are with the Smead Aerospace Engineering
+Sciences Department, University of Colorado Boulder, Boulder, CO 80303
+USA [shohei.wakayama; nisar.ahmed]@colorado.edu
+2A. Candela is with the Jet Propulsion Laboratory, Cal-
+ifornia Institute of Technology, Pasadena, CA 91109, USA
+alberto.candela.garza@jpl.nasa.gov
+3P. Hayne is with the Astrophysical & Planetary Sciences
+Department, University of Colorado Boulder, CO 80303 USA
+paul.hayne@lasp.colorado.edu
+I want to collect a 
+kaolinite specimen
+k =1
+k =K
+He wants to collect a 
+kaolinite specimen… 
+Hyperspectral contextual data
+This area might be 
+rich in alunite…
+Fig. 1. An aerial robot reasons where a desired mineral rock specimen can be
+sampled by utilizing remote sensing data such as hyperspectral information.
+To speed up the process, it is desirable not only to strike a balance between
+exploitation and exploration, but also incorporate a selection bias, i.e. human
+expert prior preferences, regarding the desired observations.
+tance between humans and robots, limited bandwidth in com-
+munication, and necessity for increased “housekeeping” down-
+time for the robots. Therefore, robots operating in uncertain
+environments are expected to efficiently and autonomously
+determine the best options for data collection to mitigate the
+aforementioned issues and to enhance the overall mission
+outcomes. Nevertheless, it is not straightforward to make
+such decisions due to the stochastic nature of the dispatched
+environments, since sensing outcomes are stochastic and the
+distributions of the outcome observations are unknown a
+priori.
+For instance, consider a scenario, as illustrated in Fig. 1,
+where an aerial robot must autonomously select the most
+promising site for sampling a desired mineral rock specimen
+during a follow-up in-situ survey mission [5]. This search site
+selection is based on remote sensing data (e.g. hyperspectral
+information) gathered from predetermined search sites using
+a lightweight sensor (e.g. spectrometer). In this scenario,
+however, the sensing returns obtained by directing sensors are
+stochastic for various reasons, for example, due to observation
+noise and the variability in the targeted coordinates for each
+site sampling instance. Moreover, model parameters used to
+predict the likelihood of observing each outcome (e.g. a de-
+tected mineral specimen) based on these returns are not known
+arXiv:2408.04119v2  [cs.RO]  5 Jan 2025
+IEEE TRANS. ROBOTICS, VOL. V , NO. N, NOVEMBER 2024 2
+beforehand. Thus, the robot needs to carefully strike a balance
+between exploitation (increasing the certainty in sites where
+desired mineral specimens are expected) and exploration (de-
+creasing the uncertainty in poorly explored search sites). This
+sequential decision-making problem can be formulated with
+mathematical frameworks such as partially observable Markov
+decision processes (POMDPs) [6], [7] and Gaussian processes
+(GPs) [8], [9]. In the case of POMDPs, however, careful
+definitions of a state transition function, a reward function, and
+planner hyperparameters (e.g. a planning depth and a discount
+factor) are required. Reward and hyperparameter tuning, in
+particular, can be tricky and time-consuming in new and uncer-
+tain environments [10]. On the other hand, in the case of GPs,
+while they can leverage a spatial structure of an environment,
+the computation cost of kernel functions is significant for real-
+time operation [11], [12]. Additionally, neither framework eas-
+ily incorporates human expert preferences regarding outcomes
+easily. Thus, instead, we opt to study simpler contextual multi-
+armed bandit (CMAB) formulation, which has been widely
+studied in recommendation systems, finance, healthcare, and
+recently, robotics [13]–[16], and allows us to advantageously
+abstract certain lower-level behavioral aspects of the search
+site selection problem.
+However, in general, bandit problems–depending on their
+scale and complexity–often require a large number of itera-
+tive interactions with the environment to finalize the optimal
+option. This need for numerous iterations can become a
+bottleneck when applying this mathematical framework to
+practical robotic applications, such as space exploration and
+mineralogical surveys on Earth, where resources and time are
+often constrained. Moreover, existing conventional methods in
+CMABs typically do not explicitly take into account human
+experts’ (e.g. scientists’) prior preferences regarding outcomes
+in their decision-making processes. As a consequence, the
+decisions derived from these methods may not always align
+with what humans are actually interested in observing, lead-
+ing to the decrease in mission efficiency. In light of these
+backdrops, our previous studies [17], [18] sought to emulate
+the approach taken by astronaut Harrison Schmitt during
+the Apollo 17 mission, where he combined in-situ findings
+with geological expert knowledge to advance lunar geology
+[19]. To achieve a similar behavior in robotic systems, we
+applied active inference (AIF) [20]–[22]–which originated in
+computational neuroscience and has recently gained traction in
+robotics–to develop option selection strategies for stationary,
+independent, and linear CMABs that are informed by expert-
+provided prior preferences on observations. While these stud-
+ies showed that AIF agents could efficiently identify the best
+option for humans compared to other strategies when expert
+prior preference is stationary, the contextual information used
+for decision-making and the true hidden model parameters
+associated with the options were randomly generated, which
+does not reflect real-world conditions. Hence, in this article, we
+aim to validate the applicability of the AIF-based option selec-
+tion methodology in realistic problem scenarios. Specifically,
+the key contributions and novelty with respect to previous
+studies [17], [18] are:
+• Demonstrating the effectiveness of the AIF-based option
+selection algorithm using real scientific data, namely
+based on hyperspectral data collected by A VIRIS-NG [23]
+and mineral label data created by geologists [24]. This
+study marks the first application of active inference in
+geological data exploration.
+• Showcasing the superiority of the proposed method to
+conventional bandit option selection strategies even when
+human expert’s preferences for desired outcomes change
+dynamically.
+The remainder of this paper is organized as follows. Sec.
+II provides an overview of multi-armed bandits (MABs) and
+CMABs, along with an introduction to active inference. Sec.
+III describes the problem statement, and then presents the
+AIF-based option selection method for CMABs. In Sec. IV,
+we explain the science dataset and detail the preprocessing
+procedures. Following that, we present the offline training
+results used to learn the “true” (but unknown to the exploration
+robot) hidden parameters associated with options. Then, the
+simulation setup is outlined and the results from the simu-
+lated Monte Carlo experiments are discussed. Finally, Sec. V
+concludes the study with a summary of key findings and the
+potential research directions.
+II. B ACKGROUND
+A. Multi-Armed Bandits (MABs) and Contextual MABs
+The multi-armed bandit (MAB) is a classic reinforcement
+learning problem that involves identifying and utilizing the
+optimal option among multiple alternatives [25]. In MABs,
+an outcome from each option (a.k.a. “arm”) is probabilistic,
+and its distribution is unknown a priori, leading to the so-
+called exploration-exploitation dilemma since only one op-
+tion’s outcome can be observed per decision-making iteration.
+Therefore, bandit agents repeatedly execute two key steps–
+1) option/arm selection and 2) measurement update–to ideally
+minimize the cumulative regret, which measures the disparity
+between the total reward achieved by consistently selecting
+the best option (unknown during execution) and that obtained
+following a specific option selection strategy [26]. In standard
+MAB, however, since the information used for option selection
+is solely based on past outcome observations, a sufficiently
+large number of iterations is typically required to identify the
+best option.
+Conversely, in contextual MABs (CMABs), additional side
+information, known as contexts, associated with each option
+is used to predict outcome observation probabilities. This
+prediction is done in conjunction with the unique hidden
+parameters of each option during option selection, and allows
+for more efficient identification of the optimal option and min-
+imization of the cumulative regret. For measurement updates,
+Bayes’ theorem is primarily used. For option selection, ε-
+greedy, strategies based on the upper confidence bound (UCB)
+[27], [28], Thompson sampling [29], [30], and methods using
+the softmax function [26] are well-known. However, these
+conventional option selection methods often rely on heuristics
+to achieve good performance. Additionally, external prefer-
+ences, such as those from domain experts regarding valuable
+IEEE TRANS. ROBOTICS, VOL. V , NO. N, NOVEMBER 2024 3
+outcome observations for robotic exploration, cannot be easily
+incorporated. Hence, the outcomes obtained by following
+these option selection strategies may not align with what
+humans actually want to observe. Therefore, it is important
+to develop an alternative option selection strategy particularly
+for such robotics applications. This is because the number of
+iterations must generally be limited in such applications, and
+incorporating human prior preferences in decision-making is
+crucial to enhance the interpretability of the robot’s decisions.
+B. Free Energy Principle and Active Inference
+The free energy principle (FEP) is a theoretical framework
+proposed in the field of computational neuroscience to math-
+ematically and systematically explain the functioning of the
+brain [31], [32]. According to this principle, biological agents
+form probabilistic internal models of external environments
+and, based on these models, perceive, learn, and act to
+minimize the discrepancy (i.e. free energy) between predicted
+observations and actual sensory inputs, thereby increasing their
+chances of survival. Predictive coding, known in research on
+the visual cortex, is one specific implementation of the FEP
+[33], [34].
+Active inference (AIF) is a mathematical framework that
+applies the FEP specifically to the behavioral norms of biolog-
+ical agents [20], [21]. In the field of neuroscience, it has been
+used to understand the characteristic behavioral mechanisms
+observed in patients with autism [35], [36]. Recently, it has
+also garnered attention in the field of robotics for state
+estimation, adaptive control, and for decision making under
+uncertainty [22], [37]–[39]. The reason for this lies in the
+expected free energy (EFE)objective function characterizing
+AIF. Although a detailed explanation is provided in Sec. III,
+the EFE for each possible option/action in the MAB/CMAB
+context consists of the (negative) value resulting from selecting
+a particular option and the (negative) information gain (i.e.
+mutual information commonly known in robotics [40], [41]
+and Bayesian experimental design [42], [43]) representing how
+much the uncertainty about hidden states is reduced by taking
+that option. Consequently, by optimizing (i.e. minimizing) the
+EFE, agents can naturally take an action balancing exploitation
+and exploration. Additionally, since preference information
+regarding outcome observations, known as prior preference,
+can be externally incorporated into the value term, agents
+take actions biased towards obtaining desired observations.
+This characteristic has recently been studied for Pareto point
+selection problems in multi-objective reinforcement learning
+[44].
+Given these backdrops, our previous works have proposed
+AIF-based option selection methods for CMABs, particularly
+when hybrid discrete-continuous observation likelihoods such
+as sigmoid and softmax functions are employed [17], [18].
+Although autonomous robotic agents with these methods oc-
+casionally get stuck in local minima due to selection bias,
+extensive simulation experiments with synthetic datasets have
+demonstrated that the AIF agents can identify the best option
+with a far fewer number of iterations. Yet, the practicability
+of the proposed AIF methods has not been validated on
+more realistic data. Also, in our previous studies, the prior
+preference distributions are assumed to be stationary. However,
+in realistic scenarios, human preferences regarding outcomes
+can change dynamically. Therefore, after introducing the
+CMAB problem and reviewing the proposed AIF-based option
+selection method, we are going to present how the method is
+validated and demonstrated for more practical problems with
+these characteristics, using a real scientific dataset.
+III. M ETHODOLOGY
+A. Problem Statement
+Suppose the total number of options (e.g. search sites) taken
+into account by a robot is K ∈ N. Note that these options are
+equivalent to the bandit arms and selecting an option k ∈
+{1, ··· , K} is denoted as a = k (for the ease of notation, in
+the following, we use ak ↔ a = k). Additionally, suppose that
+a semantic observation ok (e.g. mineral label) of each option k
+from an observation source is multicategorical across F labels,
+i.e. ok = f, f∈ F= {1, ··· , F}. Therefore, the probability
+that a feature f is observed by investigating an option k at a
+decision instance t can be described as the following softmax
+likelihood function [45], [46] 1,
+p(ok,t = f|⃗Θk; ⃗ xk,t) = e⃗ wT
+k,f⃗ xk,t+bk,f
+PF
+h=1 e⃗ wT
+k,h⃗ xk,t+bk,h
+, (1)
+where ⃗Θk = [ ⃗ wk,1, bk,1, ··· , ⃗ wk,F , bk,F ], ⃗Θk ∈ R(C+1)×F is
+a hidden linear parameter vector unique to the option k, and
+⃗ xk,t ∈ RC is a (dynamic) context vector (e.g. indicating the
+choice of in-situ hyperspectral measurement) specific to the
+option k, where C is the context feature dimension (e.g. the
+number of available hyperspectral bands).
+Recall that the objective of CMABs is to minimize cu-
+mulative regret. Here, a unit reward (1) is provided if a
+predetermined preferable feature fp ∈ Fis observed for ok,
+and no reward (0) is given if any other feature is observed. In
+the case of the search site selection scenario, for instance, fp
+represents a particular mineral label that scientists want the
+robot to investigate (e.g. a kaolinite specimen). Thus, if the
+probability of observing fp with the best (unknown a priori)
+option is ψ∗, the cumulative regret is written as below [27],
+Regret(T) = T ψ∗ −
+KX
+k=1
+NT (k)ψk, (2)
+where T is the total number of decision instances, NT (k)
+represents the number of times an option k is selected within
+T iterations, and ψk is the probability that fp is observed by
+selecting the option k. In order to minimize the cumulative
+regrets, the robot is required to efficiently estimate the set
+of softmax parameters ⃗Θk for all k in the process of finding
+an optimal option by iteratively performing the two steps of
+1It is also natural to choose a Dirichlet distribution as a prior and a
+categorical distribution as an observation likelihood, as their conjugacy allows
+for easy posterior calculation [45]. Nevertheless, this approach cannot easily
+incorporate continuous contextual information (such as hyperspectral data)
+associated with the options. Hence, the softmax function, which is one of
+hybrid discrete-continuous likelihood functions and has gained attention in
+the field of multi-sensor fusion [47]–[50], is adopted.
+IEEE TRANS. ROBOTICS, VOL. V , NO. N, NOVEMBER 2024 4
+option selection and measurement update. As described in Sec.
+II-A, for measurement update, Bayes’ theorem is commonly
+used. For option selection, ε-greedy, methods based on the
+upper confidence bound (UCB) and the softmax function are
+widely used [26]. However, these methods cannot leverage
+additional information regarding the preference of observed
+outcomes, which could enable the robot to selectively favor
+options, leading to preferred outcomes and potential increase
+of the interpretability of the robot (issue A). Additionally, since
+these methods rely on heuristics for exploring the unknown
+options, they usually require lots of decision instances to de-
+termine the optimal option, which is not desirable for problems
+for which there are constraints on T (issue B). Hence, in this
+study, we employ an option selection method that not just
+exploits the outcome preference to increase the interpretability
+of robotic decision-making, but also explores unknown options
+in a mathematically rigorous way for efficiently identifying the
+optimal options.
+B. Active Inference Option Selection
+As experimentally validated in previous studies [17], [18],
+[51], option selection based on active inference (AIF) ad-
+dresses the aforementioned desirable key elements. This is
+because of the unique characteristics of its objective function,
+i.e. expected free energy (EFE), which is composed of (i)
+the extrinsic value scoring the degree of how the predicted
+outcome observation distribution aligns with the desired dis-
+tribution, and (ii) the epistemic value evaluating how executing
+an option could reduce the uncertainty of the option [52].
+In the following, we begin with outlining the derivation of
+EFE for constructing an option selection policy. Then, as a
+special case, we explain how to compute EFE when a prior
+proposal distribution for a hidden linear parameter vector ⃗Θ is
+a multivariate Gaussian and the observation likelihood is the
+softmax function.
+1) Derivation of Option Selection Policy in AIF:According
+to the theory of active inference [20], [21], the goal of a
+decision-making agent is to minimize the surprise of observa-
+tions to maintain its homeostasis. The surprise in the case of
+CMABs defined in Sec. III-A is expressed as,
+Surprise = −log p(o) = −log
+Z
+⃗Θ
+p(o, ⃗Θ)d⃗Θ. (3)
+However, directly calculating (3) via multiple integrals tends
+to be analytically intractable, so its upper bound derived from
+Jensen’s inequality results in a function called free energy
+(a.k.a. (negative) evidence lower bound) which is minimized
+instead. Nevertheless, in decision making, outcomes o are
+unknown until an option k is actually executed. Therefore, the
+AIF agent instead optimizes EFE (denoted asG(ak)) described
+in (4). Hereafter, the decision instance index t and the context
+vector ⃗ xk,t are abbreviated for the ease of notation,
+G(ak)=
+Z
+⃗Θk
+q(⃗Θk|ak)
+X
+o
+p(o|⃗Θk)log q(⃗Θk|ak)
+p(⃗Θk|o,ak)ppr(o)
+d⃗Θk,
+=
+X
+o
+n
+q(o|ak) log q(o|ak)
+ppr(o)
+−
+Z
+⃗Θk
+q(⃗Θk|ak)p(o|⃗Θk) logp(o|⃗Θk)d⃗Θk
+o
+, (4)
+where q(⃗Θk|ak) is a proposal distribution that approximates
+the posterior distribution p(⃗Θk|o, ak), and ppr(o) is a prior
+preference distribution, which defines an outcome observation
+distribution that the agent expects to see when undertaking
+options. Since ppr(o) can be arbitrarly determined, in the
+case of the mineralogical survey scenario, for example, a
+human scientist can provide the robot with the desired mineral
+label distribution as ppr(o), specified as 1 × F probability
+vector with non-negative entries summing to 1. This desired
+distribution can be interpreted as a probabilistic characteri-
+zation of worthwhile data that the scientist would expect to
+obtain. Specifying this distribution differentiates AIF from
+other conventional decision-making algorithms [6], [7], where
+either robotics experts must manually adjust numeric reward
+values assigned to actions (a process that lacks straightforward
+interpretability), or rewards must be learned from multiple user
+demonstrations (which is also time-consuming and impractical
+for many kinds of exploration missions). In AIF literature, (4)
+is commonly further transformed as follows to easily interpret
+the meaning,
+G(ak) = − Eq(o|ak)
+h
+log ppr(o)
+i
+− Eq(o|ak)
+h
+DKL
+
+q(⃗Θk|o, ak)||q(⃗Θk|ak)
+i
+, (5)
+where q(o|ak) is the predicted observation distribution
+q(o|ak) =
+Z
+⃗Θk
+q(⃗Θk|ak)p(o|⃗Θk)d⃗Θk. (6)
+The first term and the second term of (5) represent (i) the
+(negative) extrinsic value and (ii) the (negative) epistemic
+value, respectively. Thus, as can be seen from this equation,
+by optimizing (i.e. minimizing) G(ak), the agent can naturally
+strike a balance between exploitation contributing to (issue A)
+and exploration contributing to (issue B). For detailed equation
+transformations to obtain (4) and (5), refer to previous studies
+[17], [20].
+To further reflect the possibility that the agent is not
+necessarily confident of the values of G(ak), in this study, an
+option selection policy (7) is formed with the use of G(ak),
+such that the agent samples the next action from the categorical
+distribution (8).
+q(ak) = exp(−γG(ak))PK
+j=1 exp(−γG(aj))
+, (7)
+a ∼ Cat(a1, ··· , aK; q(a1), ··· , q(aK)). (8)
+In (7), γ is called precision (similar to inverse temperature) and
+it adjusts the confidence of the current EFE prediction [20] (the
+larger the value of γ, the higher the confidence). Algorithm
+1 summarizes the process of active inference option selection
+for CMABs. At first glance, this stochastic option selection
+policy resembles the softmax option selection technique used
+for conventional MABs and CMABs [26]. However, unlike
+AIF, the conventional MAB softmax method only uses the
+average reward/utility obtained by selecting an option k up
+IEEE TRANS. ROBOTICS, VOL. V , NO. N, NOVEMBER 2024 5
+Algorithm 1 Active Inference Option Selection for CMABs
+Input: Estimated set of parameters ⃗Θk and context vector ⃗ xk,t
+for all options k, k= {1, ··· , K}, and the prior preference
+distribution ppr(o)
+Output: Selected option index
+1: Initialize G(ak) for all options
+2: for each option k do
+3: for each outcome o do
+4: Compute G(ak, o) via (5)
+5: end for
+6: Derive G(ak) = P
+o G(ak, o)
+7: end for
+8: Construct the option selection policy Cat (·) via (7)
+9: return Sample the option a from (8)
+until the current decision instance to calculate the probability
+of selecting that option. In other words, it does not take into
+account the prediction of future outcomes by utilizing context
+information as well as the (human) prior preference regarding
+outcome observations. The differences of the behaviors be-
+tween softmax and AIF agents are further discussed in Sec.
+IV.
+2) Special Case: Multivariate Gaussian Prior and Soft-
+max Observation Likelihood: When q(⃗Θk|ak) is multivariate
+Gaussian and p(o|⃗Θk) is a softmax function, G(ak) cannot
+be computed analytically since calculating (6) is intractable.
+Luckily, several statistical methods have been proposed to
+approximate this normalization term [45], [47], [53], and in
+this study we adopt the Laplace approximation due to its
+computation efficiency.
+In statistical machine learning, the Laplace approximation is
+often employed to approximate a probability density function
+(pdf) as a Gaussian distribution [45]. This uses the second-
+order approximation of the vector Taylor expansion of a loga-
+rithmic function whose gradient is a zero-vector. Particularly,
+in the process of approximating G(ak), a function g(⃗Θk) is de-
+fined as the joint unnormalized distribution q(⃗Θk|ak)p(o|⃗Θk)
+such that the following logarithmic function is used,
+log g(⃗Θk) ≈ log g(⃗Θ(0)
+k )
++
+(C+1)×FX
+r=1
+(Θk,r − Θ(0)
+k,r)∂ log g(⃗Θ(0)
+k )
+∂Θk,r
++ 1
+2
+n(C+1)×FX
+r=1
+(Θk,r − Θ(0)
+k,r)∂ log g(⃗Θ(0)
+k )
+∂Θk,r
+o2
+,
+(9)
+where ⃗Θ(0)
+k satisfies ∇log g(⃗Θk) = ⃗0. However, as it is also
+analytically intractable to find ⃗Θ(0)
+k , ⃗Θk,MAP is computed via
+Newton’s method [54]. Since the second term in (9) is removed
+and the third term in (9) can be written as
+1
+2
+n(C+1)×FX
+r=1
+(Θk,r − Θ(0)
+k,r)∂ log g(⃗Θ(0)
+k )
+∂Θk,r
+o2
+= 1
+2
+n
+(⃗Θk − ⃗Θ(0)
+k )T ∇log g(⃗Θ(0)
+k )
+o2
+, (10)
+(9) reduces to
+log g(⃗Θk) ≈ log g(⃗Θk,MAP )+
+1
+2(⃗Θk −⃗Θk,MAP )T H
+h
+log g(⃗Θk,MAP )
+i
+(⃗Θk −⃗Θk,MAP ), (11)
+where H is the Hessian (Note that the Hessian can be
+calculated by computing the Jacobian of the gradient, and
+the gradient can be derived with an optimizer imple-
+mented in the standard scientific computing library such as
+scipy.optimizer). Thus, if we define A = −H and by
+taking the logarithm from (11),
+g(⃗Θk) ≈
+g(⃗Θk,MAP )·exp
+
+−(⃗Θk −⃗Θk,MAP )T A(⃗Θk −⃗Θk,MAP )
+2
+
+,
+(12)
+and the normalization constant, i.e. the predicted observation
+distribution (6), is computed as
+q(o|ak) = g(⃗Θk,MAP ) · (2π)
+(C+1)×F
+2
+|A|
+1
+2
+. (13)
+By using (13) into (4), the first term of (4) (i.e.
+q(o|ak) log q(o|ak)
+ppr(o) ) can be calculated. To calculate the sec-
+ond term of (4), by approximating p(o|⃗Θk) as a Gaussian
+exponential form from the result of the Laplace posterior
+approximation. More details can be found in [18].
+IV. S IMULATION STUDY
+To verify whether the proposed active inference option
+selection method is effective not only for stationary, indepen-
+dent, and linear CMABs formulated with randomly generated
+hidden parameters and contexts, as in previous studies [17],
+[18], but also for CMABs formulated based on actual scientific
+data, a mineral search site selection study is considered.
+In the following subsections, we begin with an overview
+of the motivating autonomous robotic exploration scenario
+focusing on surface mineralogical surveys. We then describe
+the hyperspectral and mineral label dataset used as contexts
+and outcome observations. This is followed by an explanation
+of the preprocessing steps and the result of learning the true
+hidden parameters necessary for calculating the cumulative
+regret. Finally, we detail the simulation setup and present
+the results of Monte Carlo simulation experiments under both
+static and dynamic human prior preferences.
+A. Motivating Scenario
+Limestone and iron are indispensable in construction and
+manufacturing sectors. Minerals such as kaolinite and pyrox-
+ene play a crucial scientific role, shedding light on sedimentary
+processes and enhancing our comprehension of rock forma-
+tion [55]. Consequently, mineralogical surveys in unfamiliar
+territories are pivotal for uncovering resources and driving
+scientific advancements. Nevertheless, the extensive scope
+of mineral exploration presents time and safety challenges,
+making effective human-led surveys difficult. As a result,
+research has been conducted to utilize robots equipped with
+sensing suits to autonomously perform exploration [56], [57].
+IEEE TRANS. ROBOTICS, VOL. V , NO. N, NOVEMBER 2024 6
+2.0 2.1 2.2 2.2 2.3 2.3 2.4 2.5
+Wavelength [ m]
+0.20
+0.25
+0.30
+0.35
+0.40
+0.45Reflectance
+Smectite + Montmorillonite
+Sulfate + Alunite
+Mica + Muscovite
+SiOH + Chalcedony
+Fig. 2. Example raw hyperspectral data from the A VIRIS-NG dataset.
+In the following, we consider the problem of an autonomous
+aerial robot (as shown in Fig. 1) identifying the most promising
+site(s) where a mineral rock specimen desired by a scientist
+can be sampled in a follow-up sample-return mission [5].
+These K number of sites are predetermined based on satellite
+images [58]. In this problem, the aerial robot uses relatively
+lightweight sensors, such as a spectrometer, to scan the search
+sites, and predicts the site with the highest likelihood of
+containing the desirable specimen based on the obtained con-
+textual hyperspectral information ⃗ x. The robot then receives
+an observation f on the detected mineral 2 at the selected
+site k from another robot, which is remotely operated by
+humans and can quickly access the scanned coordinate. By
+hierarchically structuring the search process in multiple stages
+as such, rather than exhaustively dispatching the robots to
+survey the entire region, it is expected that survey efficiency
+significantly improves. However, the outcome observation is
+probabilistic by nature and the latent relationship between the
+context ⃗ xand the observation f used to predict the likelihood
+of observing each mineral specimen are unknown a priori, so
+a CMAB described in Sec. III is adopted to carefully take a
+balance between exploitation and exploration.
+B. Dataset
+The hyperspectral data used in this study is collected using
+the Next Generation Airborne Visible-Infrared Imaging Spec-
+trometer (A VIRIS-NG) at the Cuprite mining district, Nevada,
+an area known for its high mineralogical diversity [23]. This
+data assigns a unique reflectance spectrum across 97 spectral
+bands to every location (pixel) in the scene. Fig. 2 shows the
+example spectra collected at several different locations. On the
+other hand, the mineral label data is constructed by geological
+experts and one of 215 labels are assigned to each pixel [24].
+Fig. 3 represents the mineral map highlighted with arbitrary
+colors. Note that these two maps are aligned so that the sizes
+of map images ( 2673 and 2389 pixels in height and width
+directions) and pixels ( 3.9 m square) are the same.
+2In this study, it is assumed that the total number of minerals present in
+the entire region is bounded by a finite value F as with [9].
+Fig. 3. Mineral map: different colors correspond to different (mixture) mineral
+labels. In total, there are 215 labels in this region. Note that pixels on the
+edge with dark blue colors are invalid and no mineral labels are assigned.
+These pixels are ignored when training true softmax parameters.
+C. Training True Latent Parameters
+When calculating the cumulative regret to evaluate and
+comparing the performance of option selection algorithms, the
+ground truth best-fit softmax parameters ⃗Θ∗
+k are required to
+sample the outcomes for the best possible case. Note that these
+softmax parameters are never known by a decision-making
+agent during deployment and can only be accessed/trained
+offline (i.e. one of the goals of the decision-making agent
+is to efficiently learn the values of these parameters). In
+this subsection, we outline the preprocessing steps for the
+hyperspectral and mineral dataset introduced in Sec. IV-B
+and detail the training procedure of the ground truth best-fit
+softmax parameters3.
+First of all, some pixels lack hyperspectral data, while others
+lack mineral label data. Since these pixels do not necessarily
+overlap, we take the union of these sets, marked them as
+invalid pixels (shown in dark blue in Fig. 3), and excluded
+them from the training process. Next, since the A VIRIS-NG
+dataset has a very high spectral resolution, its dimensionality
+C is reduced from 97 to 8 via principal component analysis
+(PCA) [45]. This dimensionality reduction is plausible as the
+cumulative explained variance ratio (i.e. the sum of the target
+number of eigenvalues divided by the sum of all eigenvalues,
+which ranges between 0 and 1) when the number of PCA
+components is 8 is 0.999 (Fig. 4). Additionally, since several
+mixtures of minerals assigned with different labels are quite
+similar and some labels are not actually used, the mineral label
+dataset is further manually clustered from 215 to 14 with the
+advice of experts. Exemplary representative minerals in these
+14 clusters include alunite, mica, and kaolinite. After these
+preprocessing steps, as shown in Fig. 5, K non-overlapping
+search sites are selected, each with dimensions of 200 pixels in
+width and 250 pixels in height, and the pairs of hyperspectral
+and mineral label data are combined as datasets. To train
+3Note that the true underlying statistics are not necessarily represented by a
+linear softmax model. This modely simply represents the best approximation
+the autonomous robot could achieve using a linear approach, assuming it had
+access to more data and ground truth labels.
+IEEE TRANS. ROBOTICS, VOL. V , NO. N, NOVEMBER 2024 7
+1 2 3 4 5 6 7 8
+Number of Principle Components
+0.94
+0.95
+0.96
+0.97
+0.98
+0.99
+1.00Cumulative Explained Variance Ratio
+Fig. 4. Transition of the cumulative explained variance ratio after applying
+PCA to the A VIRIS-NG dataset.
+k =2
+k =7
+Fig. 5. Selected search sites overlaid on an aerial image of the Cuprite mining
+district, Nevada.
+the true best-fit softmax parameters ⃗Θ∗
+k, the dataset is split
+into training (80%) and test sets (20%) and the softmax
+regression (i.e. multinomial logistic regression) with the Adam
+optimizer [59] is performed with PyTorch [60]. The average
+accuracy (i.e. the proportion of correctly classified samples
+out of the total number of samples) over all search sites is
+76.7% (note that min/max accuracy is 62.3% and 93.1%,
+respectively). Despite having a relatively low accuracy as
+a classifier, it effectively captures the noise present in the
+measurement process as shown in Fig. 6. This is further
+confirmed by examining the histograms of the learned bias
+values. As depicted in Fig. 7, each subplot exhibits significant
+negative values (around −20). This observation indicates that
+the trained classifier discerns the absence of certain minerals
+in these search sites 4. Additionally, considering that other re-
+search utilizing a similar dataset also demonstrates comparable
+accuracy values, it suggests that this classifier is satisfactory
+4For example, in Fig. 6, it can be observed that minerals of Classes 2
+and 13 are absent at sites 3 and 6. As the number of such absent minerals
+increases, the frequency of large negative values in Fig. 7 also increases.
+Fig. 6. Examples of the confusion matrices constructed from the test results.
+Fig. 7. Examples histograms of the learned bias values; in mathematical
+terms, when a bias term bk,f is highly negative, the numerator in the softmax
+likelihood function associated with this label f, i.e. e⃗ wT
+k,f ⃗ xk,t+bk,f , tends
+towards zero, causing p(ok,t = f|⃗Θk; ⃗ xk,t) to also approach zero.
+to provide a best fit baseline comparison [56].
+D. Simulation Setup
+With the set of the trained ground truth softmax parameters,
+the following option selection methods are considered and
+compared in extensive Monte Carlo (MC) simulation: (i)
+best-fit optimal option selection, using the trained parameters
+(required for computing the cumulative regret); (ii) ε-greedy
+(where ε=0.3 was found to work best after initial trials); (iii)
+softmax method (where temperature τ was set as 0.1 after
+initial trials); (iv) upper confidence bound (UCB) (where the
+exploration parameter c was set as 0.8 after initial trials); (v):
+multicategorical Thompson sampling (TS); (vi): active infer-
+ence (AIF; where precision γ was set as 30 after initial trials).
+The option selection methods (v) and (vi) are paired with the
+Laplace approximation for the measurement update [45]. 100
+MC runs are performed, and the number of iterations T in each
+MC run is set to 100/150, which is much smaller compared
+to common MAB algorithm benchmarks [51] and reflects a
+practical upper limit for robotic lander sensor deployment [18].
+When the robot is actually deployed, the hyperspectral contex-
+tual information at each site varies across decision instances
+because the exact coordinates targeted by the spectrometer
+differ each time. To replicate this real-world stochasticity, at
+IEEE TRANS. ROBOTICS, VOL. V , NO. N, NOVEMBER 2024 8
+Pyrophyllite
+Kaolinite Mica Smectite Pyrophyllite
+Kaolinite
+・・・
+0 ≦ t < 20 20 ≦ t < 40 40 ≦ t < 60 60 ≦ t < 80 80 ≦ t < 100 100 ≦ t < 120
+t
+Fig. 8. Transition of the mineral of greatest interest to a scientist. In this
+study, for simplicity, it is assumed that transitions occur every 20 instances.
+every decision-making instance, a pixel is randomly selected
+(corresponding to its coordinates) within each site, and the
+PCA-processed hyperspectrum associated with it is used as
+the context ⃗ xk,t ∈ RC. For the initial probability distribution
+p(⃗Θ) used to estimate the hidden softmax parameter vector, a
+multivariate normal distribution is employed across all search
+sites, with a mean vector where all elements are 0.5 and a
+diagonal covariance matrix with a scaling factor of 5. Note
+that the value of the scaling factor is determined after initial
+trials. Finally, in the first simulation experiment intended to
+validate the effectiveness of the proposed AIF-based option
+selection method in real scientific missions, it is assumed
+that a scientist holds the strongest and consistent/stationary
+interest in observing pyropillite specimens (i.e. o = fp).
+Thus, the prior preference for observing pyropillite specimens
+pev(o = fp) is set to 0.8, while pev(o ̸= fp) is set to
+0.2 divided by the 13 other possible outcomes. In contrast,
+the second experiment assumes that the minerals of greatest
+interest to scientists (often informed by insights gained up
+to that point) dynamically changes as shown in Fig. 8 to
+better align with real scientific missions, and verifies how the
+proposed method adapts to this variability.
+E. Results: Stationary Prior Preference
+When the prior preference distribution is stationary, the
+cumulative regrets of both the proposed AIF method (orange)
+and the softmax method (yellow) outperform others as shown
+in Fig. 9 (upper left). Interestingly, in this case, there is notable
+variability in cumulative regrets across all methods as depicted
+in Fig. 9 (other subplots). Cumulative regret represents the
+difference between the ideal cumulative reward, assuming
+known hidden parameters, and the actual cumulative reward
+obtained from following a specific policy. As such, it generally
+remains non-negative. However, in this simulation study, dur-
+ing the preprocessing of the dataset, nonlinear transformations
+were applied, such as significantly reducing the total number
+of mineral labels used. Additionally, not all minerals were
+necessarily present at each site, and the test accuracy was not
+exceptionally high. Therefore, even when selecting sites based
+on the best-fit optimal option selection strategy, there is no
+guarantee that the obtained outcomes align with the outcome
+observation a scientist is interested in. Consequently, in some
+MC runs, alternative methods were found to yield lower
+cumulative regrets 5. This type of bimodality in cumulative
+regrets can also be confirmed by observing the transitions of
+5In this simulation experiment, agents are stuck in local minima or
+continued exploring search sites throughout instances in approximately 35%
+of the MC runs (corresponding to the turquoise lines).
+0 50 100
+0.0
+2.5
+5.0
+7.5
+10.0
+0 50 100
+10
+0
+10
+20 -greedy
+0 50 100
+10
+0
+10
+20 Softmax
+0 50 100
+10
+0
+10
+20 UCB
+0 50 100
+10
+0
+10
+20 AIF
+0 50 100
+10
+0
+10
+20 TS
+Time steps
+Cumulative regrets 
+ (lower = better)
+Cumulative regret (K=10, C=8, F=14, MC=100)
+Fig. 9. Comparison of the cumulative regrets when the prior preference
+is stationary (top left) and the cumulative regrets for each option selection
+method (others). In the subplots other than the top-left one, there are turquoise
+and salmon-colored lines and shaded regions. These represent the means and
+1-σ bounds of the sets where the cumulative regret value at the final step is
+above and below the overall average, respectively.
+0 25 50 75 100
+0
+2
+4
+6
+8
+10
+Best
+AIF
+0 25 50 75 100
+0
+2
+4
+6
+8
+10
+Best
+Softmax
+0 25 50 75 100
+0
+2
+4
+6
+8
+10
+0 25 50 75 100
+0
+2
+4
+6
+8
+10
+Transitions of selected search sites
+Time steps
+Search sites (options)
+Fig. 10. Example transitions of selected search sites when the AIF (left
+column) and softmax (right column) methods are used. The transitions shown
+in the top row result in very small cumulative regrets, while those in the
+bottom row lead to very high cumulative regrets.
+search sites selected by each method. As shown in the top
+row of Fig. 10, in one MC run, it can be seen that the AIF
+and softmax methods select the best search site (in this case,
+k=8) more frequently than when using the best possible option
+selection strategy. On the other hand, when stuck in local
+minima or continuing to explore the best search site, as shown
+in the bottom row, the frequency with which these methods
+select the best search site significantly decreases, resulting in
+higher cumulative regrets.
+F . Results: Dynamic Prior Preference
+Fig. 11 (top left) illustrates the comparison of the cumu-
+lative regrets when the prior preference distribution changes
+dynamically as shown in Fig. 8. In this scenario, the proposed
+AIF method demonstrates superior performance compared to
+all conventional option selection methods such as softmax
+and Thompson sampling. This superiority is stemmed from
+IEEE TRANS. ROBOTICS, VOL. V , NO. N, NOVEMBER 2024 9
+0 50 100 150
+0
+10
+20
+30
+40
+50
+0 50 100 150
+0
+10
+20
+30
+40
+50 -greedy
+0 50 100 150
+0
+10
+20
+30
+40
+50 Softmax
+0 50 100 150
+0
+10
+20
+30
+40
+50 UCB
+0 50 100 150
+0
+10
+20
+30
+40
+50 AIF
+0 50 100 150
+0
+10
+20
+30
+40
+50 TS
+Time steps
+Cumulative regrets 
+ (lower = better)
+Cumulative regret (K=10, C=8, F=14, MC=100)
+Fig. 11. Comparison of the cumulative regrets when the prior preference is
+dynamically and periodically changed; the shaded regions represent the 1-σ
+bounds of cumulative regrets.
+0 20 40 60 80 100 120 140
+0
+2
+4
+6
+8
+10
+Best
+AIF
+0 20 40 60 80 100 120 140
+0
+2
+4
+6
+8
+10
+Best
+TS
+Transitions of selected search sites
+Time steps
+Search sites (options)
+Fig. 12. Example transitions of selected search sites when the AIF (top) and
+TS (bottom) are used. In this scenario, human prior preference changes every
+20 decision instances (green dotted lines).
+EFE’s epistemic term efficiently assessing the uncertainties of
+search sites, thereby identifying sites with a high likelihood
+of achieving desired outcomes at each time step, even as
+scientists’ desired observational outcomes change dynamically.
+For instance, as shown in Fig. 12, during the initial 20 in-
+stances, neither AIF nor TS agents identify the site to observe
+pyrophillite. However, by the time when pyropyhillite becomes
+again a desired outcome (i.e. from 80 to 100 instances), the
+AIF agents are able to exploit the best site where pyrophylitte
+is likely to be observed, influenced by the extrinsic term. In
+contrast, the TS agents still continue to explore sites other
+than the best site. Additionally, in this simulation experiment,
+unlike when the prior preference is stationary, the significant
+variability in cumulative regrets is not observed. This is
+because the desired outcomes change regularly, so even if the
+accuracy of the trained hidden softmax parameters utilized in
+the best option selection strategy is not very high, using this
+allows for observing more desired outcomes compared to other
+strategies.
+V. C ONCLUSIONS
+In this study, we applied active inference (AIF) as an option
+selection method for contextual multi-armed bandits (CMABs)
+with the objective of validating its efficacy using real scientific
+data. Previous studies primarily relied on synthetic data to
+simulate true hidden parameters and contexts. In contrast, we
+utilized actual hyperspectral data along with mineral labels
+for these values. Additionally, we detailed the preprocessing
+procedures and the methodology used to train the true hidden
+parameters of search sites. Our research comprised two sets
+of Monte Carlo simulation experiments. The first set primarily
+aimed to validate the effectiveness of the proposed AIF method
+under the assumption of stationary human prior preferences,
+consistent with prior studies. As a result, AIF agents demon-
+strated on par or superior performance compared to other
+existing option selection methods. In the second set of exper-
+iments, we introduced more realistic scenarios by assuming
+dynamic changes in human prior preferences. Interestingly,
+the proposed AIF method exhibited even greater performance
+improvements in these dynamic settings. This enhancement is
+attributed to the unique characteristics of expected free energy
+(EFE), which underpin AIF’s ability to adapt and optimize
+exploration-exploitation tradeoffs efficiently in response to
+changing preferences.
+ACKNOWLEDGMENTS
+Work supported by the NASA COLDTech Program, grant
+#80NSSC21K1031. S. Wakayama was also supported by the
+Masason Foundation. Part of this research was carried out at
+the Jet Propulsion Laboratory, California Institute of Technol-
+ogy, under a contract with the National Aeronautics and Space
+Administration (80NM0018D0004).
+REFERENCES
+[1] J. A. Grant, M. P. Golombek, S. A. Wilson, K. A. Farley, K. H. Williford,
+and A. Chen, “The science process for selecting the landing site for the
+2020 mars rover,” Planetary and Space Science, vol. 164, pp. 106–126,
+2018.
+[2] J. R. Johnson, “Practicing mars 2020 rover operations, on earth,” 2019,
+https://www.planetary.org/articles/practicing-mars-2020-ops.
+[3] J. Foust, “Europa clipper passes key review,” https://spacenews.com/
+europa-clipper-passes-key-review/.
+[4] NASA, “Nasa’s mars 2020 project,” PDF, 2017, https://oig.nasa.gov/
+wp-content/uploads/2024/02/IG-17-009.pdf.
+[5] B. K. Muirhead, A. Nicholas, and J. Umland, “Mars sample return
+mission concept status,” in 2020 IEEE Aerospace Conference. IEEE,
+2020, pp. 1–8.
+[6] L. P. Kaelbling, M. L. Littman, and A. R. Cassandra, “Planning and
+acting in partially observable stochastic domains,” Artif. Intell., vol. 101,
+no. 1–2, p. 99–134, may 1998.
+[7] H. Kurniawati, “Partially observable markov decision processes and
+robotics,” Annual Review of Control, Robotics, and Autonomous
+Systems, vol. 5, no. 1, pp. 253–277, 2022.
+[8] A. Krause, A. Singh, and C. Guestrin, “Near-optimal sensor placements
+in gaussian processes: Theory, efficient algorithms and empirical stud-
+ies.” Journal of Machine Learning Research, vol. 9, no. 2, 2008.
+[9] A. Candela, K. Edelson, M. M. Gierach, D. R. Thompson, G. Woodward,
+and D. Wettergreen, “Using remote sensing and in situ measurements
+for efficient mapping and optimal sampling of coral reefs,” Frontiers in
+Marine Science, vol. 8, p. 689489, 2021.
+[10] C. E. Denniston, G. Salhotra, A. Kangaslahti, D. A. Caron, and G. S.
+Sukhatme, “Learned parameter selection for robotic information gather-
+ing,” in 2023 IEEE/RSJ International Conference on Intelligent Robots
+and Systems (IROS), 2023, pp. 10 519–10 526.
+IEEE TRANS. ROBOTICS, VOL. V , NO. N, NOVEMBER 2024 10
+[11] C. E. Rasmussen, “Gaussian processes in machine learning,” in Summer
+school on machine learning. Springer, 2003, pp. 63–71.
+[12] A. West, I. Tsitsimpelis, M. Licata, A. Jazbec, L. Snoj, M. J. Joyce, and
+B. Lennox, “Use of gaussian process regression for radiation mapping
+of a nuclear reactor with a mobile robot,” Scientific reports, vol. 11,
+no. 1, p. 13975, 2021.
+[13] L. Li, W. Chu, J. Langford, and R. E. Schapire, “A contextual-bandit
+approach to personalized news article recommendation.” in WWW.
+ACM, 2010, pp. 661–670.
+[14] L. Zhou, “A survey on contextual multi-armed bandits,” arXiv preprint
+arXiv:1508.03326, 2015.
+[15] D. Bouneffouf, I. Rish, and C. Aggarwal, “Survey on applications
+of multi-armed and contextual bandits,” in 2020 IEEE Congress on
+Evolutionary Computation (CEC), 2020, pp. 1–8.
+[16] S. Rudra, S. Goel, A. Santara, C. Gentile, L. Perron, F. Xia, V . Sind-
+hwani, C. Parada, and G. Aggarwal, “A contextual bandit approach for
+learning to plan in environments with probabilistic goal configurations,”
+in 2023 IEEE International Conference on Robotics and Automation
+(ICRA). IEEE, 2023, pp. 5645–5652.
+[17] S. Wakayama and N. Ahmed, “Active inference for autonomous
+decision-making with contextual multi-armed bandits,” in 2023 IEEE
+International Conference on Robotics and Automation (ICRA), 2023,
+pp. 7916–7922.
+[18] ——, “Observation-augmented contextual multi-armed bandits for
+robotic search and exploration,” IEEE Robotics and Automation Letters,
+vol. 9, no. 10, pp. 8531–8538, 2024.
+[19] H. H. Schmitt, “Apollo 17 report on the valley of taurus-littrow: A
+geological investigation of the valley visited on the last apollo mission
+to the moon,” Science, vol. 182, 11 1973.
+[20] R. Smith, K. J. Friston, and C. J. Whyte, “A step-by-step tutorial
+on active inference and its application to empirical data,” Journal of
+mathematical psychology, vol. 107, p. 102632, 2022.
+[21] T. Parr, G. Pezzulo, and K. J. Friston,
+Active Inference: The Free Energy Principle in Mind, Brain, and Behavior.
+The MIT Press, 03 2022. [Online]. Available:
+https://doi.org/10.7551/mitpress/12441.001.0001
+[22] P. Lanillos, C. Meo, C. Pezzato, A. A. Meera, M. Baioumy, W. Ohata,
+A. Tschantz, B. Millidge, M. Wisse, C. L. Buckley et al., “Active
+inference in robotics and artificial agents: Survey and challenges,” arXiv
+preprint arXiv:2112.01871, 2021.
+[23] L. Hamlin, R. Green, P. Mouroulis, M. Eastwood, D. Wilson, M. Dudik,
+and C. Paine, “Imaging spectrometer science measurements for ter-
+restrial ecology: Aviris and new developments,” in 2011 Aerospace
+conference. IEEE, 2011, pp. 1–7.
+[24] G. A. Swayze, R. N. Clark, A. F. Goetz, K. E. Livo, G. N. Breit,
+F. A. Kruse, S. J. Sutley, L. W. Snee, H. A. Lowers, J. L. Post et al.,
+“Mapping advanced argillic alteration at cuprite, nevada, using imaging
+spectroscopy,”Economic Geology, vol. 109, no. 5, pp. 1179–1221, 2014.
+[25] A. Mahajan and D. Teneketzis, “Multi-armed bandit problems,” in
+Foundations and applications of sensor management. Springer, 2008,
+pp. 121–151.
+[26] V . Kuleshov and D. Precup, “Algorithms for multi-armed bandit prob-
+lems,” Journal of Machine Learning Research, vol. 1, 02 2014.
+[27] P. Auer, N. Cesa-Bianchi, and P. Fischer, “Finite-time analysis of
+the multiarmed bandit problem,” Mach. Learn., vol. 47, no. 2–3,
+p. 235–256, may 2002. [Online]. Available: https://doi.org/10.1023/A:
+1013689704352
+[28] E. Kaufmann, “On bayesian index policies for sequential resource
+allocation,” The Annals of Statistics, vol. 46, no. 2, pp. 842–865, 2018.
+[29] W. R. Thompson, “On the likelihood that one unknown probability
+exceeds another in view of the evidence of two samples,” Biometrika,
+vol. 25, pp. 285–294, 1933.
+[30] S. Agrawal and N. Goyal, “Thompson sampling for contextual bandits
+with linear payoffs,” in International conference on machine learning.
+PMLR, 2013, pp. 127–135.
+[31] K. Friston, J. Kilner, and L. Harrison, “A free energy principle for the
+brain,” Journal of physiology-Paris, vol. 100, no. 1-3, pp. 70–87, 2006.
+[32] K. Friston, “The free-energy principle: a unified brain theory?” Nature
+reviews neuroscience, vol. 11, no. 2, pp. 127–138, 2010.
+[33] K. Friston and S. Kiebel, “Predictive coding under the free-energy
+principle,” Philosophical transactions of the Royal Society B: Biological
+sciences, vol. 364, no. 1521, pp. 1211–1221, 2009.
+[34] Y . Huang and R. P. Rao, “Predictive coding,” Wiley Interdisciplinary
+Reviews: Cognitive Science, vol. 2, no. 5, pp. 580–593, 2011.
+[35] T. Arthur, D. Harris, G. Buckingham, M. Brosnan, M. Wilson,
+G. Williams, and S. Vine, “An examination of active inference in autistic
+adults using immersive virtual reality,” Scientific Reports, vol. 11, no. 1,
+p. 20377, 2021.
+[36] T. Arthur, S. Vine, G. Buckingham, M. Brosnan, M. Wilson, and D. Har-
+ris, “Testing predictive coding theories of autism spectrum disorder using
+models of active inference,” PLOS Computational Biology, vol. 19,
+no. 9, p. e1011473, 2023.
+[37] L. Pio-Lopez, A. Nizard, K. Friston, and G. Pezzulo, “Active inference
+and robot control: a case study,” Journal of The Royal Society Interface,
+vol. 13, no. 122, p. 20160616, 2016.
+[38] C. Pezzato, R. Ferrari, and C. H. Corbato, “A novel adaptive controller
+for robot manipulators based on active inference,” IEEE Robotics and
+Automation Letters, vol. 5, no. 2, pp. 2973–2980, 2020.
+[39] M. Baioumy, P. Duckworth, B. Lacerda, and N. Hawes, “Active inference
+for integrated state-estimation, control, and learning,” in 2021 IEEE
+International Conference on Robotics and Automation (ICRA), 2021,
+pp. 4665–4671.
+[40] B. J. Julian, S. Karaman, and D. Rus, “On mutual information-
+based control of range sensing robots for mapping applications,” The
+International Journal of Robotics Research, vol. 33, no. 10, pp. 1375–
+1392, 2014.
+[41] M. G. Jadidi, J. V . Miro, and G. Dissanayake, “Mutual information-
+based exploration on continuous occupancy maps,” in 2015 IEEE/RSJ
+International Conference on Intelligent Robots and Systems (IROS),
+2015, pp. 6086–6092.
+[42] K. Chaloner and I. Verdinelli, “Bayesian experimental design: A review,”
+Statistical science, pp. 273–304, 1995.
+[43] X. Huan and Y . M. Marzouk, “Simulation-based optimal bayesian
+experimental design for nonlinear systems,” Journal of Computational
+Physics, vol. 232, no. 1, pp. 288–317, 2013.
+[44] P. Amorese, S. Wakayama, N. Ahmed, and M. Lahijanian, “Online
+pareto-optimal decision-making for complex tasks using active infer-
+ence,” 2024.
+[45] C. M. Bishop, Pattern Recognition and Machine Learning (Information
+Science and Statistics). Berlin, Heidelberg: Springer-Verlag, 2006.
+[46] N. Ahmed, “Data-free/data-sparse softmax parameter estimation with
+structured class geometries,” IEEE Signal Processing Letters, vol. 25,
+pp. 1–1, 07 2018.
+[47] N. R. Ahmed, E. M. Sample, and M. Campbell, “Bayesian multicategor-
+ical soft data fusion for human–robot collaboration,” IEEE Transactions
+on Robotics, vol. 29, no. 1, pp. 189–206, 2013.
+[48] N. Sweet and N. Ahmed, “Structured synthesis and compression of se-
+mantic human sensor models for bayesian estimation,” in2016 American
+Control Conference (ACC), 2016, pp. 5479–5485.
+[49] R. Tse and M. Campbell, “Human–robot communications of proba-
+bilistic beliefs via a dirichlet process mixture of statements,” IEEE
+Transactions on Robotics, vol. 34, no. 5, pp. 1280–1298, 2018.
+[50] L. Burks, I. Loefgren, and N. R. Ahmed, “Optimal continuous state
+pomdp planning with semantic observations: A variational approach,”
+IEEE Transactions on Robotics, vol. 35, no. 6, pp. 1488–1507, 2019.
+[51] D. Markovic, H. Stojic, S. Schwobel, and S. Kiebel, J., “An empirical
+evaluation of active inference in multi-armed bandits,” Neural Networks;
+2021 Special Issue on AI and Brain Science: AI-powered Brain Science,
+vol. 144, p. 229–246, may 2021.
+[52] K. Friston, F. Rigoli, D. Ognibene, C. Mathys, T. Fitzgerald, and G. Pez-
+zulo, “Active inference and epistemic value,” Cognitive neuroscience,
+vol. 6, no. 4, pp. 187–214, 2015.
+[53] S. Wakayama and N. Ahmed, “Probabilistic semantic data association
+for collaborative human-robot sensing,” IEEE Transactions on Robotics,
+vol. 39, no. 4, pp. 3008–3023, 2023.
+[54] A. Galantai, “The theory of newton’s method,” Journal of Computational
+and Applied Mathemathics, vol. 124, pp. 25–44, 2000.
+[55] F. F. Sabins, “Remote sensing for mineral exploration,” Ore geology
+reviews, vol. 14, no. 3-4, pp. 157–183, 1999.
+[56] A. Candela, D. Thompson, E. N. Dobrea, and D. Wettergreen, “Planetary
+robotic exploration driven by science hypotheses for geologic mapping,”
+in 2017 IEEE/RSJ International Conference on Intelligent Robots and
+Systems (IROS), 2017, pp. 3811–3818.
+[57] A. Arora, P. M. Furlong, R. C. Fitch, S. Sukkarieh, and T. Fong, “Multi-
+modal active perception for information gathering in science missions,”
+Autonomous Robots, pp. 1–27, 2019.
+[58] R. W. Zurek and S. E. Smrekar, “An overview of the mars reconnais-
+sance orbiter (mro) science mission,” Journal of Geophysical Research:
+Planets, vol. 112, no. E5, 2007.
+[59] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,”
+arXiv preprint arXiv:1412.6980, 2014.
+IEEE TRANS. ROBOTICS, VOL. V , NO. N, NOVEMBER 2024 11
+[60] A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury, G. Chanan,
+T. Killeen, Z. Lin, N. Gimelshein, L. Antiga et al., “Pytorch: An
+imperative style, high-performance deep learning library,” Advances in
+neural information processing systems, vol. 32, 2019.
+Shohei Wakayamareceived the B.Eng. in Mechan-
+ical Engineering from Kyushu University in 2018,
+and the Ph.D. in Aerospace Engineering with the
+Ann and H.J. Smead Aerospace Engineering Sci-
+ences Department, University of Colorado Boulder
+in 2024. His research interests lie in Bayesian state
+estimation and sequential decision making under
+uncertainty, and human-robot interaction for robotic
+exploration of unknown remote environments.
+Alberto Candelais a Data Scientist in the Artificial
+Intelligence Group at the Jet Propulsion Laboratory,
+California Institute of Technology. He received his
+B.S. in Mechatronics Engineering from Instituto
+Tecnol´ogico Aut ´onomo de M ´exico, and his M.S.
+and Ph.D. in Robotics from Carnegie Mellon Univer-
+sity. His research interests include autonomous sci-
+ence, information-theoretic planning, machine and
+deep learning, probabilistic and statistical methods,
+robotics, and remote sensing.
+Paul Hayneis an Associate Professor in the Depart-
+ment of Astrophysical and Planetary Sciences, and
+the Laboratory for Atmospheric and Space Physics
+(LASP) at the University of Colorado Boulder. He
+earned his B.S. and M.S. in Geophysics from Stan-
+ford University, and his Ph.D. in Geophysics and
+Space Physics from UCLA. At LASP, he directs the
+Exploration of Planetary Ices and Climates (EPIC)
+group, which researches interactions between the
+surfaces and atmospheres of icy planets and moons
+throughout the solar system using data from deep
+space missions.
+Nisar Ahmed is an Associate Professor and H.J.
+Smead Faculty Fellow in the Smead Aerospace
+Engineering Sciences Department at the University
+of Colorado Boulder. He earned his B.S. in En-
+gineering from Cooper Union in New York City
+in 2006, and his Ph.D. in Mechanical Engineering
+from Cornell University in Ithaca, NY in 2012. He
+directs the Cooperative Human-Robot Intelligence
+(COHRINT) Lab, which researches probabilistic
+modeling, estimation and control of autonomous
+systems, human-robot/machine interaction, sensor
+fusion, and decision-making under uncertainty.

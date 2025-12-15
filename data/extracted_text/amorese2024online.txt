@@ -1,0 +1,1958 @@
+Preprint submitted to the IEEE Transactions on Robotics journal.
+1
+Online Pareto-Optimal Decision-Making for
+Complex Tasks using Active Inference
+Peter Amorese†, Shohei Wakayama†, Nisar Ahmed, and Morteza Lahijanian
+Abstract—When a robot autonomously performs a complex
+task, it frequently must balance competing objectives while
+maintaining safety. This becomes more difficult in uncertain
+environments with stochastic outcomes. Enhancing transparency
+in the robot’s behavior and aligning with user preferences are
+also crucial. This paper introduces a novel framework for multi-
+objective reinforcement learning that ensures safe task execution,
+optimizes trade-offs between objectives, and adheres to user
+preferences. The framework has two main layers: a multi-
+objective task planner and a high-level selector. The planning
+layer generates a set of optimal trade-off plans that guarantee
+satisfaction of a temporal logic task. The selector uses active
+inference to decide which generated plan best complies with
+user preferences and aids learning. Operating iteratively, the
+framework updates a parameterized learning model based on col-
+lected data. Case studies and benchmarks on both manipulation
+and mobile robots show that our framework outperforms other
+methods and (i) learns multiple optimal trade-offs, (ii) adheres to
+a user preference, and (iii) allows the user to adjust the balance
+between (i) and (ii).
+Index Terms—Multi-Objective Decision Making, Active Infer-
+ence, Formal Synthesis
+I. I NTRODUCTION
+T
+HE demand for robots to autonomously perform haz-
+ardous and repetitive tasks is steadily increasing [1, 2].
+Such tasks often involve multiple, possibly competing, quanti-
+tative objectives, e.g., time and energy, requiring optimization
+for trade-offs between the objectives, known asPareto optimal.
+In unknown environments, like the Martian surface or civilian
+households, however, such quantities are often stochastic and
+unknown a priori . Fortunately, they are measurable and can
+be learned online. Then, the robot should make decisions to
+learn all optimal trade-offs, or focus on learning a single user-
+preferred trade-off. Although highly desirable, accomplishing
+both simultaneously is challenging since the trade-off selection
+must balance exploring unknown trade-offs with exploiting
+preferred trade-offs. This paper focuses on this challenge
+and aims to develop a framework that simultaneously (i)
+learns multiple optimal trade-offs, (ii) embeds an intuitive user
+preference over a desired trade-off, and (iii) allows the user to
+adjust the balance between (i) and (ii).
+Example 1. Consider the robotic dishwashing scenario
+in Figure 1. The robotic manipulator is equipped with a
+sampling-based motion planner (e.g., RRT and PRM [3, 4])
+that solves A-to-B planning queries. The robot must repeti-
+tively complete a complex task of inserting the dishes into
+†Authors contributed equally to this work
+Authors are with the University of Colorado Boulder.
+Risk
+Time
+: Pareto points
+: User preference
+Put jar on the floor 
+and pitcher on the rack
+Dishwasher Towel
+Drying rack
+Floor
+Fig. 1: Motivating robotic dishwashing scenario: a robotic
+manipulator needs to compare execution time of a task and
+inherent risks of dropping fragile dishes (the jar is more fragile
+than the blue pitcher). The user’s preferred trade-off between
+time and risk is incorporated for transparent behaviors.
+the dishwasher, then properly drying them by either placing
+directly up on the rack, or placing on the towel and moving
+them to the floor. In such a scenario, the robot should be both
+efficient (minimize the time of execution) and risk-aware when
+carrying fragile dishes high above the ground. However, due
+to the nature of sampling-based methods, the characteristics of
+actions (time and path-height) are unknown a priori, and hence
+the robot needs to construct accurate models of these quantities
+during deployment. The robot can either quickly place dishes
+up on a drying rack (low-time, high-risk for fragile objects),
+or manually dry dishes on the ground (high-time, low-risk).
+Considering a human user may prefer one trade-off over the
+other, the robot must both learn the quantitative models, and
+decide amongst optimal trade-off actions while adhering to the
+user’s preference. Such decision making problems involving
+competing objectives can be formulated as multi-objective
+reinforcement learning (MORL) [5, 6, 7, 8].
+Embedding the satisfaction of a task into the multi-objective
+reward function often aims to capture both qualitative prop-
+erties of the task (i.e. whether or not the robot completed
+the task), as well as quantitative properties (i.e. how well the
+robot completed the task) [9]. However, properly representing
+qualitative task completion through a reward function is a
+challenging problem, often requiring the use of methods such
+as inverse reinforcement learning (IRL) [10]. In uncertain
+environments, it is not always possible to obtain large amounts
+of human teaching data. Furthermore, these learning-based
+methods often fail to provide safety guarantees on the quali-
+tative behavior of the robot. Nevertheless, in scenarios where
+arXiv:2406.11984v1  [cs.RO]  17 Jun 2024
+2
+qualitative aspects of the robotic model and task are known
+beforehand, e.g., manipulation problems, formal methods [11]
+provide alternative approaches to both task representation and
+plan synthesis using temporal logic specifications, such as
+Linear Temporal Logic (LTL) [12] and LTL over finite traces
+(LTLf) [13]. These planning methods can solve the qualitative
+portion of the learning problem and provide guarantees on the
+completion of tasks and safety while avoiding the need for
+IRL. Formal synthesis approaches have also been used to solve
+multi-objective quantitative planning problems [14]; however,
+those approaches assume a perfectly accurate quantitative
+model, which are often unavailable.
+Unlike single-objective RL, MORL agents must select
+among potentially many optimal trade-offs. The numerical val-
+uations of these optimal trade-offs are referred to as the Pareto
+front. The Multi-Objective Multi-Armed Bandit (MOMAB)
+community emphasizes learning all optimal trade-off actions,
+yielding valuable insight into the trade-off analysis of the
+learned results [15, 16, 17, 18]. Alternatively, one can use
+scalarization to convert the multi-objective problem into a
+single objective problem based on a preference trade-offs
+[5, 6, 7, 8]. Further description of these methods can be found
+in Sec. V. To the best of our knowledge, no MORL selec-
+tion methods simultaneously propose mathematically sound
+adherence to a preferred trade-off while learning and exploring
+portions of the true Pareto front.
+In light of these gaps, this study proposes a novel MORL
+framework centered around viewing optimal trade-off selec-
+tion as its own high-level decision making under uncertainty
+problem. Specifically, we employ active inference (AIF), re-
+cently explored as a sound approach for sequential decision-
+making under uncertainty [19, 20, 21, 22] that minimizes an
+information-theoretic quantity known as surprise. We exploit
+the decision making power of AIF to adhere to a user’s ideal
+trade-off while exploring and learning localized portions of
+the whole Pareto front. This, however, introduces intractable
+computational complexity in optimizing for surprise for finite-
+horizon tasks. Our framework integrates multi-objective plan-
+ning for a complex LTLf specification with high-levelselection
+of an optimal trade-off by using a Bayesian approach to
+learning the quantitative model. We extend AIF to reasoning
+over finite horizon planning via upper-bounding the surprise
+with expected free energy (EFE). We derive computationally
+tractable techniques for optimizing EFE for LTLf tasks. Using
+our framework, we illustrate the performance trade-offs be-
+tween biasing towards a user’s preferred Pareto point versus
+learning the entire Pareto front. Additionally, we showcase the
+utility of our approach using robotic case studies, including a
+hardware demonstration of the scenario in Example 1.
+The major contributions of this work are three-fold:
+• A novel MORL framework that combines formally guar-
+anteed task plan synthesis with efficient learning of
+Pareto-optimal behavior,
+• Derivation of a tractable approximation of a free energy
+formulation for finite horizon planning over an uncertain
+quantitative model,
+• Benchmarking the efficacy of the proposed AIF-based
+selection strategy against the state-of-the-art methods
+[6, 8, 18], along with Mars surface exploration simulation
+and a robotic hardware diswashing experiment.
+A detailed discussion on related work along with an
+overview of AIF are provided in Sec. V.
+II. P RELIMINARIES AND PROBLEM FORMULATION
+This paper studies a framework that enables a robot to (i)
+repetitively complete a given high-level complex task, and (ii)
+learn the most efficient and user-aligned means of completing
+the task. These two goals separate nicely into qualitative
+behavior, i.e., whether or not the robot completes the task, and
+quantitative behavior, i.e., how well the robot completes the
+task. We restrict our attention to problems where qualitative
+aspects of the model (i.e. robotic states, state transitions, task
+related observations, etc.) are known, but quantitative aspects
+(i.e. costs of executing robotic actions) are unknown and must
+be learned. Below, we first formally define a robot model and
+LTLf task specifications. We then connect these definitions
+with cost uncertainty and user preferences to be able to fully
+formulate the problem.
+A. Robot Model
+We consider a robotic system modeled as a deterministic
+transition system (DTS), an abstraction used in many formal
+approaches to robotic systems, including both mobile robots
+and robotic manipulators [11, 23, 24, 25, 26, 27, 28]. To cap-
+ture uncertainty in quantitative values, we augment classical
+DTS with a stochastic cost function as defined below.
+Definition 1 (DTS-sc). A labeled Deterministic Transition
+System with a stochastic cost function (DTS-sc) is a tuple
+T = (S, A, δT , C, AP, L), where
+• S is a finite set of states,
+• A is a finite set of actions,
+• δT : S × A 7→ S is a deterministic transition function,
+• C : S × A 7→ D(RN ) is a stochastic cost function
+that maps each state-action pair to an N-dimensional
+probability distribution, where N ∈ N and D(RN ) is the
+set of all probability distributions over RN ,
+• AP is a set of atomic propositions related to the robot
+tasks, and
+• L : S 7→ 2AP is a labeling function that assigns to each
+state s ∈ S the subset of propositions in AP that are
+true in s.
+A robot plan π ∈ A∗ is a finite sequence of ac-
+tions π = a0a1 . . . am that induces a trajectory τ(s0, π) =
+s0s1 . . . smsm+1 from a current state s0 ∈ S, where sk ∈
+S and, for all 0 ≤ k ≤ m + 1, sk+1 = δT (sk, ak).
+The observation of τ(s0, π), denoted L(s0, π), is a trace
+L(s0, π) = o0o1 . . . om+1 where ok = L(sk).
+Example 2. Consider a simplified DTS-sc model in Fig. 2 of
+the dishwashing scenario described in Fig. 1 with five states
+capturing the locations of each dish ( Jf : jar on floor, Pr:
+pitcher on rack, etc.), and two actions load and unload.
+Each state observes either {dry} or {wash}. Each action from
+a state takes time and incurs some risk when transporting the
+3
+Jd, Pd
+{wash}
+Jf, Pf
+{dry}
+Jr, Pf
+{dry}
+Jr, Pr
+{dry}
+Jf, Pr
+{dry}
+load
+unload_1
+load
+unload_2
+load
+unload_3
+load
+unload_4
+p(c|s, a;θs,a)
+Fig. 2: The DTS-sc T described in Example 2 is shown, with
+a plan (red) that satisfies the task described in Example 3.
+jar, modeled with a unique multivariate cost distribution for
+each state-action pair.
+When robot takes action a ∈ A at state s ∈ S, it endures
+N distinct types of costs cs,a = (c1, . . . , cN ) ∈ RN , e.g.,
+energy expenditure and time of execution. This cost vector
+can generally be stochastic, i.e., the cost value of executing a
+at s can differ at different instances due to, e.g., changes in the
+environment or use of randomized algorithms (sampling-based
+planners). Hence, cs,a is a random variable whose distribution
+is given by C(s, a), i.e., cs,a ∼ C(s, a). With an abuse of
+notation, we use c as the cost random variable for all state-
+action pairs, and hence (c | s, a) = cs,a.
+We treat C(s, a) as a conditional distribution of a proba-
+bilistic transition-cost generative model, parameterized by the
+set of parameters Θ, i.e.,
+C(s, a) = p(c | s, a; Θ).
+For ease of presentation, we denote (s, a) specific parameters
+by θs,a ⊆ Θ such that Θ = ∪s∈S,a∈Aθs,a.
+We assume robot model T is a Markov process. That is, c
+for each state-action pair is independent, i.e., p(c|s, a; θs,a) is
+independent from p(c|s′, a′; θs′,a′ ) for all (s, a) ̸= (s′, a′) ∈
+S×A. Further, we assume each p(c|s, a; θs,a) is a multivariate
+normal (MVN) distribution N(µs,a, Σs,a) paramerized by a
+non-negative mean µs,a ∈ RN
+≥0 and covariance Σs,a ∈ RN×N ,
+i.e., θs,a = {µs,a, Σs,a}. Note that this assumption allows
+for correlation between types of costs. For instance, if the
+execution of a robotic action takes a long time, it is likely that
+it also uses more energy.
+In this work, we consider the realistic case where Θ are un-
+known, i.e., both µs,a and Σs,a are unknown for every (s, a).
+One of the goals of this work is to learn these parameters from
+data collected on cs,a during execution.
+Given a plan π and its induced trajectory τ , the cumulative
+cost of executing π from state s0, denoted Cs0,π, is the sum
+of the state-action costs along τ, i.e., Cs0,π = Pm
+k=0 csk,ak .
+Since each csk,ak is a random variable, Cs0,π is also a random
+variable, and its distribution is given by the convolution of the
+csk,ak distributions, i.e.,
+p(C|s0,π; θs0,π)= p(c|s0, a0; Θ)∗. . .∗p(c|sm, am; Θ), (1)
+where θs0,π is constructed by Θ. Recall that p(c|sk, ak; Θ)
+is assumed to be a MVN; p(C | s0, π; θs0,π) is also a MVN.
+Since true Θ are unknown beforehand, we learn the parameters
+from experience. We denote the learned parameters by ˜Θ.
+B. Robotic Task
+The robot is given a complex task that can be completed in
+finite time. To specify such tasks in a formal manner, we use
+Linear Temporal Logic over Finite Traces (LTLf) [13], which
+combine propositional logic with temporal operators.
+Definition 2 (LTLf Syntax). A Linear Temporal Logic over
+Finite Traces (LTLf) formula over AP is recursively defined
+as
+ϕ := true | o | ¬ϕ | ϕ ∧ ϕ | Xϕ | ϕ Uϕ,
+where o ∈ AP, ¬ (negation) and ∧ (conjunction) are Boolean
+operators, and X (next) and U (until) are temporal operators.
+The commonly-used temporal operators “eventually” ( F) and
+“globally” ( G) can be defined as F ϕ≡ true Uϕand Gϕ ≡
+¬F¬ϕ, respectively.
+The semantics of LTLf are defined over finite traces [13].
+That is, an LTLf formula ϕ can be satisfied with a finite trace
+w ∈ (2AP )∗ [13], denoted w |= ϕ. We define the language of
+ϕ to be the set of finite traces that satisfy ϕ for the first time,
+i.e., let |w| be the length of w and w[k] for 1 ≤ k ≤ |w| be
+the prefix of w with length k; the language of ϕ is defined as
+Lϕ = {w ∈ (2AP )∗ | w |= ϕ ∧ w[k] ̸|= ϕ ∀k <|w|}.
+We say plan π ∈ A∗ executed from s satisfies ϕ if the resulting
+trace L(π, s) ∈ Lϕ.
+Example 3. Following Example 2, we specify the task ϕ =
+F(wash ∧ F(dry)) stating “the robot should first wash the
+dishes, and then dry the dishes. ”
+We want the robot to execute task ϕ repeatedly. Specifically,
+we are interested in synthesizing plans that episodically repeat
+ϕ. That is, once a plan is complete ( ϕ is satisfied), a new plan
+has to be synthesized from the current state to satisfy ϕ again.
+We assume that such a repetition is always physically possible
+for the robot, i.e., the robot always ends in a state from which
+there exists a plan that satisfies ϕ. For instance, in the above
+example, after drying dishes, the robot always ends in a state
+from which it can start washing a new pile of dirty dishes.
+Thus, we focus on the set of satisfying plans from every state,
+and refer to it as the ϕ-satisfying plan set.
+Definition 3 (ϕ-Satisfying Plan Set) . Given DTS-sc robot
+model T, state s ∈ S, and LTLf task formula ϕ, ϕ-Satisfying
+Plan Set Π(s, ϕ) is defined as
+Π(s, ϕ) = {π ∈ A∗ | L(π, s) ∈ Lϕ}.
+C. Optimization Objectives
+At each planning (decision) instance from state s, we aim to
+select a plan π⋆ ∈ Π(s, ϕ) that, in addition to completing task
+ϕ, optimizes for the expected cumulative cost E[C | s, π; Θ] .
+4
+Since Cs,π is N-dimensional, it is in fact an N-objective
+optimization problem. Moreover, the cost objectives may be
+competing, i.e., by optimizing one objective, another becomes
+sub-optimal. Hence, we want to optimize for the trade-offs
+between the objectives, which is known as Pareto optimal and
+best defined by the notion of vector dominance.
+Definition 4 (Vector Dominance). Let C, C′ ∈ RN be two
+vectors and C(i) be the i-th element of C. Vector C dominates
+C′, denoted by C ≺ C′, iff C(i) ≤ C′(i) for every 1 ≤ i ≤ N
+and there exists an i such that C(i) < C′(i).
+Definition 5 (Pareto Optimal) . For state s ∈ S and LTLf
+formula ϕ, plan π ∈ Π(s, ϕ) is called Pareto optimal if
+∄π′ ∈ Π(s, ϕ) s.t. E[C | s, π′; Θ] ≺ E[C | s, π; Θ] .
+The set of all Pareto optimal plans from s is denoted by
+Π⋆(s, ϕ) ⊆ Π(s, ϕ). Then, for each π⋆ ∈ Π⋆(s, ϕ), E[C |
+s, π⋆; Θ] is called a Pareto point , and the set of all Pareto
+points is called the Pareto front, denoted Ω(s, ϕ).
+At every planning instance (episode), we desire to select a
+Pareto optimal plan π⋆ ∈ Π∗(s, ϕ) which ensures that the
+expected cost is not dominated by another plan. However,
+since Θ are not available, it is impossible to compute for π⋆.
+Instead, we can use ˜Θ to compute a learned set of ϕ-satisfying
+Pareto optimal plans denoted ˜Π⋆(s, ϕ) ⊆ Π(s, ϕ). Similarly,
+let ˜Ω(s, ϕ) denote the set of expected cost vectors of each
+π ∈ ˜Π⋆(s, ϕ).
+D. User Preference
+There are possibly many Pareto optimal plans that perform
+ϕ. We are interested in picking a plan π⋆
+pr that achieves the
+user’s most-preferred Pareto point in every instance. Given that
+our goal is autonomous operation, we require this preference
+to be provided as an input before deployment. This poses
+a challenge because the Pareto front is unknown a priori ,
+and the user cannot know the exact Pareto point they prefer.
+Instead, as suggested in recent literature [22, 29], the user can
+provide a probability density function (pdf) that serves as an
+expressive way of capturing preferred observed outcomes. We
+extend this notion to the multi-objective domain, and leverage
+the expressive pdf preference as a tie-breaker between optimal
+trade-off candidates.
+We specifically focus on user preference as a normal dis-
+tribution ppr(C) = N(µpr, Σpr) over the objectives since it
+can be fully defined by only specifying a mean µpr ∈ RN and
+covariance Σpr ∈ RN×N , respectively. Thus, by providing
+µpr and Σpr, the user can not only express a desired trade-off
+region in the objective space, but also specify the willingness
+to explore alternative trade-offs (Pareto points) that allow the
+robot to learn more quickly, offering means to address the
+exploration-exploitation trade-off problem.
+Example 4. Suppose the dishwashing robot described in Fig. 1
+is being deployed in a restaurant. If the restaurant is going to
+be busy, the user may define a preference distribution with
+mean in a low-time high-risk part of the objective space,
+whereas if the restaurant will be slow, the user may opt for a
+high-time, low-risk alternative, both of which can be informed
+by past observations of how humans wash the dishes. If the
+user is interested in learning other optimal trade-offs, or is
+uncertain how accurately they have estimated the mean, they
+can expand and orient the covariance around regions they
+would like the robot to explore information rich opportunities.
+To meet user’s preference, we seek a Pareto point that is not
+“suprising.” The information theoretic definition of surprise is
+the negative log of model evidence [30]. Similarly, we define
+the surprise of an observation obtained by following a plan π
+as:
+Surprise(π)= −log p(C | π). (2)
+This quantity can be derived by marginalizing the following
+generative model:
+(2) = −log
+Z
+s
+Z
+˜θs,π
+p(s, ˜θs,π, C | π)d˜θs,πds,
+= −log
+Z
+s
+Z
+˜θs,π
+p(s, ˜θs,π | C, π)p(C | π)d˜θs,πds. (3)
+In active inference (AIF), one can inject a bias towards
+seeing certain outcomes by substituting the predictive outcome
+distribution p(C | π) with the prior preference ppr(C) (a.k.a.
+“evolutionary prior”) that is independent of any plan [21, 31].
+We refer to the biased surprise as surprise w.r.t. ppr:
+Surprise(π, ppr)= −log
+Z
+s
+Z
+˜θs,π
+p(s,˜θs,π|C,π)ppr(C)d˜θs,πds.
+(4)
+In essence, under AIF, an agent acts to see desired observa-
+tions. An overview of AIF is provided in Sec. V-B.
+E. Problem Statement
+The problem we consider is as follows.
+Problem 1. Consider a DTS-sc robot model T with unknown
+cost distributions, an LTLf task specification ϕ that the robot
+is to repeatedly complete, and a user preference distribution
+ppr(C) over N cost objectives. Let K ∈ N denote the number
+of times (instances) the robot achieves task ϕ, and sK ∈ S be
+the start state of the robot in the K-th episode. Then, for each
+K, synthesize a ϕ-satisfying plan πK ∈ Π(sK, ϕ) such that
+(i) πK minimizes Surprise(π, ppr) in (4),
+(ii) as K → ∞, πK becomes Pareto optimal, i.e., πK ∈
+Π⋆(sK, ϕ), and
+(iii) as K → ∞, the resulting Pareto front ˜Ω(sK, ϕ) con-
+verges to the true Pareto front Ω(sK, ϕ).
+Note that, in Problem 1, satisfaction of ϕ (qualitative objec-
+tive) at each instance is a hard constraint, and the optimization
+(quantitative) objectives in (i)-(iii) are soft constraints. Hence,
+by incorporating safety requirements in ϕ, safety satisfaction
+is guaranteed throughout the process. Furthermore, from the
+perspective of multi-objective decision making, Problem 1 is
+particularly challenging since adhering to a user’s preference
+and learning the Pareto front are arguably perpendicular ef-
+forts. In our approach, we address this challenge by using
+5
+Planning Selection Execution Update
+Risk
+Time
+: Pareto points
+: User preference
+Put jar on the floor and 
+pitcher on the rack
+s0, a0
+s32, a32
+s0, a0
+s32, a32
+p(θ|c) ∝ p(c|θ)・p(θ)
+: Trajectory
+φ = F(load ∧ F(dry_rack ∨ dry_floor))
+Fig. 3: Proposed multi-objective safe reinforcement learning architecture: As the four phases involving 1) Planning, 2) Selection,
+3) Execution, and 4) Update are repeatedly executed, the robot gradually learns the state-action cost parameters and selects
+the user preferred optimal task plan.
+free energy minimization to naturally balance exploitation and
+exploration over the Pareto front.
+III. A PPROACH
+Our approach to Problem 1 is an iterative MORL framework
+with four phases: 1) planning Pareto optimal plans, 2) selection
+of the preferred Pareto optimal plan, 3) execution of the
+selected plan, and 4) update to the executed state-action cost
+parameters, as illustrated in Fig. 3. Planning, selection, and
+update all are dependent on the learning status of the robot.
+Hence, we start by formalizing our approach to modeling ˜Θ.
+A. Learning the Transition Cost Model
+Recall that the cost cs,a of each (s, a) is distributed as
+p(c | s, a; θs,a) = N(µs,a, Σs,a). However, θs,a are unknown
+and must be learned using experience. We take a Bayesian
+approach to learning θs,a by modeling with random variable
+˜θs,a. Specifically, we assume that the robot collects a realized
+sample ˆc drawn from p(c|s, a; θs,a) each time a is executed
+from s. Let Ds,a = {ˆc1, . . .ˆcl} be the set of l realizations of
+cs,a. We maintain a belief over ˜θs,a using the Normal Inverse-
+Wishart (NIW) distribution, i.e.,
+p(˜θs,a)= NIW s,a(λ0, κ0, Λ0, ν0).
+NIW is chosen because of the property of conjugacy for esti-
+mating unknown mean and covariance of a MVN distribution,
+i.e., the posterior is also represented analytically as a NIW
+[32]
+p(˜θs,a |Ds,a)= NIW s,a(λ, κ,Λ, ν).
+Note that some works assume the covariance is known a
+priori [33], limiting the fidelity of the model. NIW strikes a
+balance between an over simplified parametric model (known
+covariance) and a sample inefficient non-parametric model
+[34]. We detail the the update procedure in Sec. III-D. If the
+user has an informed guess about the mean and covariance
+of a certain state-action distribution, they can set λ0 and Λ0
+respectively, reducing the number of decision making instances
+required to learn ˜Θ.
+B. Planning
+At the start of each planning (decision-making) instance,
+we employ a multi-objective task planner to compute the set
+of approximate Pareto-optimal plans ˜Π⋆(sK, ϕ) described in
+Def. 5. To this end, we formulate a correct-by-construction
+multi-objective shortest-path graph search problem, similar to
+[14], which can be solved with the following procedure.
+1) Product Graph Construction: An LTLf formula can be
+translated into a deterministic finite automaton (DFA) [13], a
+finite state-machine that precisely captures the language of ϕ.
+Definition 6 (Deterministic Finite Automaton) . A DFA
+constructed from LTLf formula ϕ is a tuple Qϕ =
+(Γ, γ0, W, δQϕ, F) where Γ is a set of states, γ0 ∈ Γ is the
+initial state, W = 2AP is the alphabet, δQϕ : Γ×W 7→ Γ is a
+deterministic transition function, and F is a set of accepting
+states.
+A trace w = w0 . . . wm−1 ∈ (2AP )∗ induces a finite run
+τQϕ = γ0γ1 . . . γm on Qϕ, where γk+1 = δQϕ(γk, wk). Run
+τQϕ is called accepting if γm ∈ F. If τQϕ is accepting, then
+trace w is accepted by Qϕ and satisfies ϕ, i.e., w |= ϕ.
+Using T to capture the physical capability of the robotic
+system, along with Qϕ to capture the temporal attributes of
+ϕ, we can construct a product automaton that intersects the
+restrictions of both T and Qϕ.
+Definition 7 (Product Automaton). Given a DTS-sc T, current
+state sK ∈ S, and DFA Qϕ, a Product Automaton is a tuple
+P = (P, ρK, A, δP , v, FP ), where
+• P = S × Γ is a set of states,
+• ρK = ( sK, γ′
+0), where γ′
+0 = δQϕ(γ0, L(sK)), is the
+starting state in the current instance,
+• A is the same action set in T,
+• δP : P × A 7→ P is a transition function, where for
+states ρ = ( s, γ) and ρ′ = ( s′, γ′) and action a ∈ A,
+transition ρ′ = δP (ρ, a) exists if s′ = δT (s, a) and γ′ =
+δQϕ(γ, L(s′)),
+• v : P × A 7→ RN
+≥0, is a transition cost-vector function,
+and
+6
+• FP = S × Fis a set of accepting states.
+Note that unlike stochastic cost function C in T, cost-vector
+function v(ρ, a) ∈ RN
+≥0 is not a distribution. We elaborate on
+v further below.
+Similar to T, a plan π induces a run τP = ρ0 . . . ρm+1 on
+P where ρk+1 = δP (ρk, ak). Run τP is accepting iff ρm+1 ∈
+FP . Therefore, by construction, the set of ϕ-satisfying plans
+Π(sK, ϕ) is equal to the set of all plans that induce paths on
+P from ρK to a ρ ∈ FP .
+2) Transition Cost-Vector Function: We aim to define cost-
+vector function v and accordingly formulate a multi-objective
+graph search problem on P that enables the computation of the
+set of Pareto optimal ϕ-satisfying plans Π∗(sK, ϕ). Consider
+current state ρK = (sK, γ0), plan π ∈ Π(sK, ϕ), and induced
+path τ(ρK, π) = ρK,0 . . . ρK,m+1. Ideally, for every ρ =
+(s, γ) ∈ P and a ∈ A, we want v((s, γ), a) = E[c|s, a; Θ]
+because the total cost of induced path τP (ρK, π) becomes
+m+1X
+i=0
+v(ρK,i, πi) =
+m+1X
+i=0
+E[c|sK,i, πi; Θ] = E[C|sK, π; θsK,π].
+Therefore, by assigning v(ρ, a) = E[c|s, a; Θ], the multi-
+objective Pareto front of the graph search problem on P
+is exactly equal to Ω(sK, ϕ) (see Def. 5). Then, existing
+algorithms such as a multi-objective variant of Dijkstra’s
+algorithm or A∗ [35] can be employed to compute Ω. Note that
+these multi-objective graph search algorithms are exponential
+in the worst case, however the average branching factor for
+a N-dimensional vector belonging to a set of size G, i.e.
+the set of all unique cost vector edge weights, is reduced to
+O((log |G|)N−1), with certain conditions on the ordering [35].
+However, Θ is unknown. A naive approach simply uses
+learned estimates E[˜Θ] for v instead, but that suffers from
+biasing the solution towards taking transitions that have low
+estimate cost, regardless of how accurate ˜Θ is. To address this,
+we interweave exploration into the graph search problem, as
+detailed below.
+3) Pareto-Regret: The efficacy of learning can be analyzed
+with the notion of cumulative “Pareto-regret”, quantifying how
+sub-optimal each plan is with respect to the true Pareto front
+Ω(sK, ϕ). Formally, given π with true mean cumulative cost
+µsK,π = E[C|sK, π; Θ], the Pareto regret for a given instance
+is defined as
+r(sK, π) =
+min
+ϵ
+{µsK,π −ϵ1 | µ⋆ ̸≺ µsK,π −ϵ1 ∀µ⋆ ∈ Ω(sK, ϕ)}, (5)
+where 1 is a vector of ones with appropriate dimension. Note
+that if π ∈ Π⋆(sK, ϕ), then r(sK, π) = 0 . The cumulative
+regret up to instance K is simply the summed regret for every
+instance, i.e. R = PK
+i=0 r(si, πi). To minimize cumulative re-
+gret, we augment the transition cost-vector with an exploration
+strategy.
+4) Pareto Cost-LCB: We adapt the well established Pareto-
+UCB1 [15, 36] strategy for computing an estimate Pareto
+front that balances the current best estimate cost model (ex-
+ploitation) with a bonus reduction in cost (exploration). The
+learned mean transition-cost is calculated using the estimated
+Jd, Pd
+Jf, Pf
+Jr, Pf Jr, Pr
+Jf, Pr
+π1=load, unload_2
+π2
+π3
+π4
+π5
+π6
+π7
+π8
+ π9
+π10
+p(C|s, π;θs,π)
+Fig. 4: By treating plans π as macro-actions, the selection
+decision making problem becomes sequential. The example
+plan highlighted in Fig. 2 is embedded into π1, as shown.
+parameters E[˜θs,a]. To maintain optimality guarantees of the
+aforementioned graph search method, we rectify each element
+of v to be non-negative. The cost-lower confidence bound
+(LCB) cost vector v(ρ, a) is computed element-wise as:
+vi(ρ, a)=max
+
+0, E[c|s, a; E[˜θs,a]]i − α
+q
+log(kg)/n(s, a)
+
+where α is a “confidence” hyperparameter, kg is the current
+global time step across all decision instances, and n(s, a) is
+the number of times action a has been executed from state s.
+Note that many multi-objective multi-armed bandit con-
+fidence bound approaches provide theoretical regret bounds
+that are logarithmic with respect to the number of decision
+instances. It is not straight forward to extend these regret
+bounds to this framework due to the exponential nature of the
+planning space Π(sK, ϕ) which has size O(|A||P|). Hence, we
+leave theoretical regret bounds to future research.
+Using the techniques described above, we can now compute
+the approximate set of Pareto optimal plans ˜Π⋆(sK, ϕ) while
+accounting for exploration of the environment. The exploration
+in planning aids in the effort in addressing goals (ii) and (iii)
+of Problem 1, however, to uphold proper learning of the Pareto
+front (iii), the selection must also explore among trade-offs.
+C. Pareto Point Selection
+For the selection problem, one can think of candidate
+plans π ∈ ˜Π⋆(sK, ϕ) computed by the planner as abstract
+macro-actions, such that high-level decision making can be
+done sequentially for each instance. Fig. 4 provides a visual
+representation of the abstracted selection problem with respect
+to the evolution of the robotic system over each instance.
+As described in Sec. II-D, ideally, the agent should select an
+action minimizing the surprise of outcomes. However, since it
+is analytically intractable to marginalize the joint distribution
+to derive the surprise, its upper bound, i.e., free energy, is
+minimized. Yet, the outcomes C cannot be observed until a
+plan π is actually executed, thus, the agents end up minimizing
+the so-called expected variational free energy (EFE) in active
+inference based decision-making. In this Pareto point selection
+problem, the EFE is described as follows (see Appendix A for
+7
+detailed derivation).
+EFE(sK, π⋆, ppr)= −Eq(C|π⋆)
+h
+log ppr(C)
+i
+−Eq(C|π⋆)
+h
+DKL
+
+q(sK|C, π⋆)||q(sK|π⋆)
+i
+−Eq(C|π⋆)
+h
+DKL
+
+q(˜θsK,π⋆|C,sK,π⋆)||q(˜θsK,π⋆|sK,π⋆)
+i
+,
+(6)
+where q(·) represents a proposal distribution. EFE is a varia-
+tional quantity [37], yielding freedom in the choice of proposal
+distribution q(˜θsK,π|sK,π⋆). As q(˜θsK,π|sK,π⋆) more closely
+resembles p(˜θsK,π|C, sK,π⋆), the upper bound on (expected)
+surprise decreases. The first term of EFE in (6) represents
+how much the predicted cost distribution q(C|π⋆) aligns with
+ppr(C) (i.e. exploitation), and the second and third terms
+represent how much the uncertainties of sK and ˜θsK,π⋆ can be
+reduced by following π⋆ and measuring C (i.e. exploration).
+Since the user does not know the true Pareto-optimal region
+a priori , EFE cannot be used to scalarize any plan in Π,
+as it may often be sub-optimal. Therefore, as described in
+Sec. V-A, the preferred plan πpr =argminπ∈Π EFE(π, ppr) is
+not guaranteed to also be an element in Π⋆ and vice versa.
+Consequently, in order to ensure that the user’s preference
+does not bias the system away from optimal behavior, this
+preference is only expressed over Pareto-optimal candidates.
+So, Π⋆(sK, ϕ) is scalarized via EFE in order to adhere to ppr
+and reduce uncertainties in the belief over ˜θsK,π⋆. Since T
+models deterministic transitions, the second term of (6) can
+be ignored. Expanding the third term of (6) yields
+EFE(sK, π⋆, ppr) = −Eq(C|π⋆)
+h
+log ppr(C)
+i
+− H[q(˜θsK,π|sK,π⋆)]+Eq(C|π⋆)
+h
+H[q(˜θsK,π⋆|C,sK,π⋆)]
+i
+,
+(7)
+where H[·] represents the entropy of a pdf. Then, the preferred
+plan is
+π⋆
+pr = argmin
+π⋆∈Π⋆(sK)
+EFE(sK, π⋆, ppr). (8)
+Due to the Markov property of DTS-sc and (1), µsK,π⋆ and
+ΣsK,π⋆ of the convolved distribution p(C|sK, π⋆; θsK,π⋆) are
+parameterized by P
+k µsk,ak and P
+k Σsk,ak of each cost dis-
+tribution respectively. According to the estimate transition cost
+model, ˜θs,a = {˜µs,a, ˜Σs,a} are random variables themselves;
+therefore,
+p(˜θsK,π⋆|sK, π⋆) = p(˜θs0,a0 ) ∗ . . .∗ p(˜θsm,am). (9)
+As described in Section III-A, each p(˜θs,a) is a unique
+NIW, which makes (9) analytically intractable. To enable
+computation for π⋆
+pr in (8), we leverage both the functional
+freedom in choosing proposal distributions q(·) as well as three
+statistical approximations of (7): certainty equivalence of the
+predicted observation distributions [38], central limit theorem
+(CLT) [39], and Monte Carlo sampling [40].
+1) Approximating the First Term of (7): Recall
+p(˜θsK,π⋆|sK, π⋆) is the belief over parameters of the
+predicted observation distribution q(C|π⋆). To address the
+intractability, we can extract the current estimate parameters
+E[˜θsK,π⋆]. This certainty-equivalence approximation makes
+q(C|π⋆) a simple multivariate normal distribution
+q(C|π⋆) =
+Z
+˜θsK,π⋆
+q(C, ˜θsK,π⋆|π⋆)d˜θsK,π⋆
+≈ q(C|π⋆; E[˜θsK,π⋆]). (10)
+The first term can then be calculated as follows
+− Eq(C|π⋆)
+h
+log ppr(C)
+i
+≈ log((2π)−k/2|Σpr|−1/2)
++ 1
+2
+ 
+µT
+prΣ−1
+pr µpr + tr(Σ−1
+pr ΣsK,π⋆) + µT
+sK,π⋆Σ−1
+pr µsK,π⋆
+
+− µT
+prΣ−1
+pr µsK,π⋆, (11)
+where µpr and Σpr are the mean vector and the covariance
+matrix of the user’s preference distribution (see Appendix B
+for detailed derivation).
+2) Calculating the Second Term of (7): The convolved dis-
+tribution p(˜θsK,π⋆|sK, π⋆) is analytically intractable. However,
+we can leverage the CLT to determine a suitable proposal
+distribution q(·) that closely models p(·). Since each p(˜θs,a) is
+NIW-distributed, both the mean and variance are well-defined
+when κ > 0 and ν > N + 1. Therefore, under the CLT,
+p(˜θsK,π⋆|sK, π⋆) tends towards a MVN distribution as the
+plan length |π⋆| becomes large [41].
+Consider the following vectorization of the parameters θs,a
+vec(θs,a) = (µ1, . . . , µN , σ2
+1,1, . . . , σ2
+N,N ), (12)
+where µ1, . . . , µN represent the components of µs,a, and
+σ2
+1,1, . . . , σ2
+N,N are the unique upper triangular elements of
+Σs,a. In total, the vectorization has dimension N(N + 3)/2.
+Due to the linearity of expectation and independence between
+state-action pairs,
+E[˜θsK,π] =
+mX
+k=0
+E[˜θsk,ak ], (13)
+var[˜θsK,π] =
+mX
+k=0
+var[˜θsk,ak ]. (14)
+Therefore, the distribution p(˜θsK,π⋆|sK, π⋆) can be approx-
+imately represented by multivariate normal proposal distri-
+bution parameterized by the vectorized cumulative mean and
+variance
+q(˜θsK,π⋆|sK,π⋆)≡N
+ X
+k
+E[vec(˜θsk,ak )],
+X
+k
+var[vec(˜θsk,ak )]
+
+.
+(15)
+Since q(˜θsK,π⋆|sK, π⋆) is MVN, the entropy of the proposed
+distribution (second term) can be represented analytically
+rewritten as follows.
+H[q(˜θsK,π|sK, π⋆)]=1
+2 log
+ 
+det
+ X
+k
+var[vec(˜θsk,ak )]
+
++ N(N + 3)
+4 (1 + log 2π). (16)
+3) Approximating the Third Term of (7): Using both the
+certainty equivalence approximation in (10) and the CLT
+approximation in (15), the remaining third term can be ap-
+proximated using Monte Carlo sampling of the expectation.
+To sample the expectation, a cumulative cost vector must
+8
+be sampled from q(C|π⋆). Using (10), this sample (denoted
+ˆc) can be drawn from the MVN ˆC ∼ q(C|π⋆; E[˜θsK,π⋆]).
+However, note that the posterior p(˜θsK,π⋆|C, sK, π⋆) is itself
+a convolved NIW conditioned on c. To construct an analytical
+approximation of the posterior, we must instead expand the
+sampling procedure to each state-action distribution. Instead
+of sampling ˆC directly from q(C|π⋆; E[˜θsK,π⋆]), ˆc can instead
+be constructed from the observation distribution for each state
+action pair
+ˆC =
+X
+k
+ˆcsk,ak , (17)
+where ˆcsk,ak ∼p(c|sk, ak; E[˜θsk,ak ]). For each sample ˆcsk,ak ,
+the respective posterior p(˜θsk,ak |ˆcsk,ak ) are computed us-
+ing the equations found in Sec. III-D. The distribution
+p(˜θsk,ak |ˆcsk,ak ) is the conjugate NIW posterior. Therefore,
+using the same process described in Sec. III-C2, an approx-
+imation of H[q(˜θsK,π|ˆC, sK, π⋆)] can be calculated. This
+sampling procedure is repeated ns times to compute the third
+term of (7). Using the aforementioned techniques, we can
+optimize for π⋆
+pr in (8). While this sampling procedure is
+computationally burdensome, the selection procedure runs in
+O(nsm|˜Π⋆|), linear in the size of number of candidate Pareto
+optimal plans.
+Note that unlike the prior distribution in the second term
+of (7), the proposal posterior q(˜θsK,π⋆|C,sK,π⋆) is not a
+variational proposal distribution. In fact, the approximation
+of true posterior p(˜θsK,π⋆|C,sK,π⋆) with q(˜θsK,π⋆|C,sK,π⋆)
+is an approximation inherent to active inference [31], as
+p(˜θsK,π⋆|C,sK,π⋆) is often not analytically tractable. This
+approximation intuitively relies on the assumption that the in-
+ternal model of the agent is accurate enough to well predict the
+true posterior. Our empirical evaluations in Appendix C show
+that the approximation of convolved NIW with convolved
+MVN agrees with the CLT. That is, the approximation is fairly
+accurate for the typical plan length seen in the experiments
+in Sec. IV, and increases as the plan length increases (Fig.
+9a) and more data is collected (Fig. 9b). Additionally, refer to
+Appendix D for an error analysis of the Monte Carlo sampling
+procedure described in Sec. III-C3 with respect to the number
+of samples ns, plan length, and collected data.
+D. Execution and Parameter Update
+After obtaining the preferred optimal trade-off plan π⋆
+pr,
+it is executed on the robotic platform (or in simulation).
+During the execution, measurements for the cost of each
+state-action ˆc are collected. Recall, the cost parameters are
+distributed as p(˜θs,a|Ds,a) = NIW s,a(λ, κ,Λ, ν). Given a set
+of measurements Ds,a = {ˆc0, . . .ˆcl}, the conjugate posterior
+is a NIW parameterized as follows.
+λ = κ0λ0 + l¯c
+κ0 + l , (18)
+κ = κ0 + l, (19)
+Λ = Λ0 + κ0l
+κ0 + l(¯c − λ0)(¯c − λ0)T + (20)
+lX
+j=0
+(ˆcj − ¯c)(ˆcj − ¯c)T ,
+ν = ν0 + l, (21)
+By iteratively performing each described phase, the agent
+can safely complete the task, guided by the user’s preference.
+Through the iterative combination of exploratory planning,
+surprised-based selection, execution, and Bayesian update of
+cost distributions, the proposed MORL framework can achieve
+all three goals described in Prob. 1. Now, we evaluate the
+empirical efficacy through experiments.
+IV. E XPERIMENTS
+To evaluate the effectiveness of our MORL framework for
+autonomous robotic decision making in unknown environ-
+ments, we performed three case studies: (i) an illustrative sim-
+ulation study, (ii) two numerical benchmarking experiments
+for comparison against the state-of-the-art, and (iii) a hardware
+experiment to demonstrate the real-world applicability of the
+method1.
+A. Simulated Mars Surface Exploration Study
+1) Motivation: Suppose a Mars rover is tasked to collect
+scientifically interesting minerals from target sample sites
+(orange region in Fig. 5), designated based on past mission
+data [42]. Due to the limited number of sample tubes, it is
+required to go back and forth between the deposit location
+(green region) and the target site. Since the closer sampling
+region is in the sun, the rover must trade-off between low-time,
+high-radiation for efficient science data collection, or high-
+time, low-radiation to avoid long-term damage. Therefore, to
+protect itself while gaining sufficient amount of science, it
+must strike a balance between the two. Moreover, although the
+rover knows the qualitative information about the environment
+(e.g., where sand, base, washing station, etc. are located), it is
+still necessary to estimate online the time and radiation cost
+of collecting a sample. Informed by past mission data and
+scientific expertise, the user can tune an appropriate ppr.
+2) Simulation Setup: For the sake of simplicity, the rover
+can travel in cardinal directions, and may not move through
+obstacles (black). The task specification is given as
+ϕMR = F(sample ∧ F(deposit)) ∧
+G(sand → (¬base Uwash));
+in English, “ collect a sample, then deposit it, and, if sand
+is visited then wash before returning to base .” Each transition
+1To see a video of the simulation and hardware experiments, visit https:
+//youtu.be/tCRJwqeT-f4
+9
+Instance 3
+Base
+Deposit
+Sun
+Wash
+Sample
+Sand
+Candidate
+Chosen
+Instance 25
+Instance 35
+Instance 150
+0 25 50 75 100
+0
+10
+20
+30
+40
+50 Candidate
+LCB
+Chosen
+True
+ppr
+Time (m)
+Radiation (µGy)
+(a) Instance 3
+0 25 50 75 100
+0
+10
+20
+30
+40
+50
+Time (m)
+(b) Instance 25
+0 25 50 75 100
+0
+10
+20
+30
+40
+50
+Time (m)
+(c) Instance 35
+0 25 50 75 100
+0
+10
+20
+30
+40
+50
+Time (m)
+(d) Instance 150
+Fig. 5: Simulated rover sample collection: A rover is tasked with repetitively collecting a sample and delivering it to deposit.
+Moving takes time and collects radiation (in the sun). The user prefers that the sample is collected in roughly 90 minutes with
+about 6 µGy of radiation, represented with ppr. Top row figures show the computed plans, and the bottom row figures show
+the estimated Pareto points. The true optimal trade-off plans are shown for comparison in four instance (episode) snapshots.
+Video: https://youtu.be/tCRJwqeT-f4.
+takes time (objective 1) measured in minutes, and transitions in
+the sun accumulate harmful radiation (objective 2) measured
+in micrograys. The true mean costs for transitions in each
+region are given as follows:
+µsample(left) = (6, 16) (in the sun) ,
+µsample(right) = (6, 0) (out of the sun) ,
+µsand = (3, 7) (slows the rover in the sun) ,
+µwash = (11, 31) (long duration of radiation exposure) ,
+µsun = (1 , 1), and all other transitions have µ = (1 , 0).
+Covariance values are omitted for brevity. The user informs
+the prior transition cost for all transitions to be λ0 = (0.5, 0).
+For the longevity of the rover, the user aims to endure a small
+amount of radiation and prefers that the mission is completed
+in roughly one and a half hours. To express this, the chosen
+preference distribution is
+N(µpr, Σpr), µ pr = (90, 6)
+σ1,1 = 140, σ 1,2 = σ2,1 = −2, σ 2,2 = 70,
+where σi,j is the i-j element of Σpr. Soon after deployment
+(instance 3), the planner only finds candidate plans that go
+through sand to collect the sample, and then must wash off,
+seen in Fig. 5a. The robot quickly learns to avoid sand as
+washing takes very long and collects lots of radiation. The
+robot gradually discovers more optimal behavior seen by
+instance 25 in Fig. 5b. In instance 35, seen in Fig. 5c, the
+rover has roughly learned the true Pareto front, and elects to
+explore a less preferred, information rich trade-off. Finally,
+after 150 instances, seen in Fig. 5d, the robot has obtained
+a fairly accurate estimate of the true Pareto front, and has
+converged to often selecting the most preferred trade-off.
+B. Benchmarks
+We evaluate the performance of our framework against the
+state-of-the-art in two benchmark problems. The goal is to
+assess in each instance: (i) how close the selected plan π⋆
+pr is
+to being Pareto optimal, and (ii) how well Π⋆ is represented
+by ˜Π⋆. Metric cumulative Pareto-regret directly evaluates (i).
+To properly evaluate (ii), we define Pareto-bias metric
+for a true Pareto front Ω and an estimate Pareto front ˜Ω as
+B = 1
+|Ω|
+X
+Ci∈Ω
+min
+Cj∈˜Ω
+(d(Ci,Cj))+ 1
+|˜Ω|
+X
+Ci∈˜Ω
+min
+Cj∈Ω
+(d(Cj,Ci)),
+(22)
+where
+d(Ci,Cj)= W2
+
+p(Ci|sK,πi;θsK,πi),q(Cj|sK,πj;E[˜θsK,πj ])
+
+is the Wasserstein-2 ( W2) distance. The first term in (22)
+quantifies the estimate Pareto front’s coverage of the true
+Pareto front, and the second term penalizes outlier/excess
+trade-offs in the estimate Pareto front. If each true Pareto point
+is exactly similar to an estimate Pareto point, and visa versa,
+then B =0, otherwise B >0.
+We benchmarked our active inference (AIF) selection
+method against other state-of-the-art selection methods: uni-
+form random selection (fair selection), TOPSIS [8] (objective
+10
+0 50 100 150 200 250 300
+0
+200
+400
+600Cumulative Regret
+0 50 100 150 200 250 300
+Instance
+0
+10
+20
+30
+40
+50Cumulative Bias
+1e4
+TOPSIS
+Weights
+AIF (no var)
+AIF (small var)
+AIF (medium var)
+AIF (large var)
+Uniform
+(a) 10 true Pareto points
+0 100 200 300
+0
+250
+500
+750
+1000Cumulative Regret
+0 100 200 300
+Instance
+0
+100
+200
+300Cumulative Bias
+1e4 (b) 32 true Pareto points
+0 100 200 300
+0
+250
+500
+750
+1000Cumulative Regret
+0 100 200 300
+Instance
+0
+50
+100
+150Cumulative Bias
+1e4 (c) 72 true Pareto points
+Fig. 6: Specific environment benchmark: Within our framework, we benchmark our active inference (AIF) selection method
+against other state-of-the-art methods with respect to cumulative Pareto-regret (top) and Pareto-bias (bottom) for three fixed
+environments with varying numbers of true Pareto points. The mean is represented by the solid line, with 1- σ variance shown
+by the shaded region. The dark shaded bar aids in distinguishing overlapping variance bands.
+preference), and linear scalarization, i.e. “weights” (subjective
+preference). Refer to Sec. V for further description of the
+compared methods.
+1) Fixed Environment Case Study: Three grid world envi-
+ronments were designed to challenge the learning of different
+size Pareto fronts. All experiments were run for 300 instances,
+with a LCB confidence parameter α = 0 .1, and ns = 300
+Monte Carlo samples, selected via cross validation. See Ap-
+pendix D for more details on the accuracy with respect to
+the choice of ns. Fig. 6 shows benchmarks against each envi-
+ronment. Generally, methods that accumulate less bias require
+learning more of the transition cost model via exploration, and
+hence accumulate more regret. When learning the small Pareto
+front, seen in Fig. 6a, AIF performed better than both uniform
+and the biased methods (weights and TOPSIS) in terms of
+bias, with comparable regret to uniform. This is due to the
+advantageous information-gain-based exploration. When the
+number of Pareto points on the Pareto front increases, seen in
+Fig. 6b, using small and no 2 variance selects for only a portion
+of the true Pareto front, while the medium and large variance
+still envelope the entire Pareto front. With the smaller variance
+AIF methods, once a good estimate candidate is found, the first
+term of (7) dominates the selection, and thus abandons the less
+promising options that are beyond the variance. With an even
+larger Pareto front seen in Fig. 6c, this effect is exacerbated.
+In this case, the no variance method sees a decrease in regret
+due to the heavy myopic bias after finding a candidate solution
+that agrees with the preference. Thus, from this experiment,
+2If the user only wants to specify a desired point in objective-space, they
+can make the preference distribution covariance very small ( no variance)
+we can observe that AIF methods start becoming very selective
+once the preferred region (which can be varied by the size of
+variance) on the Pareto front is discovered.
+2) Random Environment Case Study: The behavior of
+our AIF selection method can vary widely across different
+scenarios depending on the diversity of the Pareto front
+relative to ppr. Therefore, we illustrate the general behavior
+of our approach using randomized grid worlds. Each trial, a
+20×20 grid world robot model is generated with randomized
+proposition locations and true cost distribution parameters. The
+data was analyzed across 750 randomized trials.
+Fig. 7 demonstrates the general trade-off between bias
+and regret. Note that the standard deviation in performance
+among trials is very large, since each randomly generated
+environment is diverse. When the variance of ppr is large,
+active inference tends to perform similarly to random selection
+(Uniform) in terms of both regret and bias. With a moderate
+variance, active inference tends to have better regret and
+bias performance than other methods due to the intelligent
+information theoretic exploration when the estimate plans ˜Π⋆
+are uninformed. Uniform, AIF (large var), and AIF (medium
+var) stabilize in cumulative bias, meaning they effectively learn
+the entire Pareto front. The remaining methods converge to a
+non-constant slope cumulative bias, indicating that portions of
+the Pareto front have not been properly learned. From this
+experiment, we can observe that AIF methods outperform
+other state-of-the-art methods in terms of both cumulative
+regrets and biases as long as the size of variance is not too
+large.
+Akin to other expected free energy approaches, the en-
+11
+0 100 200 300
+0
+500
+1000
+1500
+2000
+2500Cumulative Regret
+0 100 200 300
+Instance
+0.0
+2.5
+5.0
+7.5
+10.0
+12.5Cumulative Bias
+1e4
+TOPSIS
+Weights
+AIF (no var)
+AIF (small var)
+AIF (medium var)
+AIF (large var)
+Uniform
+Fig. 7: Randomized environment benchmark: We benchmark
+our method against other selection methods for randomly
+generated scenarios of varying complexity.
+hanced reasoning power comes at a computational cost com-
+pared to other methods [20, 31]. Uniform selection has com-
+plexity O(1), weights has O(|˜Π⋆|), and TOPSIS has O(|˜Π⋆|2)
+[43]. We benchmarked the aforementioned random environ-
+ment case studies with respect to both planning time and
+selection time per instance on a computer with AMD Ryzen
+7 3800X 3.9 GHz 8-Core Processor. The average planning
+time is across 400 experiments with 100 instances each is
+483 ± 443ms (1- σ) with a median planning time of 369ms.
+The average AIF selection time (across all four preference
+distribution variances) is 610 ± 1051ms (1- σ) with a median
+selection time of 179ms. The compared selection procedures
+completed in less than 1ms.
+Remark 1. For larger-scale robotic models, the exact multi-
+objective graph search can be replaced with approximate
+multi-objective search, such as A∗pex [44], to admit a smaller
+(approximate) Pareto front in less time. Additionally, a clus-
+tering algorithm [45, 46] can further reduce the size of the
+Pareto front. We expect both adaptations to our framework to
+greatly enhance computation speed at the cost of Pareto-regret
+and bias performance, however we leave this to future work.
+C. Hardware Experiment
+To demonstrate the efficacy and diversity of application of
+our framework, we studied a complex dishwashing experiment
+using a robotic manipulator described in Fig. 1. The robot must
+repetitively load and unload the dishwasher with two items, a
+durable pitcher, and a fragile glass jar. The LTLf specification
+is
+ϕ = ϕl ∧ ϕs,
+where
+ϕl =F(Pdw ∧ Jdw ∧ lidon ∧ F(Prack ∨ (Pdry ∧ F Pfloor )∧
+F(Jrack ∨ (Jdry ∧ F Jfloor ))),
+ϕs =G(¬lidaside → F(Pdw ∧ Jdw)),
+which can be interpreted as “ put the pitcher and the jar in the
+dishwasher, then put the lid on, then for both the pitcher and
+jar, place on the drying rack, or dry the item and place it on
+the ground”. The performance of the robot is evaluated by the
+cumulative execution time (objective 1), as well as cumulative
+risk (objective 2) measured for a given action primitive,
+risk(s, a) =
+(R
+t h2
+Jdt if holding jar,
+0 otherwise, (23)
+where hJ is the height of the jar above the ground. A sampling
+based motion planner (PRM ∗ [47]) is used to realize motion
+action primitives, inducing unknown and random time and risk
+costs. Note that placing the jar on the drying rack is likely
+to have high risk, whereas manually drying the jar on the
+ground will likely take more time. We trained the transition
+cost model in simulation for 500 instances, using a preference
+distribution of µpr = (350 , 0.5) and σ2
+1,1 = 400 , σ2
+2,2 = 2 ,
+σ1σ2 = 0, which selects for a high-time, low-risk alternative.
+The converged behavior is shown in Fig. 8. As can be seen, the
+robot correctly loads the dishwasher, then unloads the pitcher
+on the rack, and decides to manually dry the jar, all while not
+performing any sub-optimal/unnecessary actions. The video of
+the execution is included in the supplementary material and
+visually represents the applicability of our MORL framework
+to a variety of robotic models with complex tasks.
+V. R ELATED WORK
+A. Multi-Objective Reinforcement Learning
+The goal of MORL is to maximize a multi-objective value
+or utility function [7]. MORL extends single-objective RL
+methods by selecting among Pareto-optimal candidate actions.
+One method of selection is casting valuations of candidate
+actions to a single-objective by scalarizing, in turn requiring
+a sound and interpretable utility function.
+Scalarization of utility functions can be classified as sub-
+jective, scalarizing based on an exogenous user’s preferred
+trade-off [6], or non-subjective, scalarizing without external
+preferences [5, 8]. Linear scalarization is a standard subjective
+method that combines objectives objectives through a relative-
+importance weighted sum. On the contrary, non-subjective
+methods such as TOPSIS [8] and hyper-volume indicators [5]
+rely on Euclidian distance metrics in objective space. However,
+in many robotic applications where objectives have different
+units of measurement (e.g. time in seconds and energy in
+joules), these methods use the addition of quantities with
+different units, which is generally mathematically ad-hoc and
+12
+Fig. 8: Hardware dishwashing experiment: A robotic manipulator must load both a durable pitcher and a fragile glass jar into a
+dishwasher, then must unload each item by either placing it on the drying rack, or manually drying it on the ground. The robot
+learns to minimize time and risk (holding the jar high above the ground). The user prefers a low-risk, higher-time trade-off.
+After 500 instances, the system performs optimally (left to right, top to bottom), and decides to quickly place the pitcher on
+the rack, and spend time to manually dry the jar. Video: https://youtu.be/tCRJwqeT-f4.
+lacks interpretation. Linear scalarization can potentially com-
+bat this issue by interpreting weights as reciprocal measures
+(e.g. 1/second), at the cost of requiring a user to have a
+rigorous understanding of how to compare the importance
+of each objective and properly assign weights. Furthermore,
+re-interpreting units of measurement (e.g. seconds instead of
+milliseconds) alters Euclidian distance, which can dramatically
+alter the selected solution, when no fundamental aspects about
+the problem have changed. On the contrary, our method
+avoids this issue by only describing the scalarization through
+operations on probability density functions.
+Many MORL methods do not distinguish between optimiz-
+ing multi-objective value function and selecting the best action
+from the Pareto-optimal candidate actions [6, 7]. Instead,
+these methods scalarize using a monotonic utility function,
+which guarantees that an optimal (preferred) action with
+respect to the single-objective utility function must also be
+Pareto-optimal in objective space. The use of such a utility
+function effectively optimizes a single objective, which casts a
+complete order on the reward space and eliminates the need for
+explicit computation of the Pareto front beforehand. However,
+when a non-monotonic utility function is used, or the agent
+is concerned with learning the set of all optimal trade-off
+solutions [15], the Pareto front must be explicitly computed
+before selection, as seen in many MOMAB approaches. Our
+framework computes the Pareto front using a multi-objective
+task-planner.
+MOMAB problems are concerned with minimizing Pareto-
+Regret [15], which uses ε-dominance to measure how “far”
+the chosen action is from being Pareto-optimal with respect
+to the true unknown reward distributions. Besides Pareto-
+regret, the MOMAB performance can also be evaluated by
+fairness, which quantifies how evenly Pareto-optimal actions
+were selected. Fairness is used to compare MOMAB selection
+by diversity in selection and learning of all actions on a
+possibly non-convex Pareto-front. To learn the entire Pareto
+front, work [15] extends the single-objective Upper Confidence
+Bound (UCB) algorithm [36] to multiple objectives, then rely
+on random selection among the Pareto front. While random
+selection effectively learns the entire Pareto front, it cannot
+account for or converge to a preferred trade-off. To address this
+shortcoming, our formulation of the high-level active inference
+decision making agent naturally balances this exploration vs.
+exploitation trade-off.
+B. Active Inference and Expected Free Energy
+Active inference is an uncertainty-based sequential decision
+making scheme that applies the free energy principle (FEP)
+[48] to the behavioral norms of physical agents [19, 20, 21].
+According to the FEP, agents intend to minimize the surprise
+(in our problem it is denoted as −log p(C|π)) to maintain
+their homeostases. However, calculating the surprise directly
+requires to sum/integrate over all possible states/parameters
+in their internal generative models. When these quantities
+are continuous, depending on the prior and/or the likelihood
+function, the integral does not have a closed-form solution.
+Thus, some approximation methods are required to calculate
+the surprise.
+One of the approaches is to employ variational Bayesian
+inference in statistical machine learning [40]. The core idea
+of this methodology is to introduce a proposal/surrogate dis-
+tribution, which is easily modeled, and optimize the functional
+of this distribution to make it resemble a true intractable distri-
+bution. More specifically, in our problem, the following free-
+energy (FE, i.e. negative evidence lower bound) is minimized
+such that the Kullback-Leibler Divergence (KLD) between
+the proposal distribution q(s, ˜θ|π) and the true distribution
+13
+p(s, ˜θ|C, π) approaches zero (Note that here we used the
+simplified notations seen in Appendices A and B).
+F E=
+Z
+s,˜θ
+q(s, ˜θ|π) log q(s, ˜θ|π)
+p(s, ˜θ, C|π)
+d˜θds
+=
+Z
+s,˜θ
+q(s, ˜θ|π) log q(s, ˜θ|π)
+p(s, ˜θ|C, π)
+d˜θds − log p(C|π)
+= DKL
+
+q(s, ˜θ|π)||p(s, θ|C, π)
+
+− log p(C|π)
+≥ Surprise(π). (24)
+As can be seen from this equation, since KLD is greater or
+equal to zero, FE is the upper bound of the surprise, i.e.
+minimizing FE leads to minimize the surprise.
+Computation of FE is performed given an observed outcome
+observation C, which is not known until the plan is executed.
+Hence, in active inference, the expected free energy (EFE)
+is instead minimized, and similar to FE, if the proposal and
+the true hidden posterior distributions match, the EFE term
+reduces to the following,
+EF E→ −Eq(C|π)[log ppr(C)], (25)
+which is “expected” surprise. In summary, FE allows to
+make the surprise minimization tractable for continuous
+state/parameter systems, and EFE allows for the minimization
+FE without knowing the received observation a priori.
+Additionally, as explained in (6), the EFE comprises of an
+utility term governed by a prior agent’s desired observation
+distribution, and an information gain term that evaluates how
+much a candidate action would reduce the uncertainty of hid-
+den states/parameters. Hence, by minimizing EFE, the agents
+can naturally balance between two modes of behavior that are
+essential for autonomous decision making under uncertainty;
+exploitation (i.e. focusing on the current best action) and
+exploration (i.e. trying less executed actions). Furthermore, the
+degree of preference for either mode can be easily adjusted by
+varying the prior preference distribution. For instance, using
+a prior preference with a large variance will cause the agents
+to provide more priority to exploration, and vice versa. These
+characteristics are particularly useful when transparent agent
+behavior is desired [49]. Using active inference for selection
+marries the benefits of preferred versus fair selection described
+in Sec. V-A through localized information-theoretic explo-
+ration around the prior preference distribution. Additionally,
+specifying a preference distribution over desired trade-offs
+may be particularly intuitive, explainable, and even statistically
+informed with past data. Throughout this work, we study the
+benefits of using EFE in active inference for Pareto point
+selection in MORL with two statistical techniques when an
+intractable convolved NIW is used to represent the hidden
+parameters.
+VI. C ONCLUSION AND FUTURE WORK
+In this work we study a systematic approach to learn-
+ing Pareto-optimal behavior on an unknown multi-objective
+stochastic cost model. In particular we examine an active
+inference-based approach to multi-objective decision making
+and we examine the resulting behavior through robotic simu-
+lation and hardware experiments, and numerical benchmarks
+that compare against other state-of-the-art selection methods.
+Our approach marries the benefits of a user-provided preferred
+optimal trade-off with exploration required to learn portions of
+the entire Pareto front. We introduce a new Pareto-bias metric
+that, coupled with traditional Pareto-regret, elucidates the
+trade-off between accurately learning the diverse Pareto front
+versus quickly learning a single optimal trade-off. Notably,
+the balance between the aforementioned behaviors can be
+controlled via the user’s preference.
+This work gives rise to a few future directions of research
+such as extension to stochastic transition models. Additionally,
+integrating cost-bounds for certain objectives by embedding a
+pruning procedure [14] into the multi-objective graph search
+algorithm is an interesting extension. Since the costs are not
+known a priori , we expect the Pareto cost upper confidence
+bound to be an effective choice of pruning constraint. We
+are also interested in generalizing the cost distribution to a
+Gaussian mixture to account for multi-modality. Other future
+directions may include convergence analysis and finite time
+regret analysis, for example, adapting the Upper Credible
+Limit algorithm [33] for Gaussian multi-armed bandits to the
+multi-objective setting.
+REFERENCES
+[1] Yang Gao and Steve Chien. Review on space robotics:
+toward top-level science through space exploration. Sci-
+ence Robotics, 2(7), 2017.
+[2] Jaeseok Kim, Anand Kumar Mishra, Raffaele Limosani,
+Marco Scafuro, Nino Cauli, Jose Santos-Victor, Barbara
+Mazzolai, and Filippo Cavallo. Control strategies for
+cleaning robots in domestic applications: A comprehen-
+sive review. International Journal of Advanced Robotic
+Systems, 16(4):1729881419857432, 2019.
+[3] Lydia E Kavraki, Petr Svestka, J-C Latombe, and Mark H
+Overmars. Probabilistic roadmaps for path planning in
+high-dimensional configuration spaces. IEEE transac-
+tions on Robotics and Automation , 12(4):566–580, 1996.
+[4] Sertac Karaman and Emilio Frazzoli. Sampling-based al-
+gorithms for optimal motion planning. The international
+journal of robotics research , 30(7):846–894, 2011.
+[5] Weijia Wang and Mich `ele Sebag. Multi-objective Monte-
+Carlo tree search. In Steven C. H. Hoi and Wray
+Buntine, editors, Proceedings of the Asian Conference
+on Machine Learning , volume 25 of Proceedings of
+Machine Learning Research , pages 507–522, Singapore
+Management University, Singapore, 04–06 Nov 2012.
+PMLR.
+[6] Axel Abels, Diederik M. Roijers, Tom Lenaerts, Ann
+Now´e, and Denis Steckelmacher. Dynamic weights in
+multi-objective deep reinforcement learning. In Kamalika
+Chaudhuri and Ruslan Salakhutdinov, editors, Proceed-
+ings of the 36th International Conference on Machine
+Learning, ICML 2019, 9-15 June 2019, Long Beach,
+California, USA, volume 97 of Proceedings of Machine
+Learning Research, pages 11–20. PMLR, 2019.
+14
+[7] Conor F. Hayes, Roxana R ˘adulescu, Eugenio Bargiacchi,
+Johan K ¨allstr¨om, Matthew Macfarlane, Mathieu Rey-
+mond, Timothy Verstraeten, Luisa M. Zintgraf, Richard
+Dazeley, Fredrik Heintz, Enda Howley, Athirai A. Iris-
+sappane, Patrick Mannion, Ann Now ´e, Gabriel Ramos,
+Marcello Restelli, Peter Vamplew, and Diederik M. Roi-
+jers. A practical guide to multi-objective reinforcement
+learning and planning. Autonomous Agents and Multi-
+Agent Systems, 36(1), apr 2022.
+[8] Mohammad Mirzanejad, Morteza Ebrahimi, Peter Vam-
+plew, and Hadi Veisi. An online scalarization multi-
+objective reinforcement learning algorithm: Topsis q-
+learning. The Knowledge Engineering Review , 37:e7,
+2022.
+[9] Tuomas Haarnoja, Aurick Zhou, Kristian Hartikainen,
+George Tucker, Sehoon Ha, Jie Tan, Vikash Kumar,
+Henry Zhu, Abhishek Gupta, Pieter Abbeel, et al. Soft
+actor-critic algorithms and applications. arXiv preprint
+arXiv:1812.05905, 2018.
+[10] Saurabh Arora and Prashant Doshi. A survey of in-
+verse reinforcement learning: Challenges, methods and
+progress. Artificial Intelligence, 297:103500, 2021.
+[11] Hadas Kress-Gazit, Morteza Lahijanian, and Vasumathi
+Raman. Synthesis for robots: Guarantees and feedback
+for robot behavior. Review of Control, Robotics, and
+Autonomous Systems, 1:211–236, May 2018.
+[12] Christel Baier and Joost-Pieter Katoen. Principles of
+Model Checking (Representation and Mind Series) . The
+MIT Press, 2008.
+[13] Giuseppe De Giacomo and Moshe Y Vardi. Linear tem-
+poral logic and linear dynamic logic on finite traces. In
+IJCAI’13 Proceedings of the Twenty-Third international
+joint conference on Artificial Intelligence , pages 854–
+860. Association for Computing Machinery, 2013.
+[14] Peter Amorese and Morteza Lahijanian. Optimal cost-
+preference trade-off planning with multiple temporal
+tasks. In 2023 IEEE/RSJ International Conference on
+Intelligent Robots and Systems (IROS), pages 2071–2077,
+2023.
+[15] Madalina M. Drugan and Ann Nowe. Designing multi-
+objective multi-armed bandits algorithms: A study. In
+The 2013 International Joint Conference on Neural Net-
+works (IJCNN), pages 1–8, 2013.
+[16] R ´obert Busa-Fekete, Bal ´azs Sz ¨or´enyi, Paul Weng, and
+Shie Mannor. Multi-objective bandits: Optimizing the
+generalized gini index. In Proceedings of the 34th
+International Conference on Machine Learning - Volume
+70, ICML’17, page 625–634. JMLR.org, 2017.
+[17] Eralp Turgay, Doruk ¨Oner, and Cem Tekin. Multi-
+objective contextual bandit problem with similarity in-
+formation. In Amos J. Storkey and Fernando P ´erez-
+Cruz, editors, International Conference on Artificial In-
+telligence and Statistics, AISTATS 2018, 9-11 April 2018,
+Playa Blanca, Lanzarote, Canary Islands, Spain , vol-
+ume 84 of Proceedings of Machine Learning Research ,
+pages 1673–1681. PMLR, 2018.
+[18] Shiyin Lu, Guanghui Wang, Yao Hu, and Lijun Zhang.
+Multi-objective generalized linear bandits. IJCAI’19,
+page 3080–3086. AAAI Press, 2019.
+[19] Karl Friston, Francesco Rigoli, Dimitri Ognibene,
+Christoph Mathys, Thomas FitzGerald, and Giovanni
+Pezzulo. Active inference and epistemic value. Cognitive
+neuroscience, 02 2015.
+[20] Raphael Kaplan and Karl J. Friston. Planning and naviga-
+tion as active inference. Biol. Cybern., 112(4):323–343,
+aug 2018.
+[21] Karl J Friston, Maxwell JD Ramstead, Alex B Kiefer,
+Alexander Tschantz, Christopher L Buckley, Mahault Al-
+barracin, Riddhi J Pitliya, Conor Heins, Brennan Klein,
+Beren Millidge, Dalton AR Sakthivadivel, Toby St Clere
+Smithe, Magnus Koudahl, Safae Essafi Tremblay, Capm
+Petersen, Kaiser Fung, Jason G Fox, Steven Swanson,
+Dan Mapes, and Gabriel Ren ´e. Designing ecosystems of
+intelligence from first principles. Collective Intelligence,
+3(1):26339137231222481, 2024.
+[22] Shohei Wakayama and Nisar Ahmed. Active inference
+for autonomous decision-making with contextual multi-
+armed bandits. In 2023 IEEE International Conference
+on Robotics and Automation (ICRA) , pages 7916–7922,
+2023.
+[23] Marius Kloetzer and Calin Belta. A fully automated
+framework for control of linear systems from temporal
+logic specifications. IEEE Transactions on Automatic
+Control, 53(1):287–297, 2008.
+[24] Georgios E Fainekos, Hadas Kress-Gazit, and George J
+Pappas. Temporal logic motion planning for mobile
+robots. In Proceedings of the 2005 IEEE International
+Conference on Robotics and Automation , pages 2020–
+2025. IEEE, 2005.
+[25] Shuo Yang, Xiang Yin, Shaoyuan Li, and Majid Zamani.
+Secure-by-construction optimal path planning for linear
+temporal logic tasks. In 2020 59th IEEE Conference on
+Decision and Control (CDC) , pages 4460–4466. IEEE,
+2020.
+[26] Georgios E Fainekos, Hadas Kress-Gazit, and George J
+Pappas. Hybrid controllers for path planning: A temporal
+logic approach. In Proceedings of the 44th IEEE Confer-
+ence on Decision and Control , pages 4885–4890. IEEE,
+2005.
+[27] Keliang He, Morteza Lahijanian, Lydia E Kavraki, and
+Moshe Y Vardi. Towards manipulation planning with
+temporal logic specifications. In 2015 IEEE international
+conference on robotics and automation (ICRA) , pages
+346–352. IEEE, 2015.
+[28] Keliang He, Morteza Lahijanian, E Kavraki, Lydia, and
+Y Vardi, Moshe. Automated abstraction of manipulation
+domains for cost-based reactive synthesis. IEEE Robotics
+and Automation Letters , 4(2):285–292, Apr. 2019.
+[29] Pablo Lanillos, Cristian Meo, Corrado Pezzato,
+Ajith Anil Meera, Mohamed Baioumy, Wataru Ohata,
+Alexander Tschantz, Beren Millidge, Martijn Wisse,
+Christopher L. Buckley, and Jun Tani. Active inference
+in robotics and artificial agents: Survey and challenges.
+CoRR, abs/2112.01871, 2021.
+[30] Thomas M. Cover and Joy A. Thomas. Elements of
+Information Theory (Wiley Series in Telecommunications
+15
+and Signal Processing). Wiley-Interscience, USA, 2006.
+[31] Ryan Smith, Karl J. Friston, and Christopher J. Whyte.
+A step-by-step tutorial on active inference and its ap-
+plication to empirical data. Journal of Mathematical
+Psychology, 107:102632, 2022.
+[32] Kevin P. Murphy. Conjugate bayesian analysis of the
+gaussian distribution. 2007.
+[33] Paul B Reverdy, Vaibhav Srivastava, and Naomi Ehrich
+Leonard. Modeling human decision making in gener-
+alized gaussian multiarmed bandits. Proceedings of the
+IEEE, 102(4):544–571, 2014.
+[34] Yen-Chi Chen. A tutorial on kernel density estimation
+and recent advances. Biostatistics & Epidemiology ,
+1(1):161–187, 2017.
+[35] Lawrence Mandow and Jos ´e Luis P ´erez De La Cruz.
+Multiobjective a* search with consistent heuristics. Jour-
+nal of the ACM (JACM) , 57(5):1–25, 2008.
+[36] Peter Auer, Nicol `o Cesa-Bianchi, and Paul Fischer.
+Finite-time analysis of the multiarmed bandit problem.
+Mach. Learn., 47(2–3):235–256, may 2002.
+[37] David M Blei, Alp Kucukelbir, and Jon D McAuliffe.
+Variational inference: A review for statisticians. Journal
+of the American statistical Association , 112(518):859–
+877, 2017.
+[38] Horia Mania, Stephen Tu, and Benjamin Recht. Certainty
+equivalence is efficient for linear quadratic control. Ad-
+vances in Neural Information Processing Systems , 32,
+2019.
+[39] Sang Gyu Kwak and Jong Hae Kim. Central limit
+theorem: the cornerstone of modern statistics. Korean
+journal of anesthesiology , 70(2):144–156, 2017.
+[40] Christopher M. Bishop. Pattern Recognition and Ma-
+chine Learning (Information Science and Statistics) .
+Springer-Verlag, Berlin, Heidelberg, 2006.
+[41] William L Dunn and J Kenneth Shultis. Exploring monte
+carlo methods. Elsevier, 2022.
+[42] Kenneth A Farley, Kenneth H Williford, Kathryn M
+Stack, Rohit Bhartia, Al Chen, Manuel de la Torre, Kevin
+Hand, Yulia Goreva, Christopher DK Herd, Ricardo
+Hueso, et al. Mars 2020 mission overview. Space Science
+Reviews, 216:1–41, 2020.
+[43] Hamdani Hamdani and Retantyo Wardoyo. The complex-
+ity calculation for group decision making using topsis
+algorithm. In AIP conference proceedings, volume 1755.
+AIP Publishing, 2016.
+[44] Han Zhang, Oren Salzman, TK Satish Kumar, Ariel Fel-
+ner, Carlos Hern ´andez Ulloa, and Sven Koenig. A* pex:
+Efficient approximate multi-objective search on graphs.
+In Proceedings of the International Conference on Auto-
+mated Planning and Scheduling , volume 32, pages 394–
+403, 2022.
+[45] Enrico Zio and Roberta Bazzo. A clustering procedure
+for reducing the number of representative solutions in
+the pareto front of multiobjective optimization problems.
+European Journal of Operational Research, 210(3):624–
+634, 2011.
+[46] Lilian Astrid Bejarano, Helbert Eduardo Espitia, and
+Carlos Enrique Montenegro. Clustering analysis for
+the pareto optimal front in multi-objective optimization.
+Computation, 10(3):37, 2022.
+[47] SM LaValle. Planning Algorithms, volume 2. 2006.
+[48] K. Friston. The free-energy principle: A unified brain
+theory? Nature Reviews Neuroscience , 11(2):127–138,
+2010.
+[49] Shohei Wakayama and Nisar Ahmed. Observation-
+augmented contextual multi-armed bandits for robotic
+exploration with uncertain semantic data. arXiv,
+(2312.12583), 2023.
+[50] Robert A. Stine. Explaining normal quantile-quantile
+plots through animation: The water-filling analogy. The
+American Statistician, 71(2):145–147, 2017.
+[51] Zafeirios Fountas, Noor Sajid, Pedro Mediano, and Karl
+Friston. Deep active inference agents using monte-carlo
+methods. Advances in neural information processing
+systems, 33:11662–11675, 2020.
+[52] Alexander Tschantz, Manuel Baltieri, Anil. K. Seth, and
+Christopher L. Buckley. Scaling active inference. In
+2020 International Joint Conference on Neural Networks
+(IJCNN), pages 1–8, 2020.
+[53] Domenico Maisto, Francesco Gregoretti, Karl J. Friston,
+and Giovanni Pezzulo. Active tree search in large
+pomdps. ArXiv, abs/2103.13860, 2021.
+APPENDIX A
+DERIVATION OF EFE FOR THE PARETO POINT SELECTION
+As mentioned in Sec. III-C, marginalizing the joint distri-
+bution is analytically intractable. Therefore, its bound, i.e. free
+energy, is minimized instead. Yet, the outcomes C cannot be
+observed until a plan π⋆ is actually executed, so the agent ends
+up minimizing EFE. Hereafter, for the sake of simplicity, we
+denote sK as s, π⋆ as π, and ˜θs,π as ˜θ.
+EFE(π)
+=
+Z
+s,˜θ
+q(s,˜θ|π)
+Z
+C
+q(C|s,˜θ,π)log q(s,˜θ|π)
+p(s,˜θ|C,π)ppr(C)
+dCd˜θds,
+(26)
+where ppr(C) is the prior preference for outcomes and
+q(s, ˜θ|π) is the proposal distribution for s and ˜θ given a plan
+π. Eq. (26) can be decomposed into three parts as follows.
+(1st)= −
+Z
+s,˜θ,C
+q(s, ˜θ|π)q(C|s, ˜θ, π) logppr(C)dCd˜θds,
+=−
+Z
+C
+log ppr(C)
+nZ
+s,˜θ
+q(s, ˜θ, C|π)d˜θds
+o
+dC,
+=−Eq(C|π)
+h
+log ppr(C)
+i
+. (27)
+(2nd)=
+Z
+s,˜θ,C
+q(s, ˜θ|π)q(C|s, ˜θ, π) log q(s|π)
+p(s|C, π)dCd˜θds,
+=
+Z
+s,C
+nZ
+˜θ
+q(s, ˜θ, C|π)d˜θ
+o
+log q(s|π)
+p(s|C, π)dCds,
+=−
+Z
+C
+q(C|π)
+Z
+s
+q(s|C, π) log q(s|C, π)
+q(s|π) dsdC,
+=−Eq(C|π)
+h
+DKL
+
+q(s|C, π)||q(s|π)
+i
+. (28)
+16
+(3rd)=
+Z
+s,˜θ,C
+q(s, ˜θ|π)q(C|s, ˜θ, π) log q(˜θ|s, π)
+p(˜θ|s, C, π)
+dCd˜θds,
+=−
+Z
+s,C
+q(s, C|π)
+nZ
+˜θ
+q(˜θ|s,C,π) log q(˜θ|s,C,π)
+q(˜θ|s, π)
+d˜θ
+o
+dCds,
+=−Eq(s,C|π)
+h
+DKL
+
+q(˜θ|s, C, π)||q(˜θ|s, π)
+i
+. (29)
+By combining these parts, (6) is finally derived.
+APPENDIX B
+APPROXIMATION FOR THE FIRST TERM OF (7)
+In order to approximate the first term of (7), log ppr(C) can
+be at first simplified as follows.
+log ppr(C)=log
+
+Zprexp
+ 
+−1
+2(C−µpr)T Σ−1
+pr (C−µpr)
+
+,
+= log(Zpr)−1
+2(C−µpr)T Σ−1
+pr (C−µpr)
+
+, (30)
+where Zpr = (2π)−N/2|Σpr|−1/2. Recall, the certainty equiv-
+alence approximation for the predicted observation distribution
+q(C|π) ≈ q(C|π; E[θ]) is a MVN distribution q(C|π) =
+N(µs,π, Σs,π). By substituting this result into (7), the first
+term of (7) can be further transformed as
+(1st)= −Eq(C|π;E[θ])
+h
+log(Zpr)−(C−µpr)T Σ−1
+pr (C−µpr)
+2
+i
+.
+(31)
+Since (C−µpr)T Σ−1
+pr (C−µpr) is expanded as CT Σ−1
+pr C−
+2µT
+prΣ−1
+pr C+µT
+prΣ−1
+pr µpr, the second term of (31) is turned to
+(2nd of (31)) = 1
+2
+Z
+C
+q(C|π; E[θ])
+ 
+CT Σ−1
+pr C
+
+dC (32)
++ 1
+2
+Z
+C
+q(C|π; E[θ])
+ 
+µT
+prΣ−1
+pr µpr
+
+dC (33)
+−
+Z
+C
+q(C|π; E[θ])
+ 
+− µT
+prΣ−1
+pr C
+
+dC (34)
+Finally, (32) can be reduced to
+1
+2
+
+tr(Σ−1
+pr Σ) + µT Σ−1
+pr µ
+
+where E[θ] = {µ, Σ}. Also, (33) is simply
+µT
+prΣ−1
+pr µpr,
+and (34) can be reduced to
+−µT
+prΣ−1
+pr µ.
+APPENDIX C
+EMPIRICAL ANALYSIS OF ERROR INTRODUCED VIA
+NIW-MVN S UBSTITUTION
+To evaluate the choice of approximate posterior described
+in Sec. III-C3, we numerically demonstrated the efficacy of
+substituting intractable convolved NIW distributions (denoted
+p(·)) with convolutions of MVN (denoted q(·)). Additionally,
+since the same substitution technique is used for choosing the
+prior proposal distribution in (15), this analysis also yields
+insight into the quality of the variational upper bound.
+Following (13) and (14), p(·) and q(·) must have the same
+mean and variance, therefore, it suffices to analyze the normal-
+ity of Monte Carlo samples of p(·) for determining how well
+q(·) approximates p(·). This analysis is done using a Quantile-
+Quantile (Q-Q) plot [50]. The procedure for generating Monte
+Carlo samples used in the Q-Q plot is outlined as follows:
+1) Generate M number of samples of ˆ˜θs,a from each
+respective NIW p(˜θsk,ak ). For high fidelity, we used
+M = 5000 samples.
+2) Sum each respective sample to get M samples of ˆ˜θsK,π,
+(empirically representing samples from p(˜θ|s, C, π)),
+3) Perform a whitening transform to all ˆ˜θsK,π such that
+the such that the mean is zero and the covariance is
+normalized and uncorrelated,
+4) Produce a Q-Q plot to assess the normality of the
+whitened empirical distribution.
+The resulting Q-Q plots are shown in Fig. 9. The distributions
+of the mean parameters µsK,π (Fig. 9a, top row) are generally
+well approximated by q(·). For short plans |π| = 10 , p(·)
+the covariance parameter distributions differ from q(·) slightly
+(Fig. 9a, bottom left), however, due to the Central Limit
+Theorem (CLT), they converge to normal as the length of the
+plan increases (Fig. 9a, bottom right). Similarly, as more data
+is supplied to each state-action pair, the distribution becomes
+more normal due to the Inverse Wishart distribution being less
+right-skewed (Fig. 9b, bottom left to bottom right). Therefore,
+the MVN replacement approximation introduces less error
+as the scenarios become more complex, and more data is
+collected.
+APPENDIX D
+EMPIRICAL ANALYSIS OF ERROR INTRODUCED VIA
+MONTE CARLO SAMPLING
+Fig. 10 shows the percent error introduced via sampling.
+Note that ns = 300 was used for the experiments and bench-
+marks shown in the manuscript as well as the computation
+time benchmarks. Although the specific sampling procedure is
+slightly different, there are multiple studies using the Monte
+Carlo sampling to evaluate the EFE [51, 52, 53].
+17
+-4
+-2
+0
+2
+4
+-5 0 5
+-2
+0
+2
+4
+6
+8
+-5 0 5-5 0 5
+(a) Q-Q plot varying length of plan ( m = |π|), while each (s, a)
+has 10 data samples ( l). As the length of the plan increases, the true
+distribution becomes more normal (i.e. the effect of the CLT).
+-4
+-2
+0
+2
+4
+-5 0 5
+-4
+-2
+0
+2
+4
+6
+-5 0 5-5 0 5
+(b) Q-Q plots of varying number of collected samples ( l) from
+execution for each state-action, while m = 20. As more samples
+are collected, the true distribution becomes more normal.
+Fig. 9: Q-Q Plot assessing the normality of Monte Carlo approximated true posterior p(˜θ|s, C, π). For brevity, only µ1 and
+σ1,1 are shown. The closer the samples (blue) are to the quantile line (red), the more normal the empirical distribution.
+0 100 200 300 400 500
+Monte Carlo Samples
+0.000
+0.002
+0.004
+0.006
+0.008
+0.010
+0.012
+0.014Percent Error
+m = 10
+m = 20
+m = 50
+(a) Error for varying length of plan ( m).
+0 100 200 300 400 500
+Monte Carlo Samples
+0.000
+0.002
+0.004
+0.006
+0.008
+0.010
+0.012
+0.014Percent Error
+l = 1
+l = 2
+l = 10
+l = 20 (b) Error for varying number of collected samples ( l).
+Fig. 10: Percent error introduced via sampling.

@@ -1,0 +1,1483 @@
+Preprint
+BED-LLM: INTELLIGENTINFORMATIONGATHERING
+WITHLLMS ANDBAYESIANEXPERIMENTALDESIGN
+Deepro Choudhury
+University of Oxford
+Sinead Williamson
+Apple
+Adam Goli´nski
+Apple
+Ning Miao
+City University of Hong Kong
+Freddie Bickford Smith
+University of Oxford
+Michael Kirchhof
+Apple
+Yizhe Zhang
+Apple
+Tom Rainforth
+University of Oxford
+ABSTRACT
+We propose a general-purpose approach for improving the ability of large language
+models (LLMs) to intelligently and adaptively gather information from a user or
+other external source using the framework of sequential Bayesian experimental
+design (BED). This enables LLMs to act as effective multi-turn conversational
+agents and interactively interface with external environments. Our approach, which
+we call BED-LLM (Bayesian experimental design with large language models),
+is based on iteratively choosing questions or queries that maximize the expected
+information gain (EIG) about the task of interest given the responses gathered
+previously. We show how this EIG can be formulated (and then estimated) in
+a principled way using a probabilistic model derived from the LLM’s predictive
+distributions and provide detailed insights into key decisions in its construction
+and updating procedure. We find that BED-LLM achieves substantial gains in
+performance across a wide range of tests based on the 20 Questions game and
+using the LLM to actively infer user preferences, compared to direct prompting
+of the LLM and other adaptive design strategies.
+1 INTRODUCTION
+Intelligent information gathering—the ability to ask the right questions at the right time—is
+fundamental to effective AI systems. However, despite their many successes, LLMs currently fall
+short on a crucial aspect of interactive intelligence: proactively seeking out information from a user
+or external environment in an intelligent and adaptive manner (Laban et al., 2025; Li et al., 2025c).
+For example, they have been shown to perform poorly on problems such as multi-turn guessing
+games (Bertolazzi et al., 2023; Zhang et al., 2024), task clarification (Chi et al., 2024), IT task
+automation (Jha et al., 2025), and multi-step tool use (Patil et al., 2025). In particular, while modern
+LLMs are often capable of producing coherent and insightful questions (or other external queries)
+in a single-turn setting, they typically struggle to appropriately tailor their questions to previously
+gathered responses on interactive tasks (Bertolazzi et al., 2023; Patil et al., 2025).
+There is, therefore, a pressing need to improve the ability of LLMs toadaptivelyask questions based
+on previous responses, and gather information in a targeted manner. Such capabilities are essential for
+a wide variety of problems, such as clarifying user intent, personalizing model behavior to a particular
+user, or generally acting as effective multi-turn conversational agents. They are also critical if we
+want to use LLMs in data gathering tasks or as automated agents in decision-making pipelines (Wu
+et al., 2025). In turn, these capabilities are essential across domains ranging from medical diag-
+nosis (Hirosawa et al., 2024), troubleshooting (Jha et al., 2025), preference learning (Handa et al.,
+2024; Chakraborty et al., 2024; Ouyang et al., 2022), and tutoring systems (Kestin et al., 2025; Liu
+et al., 2024a), to conducting automated surveys (Aher et al., 2023; Lee et al., 2024; Jacobsen et al.,
+2025), and AI–driven scientific inquiries (Lu et al., 2024; Mandal et al., 2025). Note that in all these
+1
+arXiv:2508.21184v2  [cs.CL]  18 Oct 2025
+Preprint
+problems it is not enough for the LLM to generate full sets of suitable questions up front, we need it
+to be able to adaptively choose questions that are tailored to the already-collected user responses.
+We propose to address this challenge using the framework ofsequential Bayesian experimental
+design(BED, Lindley (1956); MacKay (1992); Chaloner & Verdinelli (1995); Sebastiani & Wynn
+(2000); Rainforth et al. (2024)), which provides a model-based, information-theoretic mechanism
+for making adaptive design decisions, given a generative model of the experiment. Specifically,
+we show how the problem of interactive information gathering with LLMs can be formulated as a
+sequential experimental design problem with a model derived from the LLM, wherein we iterate
+between choosing queries based on maximizing their expected information gain (EIG) and updating
+our beliefs with the information from the received response.
+We call our approach BED-LLM and show how its success is critically dependent on our precise
+model formulation, belief updating procedure, and EIG estimation strategy. In particular, we show
+that it is essential to formulate the model with a precise distribution pairing that does not solely rely
+on in-context learning to update beliefs and uses the LLM’s uncertainties in the space of answers
+rather than the more complicated underlying hypothesis space we are trying to learn in.
+Together, we find that these innovations provide substantial performance benefits over directly
+generating queries from the LLM and more basic approximations of the sequential BED framework.
+Specifically, we first find that BED-LLM provides substantial improvements in the success rate for
+the 20 Questions problem across a variety of LLMs and target quantities. For example, when guessing
+celebrities with a small model, Llama-3.1-8B, we observe a 5.8x gain in success rate. Second, we
+demonstrate noticeable improvements in using the LLM for movie recommendations, showing that
+these benefits hold even when the LLM’s predictive model differs from that of the answerer.
+2 PROBLEMFORMULATION ANDBACKGROUND
+There are two natural ways to improve LLMs’ ability to gather information: modifying the model
+itself (e.g. via test-time- or post-training) or altering how the model is used at deployment time.
+We focus on the latter, since information–gathering tasks rarely provide task-specific data upfront
+(e.g. a user’s unknown preferences), and deployment–time methods avoid the cost and difficulty of
+finetuning an LLM altogether and are applicable to any existing LLM. However, we emphasize that
+improvements at the model level (e.g., Zhang et al., 2024) would be complementary to our approach.
+To formalize the notion of information gathering, we need a concrete idea of what we wish to
+learn about. We denote the target quantity of interest as θ, which may represent, for example, a
+user’s preferences, the answer to a question, or a desired piece of content. We start with incomplete
+information about θ, as represented by an initialbelief distributionor prior, p(θ), but can refine these
+beliefs by making queries, x∈ X, to the user or some other external agent and receiving responses,
+y∈ Y, that are informative about θ. Multiple such queries, x1, . . . , xn, can be adaptively selected
+in a sequential decision-making process where we iteratively choose each xt based on the collected
+history ht−1 := (xi, yi)i=1:t−1. As our history grows, we will update our belief distribution to obtain
+p(θ;h t−1) via some model updating procedure.1 In the LLM setting, there is considerable flexibility
+in how p(θ;h t−1) is constructed, as discussed in §3.3 and §4. While p(θ;h t−1) need not be explicitly
+defined, it provides the foundation for our information-theoretic method of query selection.
+For clarity of exposition, we focus on the case where the xt correspond to explicit questions asked to
+the user, but emphasize that the approach applies more broadly to other forms of external interaction
+by the LLM, such as retrieving documents or calling external functions.
+2.1 IN–CONTEXTUPDATING OF THE BELIEF DISTRIBUTION
+A natural and cheap way to incorporate the interaction history into the LLM is to include it in
+the context (Brown et al., 2020). If the LLM’s distribution over generated text, z∈Z , is pLLM(z)
+given appropriate prompting, then pLLM(z;h t−1) is an updated distribution with the previous
+question–response pairs in context. From this, we can derive an updated belief distribution over θ.
+1We carefully distinguish between explicit probabilistic conditioning, i.e. p(a|b), and more general depen-
+dency, p(a;b) . The former corresponds to the conditional distribution of an associated joint distribution, p(a, b),
+while the latter may not. Here, ht−1 influences our distribution on θ, but it is not derived via a joint distribution.
+2
+Preprint
+Most simply, this can be done by using pLLM(z;h t−1) to directly query about θ (e.g. if θ is some
+preference, we could prompt the LLM to predict this preference). However, as we show later, this
+approach often fails to appropriately incorporate the information from ht−1, leading to a belief
+distribution inconsistent with past observations. This is consistent with recent work that shows that
+in context updating does not treat all contextual information equally (Kossen et al., 2024; Liu et al.,
+2024b; Zhang et al., 2024). In §3.3, we introduce a more robust method for derivingp(θ;h t−1).
+2.2 INFORMATION–THEORETICEXPERIMENTALDESIGN
+The core of the BED framework is a joint generative model p(θ, y;x)over the target quantity θ and
+outcomes, y, given designsx. Most commonly, this is specified as a Bayesian model using a priorp(θ)
+and likelihood p(y|θ;x) . In the general case, designs are then chosen to maximize the expectation of
+some utility function U(θ, y, x)under this model: we choose x∗ = argmaxxEp(θ,y;x) [U(θ, y, x)].
+The most common choice is to take U(θ, y, x) = logp(θ, y;x)−logp(θ) logp(y;x) , where p(θ)
+and p(y;x) are the marginal distributions onθ and y implied by our joint model and we have assumed
+that our current beliefs on θ are independent of the design x. This leads to an objective corresponding
+to the expected information gain (EIG) inθ(Lindley, 1956; 1972),
+EIGθ(x) = H[p(θ)]−E p(y;x)[H[p(θ|y;x)]](1)
+= H[p(y;x)]−E p(θ)[H[p(y|θ;x)]],(2)
+where H denotes the Shannon entropy (i.e., H[p(θ)] =−E p(θ)[logp(θ)] ). We can thus equivalently
+think of the EIG as: a) themutual informationbetween θ and y, b) the expectedinformation gain
+over possible datasimulated from our model(where the information gain is defined as the reduction
+in entropy from our prior on θ to the posterior), or c) the expected reduction in entropy over data
+from observingθsimulated from our prior(Sebastiani & Wynn, 2000).
+Working with the EIG is highly suited to asequentialoradaptivedesign approach, wherein it is gener-
+ally referred to as sequential BED or Bayesian Adaptive Design (Rainforth et al., 2024). Because the
+EIG is only a function of our underlying model, when we update the model as new data becomes avail-
+able, our EIG design objective will naturally update as well. Specifically, to derive theincremental
+EIG (Cavagnaro et al., 2010) for thet-th query, EIGθ(xt;h t−1), we simply replace the joint p(θ, y;x)
+in the above formulation with the updated joint p(θ, yt;h t−1, xt), with all marginals a conditionals
+derived from this (e.g. p(y;x) becomes p(yt;h t−1, xt)). Here this updated joint conventionally
+comes from a Bayesian update of the original model. However, in many cases, this is not practical and
+other non-Bayesian updates are performed instead, e.g. in active learning the update often actually
+corresponds to retraining the model with the new data (Gal et al., 2017; Bickford Smith et al., 2023).
+3 SEQUENTIALBAYESIANEXPERIMENTALDESIGN FORLLMS
+The sequential BED framework described in §2.2 requires two core components to be specified by the
+user: a) an initial joint model p(θ, y;x)over hypotheses θ and outcomes y, given chosen experiment
+x, and b) a procedure to derive an updated model p(θ, yt;h t−1, xt) after observing ht−1. In the LLM
+setting, there is significant flexibility in these critical design decisions. In particular, there are many
+ways to derive a suitable joint distribution from the LLM and its ability to learn in-context provides
+opportunities for update methods that go beyond standard Bayesian model updates.
+Model ConstructionA major challenge in the LLM setting is that unlike conventional probabilistic
+models, in general, pLLM(θ)p LLM(y; [θ, x])̸=p LLM(y;x)p LLM(θ; [x, y]). That is, we induce a
+different joint distribution if we first sampleθ then sample y with θ in context (which we refer to as the
+prior–likelihood pairing), than if we first sample y then sample θ with y in context (data–estimation
+pairing). Moreover, we can deviate from the distribution directly induced by the LLM on one or both
+variables. The success of using BED with LLMs turns out to be critically dependent on these choices.
+We delay proper discussion of this complex issue until §4, where we will see that the preferable
+setup can depend on problem setting and, in particular, the relative complexity of spaces of θ and
+y. For now, we will focus on using the prior–likelihood pairing; we will argue in §4 that this is the
+advantageous setup in many practical scenarios. While we will generally use the LLM’s directly
+induced distribution for the likelihood, we allow the prior to deviate from this in a problem–specific
+manner. As such, our initial joint model will bep(θ, y;x) =p(θ)p LLM(y; [θ, x]).
+3
+Preprint
+Model UpdatingOptimally updating the joint model in this setting requires incorporating new
+observations in a way that both fully captures the information from new data and is computationally
+tractable. At one extreme, we could perform full Bayesian updates via approximate inference, as in
+classical sequential BED. However, this demands a prohibitively large number of LLM evaluations to
+accurately approximate the posterior, and it does not exploit the power of the LLM as a probabilistic
+generative model, where autoregressive sequential rollouts often lead to more nuanced and diverse
+behavior than repeated static likelihood queries. At the other extreme, simple in-context updating,
+p(θ;h t−1) =p LLM(θ;h t−1), is cheap but, as we show later, fails to reliably capture information
+from new data, leading to inconsistent belief states and undermining the sequential BED approach.
+As we discuss in §3.3, we therefore employ a strategy that is somewhere between the two: drawing
+samples in a way that utilizes pLLM(θ;h t−1) while encouraging diversity, then filtering out samples
+that are actually not compatible with ht−1 and renormalizing. We refer to the resulting distribution as
+pf (θ;h t−1). We do not update our likelihood modelp LLM(θ;h t−1); see §A.1 for a discussion.
+BED-LLMWe now introduce our specific algorithmic approach, BED-LLM. Here, the queries will
+correspond to our designs, x (assumed to be in form of questions posed to the user in the following
+for simplicity, but could also be, e.g., external function calls, document retrieval, web search, etc), and
+the responses received will correspond to our outcomes,y. Using the LLM to derive joint models over
+these outcomes and the target variables θ given histories, ht−1 as described above, we can interleave
+choosing informative questions by optimizing the incremental EIG, EIGθ(xt;h t−1), and updating
+our underlying model based on the received question–response pairs. Specifically, BED-LLM iterates
+over the following key steps, wheretindexes the current turn:
+1. Generate candidate questions(§3.1): Propose a candidate set of M diverse, multiple-choice
+questions, Xcand, by appropriate sampling of the LLM based on the conversational context ht−1.
+2.Compute EIG estimator(§3.2): For each candidatex t ∈ Xcand, estimate EIGθ(xt;h t−1).
+3. Select and ask optimal question: Choose the question xt ∈ Xcand that yields the highest esti-
+mated EIG. Pose xt to the user, observe responseyt, and update the history,ht = (ht−1,(x t, yt)).
+4. Construct updated joint(§3.3): p(θ, yt+1;h t, xt+1) =p f (θ;h t)pLLM(yt+1; [θ, xt+1]), using
+the new history and return to Step 1 (unless a termination criterion has been achieved).
+Note our belief state onθafter thet-th turn is simply given byp f (θ;h t).
+3.1 GENERATINGCANDIDATEQUESTIONS
+As it is not computationally feasible to directly optimize over the space of possible questions, we
+rely on using the LLM to propose diverse candidate questions, Xcand, then select the best question
+from these. We consider two specific approaches: 1)Unconstrained generation.Given ht−1, the
+LLM is simply asked to propose new questions by sampling from pLLM(xt;h t−1) with appropriate
+prompting. 2)Conditional generation.The LLM is given both ht−1 anda generated set of hypotheses
+Θcand ={θ (n)}N
+n=1, such that we sample from pLLM(xt; [ht−1,Θ cand]). Specifically, the LLM is
+prompted to propose questions that “slice” the hypothesis pool into roughly balanced subsets.
+For both strategies, we sample M questions jointly with a relatively high temperature to encourage
+diversity. Conditional generation allows us to “guide” the LLM to propose highly informative
+questions. However, it risks overfitting to Θcand. In practice, we find it is effective for discrete spaces
+(§6.1), but less so for spaces with complex, overlapping hypotheses (§6.2). We restrict questions to
+multiple-choice format to allowp LLM (yt; [θ, xt])to produce well-calibrated probabilities (see §4).
+3.2 ESTIMATINGEIGFOR EACH QUESTION
+To estimate the EIG based on Equation 2 for a given question xt, we derive the following Rao-
+Blackwellized estimator based on the LLM’s predictive distribution:
+EIGθ(xt;h t−1)≈ 1
+N
+PN
+n=1
+P
+yt∈Y pLLM(yt; [θ(n), xt]) logpLLM(yt; [θ(n), xt])
+− P
+yt∈Y ˆp(yt; [ht−1, xt]) log ˆp(yt; [ht−1, xt]),
+(3)
+where ˆp(yt; [ht−1, xt]):= 1
+N
+PN
+n=1 pLLM(yt; [θ(n), xt]) and θ(n) ∼pf (θ;h t−1), see §3.3. This esti-
+mator has been used in other BED contexts (Gal et al., 2017; Rainforth, 2017). Note that the samples
+do not need to be independent for this estimator to converge, provided they satisfy some appropriate
+form of ergodicity or decaying correlation (see, e.g., Billingsley (2013)). When constructing this
+4
+Preprint
+estimator, we compute the pLLM(yt; [θ(n), xt]) terms using the LLM’s logits whenever possible.
+By the Rao-Blackwell theorem, this always produces lower variance than purely sample–based
+estimators (Rao et al., 1945), like those employed in Hu et al. (2024) and Kobalczyk et al. (2025).
+Avoiding deterministic likelihood assumptionsPrevious attempts to apply information criteria to
+choosing queries in LLMs have generally assumed responses are deterministic given (θ, xt) (Cooper
+et al., 2025; Kobalczyk et al., 2025; Hu et al., 2024; Mazzaccara et al., 2024; Piriyakulkij et al., 2023).
+Under this assumption, the EIG simplifies to the marginal predictive entropy,H[p(yt;x t, ht−1)].
+This is problematic as, in practice, the expected likelihood entropy will vary with xt. For example,
+if θ= “Dog”, then the response to the question “Is it an animal?” should be close to deterministic,
+but the expected response to the question “Does it have black fur?” clearly is not. In general,
+Ep(θ;ht−1)[H[p(yt|θ;x t, ht−1)]] measures how certainly the question can be answered once θ is
+known. Including it in our objective is essential in avoiding questions that are irrelevant, ambiguous,
+unclear, or simply unhelpful in our quest to learn about θ. We provide an illustrative example of this
+in §A.2.1 and empirical evidence for this in §6. Given that approximating the EIG with marginal
+predictive entropy does not provide meaningful computational savings (as it does not reduce the
+required number of LLM calls), we advise against making such deterministic likelihood assumptions.
+3.3 PRIORCONSTRUCTION ANDBELIEFUPDATING
+The Savage axioms (Savage, 1954) tell us that a rational agent should update its beliefs in a Bayesian
+manner. However, doing full Bayesian updates to our model as the history grows is generally
+impractical for computational reasons in the LLM setting, as it requires approximate inference and
+this, in turn, typically requires large numbers of expensive likelihood evaluations. Furthermore, the
+Savage axioms only hold if our (implied) prior truly represents our beliefs, but we find that pLLM(θ)
+is typically heavily overconfident on a small number of possible hypotheses and can struggle to
+convey the full range of possibilities even with careful prompting and a high temperature (c.f. Fig. 5).
+A natural tractable alternative is to derive our beliefs through LLM in-context updates, that is, use
+pLLM(θ;h t−1), noting that this has been shown to behave differently to Bayesian updating (Falck
+et al., 2024; Kossen et al., 2024). However, we find that even state-of-the-art LLMs such as GPT-
+4o (OpenAI, 2024) often fail to incorporate history faithfully; they regularly sample hypotheses
+incompatible with past observations and exhibit premature overconfidence, with both issues becoming
+more pronounced ash t−1 grows. We discuss reasons for these shortfalls in §A.3.
+To avoid these shortfalls, we instead propose an approach that balances tractability and faithfulness.
+Although we will still use pLLM(θ;h t−1) as the basis for deriving our belief state over θ (i.e. our
+intermediate prior), we make various alterations to effectively incorporate historical information
+and ensure diversity. Our derived distribution, which we refer to as pf (θ;h t−1), differs from
+pLLM(θ;h t−1) in two key ways. First, we filter the generated hypotheses according to whether
+they are compatible with the history ht−1. We do this by using the LLM to zero-shot check
+the compatibility of each sampled θ with all the previous question–answer pairs in ht−1 (using
+pLLM(yi; [θ, xi])∀i= 1 :t−1 ) and then rejecting that sample if an incompatibility is found.
+Specifically, a sample is rejected if the likelihood of an observed answer falls below a predefined
+threshold, chosen to balance robustness to model uncertainty against the need to enforce strict
+historical coherence. To reduce the computational cost of generating and evaluating hypotheses,
+we further include ahypothesis-retention mechanism: any hypotheses from the previous turn which
+remain consistent with the most recent question and observation are retained in the hypothesis set
+without regeneration. Second, we make a number of modifications to promote diversity. Rather than
+generate candidates independently, we prompt the LLM to generate batches of candidates using
+a prompt encouraging diversity. After filtering these candidates as above and removing duplicates,
+we then impose a uniform distribution. Details of our exact setup forp f (θ;h t−1)are given in §E.
+4 ON THESPECIFICATION OFp(θ, y t;h t−1, xt),AND ITSIMPLICATIONS
+As we described in §3, successfully applying sequential BED in the LLM setting hinges upon how we
+specify, and update, the joint distribution p(θ, yt;h t−1, xt). In particular, as previously highlighted,
+there are two distinct ways to derive the joint model from our LLM: using aprior–likelihood pairing,
+p(θ;h t−1)p(y t; [θ, xt]), or adata–estimation pairing, p(y t; [ht−1, xt])p(θ; [h t−1, xt, yt]). The
+first construction mirrors deriving our beliefs about θ from aconventionalBayesian posterior with
+5
+Preprint
+a concrete prior and likelihood derived (at least partially) from the LLM, whereas the second has
+analogies to amarginal-posteriorapproach (Fong et al., 2023; Falck et al., 2024) in that it that
+samples hypothetical data and draws inferences onθ given hypothetical data using in-context learning.
+In our outlined BED-LLM approach, we adopted a prior–likelihood pairing. Below, we justify this
+decision and also discuss certain settings where the data–estimation setup might be preferable instead.
+Modeling flexibilityThe most obvious relative merits of the prior–likelihood and data–estimation
+pairings are in the flexibility in how each term is chosen. The prior–likelihood pairing gives us greater
+flexibility to construct a prior set of beliefs over θ that is distinct to the LLM’s internal beliefs, as it
+allows us to directly control this prior by changing p(θ;h t−1), whereas the prior is only implicitly
+defined in the data–estimation pairing. In §3.3 we exploited this flexibility through our definition of
+pf (θ;h t−1). On the other hand, the data–estimation pairing could provide some beneficial flexibility
+in specifying how the data itself is simulated through changing p(y t; [ht−1, xt]), which could, for
+example, be useful when we have access to external data simulators.
+Faithfulness of conditional distributionsWhile deviations from relying on direct LLM predictions
+are also in principle possible for the conditional models p(y t; [θ, xt]) and p(θ; [ht−1, xt, yt]), in
+practice, these will typically be more difficult and expensive to implement. This is first because
+these conditionals need to be instantiated for each sampled instance of the conditional variable (θ
+and yt respectively), rather than just needing us to set up a single marginal distribution. Second, to
+construct estimators for Equations (1) and (2), we require access to concreteprobabilitiesfor the
+conditional distributions (in order to calculate entropies), whereas we only needed to draw samples
+for the marginal distributions (in order to approximate expectations). As such, the conditionals need
+to be explicit distributions, or at least ones where the probability can be cheaply estimated, so they are
+more difficult to define through the output of some algorithmic procedure, especially in large spaces.
+When considering the conditional distributions, the decisive question on the relative merit of the two
+formulations is which conditional factor we are willing to trust the LLM to supply as afull probability
+distribution. Critically, we rely on how the LLM captures uncertainty in this full distribution—
+including, for example, tail behavior—not merely the fidelity of typical samples; the marginal
+factors, by contrast, only need to be sampled from. If we accept the LLM’s direct predictive
+distribution for p(y t; [θ, xt]), then we are basing our notion of uncertainty around (and will need to
+calculate) H[pLLM (yt; [θ, xt])], and if instead we place more faith in the LLM’s internal distribution
+for p(θ; [ht−1, xt, yt]), then we are basing our uncertainty around H[pLLM(θ; [ht−1, xt+1, yt+1])].
+In essence, the choice between prior–likelihood and data–estimation pairings thus comes down to
+whether we believe the LLM will produce a more appropriate conditional uncertainty over θ or y,
+along with our ability to numerically estimate this uncertainty cheaply.
+This difference becomes particularly noticeable when the complexities of the spaces of θ and y differ
+significantly. Our ability to draw sensible samples of either will generally be quite robust to these
+spaces being complex or high–dimensional; this is where LLMs tend to thrive, effectively generating
+highly complex outputs in an autoregressive manner. However, evaluating the entropy of a distribution
+becomes dramatically harder as the dimensionality or complexity increases (Acharya et al., 2019;
+Paninski, 2003), and the entropy of the predictive distribution of an LLM in such cases willnot
+typically provide a sensible measure of uncertainty (Kadavath et al., 2022; Desai & Durrett, 2020).
+As such, the decision between joint formulations should predominantly be based on the complexity
+of the space of θ versus that of y:we should generally favor the prior–likelihood formulation if θ
+is more complex and the data–estimation formulation if y is more complex. For the problems
+that we consider, the space of y is less complex than that of θ, indicating we should, in general,
+use the prior–likelihood formulation. However, in cases where this is not true, the data–estimation
+formulation may be preferable instead. We provide additional discussion on the impact of the chosen
+pairing on our entropy estimate, plus discussion on the choice ofθ, in §B.
+Extracting the belief stateA further advantage of the prior–likelihood construction is that our belief
+state on θ can be extracted directly as pf (θ;h t−1). With the data–estimation construction, we would
+have to estimate the marginal on θ by integrating p(y t; [ht−1, xt])p(θ; [h t−1, xt, yt]) over the syn-
+thetic response yt. Direct access to p(θ;h t−1) is also important to ensure that our current belief state
+is independent of the next question xt, which is both intuitively desirable and theoretically required
+to be a valid BED approach (Lindley, 1972); data–estimation formulations will generally violate this.
+6
+Preprint
+5 RELATEDWORK
+Several works have explored the baseline ability of LLMs to rapidly learn about a parameter of
+interest by asking questions (Zhang et al., 2024; Li et al., 2025b)—effectively ourNaivebaseline
+in §6. While these works demonstrate some ability to adaptively construct information-seeking
+questions, they often fail to extract important information (Li et al., 2025a).
+Some works have further specifically attempted to choose questions based on model-based
+uncertainty criteria (Piriyakulkij et al., 2023; Hu et al., 2024; Kobalczyk et al., 2025; Mazzaccara
+et al., 2024; Cooper et al., 2025). None of these works provide the same careful consideration of how
+the underlying joint model should be formulated, which underpins our own work, and they all assume
+deterministic likelihood models that mean their objectives correspond to a sample-based estimate of
+marginal predictive entropy in practice, as explained in §3.2. In general, these previous works have
+also required restrictions on the space of allowable hypotheses, θ, and typically require additional
+assumptions and/or approximations. More extensive discussion of related work is given in §C.
+6 EXPERIMENTS
+We now assess how well BED-LLM and alternative information-gathering approaches work in two
+practical scenarios: 20 Questions, a game in which the player has to guess a target entity and can ask
+up to 20 yes-no questions about the entity; and preference elicitation, a task in which the agent has to
+predict a user’s preference profile and can ask five multiple-choice questions to the user.
+AnswererWe produce answers to thequestionerLLM’s questions using a separateanswererLLM.
+The answerer is provided with a ground-truthθ∗ (a target entity in 20 Questions or a user profile in pref-
+erence elicitation) and processes individual questions from the questioner without access to any of the
+questioner’s context (i.e. ht−1and the questioner’s prompts). We test two questioner-answerer setups,
+where the two are served by separate instances of the same LLM, or two different LLMs. The latter sce-
+nario is important because in practice, the answerer will often follow a different distribution than the
+questioner’s internal model for reasoning about responses, thereby forming a model misspecification.
+BaselinesWe compare BED-LLM against two existing baseline methods: Naive and Split. Naive
+involves prompting the questioner to directly generate an informative next question, without explicit
+hypotheses generation or computing a data-acquisition objective, and then sampling the question with
+temperature T=1 ; this was explored by Zhang et al. (2024). Split involves choosing the question
+that most equally splits a sampled set of hypotheses Θcand, which corresponds to maximizing the
+marginal predictive entropy H[p(yt;x t, ht−1)] in a model with a deterministic likelihood. As such,
+the methods of Cooper et al. (2025), Hu et al. (2024), Kobalczyk et al. (2025), Mazzaccara et al.
+(2024) and Piriyakulkij et al. (2023) can all be viewed as variants of this Split baseline. While
+Split is not applicable to the preference-elicitation scenario, where a deterministic likelihood is not
+viable, it is to our knowledge the state-of-the-art method for 20 Questions. We note that our own
+Split baseline implementation achieves dramatically better results than reported by, for example,
+Kobalczyk et al. (2025), so this constitutes a very strong baseline relative to previous work. On top of
+this, our implementation of Naive appears to signficantly improve over that of Zhang et al. (2024),
+6.1 20 QUESTIONS
+We consider three sets of 20 Questions problems: Animals, Celebrities, and Things (See §F.1). Each
+problem set comprises 100 target entities {θ∗
+i }100
+i=1 from a given category. The space of possible θ
+is large and not explicitly defined or restricted: we do not tell the LLM this set of target entities, so
+the space of θ is bounded only by what the LLM can generate. We note that by comparison, many
+previous works have relied on restricted spaces for θ (Chan et al., 2025; Hu et al., 2024; Piriyakulkij
+et al., 2023; Wang et al., 2025).
+To evaluate performance, at each turnt∈(0,1, . . . ,20)we extract θt
+i from pf (θi;h t) using greedy
+decoding and we compute the success rate as the mean across i of I(θt
+i =θ ∗
+i ). These evaluation
+guesses are not part of the questioner algorithm itself and are not included in ht−1. In line with the
+original rules of the game, we also introduce an explicit mechanism for the questioner to guess the
+answer as one of its 20 questions: if the set of filtered hypotheses collapses to a single candidate, the
+questioner asks “Is it ⟨item⟩?”. A correct guess ends the game; otherwise the negative response is
+added toh t−1 and counted towards the budget. See §F for further experimental details.
+7
+Preprint
+Success Rate (%)
+Dataset Model Naive Split BED-LLM Entropy Data–Est. ICL Beliefs Impl. Max.
+Animals
+GPT-4o-mini 44±5.078±4.288±3.379±4.1— 18±3.947±5.0
+GPT-4o 45±5.083±3.893±2.688±3.3— 25±4.470±4.6
+Llama-3.1-8B 8±2.749±5.063±4.954±5.038±4.925±4.416±3.7
+Llama-3.3-70B 40±4.965±4.879±4.168±4.740±4.933±4.754±5.0
+Qwen2.5-72B 45±5.087±3.495±2.285±3.668±4.746±5.061±4.9
+Celebrities
+GPT-4o-mini 30±4.653±5.072±4.555±5.0— 16±3.731±4.7
+GPT-4o 45±5.063±4.986±3.564±4.8— 52±5.050±5.0
+Llama-3.1-8B 10±3.035±4.858±5.036±4.819±3.924±4.319±3.9
+Llama-3.3-70B 33±4.743±5.055±5.046±5.026±4.427±4.537±4.9
+Qwen2.5-72B 32±4.756±5.084±3.759±4.934±4.826±4.439±4.9
+Things
+GPT-4o-mini 26±4.438±4.949±5.037±4.9— 19±4.025±4.4
+GPT-4o 34±4.840±4.964±4.849±5.0— 19±3.942±5.0
+Llama-3.1-8B 10±3.012±3.326±4.415±3.69±2.911±3.110±3.0
+Llama-3.3-70B 34±4.846±5.055±5.048±5.019±3.915±3.634±4.8
+Qwen2.5-72B 32±4.751±5.062±4.951±5.039±4.924±4.340±4.9
+Table 1:Success rate (%) for 20 Questions at the end of the game. Best result in bold. ± numbers
+show the standard error of the mean estimated using
+p
+p(1−p)/(n−1) where p is the success
+percentage and n is the number of datapoints. This estimator is positively biased and thus conservative.
+Data–Est. is not possible to run for GPT models due to limited logprobs support in OpenAI API.
+0
+100
+Success %
+on Animals
+GPT-4o-mini
+0
+100
+GPT-4o
+0
+90
+Llama-3.3-70B
+0
+100
+Qwen2.5-72B
+0
+90
+Q: GPT-4o-mini
+A: Qwen2.5-72B
+0
+90
+Q: Qwen2.5-72B
+A: GPT-4o-mini
+0
+90
+Success %
+on Celebrities 0
+100
+0
+70
+0
+100
+0
+70
+0
+70
+0 20
+Turn t
+0
+60
+Success %
+on Things
+0 20
+Turn t
+0
+80
+0 20
+Turn t
+0
+70
+0 20
+Turn t
+0
+80
+0 20
+Turn t
+0
+60
+0 20
+Turn t
+0
+60
+Naive Split BED-LLM Entropy
+Figure 1:Success rate on 20 Questions: mean±standard error across 100 targets per dataset.
+BED-LLM improves over Naive and Split baselinesOur results in Tab. 1 and Fig. 1 show BED-
+LLM significantly outperforming Naive and Split across all problems and LLMs. Particularly notable
+is that BED-LLM’s final success rate is typically more than double that of Naive, highlighting the big
+gains that can be achieved by using explicit EIG maximisation instead of implicit LLM reasoning.
+BED-LLM ablationsIn order to understand the importance of BED-LLM’s algorithmic compo-
+nents, we further evaluate four ablations on this problem: Entropy, Data–Estimation, ICL Beliefs
+and Implicit Maximization. Each of these differs from BED-LLM with respect to one algorithmic
+component. Entropy replaces the EIG data-acquisition objective with the marginal predictive entropy
+H[p(yt;x t, ht−1)] (§3.2); this contrasts with Split in that it uses pLLM(yt+1; [θ, xt+1]) rather than a
+deterministic likelihood. Implicit Maximization involves sampling candidate questions and prompting
+the questioner to select the most informative one, without any explicit objective estimation (§3.2).
+ICL Beliefs uses θ belief updates derived from simple in-context learning, namely pLLM(θ;h t−1)
+instead of pf (θ;h t−1), testing the importance of our filtering mechanism (§3.3). Data–Estimation
+uses a data–estimation pairing rather than BED-LLM’s prior–likelihood setup (see §D). In Tab. 1 we
+see that BED-LLM comfortably outperforms all alternative approaches. Notably, Entropy provides
+8
+Preprint
+0 5
+Turn t
+3.5
+4.0
+4.5
+Mean Rating
+GPT-4o-mini
+0 5
+Turn t
+3.5
+4.0
+GPT-4o
+0 5
+Turn t
+4.0
+4.5
+Llama-3.3-70B
+0 5
+Turn t
+3.5
+4.0
+Qwen2.5-72B
+0 5
+Turn t
+4.0
+4.5
+Q: GPT-4o-mini
+A: Qwen2.5-72B
+0 5
+Turn t
+3.5
+4.0
+Q: Qwen2.5-72B
+A: GPT-4o-mini
+Naive BED-LLM Entropy
+Figure 2:Mean rating across 10 film recommendations: mean±standard error across 200 users.
+the strongest ablation baseline, with performance almost identical (sometimes superior) to Split. This
+shows that the use of a non-deterministic likelihood is beneficial in allowing us to target a proper
+EIG, rather than because it is particularly detrimental to the marginal predictive entropy itself.
+Prior–likelihood outperforms data–estimationOur analysis in §4 is validated by our results:
+BED-LLM’s prior-likelihood approach substantially outperforms Data–Estimation. Data–Estimation
+still outperforms Naive, but interestingly it performs worse than Entropy, highlighting the importance
+of estimating uncertainty in the y space instead of θ space. These findings reinforce our claim that
+the choice of joint-model factorization is a critical algorithmic decision.
+Rejection sampling and explicit EIG maximization are keyWe also see the importance of two
+other aspects of BED-LLM. First, how we produce our beliefs over θ matters: deriving beliefs using
+simple in-context learning, as in ICL Beliefs, lead to massive performance drops. Second, while
+BED-LLM’s routines for sampling candidate questions and hypotheses are crucial, they alone are not
+sufficient: passing the samples to an LLM and prompting it to select the highest-EIG question, as in
+Implicit Maximization, works much less well than using the samples to explicitly maximize EIG.
+BED-LLM is robust to questioner–answerer mismatchOur results in Fig. 1 demonstrate that the
+benefit of BED-LLM persists even under model misspecification. This is important for applicability
+to real-world users, whose responses will follow a different distribution than the questioner LLM.
+6.2 PREFERENCEELICITATION
+Unlike 20 Questions, in whichθ is a concrete entity and most reasonable questions have clear answers,
+many real-world information-gathering tasks involve more abstract targets and less predictable data
+generation. A key example is learning user preferences, where it may be difficult to explicitly define
+a concrete closed set of possible θ, and it is also challenging for the LLM to develop appropriate
+uncertainty estimates. To study such a scenario, we evaluate BED-LLM on inferring users’ film
+preferences. Here the target we are trying to gather information about is somewhat abstract, and we
+have some flexibility in how we define θ in our joint model. Our chosen setup is to define θ to be
+a user profile, namely a paragraph of text describing the user’s film preferences, with our answerer
+model prompted to emulate a user with a given profile; see §G for full details. We consider 200
+different user profiles as the ground truth θ∗, but as with 20 Questions this set is never given to the
+questioner. Because Split is not applicable as a baseline here (a deterministic likelihood assumption
+is clearly unreasonable), we benchmark with the similar Entropy approach instead. We also note that
+data–estimation setup is completely unviable here as well because of the largeθspace.
+At each turn t∈(0,1, . . . ,5)we use the question-answer history as context for generating a list of
+ten film recommendations. This list is then rated in its fit to the user profile using an LLM-as-judge
+setup (Trivedi et al., 2024; Zhu et al., 2025). Specifically, the answerer scores each film on a scale of
+1 to 5 (in 0.5 increments), based on how well the film aligns with θ∗; this score is output together
+with a brief justification to increase reliability. The films’ scores are not included inh t−1.
+Our results in Fig. 2 show that, while Naive is often a strong baseline in this preference-elicitation
+scenario, BED-LLM is still able to provide a boost over both Naive and Entropy, producing higher-
+rated film recommendations. BED-LLM’s benefit is most clear in scenarios where the questioner
+belongs to a different model class to the answerer: here Naive’s performance is much less convincing.
+9
+Preprint
+7 CONCLUSION
+In this work, we have shown how to effectively apply the framework of sequential Bayesian experimen-
+tal design (BED) to the problem of interactive information gathering with LLMs. Specifically, we have
+introduced BED-LLM, which provides a specific, information–theoretic, sequential BED approach
+that makes a variety of carefully justified design choices in the joint-model factorization, belief updat-
+ing, and EIG estimation. Particularly central to BED-LLM is the prior–likelihood pairing with filtering
+of hypotheses for consistency with the history. BED-LLM is notably the first work that uses both this
+prior–likelihood pairing without making a deterministic likelihood assumption that causes the EIG to
+simply to just marginal predictive entropy. Together, these innovations lead to substantial performance
+improvements compared to previous approaches. The results thus confirm that principled EIG–driven
+strategies can yield substantial gains for interactive, multi-turn, information gathering problems.
+10
+Preprint
+REFERENCES
+Jayadev Acharya, Sourbh Bhadane, Piotr Indyk, and Ziteng Sun. Estimating entropy of distributions
+in constant space. InAdvances in Neural Information Processing Systems, 2019.
+Gati V Aher, Rosa I Arriaga, and Adam Tauman Kalai. Using large language models to simulate
+multiple humans and replicate human subject studies. InInternational Conference on Machine
+Learning, 2023.
+Chinmaya Andukuri, Jan-Philipp Fränken, Tobias Gerstenberg, and Noah D Goodman. Star-gate:
+Teaching language models to ask clarifying questions. InConference on Language Modeling,
+2024.
+Leonardo Bertolazzi, Davide Mazzaccara, Filippo Merlo, and Raffaella Bernardi. ChatGPT’s
+information seeking strategy: Insights from the 20-questions game. InInternational Natural
+Language Generation Conference, 2023.
+Freddie Bickford Smith, Andreas Kirsch, Sebastian Farquhar, Yarin Gal, Adam Foster, and Tom
+Rainforth. Prediction-oriented Bayesian active learning. InInternational Conference on Artificial
+Intelligence and Statistics, pp. 7331–7348, 2023.
+Freddie Bickford Smith, Jannik Kossen, Eleanor Trollope, Mark van der Wilk, Adam Foster, and
+Tom Rainforth. Rethinking aleatoric and epistemic uncertainty. InInternational Conference on
+Machine Learning, 2025. URLhttps://openreview.net/forum?id=CY9MlORQs5.
+Patrick Billingsley.Convergence of probability measures. John Wiley & Sons, 2013.
+Tom Blau, Edwin V Bonilla, Iadine Chades, and Amir Dezfouli. Optimizing sequential experimental
+design with deep reinforcement learning. InInternational Conference on Machine Learning, 2022.
+Brown, Mann, Ryder, Subbiah, Kaplan, Dhariwal, Neelakantan, Shyam, Sastry, Askell, Agarwal,
+Herbert-V oss, Krueger, Henighan, Child, Ramesh, Ziegler, Wu, Winter, Hesse, Chen, Sigler, Litwin,
+Gray, Chess, Clark, Berner, McCandlish, Radford, Sutskever, and Amodei. Language models are
+few-shot learners. InAdvances in Neural Information Processing Systems, 2020.
+Daniel R Cavagnaro, Jay I Myung, Mark A Pitt, and Janne V Kujala. Adaptive design optimization:
+A mutual information-based approach to model discrimination in cognitive science.Neural
+computation, 22(4):887–905, 2010.
+Souradip Chakraborty, Jiahao Qiu, Hui Yuan, Alec Koppel, Furong Huang, Dinesh Manocha, Am-
+rit Singh Bedi, and Mengdi Wang. Maxmin-rlhf: Alignment with diverse human preferences. In
+International Conference on Machine Learning, 2024.
+Kathryn Chaloner and Isabella Verdinelli. Bayesian experimental design: A review.Statistical
+Science, pp. 273–304, 1995.
+Kwan Ho Ryan Chan, Yuyan Ge, Edgar Dobriban, Hamed Hassani, and René Vidal. Conformal infor-
+mation pursuit for interactively guiding large language models.arXiv preprint arXiv:2507.03279,
+2025.
+Yizhou Chi, Jessy Lin, Kevin Lin, and Dan Klein. Clarinet: Augmenting language models to ask
+clarification questions for retrieval.arXiv preprint arXiv:2405.15784, 2024.
+Michael Cooper, Rohan Wadhawan, John Michael Giorgi, Chenhao Tan, and Davis Liang. The
+curious language model: Strategic test-time information acquisition. InSecond Workshop on
+Test-Time Adaptation: Putting Updates to the Test! at ICML 2025, 2025. URL https://
+openreview.net/forum?id=1Bfo9L5ayn.
+Shrey Desai and Greg Durrett. Calibration of pre-trained transformers. In Bonnie Webber, Trevor
+Cohn, Yulan He, and Yang Liu (eds.),Conference on Empirical Methods in Natural Language
+Processing, pp. 295–302, Online, November 2020. Association for Computational Linguis-
+tics. doi: 10.18653/v1/2020.emnlp-main.21. URL https://aclanthology.org/2020.
+emnlp-main.21/.
+11
+Preprint
+Fabian Falck, Ziyu Wang, and Chris Holmes. Is in-context learning in large language models
+Bayesian? A martingale perspective. InInternational Conference on Machine Learning, 2024.
+Edwin Fong, Chris Holmes, and Stephen G Walker. Martingale posterior distributions.Journal of the
+Royal Statistical Society Series B: Statistical Methodology, 85(5):1357–1391, 2023.
+Adam Foster.Variational, Monte Carlo and policy-based approaches to Bayesian experimental
+design. PhD thesis, University of Oxford, 2021.
+Adam Foster, Desi R Ivanova, Ilyas Malik, and Tom Rainforth. Deep adaptive design: Amortizing
+sequential Bayesian experimental design. InInternational Conference on Machine Learning, pp.
+3384–3395, 2021.
+Yarin Gal, Riashat Islam, and Zoubin Ghahramani. Deep Bayesian active learning with image data.
+InInternational Conference on Machine Learning, pp. 1183–1192, 2017.
+Kunal Handa, Yarin Gal, Ellie Pavlick, Noah Goodman, Jacob Andreas, Alex Tamkin, and Belinda Z.
+Li. Bayesian preference elicitation with language models.arXiv preprint arXiv:2403.05534, 2024.
+F Maxwell Harper and Joseph A Konstan. The movielens datasets: History and context.Acm
+Transactions on Interactive Intelligent Systems, 5(4):1–19, 2015.
+Marcel Hedman, Desi R. Ivanova, Cong Guan, and Tom Rainforth. Step-DAD: Semi-amortized
+policy-based Bayesian experimental design. InInternational Conference on Machine Learning,
+2025. URLhttps://openreview.net/forum?id=JRg8P2bX8P.
+Takanobu Hirosawa, Yukinori Harada, Kazuya Mizuta, Tetsu Sakamoto, Kazuki Tokumasu, and
+Taro Shimizu. Evaluating chatgpt-4’s accuracy in identifying final diagnoses within differential
+diagnoses compared with those of physicians: Experimental study for diagnostic cases.JMIR Form
+Res, 8:e59267, Jun 2024. ISSN 2561-326X. doi: 10.2196/59267. URL https://formative.
+jmir.org/2024/1/e59267.
+Zhiyuan Hu, Chumin Liu, Xidong Feng, Yilun Zhao, See-Kiong Ng, Anh Tuan Luu, Junxian He,
+Pang Wei Koh, and Bryan Hooi. Uncertainty of thoughts: Uncertainty-aware planning enhances
+information seeking in large language models. InAdvances in Neural Information Processing
+Systems, 2024.
+Xun Huan and Youssef M Marzouk. Sequential Bayesian optimal experimental design via approxi-
+mate dynamic programming.arXiv preprint arXiv:1604.08320, 2016.
+Desi R Ivanova, Adam Foster, Steven Kleinegesse, Michael U Gutmann, and Tom Rainforth. Implicit
+deep adaptive design: policy-based experimental design without likelihoods. InAdvances in Neural
+Information Processing Systems, 2021.
+Rune Møberg Jacobsen, Samuel Rhys Cox, Carla F. Griggio, and Niels van Berkel. Chatbots
+for data collection in surveys: A comparison of four theory-based interview probes. InCHI
+Conference on Human Factors in Computing Systems, CHI ’25, pp. 1–21. ACM, April 2025. doi:
+10.1145/3706598.3714128. URLhttp://dx.doi.org/10.1145/3706598.3714128.
+Saurabh Jha, Rohan Arora, Yuji Watanabe, Takumi Yanagawa, Yinfang Chen, Jackson Clark, Bhavya
+Bhavya, Mudit Verma, Harshit Kumar, Hirokuni Kitahara, Noah Zheutlin, Saki Takano, Divya
+Pathak, Felix George, Xinbo Wu, Bekir O. Turkkan, Gerard Vanloo, Michael Nidd, Ting Dai,
+Oishik Chatterjee, Pranjal Gupta, Suranjana Samanta, Pooja Aggarwal, Rong Lee, Pavankumar
+Murali, Jae wook Ahn, Debanjana Kar, Ameet Rahane, Carlos Fonseca, Amit Paradkar, Yu Deng,
+Pratibha Moogi, Prateeti Mohapatra, Naoki Abe, Chandrasekhar Narayanaswami, Tianyin Xu,
+Lav R. Varshney, Ruchi Mahindru, Anca Sailer, Laura Shwartz, Daby Sow, Nicholas C. M. Fuller,
+and Ruchir Puri. Itbench: Evaluating ai agents across diverse real-world it automation tasks. In
+International Conference on Machine Learning, 2025.
+Saurav Kadavath, Tom Conerly, Amanda Askell, Tom Henighan, Dawn Drain, Ethan Perez, Nicholas
+Schiefer, Zac Hatfield-Dodds, Nova DasSarma, Eli Tran-Johnson, Scott Johnston, Sheer El-Showk,
+Andy Jones, Nelson Elhage, Tristan Hume, Anna Chen, Yuntao Bai, Sam Bowman, Stanislav Fort,
+Deep Ganguli, Danny Hernandez, Josh Jacobson, Jackson Kernion, Shauna Kravec, Liane Lovitt,
+12
+Preprint
+Kamal Ndousse, Catherine Olsson, Sam Ringer, Dario Amodei, Tom Brown, Jack Clark, Nicholas
+Joseph, Ben Mann, Sam McCandlish, Chris Olah, and Jared Kaplan. Language models (mostly)
+know what they know.arXiv preprint arXiv:2207.05221, 2022.
+Greg Kestin, Kelly Miller, Anna Klales, Timothy Milbourne, and Gregorio Ponti. Ai tutoring
+outperforms in-class active learning: an rct introducing a novel research-based design in an
+authentic educational setting.Scientific Reports, 15(1):17458, 2025.
+Katarzyna Kobalczyk, Nicolas Astorga, Tennison Liu, and Mihaela van der Schaar. Active task
+disambiguation with llms. InInternational Conference on Learning Representations, 2025.
+Jannik Kossen, Yarin Gal, and Tom Rainforth. In-context learning learns label relationships but is
+not conventional learning. InThe Twelfth International Conference on Learning Representations,
+2024. URLhttps://openreview.net/forum?id=YPIA7bgd5y.
+Philippe Laban, Hiroaki Hayashi, Yingbo Zhou, and Jennifer Neville. Llms get lost in multi-turn
+conversation.arXiv preprint arXiv:2505.06120, 2025.
+Sanguk Lee, Tai-Quan Peng, Matthew H Goldberg, Seth A Rosenthal, John E Kotcher, Edward W
+Maibach, and Anthony Leiserowitz. Can large language models estimate public opinion about
+global warming? an empirical assessment of algorithmic fidelity and bias.PLoS Climate, 3(8):
+e0000429, 2024.
+Belinda Z Li, Been Kim, and Zi Wang. Questbench: Can llms ask the right question to acquire
+information in reasoning tasks?arXiv preprint arXiv:2503.22674, 2025a.
+Belinda Z. Li, Alex Tamkin, Noah Goodman, and Jacob Andreas. Eliciting human preferences with
+language models. InThe Thirteenth International Conference on Learning Representations, 2025b.
+URLhttps://openreview.net/forum?id=LvDwwAgMEW.
+Yubo Li, Xiaobin Shen, Xinyu Yao, Xueying Ding, Yidi Miao, Ramayya Krishnan, and Rema
+Padman. Beyond single-turn: A survey on multi-turn interactions with large language models.
+arXiv preprint arXiv:2504.04717, 2025c.
+Lindley.Bayesian Statistics: a Review. Society for Industrial and Applied Mathematics, 1972.
+Dennis V Lindley. On a measure of the information provided by an experiment.The Annals of
+Mathematical Statistics, 27(4):986–1005, 1956.
+Jiayu Liu, Zhenya Huang, Tong Xiao, Jing Sha, Jinze Wu, Qi Liu, Shijin Wang, and Enhong Chen.
+Socraticlm: Exploring socratic personalized teaching with large language models.Advances in
+Neural Information Processing Systems, 37:85693–85721, 2024a.
+Nelson F Liu, Kevin Lin, John Hewitt, Ashwin Paranjape, Michele Bevilacqua, Fabio Petroni, and
+Percy Liang. Lost in the middle: How language models use long contexts.Transactions of the
+Association for Computational Linguistics, 12, 2024b.
+Chris Lu, Cong Lu, Robert Tjarko Lange, Jakob Foerster, Jeff Clune, and David Ha. The ai scientist:
+Towards fully automated open-ended scientific discovery.arXiv preprint arXiv:2408.06292, 2024.
+David JC MacKay. Information-based objective functions for active data selection.Neural computa-
+tion, 4(4):590–604, 1992.
+Indrajeet Mandal, Jitendra Soni, Mohd Zaki, Morten M. Smedskjaer, Katrin Wondraczek, Lothar Won-
+draczek, Nitya Nand Gosvami, and N. M. Anoop Krishnan. Autonomous microscopy experiments
+through large language model agents.arXiv preprint: arXiv2501.10385, 2025.
+Davide Mazzaccara, Alberto Testoni, and Raffaella Bernardi. Learning to ask informative questions:
+Enhancing llms with preference optimization and expected information gain. InFindings of the
+Association for Computational Linguistics: EMNLP, 2024.
+Sewon Min, Xinxi Lyu, Ari Holtzman, Mikel Artetxe, Mike Lewis, Hannaneh Hajishirzi, and Luke
+Zettlemoyer. Rethinking the role of demonstrations: What makes in-context learning work?arXiv
+preprint arXiv:2202.12837, 2022.
+13
+Preprint
+Willie Neiswanger, Ke Alexander Wang, and Stefano Ermon. Bayesian algorithm execution: Esti-
+mating computable properties of black-box functions using mutual information. InInternational
+Conference on Machine Learning, pp. 8005–8015, 2021.
+OpenAI. Gpt-4o system card.arXiv preprint arXiv:2410.21276, 2024.
+OpenAI. OpenAI o3 and o4-mini system card. System card, OpenAI, April 2025. URL
+https://cdn.openai.com/pdf/2221c875-02dc-4789-800b-e7758f3722c1/
+o3-and-o4-mini-system-card.pdf. Accessed 2025-07-15.
+Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong
+Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow
+instructions with human feedback.Advances in Neural Information Processing Systems, 35:
+27730–27744, 2022.
+Liam Paninski. Estimation of entropy and mutual information.Neural computation, 15(6):1191–1253,
+2003.
+Shishir G Patil, Huanzhi Mao, Fanjia Yan, Charlie Cheng-Jie Ji, Vishnu Suresh, Ion Stoica, and
+Joseph E. Gonzalez. The berkeley function calling leaderboard (BFCL): From tool use to agentic
+evaluation of large language models. InInternational Conference on Machine Learning, 2025.
+URLhttps://openreview.net/forum?id=2GmDdhBdDk.
+Wasu Top Piriyakulkij, V olodymyr Kuleshov, and Kevin Ellis. Active preference inference using
+language models and probabilistic reasoning.arXiv preprint arXiv:2312.12009, 2023.
+Tom Rainforth.Automating inference, learning, and design using probabilistic programming. PhD
+thesis, University of Oxford, 2017.
+Tom Rainforth, Adam Foster, Desi R Ivanova, and Freddie Bickford Smith. Modern Bayesian
+experimental design.Statistical Science, 39(1):100–114, 2024.
+C Radhakrishna Rao et al. Information and the accuracy attainable in the estimation of statistical
+parameters.Bull. Calcutta Math. Soc, 37(3):81–91, 1945.
+Leonard J Savage.The foundations of statistics.John Wiley & Sons, 1954.
+Paola Sebastiani and Henry P Wynn. Maximum entropy sampling and optimal Bayesian experimental
+design.Journal of the Royal Statistical Society: Series B (Statistical Methodology), 62(1):145–157,
+2000.
+Prapti Trivedi, Aditya Gulati, Oliver Molenschot, Meghana Arakkal Rajeev, Rajkumar Ramamurthy,
+Keith Stevens, Tanveesh Singh Chaudhery, Jahnavi Jambholkar, James Zou, and Nazneen Rajani.
+Self-rationalization improves llm as a fine-grained judge.arXiv preprint arXiv:2410.05495, 2024.
+Jimmy Wang, Thomas Zollo, Richard Zemel, and Hongseok Namkoong. Adaptive elicitation of
+latent information using natural language.arXiv preprint arXiv:2504.04204, 2025.
+Shirley Wu, Michel Galley, Baolin Peng, Hao Cheng, Gavin Li, Yao Dou, Weixin Cai, James Zou,
+Jure Leskovec, and Jianfeng Gao. Collabllm: From passive responders to active collaborators. In
+International Conference on Machine Learning, 2025.
+Yizhe Zhang, Jiarui Lu, and Navdeep Jaitly. Probing the multi-turn planning capabilities of llms via
+20 question games. InProceedings of the Association for Computational Linguistics, 2024.
+Yue Zhang, Yafu Li, Leyang Cui, Deng Cai, Lemao Liu, Tingchen Fu, Xinting Huang, Enbo Zhao,
+Yu Zhang, Yulong Chen, et al. Siren’s song in the ai ocean: a survey on hallucination in large
+language models.ACM Transactions on Information Systems, 42(2), 2025.
+Lianghui Zhu, Xinggang Wang, and Xinlong Wang. Judgelm: Fine-tuned large language models are
+scalable judges. InInternational Conference on Learning Representations, 2025.
+14
+Preprint
+APPENDIXCONTENTS
+A Algorithmic considerations 16
+A.1 Updating the likelihood . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+A.2 Estimating EIG for each question . . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+A.2.1 Predictive entropy is not a good approximation for EIG . . . . . . . . . . . 16
+A.2.2 EIG estimator . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+A.3 Prior construction and belief updating . . . . . . . . . . . . . . . . . . . . . . . . 17
+B Additional discussions on design choices 17
+B.1 An alternative view on the faithfulness of conditional distributions . . . . . . . . . 17
+B.2 Choice ofθ. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+B.3 Alignment between EIG and belief updating procedure . . . . . . . . . . . . . . . 18
+C Extended related work 19
+D Data–estimation method 20
+D.1 EIG Estimation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20
+D.2 Generating candidate hypotheses . . . . . . . . . . . . . . . . . . . . . . . . . . . 21
+E Generating candidate hypotheses for BED-LLM 22
+F Experiment details for 20 Questions 23
+F.1 Problem sets . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23
+F.2 Evaluation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23
+F.3 Algorithmic details . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23
+G Experiment details for preference elicitation 24
+G.1 Problems . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24
+G.2 Evaluation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25
+G.3 Algorithmic details . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25
+15
+Preprint
+A ALGORITHMIC CONSIDERATIONS
+A.1 UPDATING THE LIKELIHOOD
+The success of BED-LLM hinges on our ability to update our joint distribution. As mentioned in §3,
+we choose not to update the likelihood model as more data is gathered, that is, our likelihood in the
+sequential setting will be pLLM (yt; [θ, xt]) instead of pLLM(yt+1; [ht−1, θ, xt+1]). The main ratio-
+nale of this choice is that for many problems our beliefs on θ capture all the required information to
+predict y|x, hence including the history is adding unnecessary context that could influence the LLM’s
+behavior in undesirable ways. However, it is important to note that pLLM(yt+1; [ht−1, θ, xt+1])
+should be used instead for problems where θ will not capture all information from previous data,
+e.g. ifθis a binary value corresponding to whether we reject a null hypothesis, or is the answer to a
+particular other question of interest.
+A.2 ESTIMATINGEIGFOR EACH QUESTION
+Question 1
+Question:
+Which ice cream flavor feels like the best match for
+this user?
+Choose one option:
+A.Vanilla
+B.Dark Chocolate
+C.Strawberry Swirl
+D.Mint Chocolate Chip
+Predictive Entropy: Very High
+EIG: 0
+Question 2
+Question:
+Which film genre does the user most prefer?
+Choose one option:
+A.Action
+B.Sci-Fi
+C.Comedy
+D.Horror
+Predictive Entropy: High
+EIG: High
+Figure 3:Predictive entropy vs. expected information gain (EIG) in a film-preferences elicitation
+task. Left: very high predictive entropy (answer is completely unknown) but EIG = 0 because the
+answer provides no insight into the user’s film preferences. Right: both predictive entropy and EIG
+are high as the answer is uncertain, but different answers would lead to markedly different posterior
+updates, making it informative for learning film preferences. This thus demonstrates how the two
+criteria can select different questions.
+A.2.1 PREDICTIVE ENTROPY IS NOT A GOOD APPROXIMATION FOREIG
+As discussed in §3.2, previous information-based query selection mechanisms have assumed that
+responses are deterministic given θ and x. This implies that the expected entropy of the likelihood,
+Ep(θ;ht−1)[H[p(yt+1|θ;x t+1, ht−1)]], is constant over designs, meaning that maximizing EIG is
+equivalent to maximizing the marginal predictive entropy,H[Ep(θ;ht−1)[p(yt|θ;x t, ht−1)]].
+In practice, the expected likelihood entropy can and will vary across designs. This variability in
+the expected likelihood entropy can be crucial in selecting good designs. Here, we walk through a
+concrete example where predictive entropy might differ significantly from EIG.
+Fig. 3 shows two candidate questions that could be asked to elicit film preference. Question 1 has
+high predictive entropy: in a randomly selected group of people, we would expect high variation
+in ice cream preference (regardless of the individual’s film preferences). However, since ice cream
+preference is unrelated to film preference, the answer would not help us narrow down our hypothesis
+space, and the EIG is zero.
+This is also supported by evidence in our experiments (§6). Both the Split baseline, and the Entropy
+ablation, assume a deterministic likelihood; in particular, the Entropy ablation uses the same estimator
+of the predictive entropy as BED-LLM. In both cases, we see the performance significantly degrades
+relative to using the full EIG. Further, omitting the expected likelihood entropy term provides no
+meaningful computational saving—the same LLM evaluations are used for the top and bottom lines
+of Eq. 3, hence doing the full estimate of the EIG requires no additional LLM calls to be made.
+16
+Preprint
+A.2.2 EIGESTIMATOR
+One might be tempted to replace ˆp(yt+1; [ht−1, xt+1]) with pLLM(yt+1; [ht−1, xt+1]) in the EIG
+estimation in Eq. 3, as the two essentially offer alternative predictive distributions for the outcome.
+We also advise against this though, noting that it again provides no meaningful computational benefits
+(unless one also assumes a deterministic likelihood, but this would then mean we no longer consider
+θ at all). A key reason for avoiding this substitution is that it would mean we are no longer estimating
+a true EIG: the inconsistency between the likelihood and the marginal data distribution means there is
+no longer a joint model where we are minimising our expected uncertainty in θ. We also find that the
+LLM process of sampling θ from pf (θ;h t−1) followed by y from pLLM (yt; [θ, xt]) tends to give a
+better uncertainty over responses than samplingydirectly fromp LLM(yt+1; [ht−1, xt+1]).
+A.3 PRIOR CONSTRUCTION AND BELIEF UPDATING
+In §3.3, we argued that naive in-context updating is not sufficient for updating our beliefs: We fail to
+fully incorporate the information from the history ht, and we often have overconfident distributions.
+The shortfalls of in-context learning in such settings have also previously be noted by, for example,
+(Liu et al., 2024b; Zhang et al., 2025; 2024). We posit two reasons why they likely struggle in such
+settings. First, the information from the different examples in the history are generally highly distinct
+in these information-gathering settings (indeed, this is part of our aim in adaptively design informative
+questions), making it harder for the LLM to appropriately reconcile all the provided information than
+in many other uses of in–context learning. Second, θ will often represent a user–specific variable
+that cannot easily be predicted from any data other than the user’s responses to questions: it has
+been argued that much of the success of in–context learning in LLMs is down to improving problem
+specification and linking the requested task to data it has seen in its training, rather than truly “learning”
+from the provided examples (Min et al., 2022; Kossen et al., 2024), but the history in our setting is
+rarely helpful for this due to its user–specific nature.
+B ADDITIONAL DISCUSSIONS ON DESIGN CHOICES
+B.1 AN ALTERNATIVE VIEW ON THE FAITHFULNESS OF CONDITIONAL DISTRIBUTIONS
+Another way of viewing the distinction between the prior–likelihood and data–estimation construc-
+tions is in which of the EIG forms, Eq. 1 or Eq. 2, we center our reasoning. For a given joint model,
+the two are, of course, mathematically equivalent. However, they give us different ways of thinking
+about what it means to maximize the EIG: reducing entropy in θ from seeing y, or reducing entropy
+in y from seeing θ. This, in turn, gives us a way to reason about how appropriate our joint model is.
+When we choose to use one of p(y t; [θ, xt]) or p(θ; [ht−1, xt, yt]), we are centering our reasoning
+around the entropy of this quantity making sense, while allowing the other entropy in the other form
+to be implicitly defined from the resulting joint distribution; because the two forms are equivalent,
+we know that if our explicit form is suitable/unsuitable, the implicit form will be as well. If, for
+example, we directly fix the form of p(θ; [ht−1, xt, yt]) using our LLM’s predictive distribution, we
+are also directly relying on its expected entropy being a meaningful measure of design quality. If θ
+is high–dimensional and predominantly free–form, the resulting entropy produced by the LLM is
+unlikely to be meaningful and using the data–estimation pairing is unlikely to produce an effective
+strategy. However, if y is instead quite constrained, the LLM can produce a meaningful entropy
+over it, and choosing a model based on the prior–likelihood pairing is likely toimplicitly definea
+meaningful distribution, and thus entropy, on θ. Conversely, if θ is constrained and y is free form, the
+opposite will hold instead.
+B.2 CHOICE OFθ
+An important corollary of this reasoning is that it can be important to be careful in our choice of
+exactly what we take θ to be, especially if we are using the data–estimation formulation. In particular,
+it is essential for entropy in the space of θ to form a meaningful notion of uncertainty, even if this
+entropy is not being measured through the LLM’s predictive distribution ofθ directly. Thus, while
+θ inherently represents what we are trying to learn about and should always be set up as such, if
+there is flexibility in how exactly we formulate it, we should be careful to choose a form that yields
+17
+Preprint
+an appropriate uncertainty measure. For example, if the LLM is trying to clarify what code a user
+wishes it to generate, we could either chooseθto be the code itself or, following (Neiswanger et al.,
+2021; Bickford Smith et al., 2023), the output the code produces. Here the entropy over code outputs
+induced by our distribution on code is likely to be a much better measure of uncertainty than the
+entropy of the raw code itself, given that there are multiple ways one can code the same operation.
+B.3 ALIGNMENT BETWEENEIGAND BELIEF UPDATING PROCEDURE
+Our ultimate goal is to minimize uncertainty in θ, as measured by its entropy. With this in mind,
+we can use the expected uncertainty reduction framework of Bickford Smith et al. (2025) to provide
+insights into how well our EIG formulation and belief updating procedures align.
+To simplify discussions, for now we consider the setting where we choose a single questionx and
+obtain a response y. Following Bickford Smith et al. (2025), we can think of the “true” optimal
+design as selecting
+x∗
+true = argminxEptrue(y;x) [H[p(θ;x, y)]],(4)
+where ptrue(y;x) is the true response distribution andp(θ;x, y)is our belief state after the experiment.
+Note here that true optimal design has no direct dependency on our current beliefs about θ; it only
+depends on ptrue(y;x) and the hypothetical beliefs we produce for given observed data, p(θ;x, y).
+Thus, we can now see that our choice of joint model corresponds to different choices for approximating
+these quantities. Assuming that the LLM distribution is used directly for the conditional as per §4,
+we thus have that:
+• The prior-likelihood pairing equates to the approximations ptrue(y;x)≈R
+p(θ)pLLM(y; [θ, x])dθandp(θ;x, y)≈p(θ)p LLM(y; [θ, x])/
+R
+p(θ)pLLM(y; [θ, x])dθ;
+• The data–estimation pairing equates to directly specifying a model for ptrue(y;x) and then
+using the approximationp(θ;x, y)≈p LLM(θ; [x, y]).
+The appropriateness of each of these options, therefore, comes down to how faithful these approxima-
+tions are respectively to the true data distribution, ptrue(y;x) , and how we actually derive our belief
+distribution onθin practice once we have seen the new data.
+The former of these considerations is difficult to control for as we simply do not know the true
+response distribution and it is hard to say which approach will thus estimate it best (though we can
+refer to the discussion in §4 to determine which best matches ourbeliefsabout the true response
+distribution). However, we do know upfront how we plan to derive our belief distribution on θ in
+practice, so we can use this to guide which joint model we formulate our EIG from. Namely, we
+observe that: a) using the prior–likelihood EIG pairing equates to assuming we will make aBayesian
+update to our beliefson θ using the likelihood pLLM(y; [θ, x]); b) using the data–estimation EIG
+pairing equates to assuming we will make anin-context update to our beliefson θ, as we are treating
+p(θ;x, y)asp LLM(θ; [x, y]).
+Our preference between the pairings should therefore be guided in part byhow we plan to update the
+model in practice. In particular, if we plan to make pure Bayesian updates, then the prior-likelihood
+formulation will tend to yield an EIG that is more faithful to our updating procedure, while if we only
+make simple in-context updates, the data–estimation formulation will tend to yield a more faithful
+EIG instead.
+The update we use in practice, namely taking p(θ;x, y) =pf (θ; [x, y])as outlined in §3.3, can be
+seen as being somewhere between the in-context and Bayesian updating: we initially sample from
+pLLM(θ; [x, y]), but then perform filtering and other steps. The relative extent to which it resembles
+each will be problem–dependent and again be linked to how much we trust the LLM to capture
+uncertainty in the space ofθvs.y.
+For the settings we consider, we expectpf (θ; [x, y])to generally be better approximated by a Bayesian
+update than an in–context update, aligning with our decision to use the prior–likelihood formulation.
+The reasons for this are that a) the filtering often removes a large proportion of the generated samples,
+especially at later experiment turns, with pLLM(θ;h t−1) not fully incorporating information from the
+history; b) the maintaining of the set of one consistent hypotheses from one turn to the next encourages
+18
+Preprint
+a more Bayesian behavior, with samples persisting unless contradicted by a new likelihood term; and
+c) the typical premature overconfidence of pLLM(θ;h t−1) to a small number of hypotheses means it
+is typically unrepresentative of our beliefs.
+These theoretical benefits are perhaps secondary to the more practical benefits from the ease of
+constructing an appropriate model in the prior–likelihood formulation and avoiding direct uncertainty
+estimation in the space of θ. Nonetheless, they help confirm that our choices have not induced
+unnecessary mismatch between the EIG formulation and our updating procedure.
+The picture here can get a somewhat more complicated once we move into the sequential BED setting.
+Here, our ultimate aim is actually to minimize H[p(θ;h T )] at some final future horizon T. Now, we
+only care about intermediary belief states p(θ;h t) through their aid in future decision making toward
+the goal of minimizing the final entropy. Thus, even if we are working with in-context updates, it
+might be the case that p(θ;h t) only starts to produce a meaningful entropy once we have seen enough
+data to sufficiently narrow down the possibilities on θ. The optimal behavior in such settings would
+be to learn a policy that directly targets this final belief state instead of sequentially targeting the
+incremental EIGs. However, this will typically not be computationally feasible in practice and we
+instead need to resort to a myopic decision-making strategy. It might thus still be better to use the
+prior–likelihood formulation in such myopic decision making settings, even if we are sequentially
+updating our beliefs on θ through in-context updates, if this allows us to better guide the sequential
+decisions towards our final objective. The coherence of Bayesian updating means that the converse is
+unlikely to be true, so this provides further evidence towards using the prior–likelihood formulation.
+C EXTENDED RELATED WORK
+Information-based question answering with LLMsSeveral recent works have (explicitly or
+implicitly) looked at information gathering with LLMs. Most of these can be framed in a BED setting,
+with adeterministic likelihood(Piriyakulkij et al., 2023; Hu et al., 2024; Kobalczyk et al., 2025;
+Cooper et al., 2025), and can be seen as variants of our Split baseline. Piriyakulkij et al. (2023) use
+a deterministic 0/1 answer likelihood p(a|x, q)via the LLM to prune items from a pre-enumerated
+finite set given a candidate question q. The question is selected by minimizing expected posterior
+entropy. They model user preferences with a binary ground truth, which would not be applicable
+in preference-elicitation scenarios with nebulous user profiles. Similarly, Hu et al. (2024) use a
+deterministic likelihood to minimize entropy over a finite set Ω in a closed-world setting. Kobalczyk
+et al. (2025) target ambiguous task specifications in open-ended generation tasks by sampling a set of
+hypotheses (placing a uniform prior over them) and viewing each question as a deterministic partition
+over those samples, looking for questions that split the samples roughly evenly. Cooper et al. (2025)
+compute posterior entropy over a working set of top-k hypotheses (without filtering) through heuristic
+pruning.
+Wang et al. (2025) avoid the pitfall of deterministic likelihoods. They use a data–estimation framework
+to estimate EIG, focusing on scenarios where the target can be expressed as a predefined series of
+multiple-choice questions. Their approach relies on meta-training a predictive language model on
+historic question/answer pairs, and so is not directly comparable with BED-LLM which requires no
+additional training or data. Chan et al. (2025) do not model likelihoods or posterior beliefs, instead
+they rely on the expected size of conformal prediction sets as a surrogate uncertainty metric. This
+requires the use of an additional calibration dataset, and is confined to closed-world settings with a
+finite label set and pre-defined queries.
+Post-training LLMs for improved information gatheringRather than augmenting a frozen LLM
+with the ability to estimate utility functions, some works have instead aimed to post-train an LLM to
+improve its ability to ask questions (Zhang et al., 2024; Wu et al., 2025; Andukuri et al., 2024). Most
+do not explicitly consider informativeness of questions: Zhang et al. (2024) and Wu et al. (2025) use
+reinforcement learning techniques to reward generations that quickly lead to the correct answer, and
+Andukuri et al. (2024) builds on Li et al. (2025b) by fine-tuning on successful traces. Mazzaccara
+et al. (2024) do indirectly incorporate uncertainty, also using a deterministic likelihood: they use
+predictive entropy to identify informative questions, and then either fine-tune on the highest-entropy
+question, or perform DPO comparing the highest-entropy question with a lower-entropy question. We
+do not address fine-tuning in this work, focusing instead on exploring the correct way to formulate
+BED using LLMs.
+19
+Preprint
+Algorithm 1Data–Estimation Selection at Turnt
+Require:Historyh t−1; candidate questionsX t
+cand; answer sets{Y(x)}
+Ensure:Selected questionx ⋆
+t
+1:foreachx∈ X t
+cand do
+2:Obtain predictive answer distributionp LLM(y;x, ht−1)for ally∈ Y(x)
+3:foreachy∈ Y(x)do
+4:Compute entropyH y ←H[p f (θ;h t−1 ∪(x, y))]
+5:end for
+6:Compute EIG(x)← − P
+y∈Y(x) pLLM(y;x, ht−1)H y
+7:end for
+8:Selectx ⋆
+t ←arg max x∈Xt
+cand
+EIG(x)
+9:returnx ⋆
+t
+Combining LLMs with parametric modelsAs discussed in §4, a key challenge in adapting BED
+to the LLM setting is in aligning the expected information gain with the actual uncertainties extracted
+from the LLM after updating. Handa et al. (2024) take a different approach to this problem by using
+the LLM to generate features for an external conventional Bayesian joint model (in their case, a
+linear Bradley–Terry model), rather than deriving their joint model more directly from the LLM itself.
+This can be a good choice when the problem is well-bounded and we already have a well-specified
+Bayesian model form for the problem at hand; however, this may be challenging in arbitrarily large
+and complex hypothesis spaces. In particular, their specific method is not applicable more widely
+beyond the preference learning context they consider.
+BEDIt has been noted that the traditional sequential BED approach can sometimes be suboptimal in
+practice, as it only optimizes the EIG of the next observation, without planning ahead for the fact that
+design decisions taken at a given step can also influence the achievable EIGs from future steps (Foster,
+2021). A variety ofpolicy–basedBED approaches have subsequently been proposed to address
+this (Foster et al., 2021; Ivanova et al., 2021; Blau et al., 2022; Huan & Marzouk, 2016; Hedman et al.,
+2025), while also removing the need to make model updates and conduct optimizations during the
+experiment itself. Our findings are complementary: by providing more faithful model factorizations,
+belief updates, and EIG estimators in the LLM setting, BED-LLM could supply stronger building
+blocks for policy-based methods, reducing variance, enhancing effectiveness, and improving the
+sample efficiency of policy training.
+D DATA–ESTIMATION METHOD
+OurData–Estimationmethod is based on a model derived from a data–estimation pairing (§3).
+D.1 EIG ESTIMATION
+Suppose our model is given byp(y t; [ht−1, xt])p(θ; [h t−1, xt, yt]). Here, it will clearly be beneficial
+to directly use Eq. 1 for estimating the EIG, as here we directly have access to all the required terms,
+other than p(θ) which can be simply ignored as it is not a function ofx so does not affect optimization
+of the question. If the possible values for y are enumerable and we can evaluate p(y t; [ht−1, xt])
+in closed–form, we can directly calculate the exact EIG (up to a constant) without requiring any
+estimation at all:
+EIGθ(x)−Const =−
+X
+y
+p(y t; [ht−1, xt]) H [p(θ; [ht−1, xt, yt])],(5)
+where the entropy H [p(θ; [ht−1, xt, yt])] can be evaluated directly from the logits of the LLM, or if
+these are not available, estimated by sampling. If we cannot enumeratey or evaluate p(y t; [ht−1, xt]),
+we can simply instead resort to Monte Carlo and use the estimator:
+EIGθ(x)−Const≈ − 1
+N
+NX
+n=1
+H [p(θ; [c, x, yn])] wherey n ∼p(y t; [ht−1, xt]).(6)
+We provide an overview of how to do this in the LLM setting in Algorithm 1.
+20
+Preprint
+D.2 GENERATING CANDIDATE HYPOTHESES
+To generate candidate values ofθfor the data–estimation method, we use the prompt in Fig. 4.
+Figure 4: Prompt for generating hypotheses (and evaluating their probability) for the data–
+estimation method.
+Return only the full name of one randomly selected famous person (living or deceased)
+consistent with the questions and answers above.
+To increase randomness:
+1. Internally brainstorm a pool of diverse and representative individuals.
+2. Avoid defaulting to the most globally ubiquitous celebrities or famous figures.
+Output rules:
+- Output ONLY the person’s full name (with spaces, capitalization and accents), nothing
+else.
+- No extra words, explanations, numbering, or punctuation beyond what’s in the name
+itself (hyphens/apostrophes allowed if part of the name).
+Fig. 5 shows an example of the distribution of samples obtained following two rounds in the 20–
+questions game. Note that the samples are highly concentrated on just a handful of answers. This
+lack of diversity shows that the model’s belief distribution is far more concentrated relative to the
+variability over valid hypotheses in the ground–truth task distribution, which negatively impacts the
+performance of the data–estimation method.
+Is this person known for their contributions to science?
+No.
+Is this person known for their contributions to the arts?
+Yes.
+{
+"Vincent van Gogh": 93,
+"Salvador Dali": 44,
+"Frida Kahlo": 37,
+"Georgia O Keeffe": 10,
+"August Wilson": 8,
+"Auguste Rodin": 8
+}
+Figure 5:An example of the sample distribution generated using the prompt in Fig. 4, conditioned
+on the two question/answer pairs at the top of this figure. At this stage of the game, we independently
+sample 200 hypotheses from the LLM and record their frequencies. Note that the distribution exhibits
+strong mode collapse, with most of the mass highly concentrated on just a few answers, which
+negatively impacts the performance of the data–estimation method. This summary is for diagnostic
+purposes: Algorithm 1 operates on the probabilities of individual samples and never instantiates such
+an aggregated summary.
+21
+Preprint
+E GENERATING CANDIDATE HYPOTHESES FORBED-LLM
+Figure 6: Prompt for generating candidate hypotheses for the “Things” dataset. Similar
+prompts were used for “Celebrities” and “Animals”.
+You are playing a game of 20 Questions. Using all of the questions and answers so far:
+Generate up to {num_samples} candidate entities that satisfy every clue.
+Each candidate must be a single, self-contained entity (e.g., "Europa", "Bagpipe",
+"Diadem").
+List each entity on its own line - no numbering, punctuation, or extra text.
+Produce a varied set by identifying features not implied by the clues and diversifying
+along them.
+Do not repeat any entity.
+Return only the list of entities.
+A fundamental challenge for BED-LLM and its ablations is generating a sufficiently diverse set of
+candidate hypotheses from the LLM’s belief distribution, that are consistent with the previously-
+answered questions. Below, we detail the steps we take to construct our distribution over hypotheses.
+Candidate hypotheses are generated jointly, rather than independently.As illustrated in Fig. 5,
+the raw distribution pLLM(θ) is highly overconfident, often concentrating mass on only a few high–
+likelihood hypotheses. Thus, it is not practical to directly use the LLM’s distribution as a prior
+p(θ). Instead, we jointly sample candidates θ and assume a uniform distribution over them. We can
+view this as sampling θs from a mixture distribution. The LLM is prompted to generate a list of N
+hypotheses in a single rollout, which corresponds to drawing from the autoregressive list distribution
+pLLM(θ(1)
+t , . . . , θ(N)
+t ;h t) =
+NY
+n=1
+pLLM(θ(n)
+t ; [θ(1:n−1)
+t , ht]).
+We use a diversity-encouraging promptWe use a prompt designed to elicit stratified hypotheses by
+encouraging the LLM to consider different semantic features (e.g. age groups, genres, or categories)
+and implicitly diversify across them. An example prompt is shown in Fig. 6. In our generation
+prompt, we reverse the order of the question–answer pairs in ht to place the most recent question at
+the top of the context window (while retaining earlier exchanges), ensuring that specific constraints
+are prioritized and mitigating context drift. For the 20 Questions experiments, we used a higher-
+than-normal temperature (T= 1.3 ) to increase diversity of responses. For the preference elicitation
+experiments, we usedT= 1to obtain more coherent responses.
+Candidates are filtered based on the historyFor each candidate, we use pLLM(θ;h t−1) to assess
+whether it is compatible with the previous question/answer pairs. We filter responses where the
+probability of the given answer falls below a certain threshold; in our experiments we set this threshold
+to 0.2.
+Valid candidates from previous generations are includedWe also filter the candidate hypotheses
+from the previous generation, based on the most recent question/answer pair, and include these in our
+candidate set. We repeat the generation process, keeping the previously generated and filtered samples
+in context to elicit new generations, either twice or three times if sufficient hypotheses have not been
+generated (noting the number of possible valid samples can be less than the number requested).
+We assume a uniform distribution over hypothesesWhile one could in principle reweight
+candidates using importance sampling, in practice we choose to not rely on the model’s internal
+probabilities. Instead we approximate the prior as a uniform distribution over this union
+pf (θ;h t)≈ 1
+|Θ|
+X
+θ∈Θ
+δθ.
+Finally, we note that different LLMs respond differently to strategies aiming to increase diversity:
+some benefit more from a higher temperature while others benefit from more repetitions of the
+sampling–filtering cycle. For fairness, in our experiments we have kept these parameters constant
+across models.
+22
+Preprint
+F EXPERIMENT DETAILS FOR20 QUESTIONS
+F.1 PROBLEM SETS
+We evaluate across three distinct problem sets—Animals, Celebrities, or Things—with each con-
+taining a mix of 100 obscure and common targets. Here, the problem set is just a list of different θ∗
+that will be individually provided to the answerer to instantiate different problems (e.g. we conduct a
+trial where θ∗ =“dog”, then one where θ∗ =“cat”, etc). The list of targets isneverprovided to the
+questioner model to restrict the set of possible hypotheses: the questioner is only prompted that is
+trying to identify an “animal”, “celebrity”, or “thing”. The problem sets are
+• Animals: a set of animal species generated with OpenAI’s o3 model to ensure a diverse mix
+and balanced taxonomy.
+• Celebrities: a diverse set of public figures, as used by Zhang et al. (2024).
+• Things: a collection of everyday and exotic entities drawn from the web corpus, as used
+by Zhang et al. (2024); it covers a wide range of categories, from plants and clothing to
+professions, events, and mythical creatures.
+To create the Animals problem set, we prompted OpenAI o3 (OpenAI, 2025, o3-2025-04-16) to
+generate a list of animals, using the prompt in Fig. 7. The resulting list is shown in Fig. 8. Alternative
+names (after|character) were manually added.
+Figure 7: Prompt for Animals problem set generation.
+You are a zoologist.
+Please generate a list of 100 living animal species with very high taxonomic diversity,
+including diversity in phyla, classes, orders, and families. Present each animal on a
+different line.
+F.2 EVALUATION
+We assess performance by tracking the questioner’s ability to identify the hidden target θ∗ over
+the course of each game. At each turn t, we prompt it to produce a single guess for θ∗ via greedy
+decoding—that is, we extract the highest likelihood candidate from the belief state of the questioner
+pf (θ;h t). This guess is evaluated against the true target θ∗ (including alternative names) using
+case–insensitive exact string matching and we measure the proportion of correct guesses at each
+turn. Importantly, these evaluation guesses arenotpart of the questioner algorithm itself: they
+are extractions from the questioner’s belief state pf (θ;h t) and are excluded from ht−1 to not affect
+subsequent question selection. In line with the original rules of the game, we also introduce an explicit
+mechanism for the questioner to guess the answer as part of its 20 questions: if the set of filtered
+hypotheses collapses to a single candidate, or a direct guess of θ∗ is evaluated as the maximally
+informative question by the acquisition function, the questioner asks “Is it ⟨item⟩?”. This guess is
+evaluated using exact string matching, as above. If there is a match, the game terminates successfully;
+otherwise, if t <20, the game continues with the question and negative response included inht−1
+and counted towards the 20 question budget.
+F.3 ALGORITHMIC DETAILS
+Using our sample–then–filter process (see §3.3), we aim to sample at least N= 15 hypotheses,
+repeating the cycle up to three times if needed (the exact number of hypotheses can be less than
+this as it may not be possible to generate sufficient valid hypotheses, especially in later experiment
+turns). The questioner generates M= 15 candidate questions to test, Xcand, using the “conditional
+generation” approach of §3.1 when possible, but falling back on “unconditional generation” if
+insufficient candidate hypotheses have been generated.
+23
+Preprint
+African elephant
+Bengal tiger
+Bald eagle
+Blue whale
+Red kangaroo
+Giant panda
+Snow leopard
+Green sea turtle
+American alligator
+Bottlenose dolphin
+Emperor penguin
+Great white shark
+Golden poison frog | Golden
+poison dart frog
+Honey bee
+Monarch butterfly
+Okapi
+Chimpanzee
+Arctic fox
+Komodo dragon
+Giraffe
+Cheetah
+Hammerhead shark
+Axolotl
+Orca
+Puffin
+Red panda
+Platypus
+Rhinoceros beetle
+Tasmanian devil
+Wombat
+Sloth
+Blue-ringed octopus | Blue
+ringed octopus
+Manatee
+Narwhal
+Sea otter
+Coral snake
+King cobra
+Harpy eagle
+Lemur
+Koala
+Aye-aye | Ayeaye
+Snowy owl
+Elk
+Wolverine
+Caracal
+Cassowary
+Quokka
+Pangolin
+Saiga antelope
+Galápagos tortoise | Galapagos
+tortoise
+Sumatran orangutan
+Red-eyed tree frog | Redeyed
+tree frog
+European badger
+Moose
+African grey parrot
+Scarlet macaw
+Black mamba
+Albatross
+Humpback whale
+Dugong
+Anaconda
+Kookaburra
+Coyote
+Brown bear
+Golden jackal
+Capybara
+Ibex
+Japanese macaque
+Kiwi
+Leafcutter ant
+Mantis shrimp
+Ocelot
+Peregrine falcon
+Quetzal
+Raccoon
+Sand cat
+Tarantula
+Uakari
+Vicuña
+Wildebeest
+Rock hyrax | dassie
+Yak
+Zebra
+Blue dragon nudibranch | Blue
+dragon sea slug
+Chinchilla
+Dhole
+Electric eel
+Flying fox
+Gharial
+Horseshoe crab
+Indigo bunting
+Jerboa
+Kakapo
+Lionfish
+Markhor
+Nautilus
+Olive baboon
+Pika
+Quoll
+Rosy boa
+Figure 8:Animals problem set (generated using OpenAI o3, with manual curation)
+G EXPERIMENT DETAILS FOR PREFERENCE ELICITATION
+G.1 PROBLEMS
+To generate a set of ground-truth user profiles, we take a set of 200 real user ratings from the
+MovieLens-100K dataset (Harper & Konstan, 2015), then use an “oracle” LLM (namely, OpenAI’s
+o3 model) to produce a paragraph of text that is consistent with each distinct set of ratings, using the
+prompt in Fig. 10. As was the case for the 20 Questions problems, this problem set is never provided
+to the questioner and the set of allowedθis not constrained.
+Because we need the LLM to be able to meaningfully capture uncertainty in the space of responses,
+we restrict questions to be multiple-choice. Specifically, the questioner is tasked with producing a
+question along with five possible responses A/B/C/D/E. We then define eachxt to be the question
+coupled with the possible responses, and each yt to be one of the letters A/B/C/D/E to provide a
+restricted set of tokens over which we can measure entropy. Option E is further constrained to always
+be “none of the above” so that the answerer is not committed to choosing one of the directly generated
+choices if none are suitable.
+24
+Preprint
+0
+100
+Success %
+on Animals
+GPT-4o-mini
+0
+100
+GPT-4o
+0
+90
+Llama-3.3-70B
+0
+100
+Qwen2.5-72B
+0
+90
+Q: GPT-4o-mini
+A: Qwen2.5-72B
+0
+90
+Q: Qwen2.5-72B
+A: GPT-4o-mini
+0
+90
+Success %
+on Celebrities 0
+100
+0
+70
+0
+100
+0
+70
+0
+70
+0 20
+Turn t
+0
+60
+Success %
+on Things
+0 20
+Turn t
+0
+80
+0 20
+Turn t
+0
+70
+0 20
+Turn t
+0
+80
+0 20
+Turn t
+0
+60
+0 20
+Turn t
+0
+60
+Naive Split BED-LLM Entropy Data-Est. ICL Beliefs Impl. Max.
+Figure 9:Full plots for 20 Questions Experiments.
+G.2 EVALUATION
+To again allow tracking of progress through the experiment, after each turn of the interactiont, the
+questioner generates ten film recommendations, conditioned on ht−1. These recommendations are
+checked for consistency with prior questions and answers; if any are judged inconsistent then they are
+removed and additional recommendations are generated. The quality of the film recommendations is
+then assessed using an “LLM-as-judge” protocol (Zhu et al., 2025; Trivedi et al., 2024). Namely, the
+answerer evaluates each of the 10 films recommended by the questioner, conditioned on the hidden
+target user profile θ∗. It scores each film on a scale of 1 to 5 (in 0.5 increments), based on how well
+the recommendation aligns with θ∗ — this score is output together with a brief justification to increase
+reliability. We report the mean rating and standard error across 200 users, over 5 question–answer
+turns.
+G.3 ALGORITHMIC DETAILS
+For BED-LLM and Entropy, we compare M= 8 candidate questions at each turn and we aim to
+generate at least N= 5 candidate hypotheses. We use the “unconstrained generation” approach of
+candidate question generation (see §3.1) as the user profiles can be quite diffuse and we are only
+generating a small number of possible hypotheses that can be quite easy to split.
+We note that data–estimation setup is not at all viable for this problem because the large number of
+tokens and varying dimensionality of each θ sample mean that H[pLLM(θ; [ht−1, xt+1, yt+1])] is not
+only infeasible to estimate, but also is not a meaningful measure of uncertainty.
+25
+Preprint
+Figure 10: Prompt used to generate ground-truth user profiles for preference elicitation task.
+You will be given a user’s complete film rating history from the MovieLens dataset,
+provided as a dictionary structured by rating levels.
+Your task is to thoroughly analyze the user’s preferences across the entire range of
+their film ratings (from highest to lowest). Then, write a cohesive, descriptive
+paragraph (approximately 5-7 sentences) summarizing the user’s overall film taste
+profile.
+In your response, explicitly address:
+Favored Elements (inferred primarily from 4.5-5.0 ratings):
+•Highlight the genres, narrative styles, themes, tones, historical eras, and
+emotional experiences that consistently resonate positively with this user.
+•Avoid mentioning any specific film titles, characters, or explicit plot points.
+Neutral or Mixed Preferences (inferred from ratings around 2.5-4.0):
+•Note if there are indications of genre overlap or conditional enjoyment,
+such as certain genres or styles they occasionally appreciate under specific
+circumstances.
+Disliked Elements (inferred primarily from 0.5-1.5 ratings):
+•Clearly outline the genres, narrative characteristics, tones, or emotional
+impacts that the user consistently finds unappealing or poorly executed.
+Your paragraph must be precise, informative, nuanced, and balanced, effectively
+capturing the complexity and specificity of the user’s movie preferences. The
+resulting profile should be clear and detailed enough for a recommendation system
+to accurately predict the user’s likely enjoyment or dislike of other films based on
+their established patterns of taste.
+Proceed carefully, reasoning explicitly about the user’s overall rating patterns rather
+than relying exclusively on extreme ratings, to form a comprehensive, stable, and
+representative film preference profile.
+26
