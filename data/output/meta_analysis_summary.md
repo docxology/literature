@@ -1,14 +1,14 @@
 # Meta-Analysis Summary Report
 
-**Generated**: 2025-12-15T08:53:22.014086
+**Generated**: 2025-12-15T10:44:56.223537
 
 ---
 
 ## Executive Summary
 
-- **Total Papers Analyzed**: 5
+- **Total Papers Analyzed**: 3
 - **Year Range**: 2020 - 2022
-- **Average Publications per Year**: 1.67
+- **Average Publications per Year**: 1.00
 
 ---
 
@@ -21,39 +21,38 @@
 | Year | Count |
 |------|-------|
 | 2020 | 2 |
-| 2021 | 1 |
-| 2022 | 2 |
+| 2022 | 1 |
 
 ---
 
 ## Keyword Analysis
 
-- **Total Unique Keywords**: 362
+- **Total Unique Keywords**: 212
 
 ### Top Keywords
 
 | Rank | Keyword | Frequency |
 |------|---------|-----------|
-| 1 | free | 10 |
-| 2 | energy | 10 |
-| 3 | principle | 10 |
+| 1 | principle | 6 |
+| 2 | energy | 6 |
+| 3 | free | 6 |
 | 4 | some | 5 |
-| 5 | systems | 4 |
-| 6 | inference | 4 |
-| 7 | learning | 4 |
-| 8 | process | 3 |
-| 9 | more | 3 |
-| 10 | bayesian | 3 |
-| 11 | technical | 3 |
-| 12 | theory | 3 |
-| 13 | variational | 3 |
-| 14 | deep | 3 |
-| 15 | machine | 3 |
-| 16 | ignorance | 2 |
-| 17 | global | 2 |
-| 18 | complex | 2 |
-| 19 | local | 2 |
-| 20 | assumptions | 2 |
+| 5 | systems | 3 |
+| 6 | technical | 3 |
+| 7 | global | 2 |
+| 8 | ignorance | 2 |
+| 9 | show | 2 |
+| 10 | only | 2 |
+| 11 | assumptions | 2 |
+| 12 | observations | 2 |
+| 13 | interesting | 2 |
+| 14 | inference | 2 |
+| 15 | blanket | 2 |
+| 16 | various | 2 |
+| 17 | markov | 2 |
+| 18 | formulation | 2 |
+| 19 | bayesian | 2 |
+| 20 | fruits | 1 |
 
 ---
 
@@ -67,11 +66,11 @@
 
 | Rank | Venue | Publications |
 |------|-------|--------------|
-| 1 | arXiv | 5 |
+| 1 | arXiv | 3 |
 
 ### Authors
 
-- **Total Unique Authors**: 12
+- **Total Unique Authors**: 7
 
 #### Top Authors
 
@@ -84,20 +83,16 @@
 | 5 | Martin Biehl | 1 |
 | 6 | Felix A. Pollock | 1 |
 | 7 | Ryota Kanai | 1 |
-| 8 | Pietro Mazzaglia | 1 |
-| 9 | Tim Verbelen | 1 |
-| 10 | Ozan Çatal | 1 |
 
 ### Data Availability
 
-- **Papers with DOI**: 2 (40.0%)
-- **Papers with PDF**: 5 (100.0%)
+- **Papers with DOI**: 1 (33.3%)
+- **Papers with PDF**: 3 (100.0%)
 ---
 
 ## Key Observations
 
 - Peak publication activity occurred in 2020 with 2 papers.
-- Strong publication activity with an average of 1.7 papers per year.
-- Most frequent keyword: 'free' (appears 10 times).
+- Most frequent keyword: 'principle' (appears 6 times).
 
 ---
