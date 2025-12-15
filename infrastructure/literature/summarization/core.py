@@ -655,6 +655,23 @@ class SummarizationEngine:
             logger.warning(f"[{citation_key}] Pass 3 (methods/tools) failed: {e}")
             methods_tools_text = f"## Algorithms and Methodologies\n\nAnalysis failed: {e}\n\n## Software Frameworks and Libraries\n\nAnalysis failed.\n\n## Datasets\n\nAnalysis failed.\n\n## Evaluation Metrics\n\nAnalysis failed.\n\n## Software Tools and Platforms\n\nAnalysis failed."
         
+        # Pass 4: Classify paper
+        logger.info(f"[{citation_key}] Starting Pass 4: Paper classification")
+        classification = None
+        try:
+            classification = self._classify_paper(
+                pdf_text=pdf_text,
+                result=result,
+                citation_key=citation_key,
+                progress_callback=progress_callback
+            )
+            if classification:
+                logger.info(f"[{citation_key}] Pass 4 completed: classification = {classification.category}")
+            else:
+                logger.warning(f"[{citation_key}] Pass 4 (classification) returned None")
+        except Exception as e:
+            logger.warning(f"[{citation_key}] Pass 4 (classification) failed: {e}")
+        
         # Always include summary_text even when validation fails (for saving)
         return SummarizationResult(
             citation_key=citation_key,
@@ -662,6 +679,7 @@ class SummarizationEngine:
             summary_text=summary,  # Always include summary for saving
             claims_quotes_text=claims_quotes_text,
             methods_tools_text=methods_tools_text,
+            classification=classification,
             input_chars=input_chars,
             input_words=input_words,
             output_words=output_words,
@@ -1182,24 +1200,65 @@ class SummarizationEngine:
             
             words = len(claims_quotes.split())
             
+            # Detect and remove nested repetition patterns first
+            from infrastructure.llm.validation.repetition import detect_nested_repetition, remove_nested_repetition
+            has_nested, nested_patterns = detect_nested_repetition(claims_quotes)
+            if has_nested:
+                logger.warning(
+                    f"[{citation_key}] Detected {len(nested_patterns)} nested repetition patterns in claims/quotes"
+                )
+                claims_quotes, nested_removed = remove_nested_repetition(claims_quotes)
+                logger.info(
+                    f"[{citation_key}] Removed {nested_removed} nested repetition artifacts"
+                )
+            
             # Validate quotes against source PDF text
             validated_claims_quotes = self._validate_quotes_against_source(
                 claims_quotes, pdf_text, citation_key
             )
             
+            # Apply deduplication to remove any remaining repetition
+            from infrastructure.llm.validation.repetition import deduplicate_sections
+            original_length = len(validated_claims_quotes)
+            deduplicated_claims_quotes = deduplicate_sections(
+                validated_claims_quotes,
+                max_repetitions=1,
+                mode="aggressive",
+                similarity_threshold=0.75,
+                min_content_preservation=0.7
+            )
+            dedup_removed = original_length - len(deduplicated_claims_quotes)
+            
+            if dedup_removed > 0:
+                logger.info(
+                    f"[{citation_key}] Deduplication removed {dedup_removed} chars "
+                    f"({original_length} → {len(deduplicated_claims_quotes)} chars, "
+                    f"{len(deduplicated_claims_quotes)/original_length:.1%} preserved)"
+                )
+            
+            final_words = len(deduplicated_claims_quotes.split())
+            
             logger.info(
                 f"[{citation_key}] Claims/quotes extraction completed: "
-                f"{words} words in {extraction_time:.2f}s"
+                f"{final_words} words in {extraction_time:.2f}s "
+                f"(removed {nested_removed if has_nested else 0} nested patterns, "
+                f"{dedup_removed} chars via deduplication)"
             )
             
             emit_progress(
                 "claims_extraction",
                 "completed",
-                f"Extracted {words} words of claims and quotes",
-                {"words": words, "time": extraction_time}
+                f"Extracted {final_words} words of claims and quotes",
+                {
+                    "words": final_words,
+                    "time": extraction_time,
+                    "nested_patterns_removed": nested_removed if has_nested else 0,
+                    "deduplication_chars_removed": dedup_removed,
+                    "original_words": words
+                }
             )
             
-            return validated_claims_quotes
+            return deduplicated_claims_quotes
             
         except Exception as e:
             extraction_time = time.time() - extraction_start if 'extraction_start' in locals() else 0.0
@@ -1419,49 +1478,68 @@ class SummarizationEngine:
             f"({failed_chunks} failed)"
         )
         
-        # Simple combination: merge all results, removing obvious duplicates
-        combined_text = "\n\n---\n\n".join(all_claims_quotes)
+        # Combine all chunks
+        combined_claims_quotes = "\n\n---\n\n".join(all_claims_quotes)
         
-        # Basic deduplication: remove duplicate quotes (simple string matching)
-        # Split into sections and deduplicate
-        lines = combined_text.split('\n')
-        seen_quotes = set()
-        deduplicated_lines = []
-        
-        for line in lines:
-            # Check if this looks like a quote line
-            if '**Quote:**' in line or line.strip().startswith('"'):
-                # Extract quote text (simplified)
-                quote_key = line.strip()[:200]  # Use first 200 chars as key
-                if quote_key not in seen_quotes:
-                    seen_quotes.add(quote_key)
-                    deduplicated_lines.append(line)
-                else:
-                    continue  # Skip duplicate
-            else:
-                deduplicated_lines.append(line)
-        
-        final_result = '\n'.join(deduplicated_lines)
+        # Detect and remove nested repetition patterns first
+        from infrastructure.llm.validation.repetition import detect_nested_repetition, remove_nested_repetition
+        has_nested, nested_patterns = detect_nested_repetition(combined_claims_quotes)
+        if has_nested:
+            logger.warning(
+                f"[{citation_key}] Detected {len(nested_patterns)} nested repetition patterns in combined claims/quotes"
+            )
+            combined_claims_quotes, nested_removed = remove_nested_repetition(combined_claims_quotes)
+            logger.info(
+                f"[{citation_key}] Removed {nested_removed} nested repetition artifacts from combined results"
+            )
         
         # Validate quotes against source PDF text
-        final_result = self._validate_quotes_against_source(
-            final_result, pdf_text, citation_key
+        validated_claims_quotes = self._validate_quotes_against_source(
+            combined_claims_quotes, pdf_text, citation_key
         )
         
-        words = len(final_result.split())
+        # Apply deduplication to remove any remaining repetition
+        from infrastructure.llm.validation.repetition import deduplicate_sections
+        original_length = len(validated_claims_quotes)
+        deduplicated_claims_quotes = deduplicate_sections(
+            validated_claims_quotes,
+            max_repetitions=1,
+            mode="aggressive",
+            similarity_threshold=0.75,
+            min_content_preservation=0.7
+        )
+        dedup_removed = original_length - len(deduplicated_claims_quotes)
+        
+        if dedup_removed > 0:
+            logger.info(
+                f"[{citation_key}] Deduplication removed {dedup_removed} chars from combined results "
+                f"({original_length} → {len(deduplicated_claims_quotes)} chars, "
+                f"{len(deduplicated_claims_quotes)/original_length:.1%} preserved)"
+            )
+        
+        final_words = len(deduplicated_claims_quotes.split())
+        
         logger.info(
-            f"[{citation_key}] Claims/quotes extraction completed (chunked mode): "
-            f"{words} words from {successful_chunks} chunks"
+            f"[{citation_key}] Claims/quotes extraction completed (chunked): "
+            f"{final_words} words from {successful_chunks}/{chunking_result.total_chunks} chunks "
+            f"(removed {nested_removed if has_nested else 0} nested patterns, "
+            f"{dedup_removed} chars via deduplication)"
         )
         
         emit_progress(
             "claims_extraction",
             "completed",
-            f"Extracted {words} words of claims and quotes from {successful_chunks} chunks",
-            {"words": words, "chunks_processed": successful_chunks, "total_chunks": chunking_result.total_chunks}
+            f"Extracted {final_words} words of claims and quotes from {successful_chunks} chunks",
+            {
+                "words": final_words,
+                "successful_chunks": successful_chunks,
+                "total_chunks": chunking_result.total_chunks,
+                "nested_patterns_removed": nested_removed if has_nested else 0,
+                "deduplication_chars_removed": dedup_removed
+            }
         )
         
-        return final_result
+        return deduplicated_claims_quotes
     
     def _analyze_methods_and_tools(
         self,
@@ -1763,6 +1841,157 @@ class SummarizationEngine:
         
         return final_result
     
+    def _classify_paper(
+        self,
+        pdf_text: str,
+        result: SearchResult,
+        citation_key: str,
+        progress_callback: Optional[Callable[[SummarizationProgressEvent], None]] = None
+    ) -> Optional[PaperClassification]:
+        """Classify paper by research type (Core/Theory/Math, Translation/Tool, or Applied).
+        
+        Uses LLM with structured JSON output to classify the paper based on its
+        primary contribution and focus. Considers the entire paper content.
+        
+        Args:
+            pdf_text: Full PDF text content.
+            result: Search result with paper metadata.
+            citation_key: Citation key for logging.
+            progress_callback: Optional callback for progress events.
+            
+        Returns:
+            PaperClassification object if successful, None on failure.
+        """
+        from infrastructure.literature.summarization.models import PaperClassification
+        from infrastructure.llm.templates.research import PaperClassificationTemplate
+        from infrastructure.llm.core.config import GenerationOptions
+        
+        # Helper function to emit progress events
+        def emit_progress(stage: str, status: str, message: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None):
+            if progress_callback:
+                event = SummarizationProgressEvent(
+                    citation_key=citation_key,
+                    stage=stage,
+                    status=status,
+                    message=message,
+                    metadata=metadata or {}
+                )
+                progress_callback(event)
+        
+        emit_progress("classification", "started", f"Classifying paper: {citation_key}")
+        
+        # Clear context before classification
+        logger.info(f"[{citation_key}] Clearing LLM context before classification")
+        self.llm_client.context.clear()
+        
+        # Build classification prompt
+        template = PaperClassificationTemplate()
+        prompt = template.render(
+            title=result.title,
+            authors=', '.join(result.authors) if result.authors else 'Unknown',
+            year=str(result.year) if result.year else 'Unknown',
+            full_text=pdf_text
+        )
+        
+        # Define JSON schema for structured output
+        schema = {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": ["core_theory_math", "translation_tool", "applied"]
+                },
+                "domain": {
+                    "type": ["string", "null"]
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0
+                },
+                "reasoning": {
+                    "type": ["string", "null"]
+                }
+            },
+            "required": ["category", "confidence"],
+            "if": {
+                "properties": {"category": {"const": "applied"}}
+            },
+            "then": {
+                "required": ["domain"]
+            }
+        }
+        
+        # Generate classification with structured output
+        options = GenerationOptions(
+            temperature=0.3,  # Lower temperature for more consistent classification
+            max_tokens=500,   # Classification should be brief
+        )
+        
+        try:
+            classification_start = time.time()
+            classification_data = self.llm_client.query_structured(
+                prompt=prompt,
+                schema=schema,
+                options=options,
+                use_native_json=True
+            )
+            classification_time = time.time() - classification_start
+            
+            # Validate and create PaperClassification object
+            category = classification_data.get("category")
+            if category not in ["core_theory_math", "translation_tool", "applied"]:
+                logger.warning(f"[{citation_key}] Invalid category: {category}")
+                emit_progress("classification", "failed", f"Invalid category: {category}")
+                return None
+            
+            # Validate domain requirement for applied papers
+            domain = classification_data.get("domain")
+            if category == "applied" and not domain:
+                logger.warning(f"[{citation_key}] Applied paper missing domain")
+                emit_progress("classification", "failed", "Applied paper missing domain")
+                return None
+            
+            confidence = classification_data.get("confidence", 0.0)
+            if not isinstance(confidence, (int, float)) or confidence < 0.0 or confidence > 1.0:
+                logger.warning(f"[{citation_key}] Invalid confidence: {confidence}")
+                confidence = 0.0
+            
+            reasoning = classification_data.get("reasoning")
+            
+            classification = PaperClassification(
+                category=category,
+                domain=domain,
+                confidence=float(confidence),
+                reasoning=reasoning
+            )
+            
+            logger.info(
+                f"[{citation_key}] Classification completed: {category}"
+                f"{f' ({domain})' if domain else ''}, "
+                f"confidence: {confidence:.2f} in {classification_time:.2f}s"
+            )
+            
+            emit_progress(
+                "classification",
+                "completed",
+                f"Classified as {category}{f' ({domain})' if domain else ''}",
+                {
+                    "category": category,
+                    "domain": domain,
+                    "confidence": confidence,
+                    "time": classification_time
+                }
+            )
+            
+            return classification
+            
+        except Exception as e:
+            classification_time = time.time() - classification_start if 'classification_start' in locals() else 0.0
+            logger.error(f"[{citation_key}] Classification failed: {e}")
+            emit_progress("classification", "failed", f"Classification failed: {e}")
+            return None
+    
     def save_summary(
         self,
         result: SearchResult,
@@ -1827,6 +2056,23 @@ class SummarizationEngine:
                     validation_section += f"  - {error}\n"
             validation_section += "\n"
 
+        # Build classification section
+        classification_section = ""
+        if summary_result.classification:
+            category_display = summary_result.classification.category.replace('_', ' ').title()
+            domain_display = summary_result.classification.domain or 'N/A'
+            confidence_display = f"{summary_result.classification.confidence:.2f}"
+            reasoning_display = summary_result.classification.reasoning or 'N/A'
+            classification_section = f"""
+## Classification
+
+- **Category**: {category_display}
+- **Domain**: {domain_display}
+- **Confidence**: {confidence_display}
+- **Reasoning**: {reasoning_display}
+
+"""
+
         # Build markdown content with validation metadata
         content = f"""# {result.title}
 
@@ -1843,7 +2089,7 @@ class SummarizationEngine:
 **PDF:** [{citation_key}.pdf](../pdfs/{citation_key}.pdf)
 
 **Generated:** {time.strftime('%Y-%m-%d %H:%M:%S')}
-{validation_section}---
+{validation_section}{classification_section}---
 
 {summary_result.summary_text}
 """
@@ -1966,5 +2212,25 @@ class SummarizationEngine:
             manager.save_metadata(metadata)
         except Exception as e:
             logger.debug(f"Failed to save summary metadata: {e}")
+        
+        # Update library entry with classification
+        if summary_result.classification:
+            try:
+                from infrastructure.literature.library.index import LibraryIndex
+                library_index = LibraryIndex(self.config)
+                entry = library_index.get_entry(citation_key)
+                if entry:
+                    entry.metadata["classification"] = {
+                        "category": summary_result.classification.category,
+                        "domain": summary_result.classification.domain,
+                        "confidence": summary_result.classification.confidence,
+                        "reasoning": summary_result.classification.reasoning
+                    }
+                    library_index.update_entry(entry)
+                    logger.info(f"[{citation_key}] Updated library entry with classification: {summary_result.classification.category}")
+                else:
+                    logger.warning(f"[{citation_key}] Library entry not found, cannot store classification")
+            except Exception as e:
+                logger.warning(f"[{citation_key}] Failed to update library entry with classification: {e}")
         
         return saved_paths

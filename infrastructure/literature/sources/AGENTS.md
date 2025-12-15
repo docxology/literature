@@ -22,28 +22,34 @@ The sources module provides API adapters for multiple academic databases, normal
 - Auth: Requires email address
 
 ### BiorxivSource (biorxiv.py)
-- API: bioRxiv/medRxiv preprint API
-- Features: Preprint metadata and PDFs
+- API: bioRxiv/medRxiv preprint API (https://api.biorxiv.org/)
+- Rate limit: 1.0 seconds between requests (default)
+- Features: Preprint metadata and PDFs, DOI-based search, title-based search with similarity matching, biology and medicine preprints
 
 ### PubMedSource (pubmed.py)
-- API: PubMed E-utilities
-- Rate limit: ~3 requests/second
+- API: PubMed E-utilities (https://eutils.ncbi.nlm.nih.gov/entrez/eutils)
+- Rate limit: 0.34 seconds between requests (~3 requests/second, NCBI requirement)
+- Features: Abstract extraction, DOI and PMC ID extraction, PDF links from PMC
 
 ### EuropePMCSource (europepmc.py)
-- API: Europe PMC REST API
-- Features: Full-text access
+- API: Europe PMC REST API (https://www.ebi.ac.uk/europepmc/webservices/rest/search)
+- Rate limit: 0.5 seconds between requests (default)
+- Features: Full-text access, open access PDF links, citation counts
 
 ### CrossRefSource (crossref.py)
-- API: CrossRef REST API
-- Features: DOI resolution and metadata
+- API: CrossRef Works API (https://api.crossref.org/works)
+- Rate limit: 1.0 seconds between requests (default)
+- Features: DOI resolution and metadata, comprehensive metadata (authors, venues, dates), open access information
 
 ### OpenAlexSource (openalex.py)
-- API: OpenAlex API
-- Features: Comprehensive metadata
+- API: OpenAlex API (https://api.openalex.org/works)
+- Rate limit: 0.5 seconds between requests (default)
+- Features: Comprehensive metadata, PDF links, citation counts, open access information (free API, no key required)
 
 ### DBLPSource (dblp.py)
-- API: DBLP API
-- Features: Computer science bibliography
+- API: DBLP API (https://dblp.org/search/publ/api)
+- Rate limit: 1.0 seconds between requests (default)
+- Features: Computer science bibliography, author and venue information, comprehensive metadata
 
 ## Base Classes
 

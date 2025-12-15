@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-successor, representation, california, losangeles, versesresearchlab, inference, millidge, active, buckley, friston
+active, millidge, successor, friston, versesresearchlab, representation, buckley, california, inference, losangeles
 
 ## Equations Found
 10 equations extracted

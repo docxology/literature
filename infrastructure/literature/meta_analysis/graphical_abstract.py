@@ -230,8 +230,6 @@ def create_single_page_abstract(
         if temporal_data.years:
             ax5.bar(temporal_data.years, temporal_data.counts, alpha=0.8, 
                    color='#2E86AB', edgecolor='#1B4F72', linewidth=0.5)
-            ax5.plot(temporal_data.years, temporal_data.counts, marker='o', 
-                    color='#A23B72', linewidth=2, markersize=4)
             ax5.set_xlabel('Year', fontsize=10, fontweight='medium')
             ax5.set_ylabel('Publications', fontsize=10, fontweight='medium')
             ax5.set_title("Publications by Year", fontsize=12, fontweight='bold')
@@ -429,5 +427,384 @@ def create_comprehensive_abstract(
     # For now, use the single-page abstract
     # Can be extended to include loadings visualizations in a larger grid
     return create_single_page_abstract(aggregator, keywords, output_path, format)
+
+
+def create_composite_panel(
+    aggregator: Optional[DataAggregator] = None,
+    keywords: Optional[List[str]] = None,
+    output_path: Optional[Path] = None,
+    format: str = "png",
+    max_panels: int = 20
+) -> Path:
+    """Create auto-sized composite panel with all available visualizations.
+    
+    Automatically determines optimal grid size based on available visualizations
+    and creates a large composite image (e.g., 5x4, 6x4, etc.) with all plots.
+    
+    Args:
+        aggregator: Optional DataAggregator instance.
+        keywords: Optional list of search keywords for title.
+        output_path: Optional output path.
+        format: Output format (png, svg, pdf).
+        max_panels: Maximum number of panels to include.
+        
+    Returns:
+        Path to saved plot.
+    """
+    if aggregator is None:
+        aggregator = DataAggregator()
+    
+    if output_path is None:
+        output_path = Path("data/output/composite_panel." + format)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Prepare data
+    entries = aggregator.aggregate_library_data()
+    temporal_data = aggregator.prepare_temporal_data()
+    keyword_data = aggregator.prepare_keyword_data()
+    metadata_data = aggregator.prepare_metadata_data()
+    corpus = aggregator.prepare_text_corpus()
+    
+    from infrastructure.literature.meta_analysis.metadata import calculate_completeness_stats
+    completeness_stats = calculate_completeness_stats(aggregator)
+    
+    # Define available visualizations with their data requirements
+    available_viz = []
+    
+    # 1. Publications by year
+    if temporal_data.years:
+        available_viz.append(("Publications by Year", "temporal"))
+    
+    # 2. Citation distribution
+    if metadata_data.citation_counts:
+        available_viz.append(("Citation Distribution", "metadata"))
+    
+    # 3. Venue distribution
+    if metadata_data.venues:
+        available_viz.append(("Venue Distribution", "metadata"))
+    
+    # 4. Author contributions
+    if metadata_data.authors:
+        available_viz.append(("Author Contributions", "metadata"))
+    
+    # 5. Keyword frequency
+    if keyword_data.keyword_counts:
+        available_viz.append(("Keyword Frequency", "keyword"))
+    
+    # 6. Keyword evolution
+    if keyword_data.keyword_frequency_over_time:
+        available_viz.append(("Keyword Evolution", "keyword"))
+    
+    # 7. Metadata completeness
+    if completeness_stats:
+        available_viz.append(("Metadata Completeness", "metadata"))
+    
+    # 8. PCA 2D
+    try:
+        from infrastructure.literature.meta_analysis.pca import (
+            extract_text_features,
+            compute_pca,
+            cluster_papers,
+        )
+        if corpus.texts or corpus.abstracts:
+            feature_matrix, feature_names, valid_indices = extract_text_features(corpus)
+            if len(feature_matrix) >= 2:
+                available_viz.append(("PCA 2D", "pca"))
+    except Exception as e:
+        logger.debug(f"PCA 2D not available: {e}")
+    
+    # 9. PCA 3D
+    try:
+        if corpus.texts or corpus.abstracts:
+            feature_matrix, feature_names, valid_indices = extract_text_features(corpus)
+            if len(feature_matrix) >= 3:
+                available_viz.append(("PCA 3D", "pca"))
+    except Exception:
+        pass
+    
+    # 10. Citation vs Year (advanced)
+    if any(e.year and e.citation_count is not None for e in entries):
+        available_viz.append(("Citation vs Year", "advanced"))
+    
+    # 11. Venue trends (advanced)
+    if any(e.venue and e.year for e in entries):
+        available_viz.append(("Venue Trends", "advanced"))
+    
+    # 12. Author productivity (advanced)
+    if metadata_data.authors:
+        available_viz.append(("Author Productivity", "advanced"))
+    
+    # 13. Topic distribution (advanced)
+    if keyword_data.keyword_counts:
+        available_viz.append(("Topic Distribution", "advanced"))
+    
+    # 14. Publication heatmap (advanced)
+    if any(e.venue and e.year for e in entries):
+        available_viz.append(("Publication Heatmap", "advanced"))
+    
+    # Limit to max_panels
+    available_viz = available_viz[:max_panels]
+    
+    if not available_viz:
+        logger.warning("No visualizations available for composite panel")
+        # Create empty figure
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111)
+        ax.text(0.5, 0.5, 'No visualization data available', ha='center', va='center',
+               fontsize=FONT_SIZE_TITLE)
+        ax.axis('off')
+        return save_plot(fig, output_path)
+    
+    # Calculate optimal grid size
+    n_viz = len(available_viz)
+    # Try to make it roughly square or slightly wider
+    cols = int(np.ceil(np.sqrt(n_viz * 1.2)))  # Slightly wider
+    rows = int(np.ceil(n_viz / cols))
+    
+    # Ensure reasonable limits
+    cols = min(cols, 6)
+    rows = min(rows, 5)
+    
+    logger.info(f"Creating composite panel: {n_viz} visualizations in {rows}x{cols} grid")
+    
+    # Create figure with GridSpec
+    fig = plt.figure(figsize=(cols * 4, rows * 3.5))
+    gs = GridSpec(rows, cols, figure=fig, hspace=0.4, wspace=0.4,
+                  left=0.05, right=0.95, top=0.93, bottom=0.05)
+    
+    # Overall title
+    title_text = "Meta-Analysis Composite Panel"
+    if keywords:
+        title_text += f"\nKeywords: {', '.join(keywords)}"
+    title_text += f"\nTotal Papers: {len(entries)} | Date: {datetime.now().strftime('%Y-%m-%d')}"
+    fig.suptitle(title_text, fontsize=FONT_SIZE_TITLE + 2, fontweight='bold', y=0.98)
+    
+    # Import advanced visualizations
+    from infrastructure.literature.meta_analysis.advanced_visualizations import (
+        plot_citation_vs_year,
+        plot_venue_trends,
+        plot_author_productivity,
+        plot_topic_distribution,
+        plot_publication_heatmap,
+    )
+    
+    # Generate each visualization
+    for idx, (viz_name, viz_type) in enumerate(available_viz):
+        row = idx // cols
+        col = idx % cols
+        
+        if row >= rows:
+            break
+        
+        ax = fig.add_subplot(gs[row, col])
+        
+        try:
+            if viz_name == "Publications by Year":
+                ax.bar(temporal_data.years, temporal_data.counts, alpha=0.8,
+                      color='#2E86AB', edgecolor='#1B4F72', linewidth=0.5)
+                ax.set_xlabel('Year', fontsize=9)
+                ax.set_ylabel('Publications', fontsize=9)
+                ax.set_title(viz_name, fontsize=11, fontweight='bold')
+                ax.grid(True, alpha=0.3, linestyle='--')
+            
+            elif viz_name == "Citation Distribution":
+                if metadata_data.citation_counts:
+                    ax.hist(metadata_data.citation_counts, bins=30, alpha=0.8,
+                           color='#6A4C93', edgecolor='#1B4F72', linewidth=0.5)
+                    mean_cit = np.mean(metadata_data.citation_counts)
+                    median_cit = np.median(metadata_data.citation_counts)
+                    ax.axvline(mean_cit, color='#E63946', linestyle='--', linewidth=1.5,
+                              label=f'Mean: {mean_cit:.1f}')
+                    ax.axvline(median_cit, color='#2A9D8F', linestyle='--', linewidth=1.5,
+                              label=f'Median: {median_cit:.1f}')
+                    ax.set_xlabel('Citation Count', fontsize=9)
+                    ax.set_ylabel('Frequency', fontsize=9)
+                    ax.set_title(viz_name, fontsize=11, fontweight='bold')
+                    ax.legend(fontsize=7, framealpha=0.9)
+                    ax.grid(True, alpha=0.3, axis='y', linestyle='--')
+            
+            elif viz_name == "Venue Distribution":
+                top_venues = sorted(metadata_data.venues.items(), key=lambda x: x[1], reverse=True)[:10]
+                venues = [v[:30] for v, _ in top_venues]
+                counts = [c for _, c in top_venues]
+                y_pos = np.arange(len(venues))
+                ax.barh(y_pos, counts, alpha=0.8, color='#2E86AB', edgecolor='#1B4F72', linewidth=0.5)
+                ax.set_yticks(y_pos)
+                ax.set_yticklabels(venues, fontsize=8)
+                ax.set_xlabel('Count', fontsize=9)
+                ax.set_ylabel('Venue', fontsize=9)
+                ax.set_title(viz_name, fontsize=11, fontweight='bold')
+                ax.grid(True, alpha=0.3, axis='x', linestyle='--')
+            
+            elif viz_name == "Author Contributions":
+                top_authors = sorted(metadata_data.authors.items(), key=lambda x: x[1], reverse=True)[:15]
+                authors = [a[:25] for a, _ in top_authors]
+                counts = [c for _, c in top_authors]
+                y_pos = np.arange(len(authors))
+                ax.barh(y_pos, counts, alpha=0.8, color='#2A9D8F', edgecolor='#1B4F72', linewidth=0.5)
+                ax.set_yticks(y_pos)
+                ax.set_yticklabels(authors, fontsize=7)
+                ax.set_xlabel('Publications', fontsize=9)
+                ax.set_ylabel('Author', fontsize=9)
+                ax.set_title(viz_name, fontsize=11, fontweight='bold')
+                ax.grid(True, alpha=0.3, axis='x', linestyle='--')
+            
+            elif viz_name == "Keyword Frequency":
+                top_keywords = sorted(keyword_data.keyword_counts.items(),
+                                    key=lambda x: x[1], reverse=True)[:15]
+                keywords = [k for k, _ in top_keywords]
+                counts = [c for _, c in top_keywords]
+                y_pos = np.arange(len(keywords))
+                ax.barh(y_pos, counts, alpha=0.8, color='#2E86AB', edgecolor='#1B4F72', linewidth=0.5)
+                ax.set_yticks(y_pos)
+                ax.set_yticklabels(keywords, fontsize=7)
+                ax.set_xlabel('Frequency', fontsize=9)
+                ax.set_ylabel('Keyword', fontsize=9)
+                ax.set_title(viz_name, fontsize=11, fontweight='bold')
+                ax.grid(True, alpha=0.3, axis='x', linestyle='--')
+            
+            elif viz_name == "Metadata Completeness":
+                if completeness_stats:
+                    fields = []
+                    percentages = []
+                    for field_key in ['year', 'authors', 'citations', 'doi', 'pdf', 'venue', 'abstract']:
+                        if field_key in completeness_stats:
+                            field_names = {
+                                'year': 'Year', 'authors': 'Authors', 'citations': 'Citations',
+                                'doi': 'DOI', 'pdf': 'PDF', 'venue': 'Venue', 'abstract': 'Abstract'
+                            }
+                            fields.append(field_names.get(field_key, field_key.capitalize()))
+                            percentages.append(completeness_stats[field_key]['percentage'])
+                    
+                    y_pos = np.arange(len(fields))
+                    colors = ['#2A9D8F' if p >= 80 else '#E9C46A' if p >= 60 else '#F77F00' if p >= 40 else '#E63946'
+                             for p in percentages]
+                    ax.barh(y_pos, percentages, alpha=0.8, color=colors, edgecolor='#1B4F72', linewidth=0.5)
+                    ax.set_yticks(y_pos)
+                    ax.set_yticklabels(fields, fontsize=8)
+                    ax.set_xlabel('Completeness (%)', fontsize=9)
+                    ax.set_ylabel('Field', fontsize=9)
+                    ax.set_title(viz_name, fontsize=11, fontweight='bold')
+                    ax.set_xlim(0, 105)
+                    ax.grid(True, alpha=0.3, axis='x', linestyle='--')
+            
+            elif viz_name == "PCA 2D":
+                feature_matrix, feature_names, valid_indices = extract_text_features(corpus)
+                filtered_years = [corpus.years[i] if i < len(corpus.years) else None for i in valid_indices]
+                pca_data, pca_model = compute_pca(feature_matrix, n_components=2)
+                cluster_labels = cluster_papers(pca_data, n_clusters=5) if len(pca_data) >= 5 else None
+                
+                valid_years = [y for y in filtered_years if y is not None]
+                min_year = min(valid_years) if valid_years else 2000
+                years_array = np.array([y if y else min_year for y in filtered_years])
+                
+                scatter = ax.scatter(pca_data[:, 0], pca_data[:, 1], c=years_array,
+                                   cmap='plasma', alpha=0.7, s=40, edgecolors='black', linewidth=0.3)
+                ax.set_xlabel(f'PC1 ({pca_model.explained_variance_ratio_[0]*100:.1f}%)', fontsize=8)
+                ax.set_ylabel(f'PC2 ({pca_model.explained_variance_ratio_[1]*100:.1f}%)', fontsize=8)
+                ax.set_title(viz_name, fontsize=11, fontweight='bold')
+                ax.grid(True, alpha=0.3, linestyle='--')
+            
+            elif viz_name == "Citation vs Year":
+                fig_viz = plot_citation_vs_year(entries)
+                # Extract axes from figure and copy to subplot
+                ax_viz = fig_viz.axes[0]
+                for line in ax_viz.lines:
+                    ax.plot(line.get_xdata(), line.get_ydata(), color=line.get_color(),
+                           linestyle=line.get_linestyle(), linewidth=line.get_linewidth(),
+                           marker=line.get_marker(), markersize=line.get_markersize() * 0.5)
+                for collection in ax_viz.collections:
+                    if hasattr(collection, 'get_offsets'):
+                        offsets = collection.get_offsets()
+                        colors = collection.get_array()
+                        ax.scatter(offsets[:, 0], offsets[:, 1], c=colors, s=30, alpha=0.6)
+                ax.set_xlabel('Year', fontsize=9)
+                ax.set_ylabel('Citations', fontsize=9)
+                ax.set_title(viz_name, fontsize=11, fontweight='bold')
+                ax.grid(True, alpha=0.3, linestyle='--')
+                plt.close(fig_viz)
+            
+            elif viz_name == "Venue Trends":
+                fig_viz = plot_venue_trends(entries, top_n_venues=5)
+                ax_viz = fig_viz.axes[0]
+                for line in ax_viz.lines:
+                    ax.plot(line.get_xdata(), line.get_ydata(), color=line.get_color(),
+                           linestyle=line.get_linestyle(), linewidth=line.get_linewidth() * 0.7,
+                           marker=line.get_marker(), markersize=line.get_markersize() * 0.7,
+                           label=line.get_label()[:20])
+                ax.set_xlabel('Year', fontsize=9)
+                ax.set_ylabel('Publications', fontsize=9)
+                ax.set_title(viz_name, fontsize=11, fontweight='bold')
+                ax.legend(fontsize=6, framealpha=0.9, ncol=1)
+                ax.grid(True, alpha=0.3, linestyle='--')
+                plt.close(fig_viz)
+            
+            elif viz_name == "Author Productivity":
+                fig_viz = plot_author_productivity(entries, top_n_authors=10)
+                ax_viz = fig_viz.axes[0]
+                for patch in ax_viz.patches:
+                    rect = patch.get_bbox()
+                    ax.barh(rect.y0, rect.width, height=rect.height, alpha=0.8,
+                           color=patch.get_facecolor(), edgecolor=patch.get_edgecolor())
+                ax.set_yticks(ax_viz.get_yticks())
+                ax.set_yticklabels([label.get_text()[:20] for label in ax_viz.get_yticklabels()], fontsize=7)
+                ax.set_xlabel('Publications', fontsize=9)
+                ax.set_ylabel('Author', fontsize=9)
+                ax.set_title(viz_name, fontsize=11, fontweight='bold')
+                ax.grid(True, alpha=0.3, axis='x', linestyle='--')
+                plt.close(fig_viz)
+            
+            elif viz_name == "Topic Distribution":
+                fig_viz = plot_topic_distribution(entries)
+                ax_viz = fig_viz.axes[0]
+                for patch in ax_viz.patches:
+                    rect = patch.get_bbox()
+                    ax.barh(rect.y0, rect.width, height=rect.height, alpha=0.8,
+                           color=patch.get_facecolor(), edgecolor=patch.get_edgecolor())
+                ax.set_yticks(ax_viz.get_yticks())
+                ax.set_yticklabels([label.get_text()[:20] for label in ax_viz.get_yticklabels()], fontsize=7)
+                ax.set_xlabel('Frequency', fontsize=9)
+                ax.set_ylabel('Topic', fontsize=9)
+                ax.set_title(viz_name, fontsize=11, fontweight='bold')
+                ax.grid(True, alpha=0.3, axis='x', linestyle='--')
+                plt.close(fig_viz)
+            
+            elif viz_name == "Publication Heatmap":
+                fig_viz = plot_publication_heatmap(entries, top_n_venues=10)
+                ax_viz = fig_viz.axes[0]
+                im = ax_viz.images[0]
+                ax.imshow(im.get_array(), aspect='auto', cmap=im.get_cmap(),
+                         extent=im.get_extent(), alpha=im.get_alpha())
+                ax.set_xticks(ax_viz.get_xticks())
+                ax.set_xticklabels([label.get_text() for label in ax_viz.get_xticklabels()], fontsize=7, rotation=45)
+                ax.set_yticks(ax_viz.get_yticks())
+                ax.set_yticklabels([label.get_text()[:25] for label in ax_viz.get_yticklabels()], fontsize=7)
+                ax.set_xlabel('Year', fontsize=9)
+                ax.set_ylabel('Venue', fontsize=9)
+                ax.set_title(viz_name, fontsize=11, fontweight='bold')
+                plt.close(fig_viz)
+            
+            else:
+                ax.text(0.5, 0.5, f'{viz_name}\n(Not available)', ha='center', va='center',
+                       fontsize=9)
+                ax.set_title(viz_name, fontsize=11, fontweight='bold')
+                ax.axis('off')
+        
+        except Exception as e:
+            logger.warning(f"Failed to create {viz_name} subplot: {e}")
+            ax.text(0.5, 0.5, f'{viz_name}\n(Error)', ha='center', va='center',
+                   fontsize=9, color='red')
+            ax.set_title(viz_name, fontsize=11, fontweight='bold')
+            ax.axis('off')
+    
+    # Fill remaining empty subplots
+    for idx in range(len(available_viz), rows * cols):
+        row = idx // cols
+        col = idx % cols
+        if row < rows:
+            ax = fig.add_subplot(gs[row, col])
+            ax.axis('off')
+    
+    return save_plot(fig, output_path)
 
 

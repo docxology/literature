@@ -29,12 +29,13 @@ The system supports multiple academic databases:
 
 - **arXiv** - Preprints in physics, mathematics, computer science
 - **Semantic Scholar** - AI-powered research tool
-- **PubMed** - Biomedical literature
+- **PubMed** - Biomedical literature (NCBI E-utilities)
 - **CrossRef** - DOI resolution and metadata
-- **OpenAlex** - Open scholarly metadata
+- **OpenAlex** - Open scholarly metadata (free API)
 - **DBLP** - Computer science bibliography
 - **bioRxiv/medRxiv** - Biology and medicine preprints
 - **Europe PMC** - European biomedical literature
+- **Unpaywall** - Open access PDF resolution (lookup-only, requires email)
 
 ### Configuring Sources
 

@@ -26,6 +26,7 @@ from infrastructure.literature.summarization.models import (
     SummarizationContext,
     SummarizationProgressEvent,
     ValidationResult,
+    PaperClassification,
 )
 from infrastructure.literature.summarization.core import SummarizationEngine
 from infrastructure.literature.summarization.validator import SummaryQualityValidator
@@ -51,6 +52,7 @@ __all__ = [
     "SummarizationContext",
     "SummarizationProgressEvent",
     "ValidationResult",
+    "PaperClassification",
     # Orchestration
     "run_summarize",
     "run_extract_text",

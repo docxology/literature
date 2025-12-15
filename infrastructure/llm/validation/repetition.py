@@ -248,6 +248,122 @@ def detect_repetition(
     return has_repetition, duplicates, unique_ratio
 
 
+def detect_nested_repetition(text: str) -> Tuple[bool, List[str]]:
+    """Detect nested repetition patterns, especially in quotes and attribution phrases.
+    
+    Detects patterns like:
+    - "The authors state: "The authors state: ..."
+    - Nested quote patterns
+    - Repeated attribution phrases
+    
+    Args:
+        text: Text to analyze
+        
+    Returns:
+        Tuple of (has_nested_repetition, list of detected patterns)
+    """
+    if not text:
+        return False, []
+    
+    patterns = []
+    
+    # Pattern 1: Nested attribution phrases
+    # Match: "The authors state: "The authors state: ..."
+    nested_attribution = re.compile(
+        r'("The authors state:\s*"|"According to [^:]+:\s*"|"They note:\s*"|"The paper argues:\s*")'
+        r'.*?'
+        r'("The authors state:\s*"|"According to [^:]+:\s*"|"They note:\s*"|"The paper argues:\s*")',
+        re.IGNORECASE | re.DOTALL
+    )
+    
+    matches = nested_attribution.finditer(text)
+    for match in matches:
+        patterns.append(f"Nested attribution: {match.group(0)[:100]}...")
+    
+    # Pattern 2: Repeated quote markers
+    # Count occurrences of common attribution phrases
+    attribution_phrases = [
+        r'"The authors state:\s*"',
+        r'"According to [^:]+:\s*"',
+        r'"They note:\s*"',
+        r'"The paper argues:\s*"',
+        r'"The study demonstrates:\s*"',
+    ]
+    
+    for phrase_pattern in attribution_phrases:
+        matches = list(re.finditer(phrase_pattern, text, re.IGNORECASE))
+        if len(matches) > 10:  # More than 10 occurrences suggests repetition
+            patterns.append(f"Repeated attribution phrase ({len(matches)} occurrences): {phrase_pattern}")
+    
+    # Pattern 3: Nested quotes (quotes within quotes that repeat)
+    # Match: "text "text "text ..."
+    nested_quotes = re.compile(r'"[^"]*"[^"]*"[^"]*"[^"]*"[^"]*"', re.DOTALL)
+    matches = nested_quotes.finditer(text)
+    for match in matches:
+        quote_text = match.group(0)
+        # Check if the quote content repeats
+        if len(quote_text) > 50:
+            # Extract inner quotes
+            inner_quotes = re.findall(r'"([^"]+)"', quote_text)
+            if len(inner_quotes) >= 2:
+                # Check if quotes are similar
+                if len(set(inner_quotes)) < len(inner_quotes) * 0.5:  # More than 50% duplicates
+                    patterns.append(f"Nested quote repetition: {quote_text[:100]}...")
+    
+    has_nested = len(patterns) > 0
+    return has_nested, patterns
+
+
+def remove_nested_repetition(text: str) -> Tuple[str, int]:
+    """Remove nested repetition patterns from text.
+    
+    Args:
+        text: Text to clean
+        
+    Returns:
+        Tuple of (cleaned_text, removed_count)
+    """
+    if not text:
+        return text, 0
+    
+    original = text
+    removed_count = 0
+    
+    # Remove nested attribution patterns
+    # Pattern: "The authors state: "The authors state: ..." -> "The authors state: ..."
+    nested_attribution_pattern = re.compile(
+        r'("The authors state:\s*"|"According to [^:]+:\s*"|"They note:\s*"|"The paper argues:\s*")'
+        r'\s*'
+        r'("The authors state:\s*"|"According to [^:]+:\s*"|"They note:\s*"|"The paper argues:\s*")',
+        re.IGNORECASE
+    )
+    
+    def remove_nested(match):
+        nonlocal removed_count
+        removed_count += 1
+        # Keep only the first attribution
+        return match.group(1)
+    
+    text = nested_attribution_pattern.sub(remove_nested, text)
+    
+    # Remove excessive repeated attribution phrases (keep first 3, remove rest)
+    attribution_phrases = [
+        (r'"The authors state:\s*"', '"The authors state: "'),
+        (r'"According to [^:]+:\s*"', '"According to the paper: "'),
+        (r'"They note:\s*"', '"They note: "'),
+    ]
+    
+    for pattern, replacement in attribution_phrases:
+        matches = list(re.finditer(pattern, text, re.IGNORECASE))
+        if len(matches) > 5:  # More than 5 occurrences
+            # Keep first 3, remove the rest
+            for i, match in enumerate(matches[3:], start=3):
+                text = text[:match.start()] + replacement + text[match.end():]
+                removed_count += 1
+    
+    return text, removed_count
+
+
 def _deduplicate_sentences(
     text: str,
     max_repetitions: int = 1,
@@ -256,6 +372,7 @@ def _deduplicate_sentences(
     """Deduplicate at sentence level first - removes exact duplicate sentences.
     
     This is more aggressive and should be applied before paragraph-level deduplication.
+    Handles edge cases like markdown formatting and very short sentences.
     
     Args:
         text: Text to deduplicate
@@ -269,8 +386,18 @@ def _deduplicate_sentences(
         return text
     
     # Split into sentences (handle multiple delimiters)
-    sentences = re.split(r'[.!?]+\s+', text)
-    if len(sentences) < 3:
+    # Preserve sentence delimiters by using a capturing group
+    sentences = re.split(r'([.!?]+\s+)', text)
+    
+    # Recombine sentences with their delimiters
+    combined_sentences = []
+    for i in range(0, len(sentences), 2):
+        if i + 1 < len(sentences):
+            combined_sentences.append(sentences[i] + sentences[i + 1])
+        elif i < len(sentences):
+            combined_sentences.append(sentences[i])
+    
+    if len(combined_sentences) < 3:
         return text
     
     original_length = len(text)
@@ -278,12 +405,23 @@ def _deduplicate_sentences(
     result_sentences = []
     removed_count = 0
     
-    for sent in sentences:
-        if not sent.strip() or len(sent.strip()) < 15:  # Skip very short fragments
+    for sent in combined_sentences:
+        sent_stripped = sent.strip()
+        
+        # Skip very short fragments (but be more lenient with markdown)
+        if not sent_stripped:
             result_sentences.append(sent)
             continue
         
-        normalized = _normalize_for_comparison(sent)
+        # Handle markdown formatting - normalize but preserve structure
+        # Remove markdown syntax for comparison but keep original for output
+        normalized = _normalize_for_comparison(sent_stripped)
+        
+        # Skip very short sentences (but allow markdown headers which are short)
+        if len(normalized) < 10 and not sent_stripped.startswith('#'):
+            result_sentences.append(sent)
+            continue
+        
         # Use first 200 chars as key for comparison
         key = normalized[:200] if len(normalized) > 200 else normalized
         
@@ -297,7 +435,8 @@ def _deduplicate_sentences(
                     is_duplicate = True
                     removed_count += 1
                     logger.debug(
-                        f"Duplicate sentence removed (similarity: {similarity:.2f})"
+                        f"Duplicate sentence removed (similarity: {similarity:.2f}, "
+                        f"length: {len(sent_stripped)} chars)"
                     )
                 break
         
@@ -306,13 +445,17 @@ def _deduplicate_sentences(
                 seen_sentences[key] = 1
             result_sentences.append(sent)
     
-    # Reconstruct text (approximate - sentence splitting may not be perfect)
-    result = '. '.join(result_sentences)
+    # Reconstruct text - preserve spacing
+    result = ''.join(result_sentences)
+    
+    # Restore headers (they were already in the original, so this is approximate)
+    # In practice, headers are usually preserved in the original text
     
     if removed_count > 0:
+        preservation_ratio = len(result) / original_length if original_length > 0 else 1.0
         logger.info(
             f"Sentence deduplication removed {removed_count} duplicate sentences "
-            f"({original_length} → {len(result)} chars)"
+            f"({original_length} → {len(result)} chars, {preservation_ratio:.1%} preserved)"
         )
     
     return result
@@ -392,7 +535,9 @@ def deduplicate_sections(
     max_repetitions: int = 2,
     mode: str = "conservative",
     similarity_threshold: float = 0.85,
-    min_content_preservation: float = 0.7
+    min_content_preservation: float = 0.7,
+    _recursion_depth: int = 0,
+    _max_recursion_depth: int = 2
 ) -> str:
     """Remove repeated sections from LLM output with improved semantic detection.
 
@@ -407,6 +552,8 @@ def deduplicate_sections(
         mode: Deduplication mode ("conservative", "balanced", "aggressive")
         similarity_threshold: Similarity threshold above which content is considered duplicate
         min_content_preservation: Minimum fraction of original content to preserve
+        _recursion_depth: Internal parameter to track recursion depth (prevents infinite recursion)
+        _max_recursion_depth: Maximum recursion depth for fallback (default: 2)
 
     Returns:
         Deduplicated text with detailed logging
@@ -415,6 +562,14 @@ def deduplicate_sections(
         return text
 
     original_length = len(text)
+    
+    # Prevent infinite recursion in fallback
+    if _recursion_depth >= _max_recursion_depth:
+        logger.warning(
+            f"Maximum recursion depth ({_max_recursion_depth}) reached in deduplication fallback. "
+            f"Returning current result to prevent infinite recursion."
+        )
+        return text
     
     # First apply sentence-level deduplication (most aggressive)
     text = _deduplicate_sentences(text, max_repetitions=1, similarity_threshold=0.85)
@@ -490,27 +645,41 @@ def deduplicate_sections(
             i += 1
 
     result = ''.join(result_parts)
-
-    # Apply content preservation rule
-    if len(result) / original_length < min_content_preservation:
+    
+    # Check content preservation BEFORE processing (early check)
+    # Estimate what would be removed based on duplicate count
+    estimated_preservation = 1.0 - (removed_count / max(1, len(parts) // 2))
+    
+    # Apply content preservation rule (check early to avoid unnecessary processing)
+    final_length = len(result)
+    actual_preservation = final_length / original_length if original_length > 0 else 1.0
+    
+    if actual_preservation < min_content_preservation:
         logger.warning(
             f"Deduplication would remove too much content "
-            f"({len(result)}/{original_length} = {len(result)/original_length:.1%}). "
-            f"Using conservative fallback."
+            f"({final_length}/{original_length} = {actual_preservation:.1%}). "
+            f"Using conservative fallback (recursion depth: {_recursion_depth})."
         )
-        # Fallback to more conservative deduplication
+        # Fallback to more conservative deduplication (with recursion limit)
         return deduplicate_sections(
-            text, max_repetitions=max_repetitions + 1,
-            mode="conservative", similarity_threshold=0.95,
-            min_content_preservation=0.8
+            text, 
+            max_repetitions=max_repetitions + 1,
+            mode="conservative", 
+            similarity_threshold=0.95,
+            min_content_preservation=0.8,
+            _recursion_depth=_recursion_depth + 1,
+            _max_recursion_depth=_max_recursion_depth
         )
 
     if removed_count > 0:
+        preservation_ratio = len(result) / original_length if original_length > 0 else 1.0
         logger.info(
             f"Deduplication removed {removed_count} duplicate sections "
             f"({original_length} → {len(result)} chars, "
-            f"{len(result)/original_length:.1%} preserved)"
+            f"{preservation_ratio:.1%} preserved, mode: {mode}, threshold: {similarity_threshold:.2f})"
         )
-
+    
+    # Return metrics in a way that can be tracked (via logging)
+    # The actual metrics are logged above, but we can also return them if needed
     return result
 

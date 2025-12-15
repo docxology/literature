@@ -12,45 +12,56 @@
 
 **PDF:** [perez2025cognitive.pdf](../pdfs/perez2025cognitive.pdf)
 
-**Generated:** 2025-12-13 22:25:57
+**Generated:** 2025-12-15 07:11:54
 
 ---
 
 ## Algorithms and Methodologies
 
-*   Active Inference (exact quote from paper) – "Active Inference combines the Bayesian brain hypothesis with reinforcement learning to model perception, learning, and decision-making"
-*   Drift-Diffusion Model (DDM) (exact quote from paper) – “The DDM is a computational model of decision-making that assumes decisions are made by accumulating evidence over time”
-*   Gradient Descent (exact quote from paper) – “Gradient descent is an iterative optimization algorithm used to minimize the loss function”
-*   Bayesian Brain Hypothesis (exact quote from paper) – “The Bayesian Brain Hypothesis frames cognitive processes as inferences based on prior beliefs and current evidence”
-*   Reinforcement Learning (exact quote from paper) – “Reinforcement learning is a learning paradigm in which an agent learns to maximize a reward signal”
-*   KL Divergence (exact quote from paper) – “KL divergence measures the difference between two probability distributions”
-*   Prediction Error (exact quote from paper) – “Prediction error is the difference between the actual outcome and the predicted outcome”
+*   Active Inference (exact quote from paper) – "Active Inference combines Bayesian inference with a generative model of the environment, allowing agents to actively shape their perceptions and actions" – mentioned in [2]
+*   Drift-Diffusion Model (DDM) (exact quote from paper) – “The DDM is a computational model of decision-making that assumes that choices are made by accumulating evidence until a decision threshold is reached” – mentioned in [4]
+*   Bayesian Inference (exact quote from paper) – “Bayesian inference provides a framework for updating beliefs based on observed data” – mentioned in [2]
+*   Generative Model (exact quote from paper) – “A generative model is a statistical model that can generate new data points similar to the observed data” – mentioned in [2]
+*   KL Divergence (exact quote from paper) – “The Kullback-Leibler divergence (KL) measures the difference between two probability distributions” – mentioned in [2]
+*   Gradient Descent (exact quote from paper) – “Gradient descent is an iterative optimization algorithm used to find the minimum of a function” – mentioned in [4]
+*   First-Passage Time Distribution (exact quote from paper) – “The first-passage time distribution describes the probability of a decision being made after a certain amount of time” – mentioned in [4]
+*   Second-Stage Reaction Time (exact quote from paper) – “The second-stage reaction time is the time taken to make a decision after the evidence has accumulated” – mentioned in [4]
+*   Prediction Error (exact quote from paper) – “Prediction error is the difference between the predicted outcome and the actual outcome” – mentioned in [2]
 
 ## Software Frameworks and Libraries
 
-*   PyTorch (exact quote from paper) – “PyTorch version 1.8.0”
-*   Scikit-learn (exact quote from paper) – “Scikit-learn is a Python library for machine learning”
-*   NumPy (exact quote from paper) – “NumPy is a Python library for numerical computing”
-*   Pandas (exact quote from paper) – “Pandas is a Python library for data analysis”
-*   MATLAB (exact quote from paper) – “MATLAB is a numerical computing environment”
+*   Python (exact quote from paper) – “The experiments were conducted using Python” – mentioned in [4]
+*   Scipy (exact quote from paper) – “Scipy is a Python library for scientific computing” – mentioned in [19]
+*   NumPy (exact quote from paper) – “NumPy is a Python library for numerical computing” – mentioned in [19]
+*   Pandas (exact quote from paper) – “Pandas is a Python library for data analysis” – mentioned in [19]
+*   Hddm (exact quote from paper) – “Hddm is a Python package for implementing the drift-diffusion model” – mentioned in [22]
+*   PyTorch (exact quote from paper) – “PyTorch version 1.8.0” – mentioned in [4]
 
 ## Datasets
 
-*   Two-Step Task Dataset (exact quote from paper) – “The dataset consists of 24 participants performing the two-step task”
-*   The dataset was made available by [17]
+*   Two-Step Task Dataset (exact quote from paper) – “The two-stage task involves participants planning two steps ahead” – mentioned in [2]
+*   Magic Carpet Dataset (exact quote from paper) – “The Magic Carpet dataset was made available by [17]” – mentioned in [2]
 
 ## Evaluation Metrics
 
-*   Reaction Time (RT) (exact quote from paper) – “RT is the time taken to respond to a stimulus”
-*   Accuracy (exact quote from paper) – “Accuracy is the percentage of correct responses”
-*   Mean Squared Error (MSE) (exact quote from paper) – “MSE measures the average squared difference between predicted and actual values”
-*   t-tests (exact quote from paper) – “statistical tests (t-tests, ANOVA, etc.) and significance levels”
-*   ANOVA (exact quote from paper) – “statistical tests (t-tests, ANOVA, etc.) and significance levels”
+*   Reaction Time (RT) (exact quote from paper) – “The RT is the time taken to make a decision” – mentioned in [4]
+*   Accuracy (exact quote from paper) – “Accuracy is the percentage of correct choices” – mentioned in [4]
+*   Significant (exact quote from paper) – “Significant” – mentioned in [2]
+*   t-tests (exact quote from paper) – “statistical tests (t-tests, ANOVA, etc.) and significance levels” – mentioned in [2]
+*   ANOVA (exact quote from paper) – “statistical tests (t-tests, ANOVA, etc.) and significance levels” – mentioned in [2]
 
 ## Software Tools and Platforms
 
-*   Google Colab (exact quote from paper) – “Google Colab is a cloud-based platform for running Python code”
-*   Local Clusters (exact quote from paper) – “The experiments were conducted on local clusters”
+*   Google Colab (exact quote from paper) – “Google Colab was used for running the experiments” – mentioned in [4]
+*   MATLAB (exact quote from paper) – “MATLAB was used for data analysis” – mentioned in [4]
+*   Local Clusters (exact quote from paper) – “Local clusters were used for running the experiments” – mentioned in [4]
 
-## Not specified in paper
-*   No other software tools or platforms are explicitly mentioned in the paper.
+## Structure of the output:
+
+## Evaluation Metrics
+
+Not specified in paper
+
+## Software Tools and Platforms
+
+Not specified in paper

@@ -1,1 +1,0 @@
-Okay, I understand. I will follow these instructions precisely to generate a summary of the provided text. I will focus on clarity, conciseness, and adherence to the specified guidelines. Let's begin.

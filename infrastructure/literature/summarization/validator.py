@@ -363,7 +363,8 @@ class SummaryQualityValidator:
                         found_group = False
                         for group in similar_groups:
                             if any(self._sentence_similarity(sent1, gs) >= 0.85 for gs in group):
-                                group.append(sent2)
+                                if sent2 not in group:  # Avoid adding duplicates to group
+                                    group.append(sent2)
                                 found_group = True
                                 break
                         if not found_group:
@@ -374,21 +375,57 @@ class SummaryQualityValidator:
                 if len(group) >= 3:
                     return True, f"Similar sentences appear {len(group)} times (severe repetition, similarity >= 0.85)"
         
-        # Check for phrase repetition
+        # Check for nested repetition patterns (e.g., "The authors state: "The authors state: ...")
+        from infrastructure.llm.validation.repetition import detect_nested_repetition
+        has_nested, nested_patterns = detect_nested_repetition(summary)
+        if has_nested:
+            return True, f"Nested repetition detected: {len(nested_patterns)} patterns found (severe repetition)"
+        
+        # Check for phrase repetition (multiple phrase lengths)
         words = normalize_text(summary).split()
+        
+        # Check 5-word phrases
         if len(words) >= 5:
-            phrases = []
+            phrases_5 = []
             for i in range(len(words) - 4):
                 phrase = ' '.join(words[i:i+5])
-                phrases.append(phrase)
+                phrases_5.append(phrase)
             
-            phrase_counts = {}
-            for phrase in phrases:
-                phrase_counts[phrase] = phrase_counts.get(phrase, 0) + 1
+            phrase_counts_5 = {}
+            for phrase in phrases_5:
+                phrase_counts_5[phrase] = phrase_counts_5.get(phrase, 0) + 1
             
-            for phrase, count in phrase_counts.items():
+            for phrase, count in phrase_counts_5.items():
                 if count >= 5:
                     return True, f"Same phrase appears {count} times (severe repetition)"
+        
+        # Check 10-word phrases (longer patterns)
+        if len(words) >= 10:
+            phrases_10 = []
+            for i in range(len(words) - 9):
+                phrase = ' '.join(words[i:i+10])
+                phrases_10.append(phrase)
+            
+            phrase_counts_10 = {}
+            for phrase in phrases_10:
+                phrase_counts_10[phrase] = phrase_counts_10.get(phrase, 0) + 1
+            
+            for phrase, count in phrase_counts_10.items():
+                if count >= 3:  # Lower threshold for longer phrases
+                    return True, f"Same long phrase (10+ words) appears {count} times (severe repetition)"
+        
+        # Check for repetitive attribution phrases (common in claims/quotes)
+        attribution_patterns = [
+            r'"the authors state:\s*"',
+            r'"according to [^:]+:\s*"',
+            r'"they note:\s*"',
+            r'"the paper argues:\s*"',
+        ]
+        
+        for pattern in attribution_patterns:
+            matches = re.findall(pattern, summary, re.IGNORECASE)
+            if len(matches) > 10:  # More than 10 occurrences
+                return True, f"Repetitive attribution phrase appears {len(matches)} times (severe repetition)"
         
         # Check for paragraph repetition
         paragraphs = [p.strip() for p in summary.split('\n\n') if p.strip() and len(p.strip()) > 50]

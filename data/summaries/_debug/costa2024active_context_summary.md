@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-world, assumptions, provides, agency, behaviour, inference, active, framework, model, exploration
+world, provides, active, agency, model, assumptions, exploration, behaviour, framework, inference
 
 ## Equations Found
 10 equations extracted

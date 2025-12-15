@@ -14,7 +14,7 @@
 - Discussion: 3668 chars
 
 ## Key Terms
-graph, ambiguous, environments, planning, maps, research, cognitive, clone, learning, inference, active, agent, integrating
+learning, ambiguous, research, maps, graph, clone, environments, active, integrating, cognitive, inference, agent, planning
 
 ## Equations Found
 5 equations extracted

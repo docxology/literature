@@ -120,14 +120,15 @@ python3 scripts/07_literature_search.py [options]
 - `--llm-operation OPERATION` - Advanced LLM operations
 
 **Options:**
-- `--keywords KEYWORDS` - Comma-separated keywords
-- `--limit N` - Limit per keyword
-- `--sources SOURCES` - Source list
+- `--keywords KEYWORDS` - Comma-separated keywords for search (prompts if not provided)
+- `--limit N` - Papers per keyword (default: from LITERATURE_DEFAULT_LIMIT or 25)
 - `--retry-failed` - Retry previously failed downloads (default: False - failed downloads are skipped)
-- `--clear-pdfs` - Clear all PDFs before download
-- `--clear-summaries` - Clear all summaries before generation
-- `--clear-library` - Clear library index before operations (requires confirmation)
-- `--paper-config PATH` - Path to YAML config file for paper selection
+- `--clear-pdfs` - Clear all PDFs before download (default: False, incremental/additive)
+- `--clear-summaries` - Clear all summaries before generation (default: False, incremental/additive)
+- `--clear-library` - Clear library index before operations (requires confirmation, default: False)
+- `--paper-config PATH` - Path to YAML config file for paper selection (default: data/paper_selection.yaml)
+
+**Note:** Sources are configured via `LITERATURE_SOURCES` environment variable, not via CLI flag. See [Configuration Guide](../guides/configuration.md) for details.
 
 **Failed Download Behavior:**
 

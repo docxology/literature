@@ -12,6 +12,22 @@ from typing import Any, Dict, List, Optional
 
 
 @dataclass
+class PaperClassification:
+    """Paper classification result.
+    
+    Attributes:
+        category: Primary category ("core_theory_math", "translation_tool", "applied")
+        domain: Domain name if category is "applied" (e.g., "Computer Science", "Biology")
+        confidence: Confidence score (0.0 to 1.0)
+        reasoning: Brief explanation of classification
+    """
+    category: str  # "core_theory_math", "translation_tool", "applied"
+    domain: Optional[str] = None  # Required if category is "applied"
+    confidence: float = 0.0
+    reasoning: Optional[str] = None
+
+
+@dataclass
 class SummarizationResult:
     """Result of a paper summarization attempt.
 
@@ -33,6 +49,7 @@ class SummarizationResult:
         validation_errors: List of quality validation issues.
         summary_path: Path to the saved summary file if successful.
         skipped: Whether this summary was skipped because it already exists.
+        classification: Paper classification result if available.
     """
     citation_key: str
     success: bool
@@ -49,6 +66,7 @@ class SummarizationResult:
     validation_errors: List[str] = field(default_factory=list)
     summary_path: Optional[Path] = None
     skipped: bool = False
+    classification: Optional[PaperClassification] = None
 
     @property
     def compression_ratio(self) -> float:

@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-click, point, agent, human, mouse, inference, behaviour, active, pointing, cursor, model
+cursor, mouse, active, model, human, behaviour, click, inference, pointing, agent, point
 
 ## Equations Found
 10 equations extracted

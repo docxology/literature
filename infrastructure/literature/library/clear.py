@@ -5,7 +5,9 @@ with confirmation and safety checks.
 """
 from __future__ import annotations
 
+import json
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
 
@@ -326,14 +328,32 @@ def clear_library(confirm: bool = True, interactive: bool = False) -> Dict[str, 
             except Exception as e:
                 logger.warning(f"Failed to remove BibTeX file: {e}")
         
-        # 5. Clear all library index entries
-        entries_removed = 0
-        for entry in entries:
+        # 5. Clear all library index entries by deleting and recreating the file
+        entries_removed = entry_count
+        index_path = library_index.index_path
+        
+        # Delete the existing index file
+        if index_path.exists():
             try:
-                library_index.remove_entry(entry.citation_key)
-                entries_removed += 1
+                index_path.unlink()
+                logger.debug(f"Deleted library index file: {index_path}")
             except Exception as e:
-                logger.warning(f"Failed to remove entry {entry.citation_key}: {e}")
+                logger.warning(f"Failed to delete library index file: {e}")
+        
+        # Create a new empty index file with proper structure
+        try:
+            index_path.parent.mkdir(parents=True, exist_ok=True)
+            empty_index = {
+                "version": "1.0",
+                "updated": datetime.now().isoformat(),
+                "count": 0,
+                "entries": {}
+            }
+            with open(index_path, 'w', encoding='utf-8') as f:
+                json.dump(empty_index, f, indent=2, ensure_ascii=False)
+            logger.debug(f"Created empty library index file: {index_path}")
+        except Exception as e:
+            logger.warning(f"Failed to create empty library index file: {e}")
         
         # Log summary
         logger.info(

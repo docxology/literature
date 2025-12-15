@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-systems, glass, konstanz, collective, university, models, inference, behaviour, active, spin, study
+collective, active, spin, study, konstanz, systems, glass, behaviour, inference, models, university
 
 ## Equations Found
 10 equations extracted

@@ -135,3 +135,4 @@ def assert_file_contains(file_path: Path, text: str, description: str = "file"):
     content = file_path.read_text()
     assert text in content, f"{description} does not contain expected text: {text}"
 
+

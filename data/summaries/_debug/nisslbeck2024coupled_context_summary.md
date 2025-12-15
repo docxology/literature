@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-systems, joint, energy, agents, filtering, control, terms, autoregressive, inference, dynamical, active, bayesian, coupled, framework, multi
+coupled, energy, agents, terms, active, bayesian, framework, autoregressive, joint, systems, multi, filtering, inference, control, dynamical
 
 ## Equations Found
 10 equations extracted

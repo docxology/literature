@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-continuous, passing, autoregressive, factor, inference, active, agent, model, algorithms, message, valued
+continuous, algorithms, active, factor, model, passing, autoregressive, message, inference, valued, agent
 
 ## Equations Found
 10 equations extracted

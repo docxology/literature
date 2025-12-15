@@ -897,8 +897,31 @@ This is a unique paragraph about the paper's main contribution to the field of r
         # May or may not detect depending on similarity calculation
         assert isinstance(has_severe, bool)
         
+        # Summary with longer phrase repetition (10+ words)
+        long_phrase = "This is a very long phrase that contains ten words or more for testing purposes."
+        summary_long_phrase_rep = f"{long_phrase} {long_phrase} {long_phrase} Additional content here."
+        has_severe, reason = validator._detect_severe_repetition(summary_long_phrase_rep)
+        assert has_severe is True
+        assert "long phrase" in reason.lower() or "appears" in reason.lower()
+        
+        # Summary with nested repetition patterns
+        summary_nested = 'The authors state: "The authors state: "The authors state: "This is a quote."'
+        has_severe, reason = validator._detect_severe_repetition(summary_nested)
+        assert has_severe is True
+        assert "nested" in reason.lower() or "repetition" in reason.lower()
+        
+        # Summary with repetitive attribution phrases
+        summary_attribution = '"The authors state: "quote1" ' * 12
+        has_severe, reason = validator._detect_severe_repetition(summary_attribution)
+        assert has_severe is True
+        assert "attribution" in reason.lower() or "repetition" in reason.lower()
+        
         # Summary without severe repetition
         summary_clean = """### Overview
+This paper presents novel methods for data analysis. The authors introduce new algorithms. The results show significant improvements."""
+        has_severe, reason = validator._detect_severe_repetition(summary_clean)
+        assert has_severe is False
+        assert reason == "" """### Overview
 This paper presents novel methods for data analysis.
 
 ### Methodology
@@ -1363,6 +1386,170 @@ class TestPostProcessingDeduplication:
         
         # Should preserve most content
         assert len(deduplicated) > len(text) * 0.7  # At least 70% preserved
+    
+    def test_deduplication_with_markdown(self):
+        """Test deduplication with markdown formatting."""
+        from infrastructure.llm.validation.repetition import deduplicate_sections
+        
+        # Text with markdown and repetition
+        text = """### Overview
+This is a paragraph about the paper.
+
+### Key Contributions
+This is a paragraph about contributions.
+
+### Overview
+This is a paragraph about the paper again."""
+        
+        deduplicated = deduplicate_sections(
+            text,
+            max_repetitions=1,
+            mode="aggressive",
+            similarity_threshold=0.85,
+            min_content_preservation=0.7
+        )
+        
+        # Should remove duplicate section
+        assert deduplicated.count("### Overview") <= 1
+    
+    def test_deduplication_conservative_fallback(self):
+        """Test that conservative fallback prevents infinite recursion."""
+        from infrastructure.llm.validation.repetition import deduplicate_sections
+        
+        # Text that would trigger fallback (very repetitive)
+        text = "This is a sentence. " * 100  # 100 identical sentences
+        
+        # Should not raise recursion error
+        deduplicated = deduplicate_sections(
+            text,
+            max_repetitions=1,
+            mode="aggressive",
+            similarity_threshold=0.5,  # Very low threshold
+            min_content_preservation=0.9  # High preservation requirement
+        )
+        
+        # Should return something (even if it's the original)
+        assert deduplicated is not None
+        assert isinstance(deduplicated, str)
+    
+    def test_deduplication_content_preservation(self):
+        """Test that content preservation limits are respected."""
+        from infrastructure.llm.validation.repetition import deduplicate_sections
+        
+        # Text with some repetition but mostly unique
+        text = "Unique sentence one. Unique sentence two. " * 10
+        text += "Repeated sentence. " * 5
+        text += "Unique sentence three. " * 10
+        
+        deduplicated = deduplicate_sections(
+            text,
+            max_repetitions=1,
+            mode="aggressive",
+            similarity_threshold=0.85,
+            min_content_preservation=0.7
+        )
+        
+        # Should preserve at least 70% of content
+        preservation_ratio = len(deduplicated) / len(text) if len(text) > 0 else 1.0
+        assert preservation_ratio >= 0.7 or len(deduplicated) == len(text)  # Either preserved or fallback used
+
+
+class TestNestedRepetitionDetection:
+    """Test nested repetition detection functionality."""
+    
+    def test_detect_nested_attribution(self):
+        """Test detection of nested attribution phrases."""
+        from infrastructure.llm.validation.repetition import detect_nested_repetition
+        
+        # Text with nested attribution
+        text = '"The authors state: "The authors state: "This is a quote.""'
+        
+        has_nested, patterns = detect_nested_repetition(text)
+        assert has_nested is True
+        assert len(patterns) > 0
+    
+    def test_remove_nested_repetition(self):
+        """Test removal of nested repetition patterns."""
+        from infrastructure.llm.validation.repetition import remove_nested_repetition
+        
+        # Text with nested attribution
+        text = '"The authors state: "The authors state: "This is a quote.""'
+        
+        cleaned, removed_count = remove_nested_repetition(text)
+        assert removed_count > 0
+        assert '"The authors state: "The authors state:' not in cleaned
+    
+    def test_detect_repeated_attribution_phrases(self):
+        """Test detection of repeated attribution phrases."""
+        from infrastructure.llm.validation.repetition import detect_nested_repetition
+        
+        # Text with many repeated attribution phrases
+        text = '"The authors state: "quote1" ' * 15
+        
+        has_nested, patterns = detect_nested_repetition(text)
+        assert has_nested is True
+        assert any("Repeated attribution phrase" in p for p in patterns)
+    
+    def test_remove_excessive_attribution_phrases(self):
+        """Test removal of excessive attribution phrases."""
+        from infrastructure.llm.validation.repetition import remove_nested_repetition
+        
+        # Text with many repeated attribution phrases
+        text = '"The authors state: "quote1" ' * 10
+        
+        cleaned, removed_count = remove_nested_repetition(text)
+        # Should remove some but keep first few
+        assert '"The authors state:' in cleaned
+        assert removed_count > 0
+
+
+class TestClaimsQuotesRepetition:
+    """Test claims/quotes extraction repetition handling."""
+    
+    def test_claims_quotes_deduplication(self):
+        """Test that claims/quotes extraction applies deduplication."""
+        from infrastructure.llm.validation.repetition import deduplicate_sections
+        
+        # Simulated claims/quotes output with repetition
+        claims_quotes = """## Key Claims and Hypotheses
+
+1. Claim: The paper presents a novel method.
+2. Claim: The paper presents a novel method.
+3. Claim: The paper presents a novel method.
+
+## Important Quotes
+
+"The authors state: "The authors state: "This is a quote.""
+"The authors state: "The authors state: "This is a quote."
+"""
+        
+        deduplicated = deduplicate_sections(
+            claims_quotes,
+            max_repetitions=1,
+            mode="aggressive",
+            similarity_threshold=0.75,
+            min_content_preservation=0.7
+        )
+        
+        # Should have less repetition
+        assert deduplicated.count("The paper presents a novel method") < claims_quotes.count("The paper presents a novel method")
+    
+    def test_nested_quote_patterns(self):
+        """Test detection and removal of nested quote patterns."""
+        from infrastructure.llm.validation.repetition import detect_nested_repetition, remove_nested_repetition
+        
+        # Text with nested quotes (3 levels of nesting)
+        # Pattern: "The authors state: " repeated 3 times with nested quotes
+        # Format: "text"text"text"content""" (3 opening quotes, content, 3 closing quotes)
+        text = '"The authors state: "The authors state: "The authors state: "quote text"""'
+        
+        has_nested, patterns = detect_nested_repetition(text)
+        assert has_nested is True
+        
+        cleaned, removed = remove_nested_repetition(text)
+        assert removed > 0
+        # Should have fewer nested levels
+        assert cleaned.count('"The authors state: "The authors state:') < text.count('"The authors state: "The authors state:')
 
 
 class TestThreePassSummarization:

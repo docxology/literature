@@ -27,6 +27,7 @@ from infrastructure.literature.meta_analysis.metadata import (
     create_author_contributions_plot,
     create_citation_distribution_plot,
     create_metadata_completeness_plot,
+    create_classification_distribution_plot,
     calculate_completeness_stats,
     get_metadata_summary,
 )
@@ -58,6 +59,7 @@ from infrastructure.literature.meta_analysis.graphical_abstract import (
     create_single_page_abstract,
     create_multi_page_abstract,
     create_comprehensive_abstract,
+    create_composite_panel,
 )
 from infrastructure.literature.meta_analysis.visualizations import (
     plot_pca_loadings_heatmap,
@@ -65,6 +67,23 @@ from infrastructure.literature.meta_analysis.visualizations import (
     plot_pca_biplot,
     plot_pca_word_vectors,
     plot_metadata_completeness,
+    plot_publications_by_year,
+    plot_pca_2d,
+    plot_pca_3d,
+)
+from infrastructure.literature.meta_analysis.advanced_visualizations import (
+    plot_citation_vs_year,
+    plot_venue_trends,
+    plot_author_productivity,
+    plot_citation_network,
+    plot_topic_distribution,
+    plot_word_cloud,
+    plot_correlation_matrix,
+    plot_publication_heatmap,
+    create_citation_vs_year_plot,
+    create_venue_trends_plot,
+    create_author_productivity_plot,
+    create_publication_heatmap_plot,
 )
 
 __all__ = [
@@ -89,6 +108,7 @@ __all__ = [
     "create_author_contributions_plot",
     "create_citation_distribution_plot",
     "create_metadata_completeness_plot",
+    "create_classification_distribution_plot",
     "calculate_completeness_stats",
     "get_metadata_summary",
     # PCA analysis
@@ -116,12 +136,29 @@ __all__ = [
     "create_single_page_abstract",
     "create_multi_page_abstract",
     "create_comprehensive_abstract",
+    "create_composite_panel",
     # Visualization functions
     "plot_pca_loadings_heatmap",
     "plot_pca_loadings_barplot",
     "plot_pca_biplot",
     "plot_pca_word_vectors",
     "plot_metadata_completeness",
+    "plot_publications_by_year",
+    "plot_pca_2d",
+    "plot_pca_3d",
+    # Advanced visualizations
+    "plot_citation_vs_year",
+    "plot_venue_trends",
+    "plot_author_productivity",
+    "plot_citation_network",
+    "plot_topic_distribution",
+    "plot_word_cloud",
+    "plot_correlation_matrix",
+    "plot_publication_heatmap",
+    "create_citation_vs_year_plot",
+    "create_venue_trends_plot",
+    "create_author_productivity_plot",
+    "create_publication_heatmap_plot",
 ]
 
 

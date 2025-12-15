@@ -30,3 +30,4 @@ def sample_log_file(tmp_path):
     log_file = tmp_path / "test.log"
     return log_file
 
+

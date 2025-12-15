@@ -492,3 +492,4 @@ class HTMLTextExtractor:
             logger.error(f"Failed to save extracted text to {output_path}: {e}")
             raise
 
+

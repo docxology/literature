@@ -328,3 +328,4 @@ class TestModularExtraction:
         urls = extract_pdf_urls_modular(html, base_url)
         assert isinstance(urls, list)
 
+

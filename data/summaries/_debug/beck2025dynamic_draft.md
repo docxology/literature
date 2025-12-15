@@ -1,1 +1,0 @@
-Okay, I understand. I will follow these instructions to create a summary of the provided text, adhering to the specified guidelines and constraints. I will focus on clarity, conciseness, and accuracy, and I will avoid any conversational or repetitive language.

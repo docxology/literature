@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-precision, university, tolerant, fault, active, learning, delft, towards, inference, control, stochastic
+learning, precision, university, active, fault, tolerant, towards, stochastic, delft, inference, control
 
 ## Equations Found
 9 equations extracted

@@ -87,3 +87,4 @@ pytest tests/infrastructure/ --cov=infrastructure --cov-report=html
 - [`llm/`](llm/) - LLM tests
 - [`literature/`](literature/) - Literature tests
 
+

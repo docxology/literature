@@ -137,6 +137,16 @@ class LibraryIndex:
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning(f"Failed to load library index: {e}")
                 self._entries = {}
+    
+    def reload(self) -> None:
+        """Reload the library index from disk.
+        
+        Clears the in-memory entries and reloads from the index file.
+        Useful after external operations that modify the index file (e.g., clear operations).
+        """
+        self._entries = {}
+        self._load_index()
+        logger.debug(f"Reloaded library index from disk: {len(self._entries)} entries")
 
     def _save_index(self) -> None:
         """Save index to disk."""

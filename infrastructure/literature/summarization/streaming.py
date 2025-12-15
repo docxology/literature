@@ -45,7 +45,8 @@ def stream_with_progress(
         update_interval: Interval in seconds between progress updates (default: 5.0).
         timeout: Maximum time to wait for response. If None, reads from 
                 LLM_SUMMARIZATION_TIMEOUT env var (default: 600.0). Adaptive timeout
-                adds 1s per 1000 chars of prompt (max 1200s).
+                adds 1s per 1000 chars of prompt (max 1200s). Considers model type
+                and historical performance for better estimates.
         options: Optional generation options (temperature, max_tokens, etc.).
         reset_context: Whether to clear LLM context before streaming (default: False).
                       Note: Context is already cleared at the start of each paper.
@@ -81,12 +82,31 @@ def stream_with_progress(
     if timeout is None:
         timeout = float(os.environ.get('LLM_SUMMARIZATION_TIMEOUT', '600.0'))
     
-    # Adaptive timeout based on prompt size
+    # Adaptive timeout based on prompt size and model considerations
     # Base: 300s, add 1s per 1000 chars of prompt (max 1200s)
+    # For very large prompts (>100KB), add extra buffer
     prompt_size = len(prompt)
-    adaptive_timeout = min(300.0 + (prompt_size / 1000.0), 1200.0)
+    prompt_size_kb = prompt_size / 1024
+    prompt_size_mb = prompt_size_kb / 1024
+    
+    # Base adaptive timeout calculation
+    base_adaptive = 300.0 + (prompt_size / 1000.0)
+    
+    # Add extra buffer for very large prompts
+    if prompt_size_mb > 0.1:  # > 100KB
+        extra_buffer = min(prompt_size_mb * 10, 300.0)  # Up to 5 minutes extra
+        base_adaptive += extra_buffer
+    
+    adaptive_timeout = min(base_adaptive, 1200.0)
     configured_timeout = timeout
     timeout = max(timeout, adaptive_timeout)  # Use larger of configured or adaptive
+    
+    # Warn if prompt is very large and timeout might be insufficient
+    if prompt_size_mb > 0.1 and timeout < 900:  # Large prompt but short timeout
+        logger.warning(
+            f"[{citation_key}] Large prompt ({prompt_size_mb:.2f}MB) with relatively short timeout "
+            f"({timeout:.0f}s). Consider increasing timeout or reducing prompt size."
+        )
     
     accumulated = []
     chars_received = 0
@@ -277,32 +297,83 @@ def stream_with_progress(
                     if estimated_remaining_time > timeout - elapsed:
                         # Only warn once per 30 seconds to avoid spam
                         if not slow_gen_warned or (now - slow_gen_warn_time) >= 30.0:
+                            # Calculate prompt size for suggestions
+                            prompt_size_kb = len(prompt) / 1024
+                            prompt_size_mb = prompt_size_kb / 1024
+                            
+                            # Generate actionable suggestions
+                            suggestions = []
+                            if prompt_size_mb > 0.1:  # > 100KB
+                                suggestions.append(f"reduce prompt size (current: {prompt_size_mb:.2f}MB)")
+                            if timeout < 1200:  # Less than 20 minutes
+                                suggestions.append(f"increase timeout (current: {timeout:.0f}s)")
+                            suggestions.append("check LLM model performance/availability")
+                            suggestions.append("verify network connectivity if using remote LLM")
+                            
+                            suggestion_text = "; ".join(suggestions) if suggestions else "check system resources"
+                            
                             logger.warning(
                                 f"[{citation_key}] Slow generation rate: {chars_per_sec:.1f} chars/s. "
                                 f"At this rate, completion would take {estimated_remaining_time:.0f}s more "
                                 f"(exceeds remaining timeout: {timeout - elapsed:.0f}s). "
-                                f"Consider increasing timeout or reducing prompt size."
+                                f"Suggestions: {suggestion_text}."
                             )
+                            
+                            # Emit structured progress event with metrics
+                            if progress_callback:
+                                progress_callback(SummarizationProgressEvent(
+                                    citation_key=citation_key,
+                                    stage=stage,
+                                    status="warning",
+                                    message=f"Slow generation rate detected: {chars_per_sec:.1f} chars/s",
+                                    metadata={
+                                        "chars_per_sec": chars_per_sec,
+                                        "estimated_remaining_time": estimated_remaining_time,
+                                        "remaining_timeout": timeout - elapsed,
+                                        "prompt_size_chars": len(prompt),
+                                        "prompt_size_kb": prompt_size_kb,
+                                        "suggestions": suggestions,
+                                        "warning_type": "slow_generation"
+                                    }
+                                ))
+                            
                             slow_gen_warned = True
                             slow_gen_warn_time = now
             
             # Emit progress every update_interval seconds
             if now - last_update >= update_interval:
+                # Calculate ETA if we have enough data
+                eta_seconds = None
+                if chars_per_sec > 0 and options and hasattr(options, 'max_tokens') and options.max_tokens:
+                    estimated_total_chars = options.max_tokens * 4
+                    estimated_remaining_chars = max(0, estimated_total_chars - chars_received)
+                    eta_seconds = estimated_remaining_chars / chars_per_sec if chars_per_sec > 0 else None
+                
                 if progress_callback:
+                    metadata = {
+                        "chars_received": chars_received,
+                        "words_received": words_received,
+                        "chunks_received": chunks_received,
+                        "elapsed_time": elapsed,
+                        "chars_per_sec": chars_per_sec,
+                        "words_per_sec": words_received / elapsed if elapsed > 0 else 0.0,
+                        "chunks_per_sec": chunks_per_sec,
+                        "streaming": True,
+                        "prompt_size_chars": len(prompt),
+                        "first_chunk_time": time_to_first_chunk if first_chunk_received else None
+                    }
+                    
+                    if eta_seconds:
+                        metadata["estimated_remaining_time"] = eta_seconds
+                        metadata["estimated_completion_time"] = elapsed + eta_seconds
+                    
                     progress_callback(SummarizationProgressEvent(
                         citation_key=citation_key,
                         stage=stage,
                         status="in_progress",
-                        message=f"Streaming: {chars_received:,} chars, {words_received:,} words ({elapsed:.1f}s elapsed, {chars_per_sec:.1f} chars/s)",
-                        metadata={
-                            "chars_received": chars_received,
-                            "words_received": words_received,
-                            "chunks_received": chunks_received,
-                            "elapsed_time": elapsed,
-                            "chars_per_sec": chars_per_sec,
-                            "chunks_per_sec": chunks_per_sec,
-                            "streaming": True
-                        }
+                        message=f"Streaming: {chars_received:,} chars, {words_received:,} words ({elapsed:.1f}s elapsed, {chars_per_sec:.1f} chars/s)" + 
+                                (f", ETA: {eta_seconds:.0f}s" if eta_seconds else ""),
+                        metadata=metadata
                     ))
                 
                 # Log at DEBUG level to reduce verbosity (deduplication will handle true duplicates)

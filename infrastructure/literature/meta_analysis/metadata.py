@@ -18,6 +18,7 @@ from infrastructure.literature.meta_analysis.visualizations import (
     plot_author_contributions,
     plot_citation_distribution,
     plot_metadata_completeness,
+    plot_classification_distribution,
     save_plot,
 )
 
@@ -307,6 +308,44 @@ def create_metadata_completeness_plot(
     fig = plot_metadata_completeness(
         completeness_stats=completeness_stats,
         title="Metadata Completeness"
+    )
+    
+    return save_plot(fig, output_path)
+
+
+def create_classification_distribution_plot(
+    output_path: Optional[Path] = None,
+    aggregator: Optional[DataAggregator] = None,
+    format: str = "png",
+    show_domains: bool = True
+) -> Path:
+    """Create classification distribution plot.
+    
+    Shows the distribution of papers across classification categories
+    (Core/Theory/Math, Translation/Tool, Applied) and optionally domains.
+    
+    Args:
+        output_path: Optional output path.
+        aggregator: Optional DataAggregator instance.
+        format: Output format (png, svg, pdf).
+        show_domains: Whether to show domain distribution for applied papers.
+        
+    Returns:
+        Path to saved plot.
+    """
+    if aggregator is None:
+        aggregator = DataAggregator()
+    
+    classification_data = aggregator.prepare_classification_data()
+    
+    if output_path is None:
+        output_path = Path("data/output/classification_distribution." + format)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    fig = plot_classification_distribution(
+        classification_data=classification_data,
+        title="Paper Classification Distribution",
+        show_domains=show_domains
     )
     
     return save_plot(fig, output_path)

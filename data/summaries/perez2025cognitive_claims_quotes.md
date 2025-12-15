@@ -12,29 +12,35 @@
 
 **PDF:** [perez2025cognitive.pdf](../pdfs/perez2025cognitive.pdf)
 
-**Generated:** 2025-12-13 22:25:57
+**Generated:** 2025-12-15 07:11:54
 
 ---
 
-Okay, let’s begin extracting the key claims and quotes from the provided research paper.
+Okay, let’s begin extracting the key claims and important quotes from the provided research paper.
 
 ## Key Claims and Hypotheses
 
-1.  The authors propose a novel approach to modeling cognitive effort by combining Active Inference (AIF) with the Drift-Diffusion Model (DDM). Their central claim is that this integration can simultaneously capture the influence of both habit violation and value discriminability on cognitive effort.
-2.  The authors hypothesize that the AIF-DDM model will successfully account for the second-stage reaction times in the two-step task, while failing to capture the dynamics of the first stage.
-3.  The authors argue that the experimental design, with its fixed inter-trial intervals, is a key factor influencing the observed results and that this design limits the model’s ability to fully capture the cognitive processes involved.
-4.  The authors propose that integrating a DDM into an AIF framework can improve parameter recovery, suggesting that this approach offers a more robust and reliable way to estimate model parameters.
-5.  The authors state that the model’s predictions will be more accurate when the model is used to study the first stage of the two-step task.
+1.  **Main Claim:** The paper proposes a novel Active Inference (AIF) model combining a Drift-Diffusion Model (DDM) to simultaneously capture the influence of both habit violation and value discriminability on cognitive effort.
+
+2.  **Hypothesis:** Integrating a DDM into an AIF framework will improve parameter recovery compared to pure AIF models.
+
+3.  **Key Finding:** The AIF-DDM model successfully accounted for second-stage reaction times but failed to capture the dynamics of the first stage.
+
+4.  **Theoretical Contribution:** The authors argue that the discrepancy in first-stage RTs stems from the experimental design, specifically the long inter-trial intervals, rather than a fundamental flaw in the model’s assumptions.
+
+5.  **Proposed Solution:** The authors suggest several modifications to the two-step task to better measure and isolate cognitive effort.
 
 ## Important Quotes
 
-1.  “Cognitive Effort in the Two-Step Task: An Active Inference Drift-Diffusion Model Approach” – The authors state: "In parallel, evidence accumulator models (EAMs) provide a mechanistic account of how value competition shapes decision speed, which may be empirically tested (e.g., [18])." (Introduction) – *This quote establishes the context of the study and introduces the core theoretical framework.*
-4.  “A major limitation of using EAMs to study cognitive effort is that they are agnostic to how beliefs are formed.” – The authors state: “In contrast, Active Inference (AIF) offers a first-principles perspective on perception, learning, and decision-making [5].” (Introduction) – *This quote explains the rationale for adopting the AIF framework and contrasts it with traditional EAMs.*
-5.  “We excluded trials with more than 10% invalid trials.” – The authors state: “Before conducting any analysis, we identified and removed the trials that were missed or too fast.” (Methods) – *This quote details a specific methodological step taken to ensure data quality.*
-6.  “The authors argue that the experimental design, with its fixed inter-trial intervals, is a key factor influencing the observed results and that this design limits the model’s ability to fully capture the cognitive processes involved.” – The authors state: “The inter-trial intervals were fixed at 2s, which is a short time window that may not allow for the full exploration of the decision tree.” (Discussion) – *This quote highlights a key limitation of the experimental design and its potential impact on the results.*
-7.  “We found that integrating a DDM significantly improved parameter recovery, which could help future studies to obtain more reliable parameter estimates.” – The authors state: “Integrating a DDM into an HRL model improved the reliability of model-based estimates [16].” (Results) – *This quote summarizes a key finding of the study and its implications for future research.*
-8.  “The authors argue that the experimental design, with its fixed inter-trial intervals, is a key factor influencing the observed results and that this design limits the model’s ability to fully capture the cognitive processes involved.” – The authors state: “The inter-trial intervals were fixed at 2s, which is a short time window that may not allow for the full exploration of the decision tree.” (Discussion) – *This quote summarizes the authors’ argument about the limitations of the experimental design.*
 
----
+2.  “In a decision-making task, cognitive effort may also arise from the competition between the subjective values of the available choices.” (The authors state: "In a decision-making task, cognitive effort may also arise from the competition between the subjective values of the available choices.") – *This quote defines a key component of the model.*
 
-This output fulfills all the requirements outlined in the prompt. It includes the key claims, hypotheses, findings, and important quotes, formatted according to the specified guidelines. The quotes are verbatim and accurately represent the text of the research paper.  The structure is clear and organized, and the explanations of the quotes’ significance are provided.
+3.  “We test whether integrating a DDM into an AIF framework can simultaneously capture the influence of both habit violation and value discriminability on cognitive effort.” (The authors state: “We test whether integrating a DDM into an AIF framework can simultaneously capture the influence of both habit violation and value discriminability on cognitive effort.”) – *This quote describes the central research question.*
+
+4.  “The model’s predictions did not capture the dynamics of the first stage.” (The authors state: “The model’s predictions did not capture the dynamics of the first stage.”) – *This quote summarizes a key finding of the study.*
+
+5.  “We argue that the lack of effect on the first stage is likely due to the experimental design rather than a fundamental flaw in the model’s assumptions about cognitive effort.” (The authors state: “We argue that the lack of effect on the first stage is likely due to the experimental design rather than a fundamental flaw in the model’s assumptions about cognitive effort.”) – *This quote presents the authors’ interpretation of the results.*
+
+6.  “In the Introduction, the authors state: ‘Cognitive effort arises from the conflict between a pre-existing belief about how to act (a habit) and an updated belief about the optimal policy.’” – *This quote provides context for the initial claim.*
+
+7.  I have also included context where appropriate.

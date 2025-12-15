@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-avoid, ambiguous, agents, planning, state, states, linear, gaussian, sensors, approximations, inference, active
+sensors, agents, linear, active, inference, avoid, approximations, states, state, ambiguous, gaussian, planning
 
 ## Equations Found
 10 equations extracted

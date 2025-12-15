@@ -6,187 +6,187 @@ loadings, showing which words contribute most to each principal component.
 ## Overview
 
 - **Total Components Analyzed**: 5
-- **Total Variance Explained**: 10.21%
+- **Total Variance Explained**: 32.23%
 
 ## Component Analysis
 
 ### Principal Component 1 (PC1)
 
-- **Variance Explained**: 4.16%
+- **Variance Explained**: 8.14%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | energy | 0.4026 |
-| 2 | free | 0.4025 |
-| 3 | free energy | 0.3598 |
-| 4 | active | -0.3273 |
-| 5 | principle | 0.3239 |
-| 6 | inference | -0.3108 |
-| 7 | active inference | -0.3068 |
-| 8 | energy principle | 0.2594 |
-| 9 | expected | 0.0850 |
-| 10 | learning | -0.0824 |
-| 11 | control | -0.0674 |
-| 12 | fep | 0.0523 |
-| 13 | model | -0.0513 |
-| 14 | models | -0.0406 |
-| 15 | action | -0.0374 |
-| 16 | planning | -0.0363 |
-| 17 | agent | -0.0336 |
-| 18 | brain | 0.0330 |
-| 19 | agents | -0.0326 |
-| 20 | minimum | 0.0319 |
+| 1 | deep | 0.5493 |
+| 2 | deep active | 0.3594 |
+| 3 | state | 0.1501 |
+| 4 | deep learning | 0.1265 |
+| 5 | agents | -0.1200 |
+| 6 | environment | 0.1185 |
+| 7 | inputs | 0.1183 |
+| 8 | car | 0.1153 |
+| 9 | performance deep | 0.1146 |
+| 10 | variational | 0.1104 |
+| 11 | high dimensional | 0.1103 |
+| 12 | performance | 0.1080 |
+| 13 | deals | 0.1031 |
+| 14 | dimensional | 0.1015 |
+| 15 | produces | 0.1013 |
+| 16 | results | 0.0958 |
+| 17 | agent | 0.0931 |
+| 18 | results model | 0.0912 |
+| 19 | visual | 0.0912 |
+| 20 | perception action | 0.0871 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): energy, free, free energy, principle, energy principle
-**Negative contributors** (low loading): active, inference, active inference, learning, control
+**Positive contributors** (high loading): deep, deep active, state, deep learning, environment
+**Negative contributors** (low loading): agents
 
 ---
 
 ### Principal Component 2 (PC2)
 
-- **Variance Explained**: 2.25%
+- **Variance Explained**: 6.87%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | expected | 0.4877 |
-| 2 | active | -0.3812 |
-| 3 | active inference | -0.3729 |
-| 4 | inference | -0.3670 |
-| 5 | free energy | -0.2745 |
-| 6 | free | -0.2620 |
-| 7 | principle | -0.2432 |
-| 8 | energy principle | -0.2048 |
-| 9 | energy | -0.1427 |
-| 10 | power | 0.0758 |
-| 11 | learning | -0.0513 |
-| 12 | control | -0.0488 |
-| 13 | information | 0.0417 |
-| 14 | cost | 0.0387 |
-| 15 | high | 0.0376 |
-| 16 | data | 0.0360 |
-| 17 | current | 0.0333 |
-| 18 | costs | 0.0323 |
-| 19 | generation | 0.0301 |
-| 20 | performance | 0.0301 |
+| 1 | agent | 0.2707 |
+| 2 | framework | -0.1990 |
+| 3 | rl | -0.1935 |
+| 4 | control | -0.1797 |
+| 5 | reward | -0.1508 |
+| 6 | graph | 0.1442 |
+| 7 | inference agent | 0.1424 |
+| 8 | learning | -0.1379 |
+| 9 | cognitive | 0.1377 |
+| 10 | map | 0.1360 |
+| 11 | autoregressive | 0.1282 |
+| 12 | systems | 0.1275 |
+| 13 | dynamics | 0.1050 |
+| 14 | approaches | -0.1047 |
+| 15 | autoregressive active | 0.1012 |
+| 16 | optimal | -0.1004 |
+| 17 | formulation | -0.1000 |
+| 18 | observed | -0.0955 |
+| 19 | partially observed | -0.0955 |
+| 20 | partially | -0.0949 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): expected, power, information, cost, high
-**Negative contributors** (low loading): active, active inference, inference, free energy, free
+**Positive contributors** (high loading): agent, graph, inference agent, cognitive, map
+**Negative contributors** (low loading): framework, rl, control, reward, learning
 
 ---
 
 ### Principal Component 3 (PC3)
 
-- **Variance Explained**: 1.87%
+- **Variance Explained**: 6.15%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | expected | 0.6924 |
-| 2 | energy | 0.2339 |
-| 3 | active | 0.2301 |
-| 4 | active inference | 0.2147 |
-| 5 | inference | 0.1927 |
-| 6 | brain | -0.1184 |
-| 7 | model | -0.1122 |
-| 8 | self | -0.0953 |
-| 9 | predictive | -0.0884 |
-| 10 | cognitive | -0.0813 |
-| 11 | fep | -0.0808 |
-| 12 | consciousness | -0.0791 |
-| 13 | free | 0.0759 |
-| 14 | theory | -0.0714 |
-| 15 | computational | -0.0713 |
-| 16 | processing | -0.0650 |
-| 17 | framework | -0.0641 |
-| 18 | sensory | -0.0635 |
-| 19 | information | -0.0618 |
-| 20 | models | -0.0610 |
+| 1 | control | 0.3448 |
+| 2 | rl | -0.2725 |
+| 3 | surprise | 0.2081 |
+| 4 | agents | -0.1754 |
+| 5 | coupled | 0.1613 |
+| 6 | horizon | 0.1603 |
+| 7 | average | 0.1494 |
+| 8 | world | -0.1421 |
+| 9 | tool | -0.1369 |
+| 10 | state | -0.1275 |
+| 11 | inference control | 0.1250 |
+| 12 | time | 0.1193 |
+| 13 | problems | 0.1191 |
+| 14 | autoregressive | 0.1157 |
+| 15 | environments | -0.1112 |
+| 16 | cognitive | -0.1048 |
+| 17 | learning | -0.1045 |
+| 18 | self | 0.1015 |
+| 19 | average surprise | 0.1013 |
+| 20 | discrete | -0.0998 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): expected, energy, active, active inference, inference
-**Negative contributors** (low loading): brain, model, self, predictive, cognitive
+**Positive contributors** (high loading): control, surprise, coupled, horizon, average
+**Negative contributors** (low loading): rl, agents, world, tool, state
 
 ---
 
 ### Principal Component 4 (PC4)
 
-- **Variance Explained**: 1.07%
+- **Variance Explained**: 5.67%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | learning | 0.3992 |
-| 2 | model | 0.2189 |
-| 3 | consciousness | -0.1891 |
-| 4 | agent | 0.1646 |
-| 5 | agents | 0.1540 |
-| 6 | based | 0.1413 |
-| 7 | predictive | -0.1303 |
-| 8 | using | 0.1205 |
-| 9 | cognitive | -0.1121 |
-| 10 | deep | 0.1083 |
-| 11 | reinforcement | 0.1032 |
-| 12 | reinforcement learning | 0.1028 |
-| 13 | task | 0.1024 |
-| 14 | planning | 0.0989 |
-| 15 | theory | -0.0974 |
-| 16 | social | -0.0971 |
-| 17 | decision | 0.0935 |
-| 18 | exploration | 0.0931 |
-| 19 | data | 0.0925 |
-| 20 | interoceptive | -0.0917 |
+| 1 | cognitive | 0.2315 |
+| 2 | terms | -0.2028 |
+| 3 | autoregressive | -0.1987 |
+| 4 | aif | 0.1628 |
+| 5 | agents | -0.1497 |
+| 6 | coupled | -0.1479 |
+| 7 | inference agents | -0.1477 |
+| 8 | agent | -0.1422 |
+| 9 | representation | -0.1414 |
+| 10 | autoregressive active | -0.1408 |
+| 11 | rl | -0.1400 |
+| 12 | state | -0.1358 |
+| 13 | expected | -0.1340 |
+| 14 | bayesian filtering | -0.1303 |
+| 15 | filtering | -0.1303 |
+| 16 | self | 0.1276 |
+| 17 | reward | -0.1237 |
+| 18 | demonstrate | -0.1160 |
+| 19 | approach | 0.1144 |
+| 20 | step | 0.1141 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): learning, model, agent, agents, based
-**Negative contributors** (low loading): consciousness, predictive, cognitive, theory, social
+**Positive contributors** (high loading): cognitive, aif, self, approach, step
+**Negative contributors** (low loading): terms, autoregressive, agents, coupled, inference agents
 
 ---
 
 ### Principal Component 5 (PC5)
 
-- **Variance Explained**: 0.86%
+- **Variance Explained**: 5.40%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | expected | 0.2767 |
-| 2 | energy | 0.2165 |
-| 3 | predictive | 0.2092 |
-| 4 | brain | 0.1731 |
-| 5 | model | 0.1571 |
-| 6 | active inference | 0.1561 |
-| 7 | free energy | 0.1531 |
-| 8 | consciousness | 0.1529 |
-| 9 | fep | 0.1526 |
-| 10 | theory | 0.1468 |
-| 11 | cognitive | 0.1427 |
-| 12 | models | 0.1345 |
-| 13 | action | 0.1312 |
-| 14 | framework | 0.1288 |
-| 15 | image | -0.1267 |
-| 16 | generative | 0.1233 |
-| 17 | quality | -0.1208 |
-| 18 | inference | 0.1188 |
-| 19 | predictive processing | 0.1125 |
-| 20 | processing | 0.1118 |
+| 1 | cognitive | 0.3089 |
+| 2 | aif | 0.2103 |
+| 3 | continuous | 0.1732 |
+| 4 | graph | 0.1721 |
+| 5 | generative models | -0.1659 |
+| 6 | generative | -0.1504 |
+| 7 | tool | -0.1485 |
+| 8 | study | -0.1427 |
+| 9 | gaussian | -0.1421 |
+| 10 | function | -0.1357 |
+| 11 | agents | -0.1326 |
+| 12 | learning | 0.1243 |
+| 13 | state | -0.1242 |
+| 14 | task | 0.1202 |
+| 15 | states | -0.1144 |
+| 16 | prior | -0.1070 |
+| 17 | time | -0.1046 |
+| 18 | distribution | -0.1034 |
+| 19 | planning | 0.1028 |
+| 20 | individual | -0.1015 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): expected, energy, predictive, brain, model
-**Negative contributors** (low loading): image, quality
+**Positive contributors** (high loading): cognitive, aif, continuous, graph, learning
+**Negative contributors** (low loading): generative models, generative, tool, study, gaussian
 
 ---
 

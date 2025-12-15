@@ -97,3 +97,4 @@ class OSFParser(BaseHTMLParser):
         # Filter and return valid URLs
         return self._filter_valid_urls(candidates)
 
+

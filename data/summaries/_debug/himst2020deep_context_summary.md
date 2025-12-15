@@ -14,7 +14,7 @@
 - Discussion: 14372 chars
 
 ## Key Terms
-action, free, partially, donders, observable, deep, learning, proach, mdps, inference, active, proposed, lanillos
+observable, learning, deep, active, proposed, action, partially, lanillos, proach, inference, free, mdps, donders
 
 ## Equations Found
 10 equations extracted

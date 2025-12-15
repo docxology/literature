@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-geometric, institute, university, affect, affective, okinawa, inference, germany, active, brain, under, hyperscanning
+brain, geometric, under, active, affect, affective, okinawa, hyperscanning, inference, germany, university, institute
 
 ## Equations Found
 8 equations extracted

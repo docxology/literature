@@ -108,10 +108,11 @@ with log_timing("Algorithm execution", logger):
 
 ### Configuration
 ```python
-from infrastructure.core import load_config, get_config_as_dict, get_translation_languages, find_config_file
+from infrastructure.core import load_config, get_config_as_dict, get_config_as_env_vars, get_translation_languages, find_config_file
 
 config = load_config(Path("project/manuscript/config.yaml"))
 env_dict = get_config_as_dict(Path("."))  # Loads from project/manuscript/config.yaml
+env_vars = get_config_as_env_vars(Path("."))  # Get config as environment variables dict
 config_path = find_config_file(Path("."))  # Returns project/manuscript/config.yaml if found
 languages = get_translation_languages(Path("."))
 ```

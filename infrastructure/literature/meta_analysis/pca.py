@@ -268,6 +268,9 @@ def create_pca_2d_plot(
             output_path = Path("data/output/pca_2d." + format)
             output_path.parent.mkdir(parents=True, exist_ok=True)
         
+        # Get loadings matrix for enhanced features
+        loadings_matrix = pca_model.components_.T  # (n_features, n_components)
+        
         # Create plot with aligned arrays
         logger.debug("Creating PCA 2D plot...")
         fig = plot_pca_2d(
@@ -276,7 +279,14 @@ def create_pca_2d_plot(
             years=filtered_years,
             cluster_labels=cluster_labels,
             explained_variance=pca_model.explained_variance_ratio_,
-            title="PCA Analysis of Papers (2D)"
+            title="PCA Analysis of Papers (2D)",
+            show_confidence_ellipses=True,
+            show_distance_vectors=False,
+            show_word_vectors=False,
+            show_correlation_circle=False,
+            loadings_matrix=loadings_matrix,
+            feature_names=feature_names,
+            top_n_words=20
         )
         
         return save_plot(fig, output_path)
@@ -364,6 +374,9 @@ def create_pca_3d_plot(
             output_path = Path("data/output/pca_3d." + format)
             output_path.parent.mkdir(parents=True, exist_ok=True)
         
+        # Get loadings matrix for enhanced features
+        loadings_matrix = pca_model.components_.T  # (n_features, n_components)
+        
         # Create plot with aligned arrays
         logger.debug("Creating PCA 3D plot...")
         fig = plot_pca_3d(
@@ -372,7 +385,13 @@ def create_pca_3d_plot(
             years=filtered_years,
             cluster_labels=cluster_labels,
             explained_variance=pca_model.explained_variance_ratio_,
-            title="PCA Analysis of Papers (3D)"
+            title="PCA Analysis of Papers (3D)",
+            show_confidence_ellipsoids=True,
+            show_distance_vectors=False,
+            show_word_vectors=False,
+            loadings_matrix=loadings_matrix,
+            feature_names=feature_names,
+            top_n_words=20
         )
         
         return save_plot(fig, output_path)

@@ -6,11 +6,12 @@ during LLM generation for paper summarization.
 from __future__ import annotations
 
 import time
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock, MagicMock, patch
 import pytest
 
 from infrastructure.literature.summarization.streaming import stream_with_progress
 from infrastructure.literature.summarization.models import SummarizationProgressEvent
+from infrastructure.llm.core.config import GenerationOptions
 
 
 class TestStreamingWrapper:

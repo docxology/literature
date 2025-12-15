@@ -98,7 +98,8 @@ classDiagram
         +stream_long(prompt, options) Iterator
         +apply_template(name, **kwargs) str
         +get_available_models() List
-        +check_connection() bool
+        +check_connection(timeout) bool
+        +check_connection_detailed(timeout) Tuple[bool, Optional[str]]
         +reset() void
         +set_system_prompt(prompt) void
     }

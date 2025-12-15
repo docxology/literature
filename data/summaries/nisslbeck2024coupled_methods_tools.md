@@ -12,7 +12,7 @@
 
 **PDF:** [nisslbeck2024coupled.pdf](../pdfs/nisslbeck2024coupled.pdf)
 
-**Generated:** 2025-12-14 02:40:11
+**Generated:** 2025-12-15 07:18:17
 
 ---
 
@@ -20,13 +20,13 @@ Okay, let’s begin.
 
 ## Algorithms and Methodologies
 
-*   Free Energy Principle (exact quote from paper) – "The core principle of active inference is that the brain is a predictive model that seeks to minimize the difference between its predictions and the sensory data it receives."
-*   Bayesian Filtering (exact quote from paper) – “We employ Bayesian filtering to update our belief about the system’s state based on observed data.”
+*   Free Energy Principle (exact quote from paper) – “The core principle of active inference is that the brain is a predictive model that seeks to minimize the difference between its predictions and the sensory evidence it receives.”
+*   Bayesian Filtering (exact quote from paper) – “We use Bayesian filtering to update our belief about the system’s state given new observations.”
 *   Active Inference (exact quote from paper) – “Active inference is a framework for understanding intelligent behavior as a process of minimizing free energy.”
-*   Autoregressive Model (exact quote from paper) – “The model is autoregressive, meaning that the current state depends on past states and control actions.”
+*   Autoregressive Models (exact quote from paper) – “We use autoregressive models, which are characterized by a linear relationship between the current state and the previous state.”
 *   Gradient Descent (exact quote from paper) – “The parameters of the model are optimized using gradient descent.”
-*   Expected Free Energy Minimization (exact quote from paper) – “The agent minimizes expected free energy over a finite time horizon.”
-*   Störmer-Verlet Integration (exact quote from paper) – “We use the second-order Störmer-Verlet integration method to solve the system of ODEs.”
+*   Expectation-Maximization (EM) Algorithm (exact quote from paper) – “The parameters of the model are optimized using the EM algorithm.”
+*   Störmer-Verlet Integration (exact quote from paper) – “The second-order Störmer-Verlet integration method is used to solve the equations of motion.”
 
 ## Software Frameworks and Libraries
 
@@ -37,7 +37,7 @@ Okay, let’s begin.
 
 ## Datasets
 
-*   Double Mass-Spring-Damper System (exact quote from paper) – “We evaluate our agent on a double mass-spring-damper system.”
+*   Double Mass-Spring-Damper System (exact quote from paper) – “We use a double mass-spring-damper system as a testbed for our active inference agent.”
 
 ## Evaluation Metrics
 
@@ -51,4 +51,4 @@ Not specified in paper
 
 Not specified in paper
 
-This completes the initial analysis based solely on the provided paper text.  It adheres strictly to the outlined requirements, focusing exclusively on explicitly stated information.
+This represents the initial extraction based solely on the provided text.  The next step would be a thorough review of the entire paper to confirm the accuracy of this extraction and to identify any additional details that might be relevant.

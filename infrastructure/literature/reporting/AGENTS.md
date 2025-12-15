@@ -11,9 +11,9 @@ The reporting module provides comprehensive reporting capabilities with multiple
 Comprehensive reporter for literature operations.
 
 **Key Methods:**
-- `generate_workflow_report()` - Generate workflow report
-- `export_library_metadata()` - Export library metadata
-- `generate_summary_report()` - Generate summary report
+- `generate_workflow_report(workflow_result, library_entries=None, format="json")` - Generate comprehensive workflow report
+  - Supports formats: "json", "csv", "html", or "all" (generates all formats)
+  - Returns Path to generated report file(s)
 
 **Export Formats:**
 - JSON - Machine-readable format
@@ -26,18 +26,23 @@ Comprehensive reporter for literature operations.
 
 ```python
 from infrastructure.literature.reporting import LiteratureReporter
+from pathlib import Path
 
-reporter = LiteratureReporter("output/reports")
+reporter = LiteratureReporter(Path("data/output/reports"))
 
-# Workflow report
-reporter.generate_workflow_report(
+# Workflow report (all formats)
+report_path = reporter.generate_workflow_report(
     workflow_result,
     library_entries=entries,
-    format="all"  # JSON, CSV, HTML
+    format="all"  # Generates JSON, CSV, and HTML
 )
 
-# Library metadata
-reporter.export_library_metadata(entries, format="csv")
+# Workflow report (single format)
+json_path = reporter.generate_workflow_report(
+    workflow_result,
+    library_entries=entries,
+    format="json"  # or "csv" or "html"
+)
 ```
 
 ## See Also

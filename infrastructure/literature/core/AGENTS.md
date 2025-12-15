@@ -11,17 +11,17 @@ The core module provides the main entry point for literature search functionalit
 Main class for searching papers across multiple sources, downloading PDFs, and managing library entries.
 
 **Key Methods:**
-- `search()` - Search across enabled sources
-- `download_paper()` - Download PDF for a search result
-- `download_paper_with_result()` - Download PDF with detailed result tracking
-- `add_to_library()` - Add paper to BibTeX and JSON index
-- `export_library()` - Export library to JSON file
+- `search(query, limit=10, sources=None, return_stats=False)` - Search across enabled sources. Returns list of SearchResult or tuple of (results, SearchStatistics) if return_stats=True
+- `download_paper(result)` - Download PDF for a search result
+- `download_paper_with_result(result)` - Download PDF with detailed result tracking (returns DownloadResult)
+- `add_to_library(result)` - Add paper to BibTeX and JSON index, returns citation key
+- `export_library(path=None, format="json")` - Export library to JSON file
 - `get_library_stats()` - Get library statistics
-- `get_library_entries()` - Get all entries in the library
-- `get_source_health_status()` - Check health of all sources
-- `check_all_sources_health()` - Check health of all sources (boolean results)
-- `remove_paper()` - Remove a paper from the library
-- `cleanup_library()` - Clean up library by removing entries without PDFs
+- `get_library_entries()` - Get all entries in the library as dictionaries
+- `get_source_health_status()` - Check health of all sources (returns detailed status dict)
+- `check_all_sources_health()` - Check health of all sources (returns boolean dict)
+- `remove_paper(citation_key)` - Remove a paper from the library by citation key
+- `cleanup_library(remove_missing_pdfs=True)` - Clean up library by removing entries without PDFs
 
 ### LiteratureConfig (config.py)
 

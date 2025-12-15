@@ -153,10 +153,34 @@ The summarization process follows a multi-stage approach:
   - Repeat up to `max_refinement_attempts` (default: 2)
 - **Progress Event**: `refinement` (started/completed, per attempt)
 
-### Stage 6: Result Management
+### Stage 6: Pass 2 - Claims and Quotes Extraction
+- Extract key claims and hypotheses from the paper
+- Identify important direct quotes
+- Generate markdown-formatted claims and quotes document
+- **Progress Event**: `claims_extraction` (started/completed)
+
+### Stage 7: Pass 3 - Methods and Tools Analysis
+- Analyze algorithms and methodologies used
+- Extract software frameworks and libraries
+- Identify datasets and evaluation metrics
+- Document software tools and platforms
+- Generate markdown-formatted methods and tools document
+- **Progress Event**: `methods_analysis` (started/completed)
+
+### Stage 8: Pass 4 - Paper Classification
+- Classify paper by research type using full paper context
+- Categories: Core/Theory/Math, Translation/Tool Development, or Applied
+- For Applied papers, identify specific domain (e.g., Computer Science, Biology)
+- Generate structured JSON classification with confidence score
+- Store classification in library entry metadata
+- **Progress Event**: `classification` (started/completed)
+
+### Stage 9: Result Management
 - Accept or reject final summary based on validation
-- Save summary to markdown file
+- Save summary to markdown file (includes classification section)
+- Save claims/quotes and methods/tools to separate files
 - Save metadata to JSON
+- Update library entry with classification
 - **Progress Event**: `completed` (success/failed)
 
 ## Progress Tracking
@@ -169,7 +193,7 @@ The module emits progress events at each stage for real-time updates:
 @dataclass
 class SummarizationProgressEvent:
     citation_key: str
-    stage: str  # "pdf_extraction", "context_extraction", "draft_generation", "validation", "refinement"
+    stage: str  # "pdf_extraction", "context_extraction", "draft_generation", "validation", "refinement", "claims_extraction", "methods_analysis", "classification"
     status: str  # "started", "completed", "failed"
     message: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -429,6 +453,27 @@ class SummarizationResult:
     def words_per_second(self) -> float:
         """Calculate generation speed in words per second."""
         return self.output_words / max(0.001, self.generation_time)
+    
+    classification: Optional[PaperClassification] = None  # Paper classification result
+```
+
+### PaperClassification
+
+```python
+@dataclass
+class PaperClassification:
+    """Paper classification result from Pass 4.
+    
+    Attributes:
+        category: Primary category ("core_theory_math", "translation_tool", "applied")
+        domain: Domain name if category is "applied" (e.g., "Computer Science", "Biology")
+        confidence: Confidence score (0.0 to 1.0)
+        reasoning: Brief explanation of classification
+    """
+    category: str  # "core_theory_math", "translation_tool", "applied"
+    domain: Optional[str] = None  # Required if category is "applied"
+    confidence: float = 0.0
+    reasoning: Optional[str] = None
 ```
 
 ### SummarizationContext
@@ -473,7 +518,7 @@ class ValidationResult:
 @dataclass
 class SummarizationProgressEvent:
     citation_key: str
-    stage: str  # "pdf_extraction", "context_extraction", "draft_generation", "validation", "refinement"
+    stage: str  # "pdf_extraction", "context_extraction", "draft_generation", "validation", "refinement", "claims_extraction", "methods_analysis", "classification"
     status: str  # "started", "completed", "failed"
     message: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)

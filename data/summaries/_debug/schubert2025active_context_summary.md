@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-probability, energy, intelligent, autonomous, agents, target, evidence, inference, reconnaissance, active, agent, free, missions
+missions, autonomous, energy, agents, evidence, active, reconnaissance, target, inference, probability, intelligent, free, agent
 
 ## Equations Found
 10 equations extracted

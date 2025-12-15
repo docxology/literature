@@ -427,5 +427,89 @@ class DataAggregator:
             abstracts=abstracts,
             years=years,
         )
+    
+    def prepare_classification_data(
+        self, 
+        entries: Optional[List[LibraryEntry]] = None
+    ) -> Dict[str, Any]:
+        """Prepare classification data for visualization.
+        
+        Aggregates classification data from library entries, grouping by
+        category and domain for analysis and visualization.
+        
+        Args:
+            entries: Optional list of entries (uses default or all if not provided).
+            
+        Returns:
+            Dictionary with classification counts and distributions:
+            {
+                "total": int,
+                "by_category": Dict[str, int],
+                "by_domain": Dict[str, int],
+                "applied_by_domain": Dict[str, int],
+                "category_distribution": Dict[str, float],
+                "domain_distribution": Dict[str, float],
+                "entries_with_classification": int,
+                "entries_without_classification": int
+            }
+        """
+        if entries is None:
+            entries = self.aggregate_library_data()
+        
+        total = len(entries)
+        by_category: Dict[str, int] = defaultdict(int)
+        by_domain: Dict[str, int] = defaultdict(int)
+        applied_by_domain: Dict[str, int] = defaultdict(int)
+        entries_with_classification = 0
+        entries_without_classification = 0
+        
+        for entry in entries:
+            classification = entry.metadata.get("classification")
+            if not classification:
+                entries_without_classification += 1
+                continue
+            
+            entries_with_classification += 1
+            category = classification.get("category")
+            domain = classification.get("domain")
+            
+            if category:
+                by_category[category] += 1
+                
+                # Track domains for all papers
+                if domain:
+                    by_domain[domain] += 1
+                
+                # Track domains specifically for applied papers
+                if category == "applied" and domain:
+                    applied_by_domain[domain] += 1
+        
+        # Calculate distributions
+        category_distribution: Dict[str, float] = {}
+        if entries_with_classification > 0:
+            for category, count in by_category.items():
+                category_distribution[category] = (count / entries_with_classification) * 100.0
+        
+        domain_distribution: Dict[str, float] = {}
+        total_with_domains = sum(by_domain.values())
+        if total_with_domains > 0:
+            for domain, count in by_domain.items():
+                domain_distribution[domain] = (count / total_with_domains) * 100.0
+        
+        logger.info(
+            f"Classification data prepared: {entries_with_classification} entries with classification, "
+            f"{entries_without_classification} without. Categories: {dict(by_category)}"
+        )
+        
+        return {
+            "total": total,
+            "by_category": dict(by_category),
+            "by_domain": dict(by_domain),
+            "applied_by_domain": dict(applied_by_domain),
+            "category_distribution": category_distribution,
+            "domain_distribution": domain_distribution,
+            "entries_with_classification": entries_with_classification,
+            "entries_without_classification": entries_without_classification
+        }
 
 

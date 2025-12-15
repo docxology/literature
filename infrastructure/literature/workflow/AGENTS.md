@@ -11,24 +11,32 @@ The workflow module orchestrates multi-paper operations, tracks progress, and ma
 High-level workflow orchestration for literature processing.
 
 **Key Methods:**
-- `search_and_add()` - Search and add papers to library
-- `download_pdfs()` - Download PDFs for library entries
-- `summarize_papers()` - Generate summaries for papers
+- `execute_search_and_summarize(keywords, limit_per_keyword, sources=None, retry_failed=False, max_parallel_summaries=1)` - Complete workflow: search → download → summarize
+- `set_summarizer(summarizer)` - Set the summarizer for this workflow
+- `set_progress_tracker(progress_tracker)` - Set the progress tracker for this workflow
+- `_search_papers(keywords, limit_per_keyword, sources=None)` - Internal: Search for papers (returns List[SearchResult])
+- `_download_papers(search_results, retry_failed=False)` - Internal: Download PDFs (returns tuple of (downloaded, results))
+- `_summarize_papers_parallel(downloaded, max_parallel_summaries)` - Internal: Generate summaries in parallel
 
 ### ProgressTracker (progress.py)
 
 Progress tracking for resumable operations.
 
 **Key Methods:**
-- `get_progress()` - Get current progress
-- `update_progress()` - Update progress for a paper
+- `start_new_run(keywords, total_papers)` - Start a new summarization run
+- `add_paper(citation_key, pdf_path)` - Add a paper to progress tracking
+- `update_entry_status(citation_key, status, **kwargs)` - Update status for a paper entry
+- `get_entry(citation_key)` - Get progress entry for a citation key
 - `save_progress()` - Save progress to disk
 - `load_progress()` - Load progress from disk
+- `get_progress_summary()` - Get summary statistics as dictionary
+- `archive_progress()` - Archive current progress to timestamped file
 
 **Features:**
 - Resumable operations
-- Per-paper status tracking
-- Progress persistence
+- Per-paper status tracking (pending, downloaded, processing, summarized, failed)
+- Progress persistence to JSON file
+- Automatic skip of existing summaries
 
 ### Failed Download Tracker Integration
 
@@ -122,28 +130,38 @@ Operation-specific modules split from orchestrator for better modularity and tes
 ### Workflow Operations
 
 ```python
-from infrastructure.literature.workflow import LiteratureWorkflow
+from infrastructure.literature.workflow import LiteratureWorkflow, LiteratureSearch
+from infrastructure.literature.core import LiteratureConfig
 
-workflow = LiteratureWorkflow()
+# Initialize workflow
+config = LiteratureConfig()
+literature_search = LiteratureSearch(config)
+workflow = LiteratureWorkflow(literature_search)
 
-# Search and add
-result = workflow.search_and_add(
+# Execute complete workflow (search → download → summarize)
+result = workflow.execute_search_and_summarize(
     keywords=["active inference"],
-    limit=10
+    limit_per_keyword=10,
+    max_parallel_summaries=2
 )
 
-# Download PDFs
-download_result = workflow.download_pdfs()
+print(f"Found {result.papers_found} papers")
+print(f"Downloaded {result.papers_downloaded} PDFs")
+print(f"Generated {result.summaries_generated} summaries")
 ```
 
 ### Progress Tracking
 
 ```python
 from infrastructure.literature.workflow import ProgressTracker
+from pathlib import Path
 
-tracker = ProgressTracker()
-progress = tracker.get_progress()
-print(f"Processed: {progress.completed}/{progress.total}")
+tracker = ProgressTracker(progress_file=Path("data/summarization_progress.json"))
+tracker.load_progress()
+
+if tracker.current_progress:
+    summary = tracker.get_progress_summary()
+    print(f"Processed: {summary['completed_summaries']}/{summary['total_papers']}")
 ```
 
 ## See Also

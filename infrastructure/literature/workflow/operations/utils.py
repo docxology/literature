@@ -309,3 +309,4 @@ def display_file_locations() -> None:
     else:
         logger.info(f"  ✗ {progress_path} (not found)")
 
+

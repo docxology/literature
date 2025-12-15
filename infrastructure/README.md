@@ -35,3 +35,4 @@ summary = client.query("Summarize this paper...")
 - [`AGENTS.md`](AGENTS.md) - Complete documentation
 - [`../docs/`](../docs/) - Comprehensive documentation
 
+

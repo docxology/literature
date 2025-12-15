@@ -218,3 +218,4 @@ class TestValidateOnStartup:
         result = validate_on_startup()
         assert isinstance(result, bool)
 
+

@@ -25,3 +25,4 @@ pytest tests/infrastructure/core/
 
 - [`AGENTS.md`](AGENTS.md) - Complete documentation
 
+

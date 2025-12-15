@@ -226,13 +226,14 @@ export LITERATURE_MAX_PARALLEL_DOWNLOADS=4
 export LITERATURE_MAX_URL_ATTEMPTS_PER_PDF=8
 export LITERATURE_MAX_FALLBACK_STRATEGIES=3
 export LITERATURE_USE_BROWSER_USER_AGENT=true
+export LITERATURE_HTML_TEXT_MIN_LENGTH=2000
 
 # File paths
 export LITERATURE_BIBTEX_FILE="data/references.bib"
 export LITERATURE_LIBRARY_INDEX="data/library.json"
 
 # Unpaywall (open access PDFs)
-export LITERATURE_USE_UNPAYWALL=true
+export LITERATURE_USE_UNPAYWALL=true  # Default is true
 export UNPAYWALL_EMAIL=your@email.com
 
 # LLM settings

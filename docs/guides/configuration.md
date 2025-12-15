@@ -61,6 +61,9 @@ export LITERATURE_MAX_FALLBACK_STRATEGIES=3
 # Use browser-like User-Agent for downloads (helps avoid 403 errors)
 export LITERATURE_USE_BROWSER_USER_AGENT=true
 
+# HTML text extraction validation
+export LITERATURE_HTML_TEXT_MIN_LENGTH=2000  # Minimum characters for extracted HTML text to be considered valid
+
 # Use Unpaywall for open access
 export LITERATURE_USE_UNPAYWALL=true
 export UNPAYWALL_EMAIL=your@email.com
@@ -172,11 +175,17 @@ export SEMANTICSCHOLAR_API_KEY=your-api-key
 
 ### Rate Limits
 
-Sources have different rate limits:
-- **arXiv**: 3 seconds between requests
+Sources have different rate limits (default delays in seconds):
+- **arXiv**: 3.0 seconds between requests
 - **Semantic Scholar**: 1.5 seconds (longer with API key)
-- **PubMed**: ~3 requests/second
-- **CrossRef**: Varies by plan
+- **PubMed**: 0.34 seconds (~3 requests/second, NCBI requirement)
+- **Europe PMC**: 0.5 seconds between requests
+- **CrossRef**: 1.0 seconds between requests
+- **OpenAlex**: 0.5 seconds between requests
+- **DBLP**: 1.0 seconds between requests
+- **bioRxiv/medRxiv**: 1.0 seconds between requests
+
+These delays are configurable via source-specific settings in `LiteratureConfig.source_configs`.
 
 ## See Also
 

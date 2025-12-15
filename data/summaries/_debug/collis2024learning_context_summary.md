@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-brighton, schoolofengineeringandinformatics, models, poppycollis, learning, inference, hybrid, active, kinghorn, universityofsussex
+learning, brighton, active, models, poppycollis, universityofsussex, schoolofengineeringandinformatics, inference, kinghorn, hybrid
 
 ## Equations Found
 10 equations extracted

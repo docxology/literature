@@ -245,6 +245,8 @@ def run_search(
             logger.info("Library clear cancelled")
             return 1
         logger.info(f"Total clear completed: {result['message']}")
+        # Reload the workflow's library index to reflect the cleared state
+        workflow.literature_search.library_index.reload()
         # Skip individual clears since total clear already did everything
         clear_pdfs = False
         clear_summaries = False
@@ -370,4 +372,5 @@ def run_search(
         import traceback
         traceback.print_exc()
         return 1
+
 

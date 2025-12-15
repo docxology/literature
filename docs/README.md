@@ -21,7 +21,6 @@ Welcome to the comprehensive documentation for the Literature Search and Managem
 - **[Meta-Analysis](guides/meta-analysis.md)** - Running meta-analysis
 - **[Configuration](guides/configuration.md)** - System configuration
 - **[Troubleshooting](guides/troubleshooting.md)** - Comprehensive troubleshooting guide
-- **[Troubleshooting](guides/troubleshooting.md)** - Comprehensive troubleshooting guide
 
 ### Reference
 - **[API Reference](reference/api-reference.md)** - Complete API documentation

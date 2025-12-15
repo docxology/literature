@@ -67,10 +67,10 @@ pytest -m requires_ollama
 ## Test Coverage
 
 ### Core Module
-- 16 test files (added test_logging_formatters.py)
+- 17 test files (including test_logging_formatters.py, test_config_validator.py)
 - Comprehensive coverage of all utilities
 - Exception handling tests
-- Configuration tests
+- Configuration tests (loader, CLI coverage, validator)
 - Logging formatter tests
 
 ### LLM Module

@@ -99,3 +99,4 @@ The CLI provides user-friendly error messages:
 - [`../../llm/AGENTS.md`](../../llm/AGENTS.md) - LLM module documentation
 - [`../core/client.py`](../core/client.py) - LLMClient implementation
 
+

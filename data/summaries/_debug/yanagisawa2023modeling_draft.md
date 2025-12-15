@@ -1,1 +1,0 @@
-Okay, I’m ready to begin. Let’s proceed with generating the summary of the paper “Modeling arousal potential of epistemic emotions using Bayesian information gain: Inquiry cycle driven by free energy fluctuations” following your instructions.

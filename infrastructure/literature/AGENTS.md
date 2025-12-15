@@ -13,7 +13,7 @@ data/
 ├── references.bib        # BibTeX entries for citations
 ├── library.json          # JSON index with full metadata
 ├── failed_downloads.json # Failed downloads for retry (if any)
-├── paper_selection.yaml  # NEW: Paper selection configuration
+├── paper_selection.yaml  # NEW: Paper selection configuration (default: literature/paper_selection.yaml, can be in data/ or any path)
 ├── pdfs/                 # Downloaded PDFs (named by citation key)
 │   ├── smith2024machine.pdf
 │   └── jones2023deep.pdf
@@ -93,6 +93,12 @@ UnpaywallResult (sources/unpaywall.py)
 
 DownloadResult (core.py)
 └── Success/failure with reason
+
+SearchStatistics (core.py)
+└── Complete search operation statistics with per-source metrics
+
+SourceStatistics (core.py)
+└── Per-source search statistics (results, citations, PDFs, timing)
 
 LibraryEntry (library_index.py)
 └── Paper metadata dataclass
@@ -282,7 +288,7 @@ Load configuration from environment with `LiteratureConfig.from_env()`:
 | `LITERATURE_BIBTEX_FILE` | BibTeX file path | data/references.bib |
 | `LITERATURE_LIBRARY_INDEX` | JSON index file path | data/library.json |
 | `LITERATURE_SOURCES` | Comma-separated sources | arxiv,semanticscholar |
-| `LITERATURE_USE_UNPAYWALL` | Enable Unpaywall fallback (true/false) | false |
+| `LITERATURE_USE_UNPAYWALL` | Enable Unpaywall fallback (true/false) | true |
 | `UNPAYWALL_EMAIL` | Email for Unpaywall API (required if enabled) | "" |
 | `LITERATURE_DOWNLOAD_RETRY_ATTEMPTS` | Retry attempts for PDF downloads | 2 |
 | `LITERATURE_DOWNLOAD_RETRY_DELAY` | Base delay for download retry (seconds) | 2.0 |
@@ -518,9 +524,12 @@ class LiteratureSearch:
         self, 
         query: str, 
         limit: int = 10, 
-        sources: Optional[List[str]] = None
-    ) -> List[SearchResult]:
-        """Search for papers across enabled sources."""
+        sources: Optional[List[str]] = None,
+        return_stats: bool = False
+    ) -> Union[List[SearchResult], Tuple[List[SearchResult], SearchStatistics]]:
+        """Search for papers across enabled sources.
+        
+        Returns list of SearchResult, or tuple of (results, SearchStatistics) if return_stats=True."""
     
     def download_paper(self, result: SearchResult) -> Optional[Path]:
         """Download PDF for a search result."""
@@ -536,6 +545,58 @@ class LiteratureSearch:
     
     def get_library_entries(self) -> List[Dict[str, Any]]:
         """Get all library entries as dictionaries."""
+    
+    def get_source_health_status(self) -> Dict[str, Any]:
+        """Get health status for all sources (returns detailed status dict)."""
+    
+    def check_all_sources_health(self) -> Dict[str, bool]:
+        """Check health of all sources (returns boolean dict)."""
+    
+    def remove_paper(self, citation_key: str) -> bool:
+        """Remove a paper from the library by citation key."""
+    
+    def cleanup_library(self, remove_missing_pdfs: bool = True) -> Dict[str, int]:
+        """Clean up library by removing entries without PDFs."""
+```
+
+### SearchStatistics
+
+```python
+@dataclass
+class SearchStatistics:
+    query: str
+    total_results: int = 0
+    source_stats: Dict[str, SourceStatistics] = field(default_factory=dict)
+    total_time: float = 0.0
+```
+
+### SourceStatistics
+
+```python
+@dataclass
+class SourceStatistics:
+    source_name: str
+    results_found: int = 0
+    citations_found: int = 0
+    pdfs_available: int = 0
+    dois_available: int = 0
+    healthy: bool = True
+    time_taken: float = 0.0
+    errors: int = 0
+    skipped: bool = False
+```
+
+### DownloadResult
+
+```python
+@dataclass
+class DownloadResult:
+    success: bool
+    pdf_path: Optional[Path] = None
+    failure_reason: Optional[str] = None
+    failure_message: Optional[str] = None
+    attempted_urls: List[str] = field(default_factory=list)
+    already_existed: bool = False
 ```
 
 ### SearchResult

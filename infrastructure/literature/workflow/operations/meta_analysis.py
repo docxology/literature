@@ -60,6 +60,8 @@ def run_meta_analysis(
             logger.info("Library clear cancelled")
             return 1
         logger.info(f"Total clear completed: {result['message']}")
+        # Reload the workflow's library index to reflect the cleared state
+        workflow.literature_search.library_index.reload()
         clear_pdfs = False
     elif clear_pdfs:
         result = clear_pdfs_func(confirm=True, interactive=interactive)
@@ -115,6 +117,8 @@ def run_meta_analysis(
                 logger.info("Library clear cancelled")
                 return 1
             logger.info(f"Total clear completed: {result['message']}")
+            # Reload the workflow's library index to reflect the cleared state
+            workflow.literature_search.library_index.reload()
             clear_pdfs = False
         elif clear_pdfs:
             result = clear_pdfs_func(confirm=True, interactive=interactive)

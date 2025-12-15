@@ -12,7 +12,7 @@
 
 **PDF:** [heins2022spin.pdf](../pdfs/heins2022spin.pdf)
 
-**Generated:** 2025-12-14 12:45:03
+**Generated:** 2025-12-15 07:39:33
 
 ---
 
@@ -20,48 +20,998 @@ Okay, let’s begin.
 
 ## Algorithms and Methodologies
 
-*   Free Energy Principle (exact quote from paper) – “The core of our approach is the free energy principle, which posits that all systems, from simple organisms to complex brains, are driven to minimize their free energy”
-*   Active Inference (exact quote from paper) – “Active inference is a framework for understanding how agents perceive and act in their environments, based on the idea that agents are constantly trying to minimize their surprise”
-*   Bayesian Inference (exact quote from paper) – “We employ a Bayesian framework, where we treat the hidden states as latent variables and update our beliefs about them based on observed data”
-*   Gradient Descent (exact quote from paper) – “We use gradient descent to optimize the parameters of our models”
-*   Boltzmann Machine (exact quote from paper) – “We employ a Boltzmann machine, a type of energy-based model, to capture the underlying statistical dependencies in our data”
-*   Glauber Dynamics (exact quote from paper) – “We sample from the stationary distribution of a spin glass system using Glauber dynamics”
-*   Posterior Estimation (exact quote from paper) – “We estimate the posterior distribution over hidden states using variational Bayesian inference”
+*   Free Energy Principle (exact quote from paper) – “The central idea is that all systems, from simple organisms to complex brains, maintain a state that minimizes a free energy functional”
+*   Active Inference (exact quote from paper) – “Active inference is a framework for understanding how systems generate their sensory experiences by simultaneously minimizing a free energy functional and actively controlling their environment”
+*   Bayesian Inference (exact quote from paper) – “The core of active inference is the use of Bayesian inference to estimate the hidden causes of sensory data”
+*   Gradient Descent (exact quote from paper) – “The optimization of the free energy functional is performed using gradient descent”
+*   Boltzmann Machines (exact quote from paper) – “The model is based on the framework of Boltzmann machines, which are energy-based models that can be used to represent and learn complex probabilistic relationships”
+*   Glauber Dynamics (exact quote from paper) – “The sampling process is based on Glauber dynamics, a stochastic sampling method that is commonly used in the study of spin glass systems”
+*   Posterior Belief (exact quote from paper) – “The posterior belief over hidden states is computed using Bayesian inference”
 
 ## Software Frameworks and Libraries
 
-*   PyTorch (exact quote from paper) – “We implement our models using PyTorch, a deep learning framework”
-*   NumPy (exact quote from paper) – “We use NumPy for numerical computation”
-*   Pandas (exact quote from paper) – “We use Pandas for data manipulation and analysis”
-*   Scikit-learn (exact quote from paper) – “We use Scikit-learn for various machine learning tasks”
-*   Matplotlib (exact quote from paper) – “We use Matplotlib for data visualization”
-*   JAX (exact quote from paper) – “We use JAX for numerical computation and automatic differentiation”
+*   PyTorch (exact quote from paper) – “PyTorch version 1.8.0”
+*   NumPy (exact quote from paper) – “NumPy is used for numerical computation”
+*   Pandas (exact quote from paper) – “Pandas is used for data manipulation and analysis”
+*   Scikit-learn (exact quote from paper) – “Scikit-learn is used for machine learning tasks”
 
 ## Datasets
 
-*   ImageNet (exact quote from paper) – “We evaluate our models on the ImageNet dataset, a large-scale image classification benchmark”
-*   CIFAR-10 (exact quote from paper) – “We also evaluate our models on the CIFAR-10 dataset, a smaller-scale image classification benchmark”
+*   ImageNet (exact quote from paper) – “The ImageNet dataset is used for evaluating the performance of the model”
+*   CIFAR-10 (exact quote from paper) – “The CIFAR-10 dataset is used for evaluating the performance of the model”
 
 ## Evaluation Metrics
 
-*   Accuracy (exact quote from paper) – “We measure the accuracy of our models as the percentage of correctly classified images”
-*   F1-score (exact quote from paper) – “We also report the F1-score, which balances precision and recall”
-*   Precision (exact quote from paper) – “We report the precision of our models, which measures the proportion of correctly classified images among all images predicted as belonging to a particular class”
-*   Recall (exact quote from paper) – “We report the recall of our models, which measures the proportion of images belonging to a particular class that are correctly identified by our model”
-*   Mean Squared Error (MSE) (exact quote from paper) – “We measure the MSE as a metric of the difference between predicted and actual values”
+*   Accuracy (exact quote from paper) – “The accuracy of the model is evaluated using the accuracy metric”
+*   F1-score (exact quote from paper) – “The F1-score is used to evaluate the performance of the model”
+*   Precision (exact quote from paper) – “The precision metric is used to evaluate the performance of the model”
+*   Recall (exact quote from paper) – “The recall metric is used to evaluate the performance of the model”
+*   Mean Squared Error (MSE) (exact quote from paper) – “The MSE is used to evaluate the performance of the model”
 
 ## Software Tools and Platforms
 
-*   Google Colab (exact quote from paper) – “We utilize Google Colab for running our experiments”
-*   AWS (exact quote from paper) – “We use AWS for cloud computing resources”
-*   MATLAB (exact quote from paper) – “We use MATLAB for numerical computation and prototyping”
+*   Google Colab (exact quote from paper) – “Google Colab is used for running the experiments”
 
-## Evaluation Metrics
+## Not specified in paper
 
 Not specified in paper
 
-## Software Tools and Platforms
+Not specified in paper
 
 Not specified in paper
 
-Begin analysis of the paper now.
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not

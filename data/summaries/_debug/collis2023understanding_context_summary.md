@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-understanding, tool, universityofsussex, schoolofengineeringandinformatics, poppycollis, inference, active, animals, discovery, innovation
+understanding, active, inference, animals, tool, poppycollis, innovation, universityofsussex, schoolofengineeringandinformatics, discovery
 
 ## Equations Found
 9 equations extracted

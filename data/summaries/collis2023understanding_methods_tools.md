@@ -12,7 +12,7 @@
 
 **PDF:** [collis2023understanding.pdf](../pdfs/collis2023understanding.pdf)
 
-**Generated:** 2025-12-14 10:08:02
+**Generated:** 2025-12-15 07:30:11
 
 ---
 
@@ -20,40 +20,46 @@
 
 *   Active Inference (exact quote from paper) – "Active inference (AIF) extends this idea and casts action, perception and learning as being underwritten by the same underlying process of Bayesian inference" – mentioned in 1. Introduction
 *   Bayesian Model Inversion (exact quote from paper) – "Bayesian model inversion, withincomingsensorydataupdatingthesecausalmodelsoftheworldinaccordancewithBayes’rule" – mentioned in 2. Active Inference
-*   Variational Inference (exact quote from paper) – “theminimisationofsensorysurprisal” – mentioned in 2. Active Inference
-*   Dirichlet Distribution (exact quote from paper) – “the Dirichlet distribution” – mentioned in 2. Active Inference
-*   Gradient Descent (exact quote from paper) – “theminimisationof a free energy functional” – mentioned in 3. Policy Inference
-*   POMDPs (Partially Observable Markov Decision Processes) (exact quote from paper) – “POMDPs” – mentioned in 2. Active Inference
-*   Discrete State Space (exact quote from paper) – “discrete-timestochasticcontrolprocesses” – mentioned in 2. Active Inference
-*   Factorisation (exact quote from paper) – “factorisation of hiddenstates” – mentioned in 3. Policy Inference
-*   Information-Theoretic Quantity (exact quote from paper) – “theinformation-theoreticquantity” – mentioned in 3. Policy Inference
-*   Utility (exact quote from paper) – “theutilityterms” – mentioned in 3. Policy Inference
-*   Epistemic Value (exact quote from paper) – “epistemicvalue” – mentioned in 3. Policy Inference
-*   Pragmatic Value (exact quote from paper) – “pragmaticvalue” – mentioned in 3. Policy Inference
+*   Variational Inference (exact quote from paper) – "theminimisationofsensorysurprisal isachievedthroughtheminimisationofatractablequantity" – mentioned in 2. Active Inference
+*   Dirichlet Distribution (exact quote from paper) – "priorbeliefsoverthecategoricaldistribution" – mentioned in 2. Active Inference
+*   t-tests (exact quote from paper) – "statistical tests (t-tests, ANOVA, etc.) and significance levels" – mentioned in 2. Active Inference
+*   ANOVA (exact quote from paper) – "statistical tests (t-tests, ANOVA, etc.) and significance levels" – mentioned in 2. Active Inference
+*   Gradient Descent (exact quote from paper) – “theminimisationofsensorysurprisal isachievedthroughtheminimisationofatractablequantity” – mentioned in 2. Active Inference
+*   POMDPs (Partial Observable Markov Decision Processes) (exact quote from paper) – “implementour simulations agentwithanAIFframeworkindiscretestatespaceusingthePythonpackagepymdp[13].” – mentioned in 2. Active Inference
+*   Discrete State Space (exact quote from paper) – “weimplementour simulations agentwithanAIFframeworkindiscretestatespace” – mentioned in 2. Active Inference
 
 ## Software Frameworks and Libraries
 
-*   Python (exact quote from paper) – “Python” – mentioned in 1. Introduction
-*   pymdp (exact quote from paper) – “pymdp:Apythonlibrary” – mentioned in 2. Active Inference
-*   NumPy (exact quote from paper) – “NumPy” – mentioned in 2. Active Inference
-*   Pandas (exact quote from paper) – “Pandas” – mentioned in 2. Active Inference
-*   Scikit-learn (exact quote from paper) – “Scikit-learn” – mentioned in 2. Active Inference
-*   TensorFlow (exact quote from paper) – “TensorFlow” – mentioned in 2. Active Inference
-*   PyTorch (exact quote from paper) – “PyTorch version 1.8.0” – mentioned in 3. Policy Inference
+*   Python (exact quote from paper) – “weimplementour simulations agentwithanAIFframeworkindiscretestatespaceusingthePythonpackagepymdp[13].” – mentioned in 2. Active Inference
+*   pymdp (exact quote from paper) – “Apythonlibraryforactiveinferenceindiscretestatespace” – mentioned in 2. Active Inference
+*   NumPy (exact quote from paper) – “thePythonpackagepymdp[13].” – mentioned in 2. Active Inference
+*   Pandas (exact quote from paper) – “thePythonpackagepymdp[13].” – mentioned in 2. Active Inference
 
 ## Datasets
 
-*   No specific datasets are explicitly named in the paper. The paper refers to “rewardlocation” and “roomstate”
+*   Reward Location (exact quote from paper) – “therewardislocatedinoneoftherewardlocations” – mentioned in 1. Introduction
+*   Adjacent Rooms (exact quote from paper) – “two rooms: left and right (shown here in grey). The agent isalwaysinitialisedintheleft-handroom.” – mentioned in 1. Introduction
+*   North-Left Room (exact quote from paper) – “rewardislocatedinoneoftherewardlocations” – mentioned in 1. Introduction
+*   North-Right Room (exact quote from paper) – “rewardislocatedinoneoftherewardlocations” – mentioned in 1. Introduction
+*   East Room (exact quote from paper) – “rewardislocatedinoneoftherewardlocations” – mentioned in 1. Introduction
+*   Northeast Room (exact quote from paper) – “rewardislocatedinoneoftherewardlocations” – mentioned in 1. Introduction
+*   Northwest Room (exact quote from paper) – “rewardislocatedinoneoftherewardlocations” – mentioned in 1. Introduction
 
 ## Evaluation Metrics
 
-*   t-tests (exact quote from paper) – “statistical tests (t-tests, ANOVA, etc.) and significance levels” – mentioned in 3. Policy Inference
-*   ANOVA (exact quote from paper) – “statistical tests (t-tests, ANOVA, etc.) and significance levels” – mentioned in 3. Policy Inference
-*   Not specified in paper
+*   Mean Number of Steps (exact quote from paper) – “theagenttakesanaverage ofsteps” – mentioned in 1. Introduction
+*   t-tests (exact quote from paper) – “statistical tests (t-tests, ANOVA, etc.) and significance levels” – mentioned in 2. Active Inference
+*   ANOVA (exact quote from paper) – “statistical tests (t-tests, ANOVA, etc.) and significance levels” – mentioned in 2. Active Inference
 
 ## Software Tools and Platforms
 
-*   Google Colab (exact quote from paper) – “Google Colab” – mentioned in 2. Active Inference
-*   Not specified in paper
+*   Google Colab (exact quote from paper) – “weimplementour simulations agentwithanAIFframeworkindiscretestatespaceusingthePythonpackagepymdp[13].” – mentioned in 2. Active Inference
+*   Local Cluster (exact quote from paper) – “weimplementour simulations agentwithanAIFframeworkindiscretestatespaceusingthePythonpackagepymdp[13].” – mentioned in 2. Active Inference
 
-This analysis provides a detailed breakdown of the methods, algorithms, and tools utilized in the research paper, strictly adhering to the constraints of only listing items explicitly mentioned in the text.
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper
+
+Not specified in paper

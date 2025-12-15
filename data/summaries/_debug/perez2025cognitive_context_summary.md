@@ -14,7 +14,7 @@
 - Discussion: 17066 chars
 
 ## Key Terms
-task, approach, effort, university, drift, information, cognitive, step, inference, active, model, wageningen, diffusion
+drift, university, active, wageningen, task, effort, step, cognitive, model, information, inference, diffusion, approach
 
 ## Equations Found
 10 equations extracted

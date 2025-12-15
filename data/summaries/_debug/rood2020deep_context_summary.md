@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-rubber, environment, body, deep, illusion, inference, active, brain, model, hand, intelligence
+environment, brain, deep, illusion, active, model, hand, rubber, intelligence, inference, body
 
 ## Equations Found
 7 equations extracted

@@ -728,3 +728,66 @@ Begin analyzing methods and tools now. Remember: ONLY list items that ARE found,
             "${authors}", authors
         ).replace("${year}", year).replace("${source}", source).replace("${text}", text)
 
+
+class PaperClassificationTemplate(ResearchTemplate):
+    """Template for classifying papers by research type."""
+    
+    template_str = """=== PAPER CONTENT ===
+
+Title: ${title}
+Authors: ${authors}
+Year: ${year}
+
+FULL PAPER TEXT:
+${full_text}
+
+=== END PAPER CONTENT ===
+
+TASK: Classify this research paper based on its primary contribution and focus.
+
+CLASSIFICATION CATEGORIES:
+
+1. **Core/Theory/Math**: Papers focused on theoretical foundations, mathematical proofs, fundamental principles, or core algorithmic/theoretical contributions. These papers advance understanding of fundamental concepts rather than applying them.
+
+2. **Translation/Tool Development**: Papers that develop software tools, frameworks, libraries, or systems that translate research into usable implementations. These papers focus on tooling, infrastructure, or software development.
+
+3. **Applied**: Papers that apply existing theories, methods, or tools to solve real-world problems in a specific domain. These papers demonstrate practical applications.
+
+REQUIREMENTS:
+- Consider the ENTIRE paper content, not just the abstract
+- Identify the PRIMARY contribution and focus
+- If Applied, specify the domain (e.g., "Computer Science", "Biology", "Medicine", "Physics", "Engineering", etc.)
+- Provide confidence score (0.0 to 1.0)
+- Include brief reasoning
+
+OUTPUT FORMAT (JSON):
+{
+  "category": "core_theory_math" | "translation_tool" | "applied",
+  "domain": "Domain name" (required if category is "applied", null otherwise),
+  "confidence": 0.0-1.0,
+  "reasoning": "Brief explanation"
+}
+"""
+    
+    def render(
+        self,
+        title: str,
+        authors: str,
+        year: str,
+        full_text: str
+    ) -> str:
+        """Render template for paper classification.
+        
+        Args:
+            title: Paper title.
+            authors: Author names.
+            year: Publication year.
+            full_text: Full paper text content.
+            
+        Returns:
+            Rendered prompt string.
+        """
+        return self.template_str.replace("${title}", title).replace(
+            "${authors}", authors
+        ).replace("${year}", year).replace("${full_text}", full_text)
+

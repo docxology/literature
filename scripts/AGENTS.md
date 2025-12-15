@@ -130,3 +130,4 @@ The orchestrator provides:
 - [`../infrastructure/literature/AGENTS.md`](../infrastructure/literature/AGENTS.md) - Literature module documentation
 - [`07_literature_search.py`](07_literature_search.py) - Implementation
 
+

@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-university, phenomenology, mapping, conscious, experience, authors, inference, active, first, onto, computational, husserlian
+computational, husserlian, authors, mapping, active, experience, first, conscious, inference, onto, university, phenomenology
 
 ## Equations Found
 5 equations extracted

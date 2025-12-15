@@ -9,6 +9,7 @@ Comprehensive test suite for infrastructure core utilities, covering all foundat
 ### Configuration Tests
 - `test_config_loader.py` - Configuration file loading
 - `test_config_cli_coverage.py` - CLI configuration coverage
+- `test_config_validator.py` - Configuration validation tests
 
 ### Logging Tests
 - `test_logging_utils.py` - Logging utilities

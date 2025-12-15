@@ -14,7 +14,7 @@
 - Discussion: 0 chars
 
 ## Key Terms
-deriving, surprise, average, principles, jordan, university, control, averaged, northeastern, inference, active, time
+surprise, university, active, averaged, average, time, deriving, principles, northeastern, inference, jordan, control
 
 ## Equations Found
 5 equations extracted

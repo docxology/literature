@@ -22,15 +22,18 @@ Advanced LLM operations for synthesizing information across multiple papers.
 Configurable paper selection and filtering.
 
 **Key Methods:**
-- `select_papers()` - Filter papers based on criteria
-- `from_config()` - Create selector from YAML config
+- `select_papers(library_entries)` - Filter papers based on criteria, returns List[LibraryEntry]
+- `from_config(config_path)` - Create selector from YAML config file (classmethod)
+- `get_selection_summary(selected_papers, total_papers)` - Get selection statistics
 
 **Selection Criteria:**
-- Year range
-- Venue filtering
-- Keyword matching
-- Citation count thresholds
-- Source filtering
+- Citation keys (specific papers by key)
+- Year range (min/max)
+- Source filtering (arxiv, semanticscholar, etc.)
+- PDF availability (has_pdf: true/false)
+- Summary availability (has_summary: true/false)
+- Keyword matching (keywords in title or abstract)
+- Limit (maximum number of papers to select)
 
 ## Usage Examples
 

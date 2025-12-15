@@ -1,1 +1,0 @@
-Okay, I've completed the summary of the provided paper, adhering to all the specified instructions and requirements. The summary is approximately1000 words in length.
