@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Comprehensive troubleshooting guide for the Literature Search and Management System.
+Troubleshooting guide for the Literature Search and Management System.
 
 ## Table of Contents
 
@@ -254,7 +254,7 @@ python3 -m infrastructure.literature.core.cli library cleanup --no-pdf
 
 **Backup Before Cleanup:**
 ```bash
-# Complete backup
+# Backup
 tar -czf literature_backup_$(date +%Y%m%d).tar.gz data/
 
 # Metadata only
@@ -618,6 +618,6 @@ Review log output for detailed error messages and diagnostics.
 
 - **[Configuration Guide](configuration.md)** - Detailed configuration options
 - **[Getting Started](../getting-started.md)** - Quick start guide
-- **[API Reference](../reference/api-reference.md)** - Complete API documentation
+- **[API Reference](../reference/api-reference.md)** - API documentation
 
 

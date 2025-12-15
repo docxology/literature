@@ -31,9 +31,14 @@ class HTMLTextExtractor:
     the main content structure.
     """
     
-    def __init__(self):
-        """Initialize HTML text extractor."""
-        self.has_bs4 = HAS_BS4
+    def __init__(self, has_bs4: Optional[bool] = None):
+        """Initialize HTML text extractor.
+        
+        Args:
+            has_bs4: Override BeautifulSoup4 availability (for testing).
+                     If None, uses global HAS_BS4 value.
+        """
+        self.has_bs4 = has_bs4 if has_bs4 is not None else HAS_BS4
     
     def extract_text(self, html_content: bytes, base_url: Optional[str] = None) -> str:
         """Extract main text content from HTML.
@@ -126,13 +131,14 @@ class HTMLTextExtractor:
             # Extract headings and paragraphs
             for element in main_content.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div']):
                 element_text = element.get_text(separator=' ', strip=True)
-                if element_text and len(element_text) > 10:  # Filter out very short fragments
-                    # Add extra spacing for headings
+                if element_text:
+                    # Preserve all headings (important for structure), filter short paragraphs/divs
                     if element.name.startswith('h'):
+                        # Headings are always included regardless of length
                         text_parts.append("")
                         text_parts.append(element_text)
                         text_parts.append("")
-                    else:
+                    elif len(element_text) > 10:  # Filter out very short fragments for paragraphs/divs
                         text_parts.append(element_text)
             
             # Join and clean up
@@ -295,36 +301,47 @@ class HTMLTextExtractor:
                     text_parts.append("=" * len(title))
                     text_parts.append("")
             
-            # Extract headings
-            heading_patterns = [
+            # Extract elements in document order to preserve structure
+            # Use a single pattern that matches all relevant elements and sorts by position
+            element_patterns = [
                 (r'<h1[^>]*>(.*?)</h1>', 'h1'),
                 (r'<h2[^>]*>(.*?)</h2>', 'h2'),
                 (r'<h3[^>]*>(.*?)</h3>', 'h3'),
+                (r'<h4[^>]*>(.*?)</h4>', 'h4'),
+                (r'<h5[^>]*>(.*?)</h5>', 'h5'),
+                (r'<h6[^>]*>(.*?)</h6>', 'h6'),
+                (r'<p[^>]*>(.*?)</p>', 'p'),
             ]
             
-            for pattern, tag in heading_patterns:
-                matches = re.finditer(pattern, html_str, re.IGNORECASE | re.DOTALL)
-                for match in matches:
-                    heading_text = self._strip_html_tags(match.group(1))
-                    if heading_text and len(heading_text) > 3:
-                        text_parts.append("")
-                        text_parts.append(heading_text)
-                        text_parts.append("")
+            # Find all elements with their positions
+            elements = []
+            for pattern, tag in element_patterns:
+                for match in re.finditer(pattern, html_str, re.IGNORECASE | re.DOTALL):
+                    text = self._strip_html_tags(match.group(1))
+                    if text and len(text) > 3:
+                        elements.append((match.start(), tag, text))
             
-            # Extract paragraphs
-            para_matches = re.finditer(r'<p[^>]*>(.*?)</p>', html_str, re.IGNORECASE | re.DOTALL)
-            for match in para_matches:
-                para_text = self._strip_html_tags(match.group(1))
-                if para_text and len(para_text) > 20:  # Filter out very short paragraphs
-                    text_parts.append(para_text)
+            # Sort by position to preserve document order
+            elements.sort(key=lambda x: x[0])
             
-            # Extract div content (as fallback for paragraphs)
-            div_matches = re.finditer(r'<div[^>]*class=["\'](?:content|main|article|paper|abstract)[^"\']*["\'][^>]*>(.*?)</div>', 
-                                      html_str, re.IGNORECASE | re.DOTALL)
-            for match in div_matches:
-                div_text = self._strip_html_tags(match.group(1))
-                if div_text and len(div_text) > 50:
-                    text_parts.append(div_text)
+            # Add elements in order
+            for pos, tag, text in elements:
+                if tag.startswith('h'):
+                    # Heading - add spacing (preserve all headings for structure)
+                    text_parts.append("")
+                    text_parts.append(text)
+                    text_parts.append("")
+                elif tag == 'p' and len(text) > 3:  # Lower threshold for regex fallback to handle test cases
+                    text_parts.append(text)
+            
+            # Extract div content (as fallback for paragraphs) - only if we didn't get much content
+            if len(text_parts) < 5:
+                div_matches = re.finditer(r'<div[^>]*class=["\'](?:content|main|article|paper|abstract)[^"\']*["\'][^>]*>(.*?)</div>', 
+                                          html_str, re.IGNORECASE | re.DOTALL)
+                for match in div_matches:
+                    div_text = self._strip_html_tags(match.group(1))
+                    if div_text and len(div_text) > 50:
+                        text_parts.append(div_text)
             
             # Join and clean up
             text = '\n'.join(text_parts)

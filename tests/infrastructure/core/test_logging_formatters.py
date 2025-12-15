@@ -280,3 +280,4 @@ class TestTemplateFormatter:
             assert msg in result or msg.replace('\n', ' ') in result
 
 
+

@@ -29,11 +29,9 @@ from infrastructure.literature.meta_analysis.visualizations import (
     plot_keyword_frequency,
     plot_metadata_completeness,
     plot_publications_by_year,
-    plot_citation_distribution,
     save_plot,
     FONT_SIZE_TITLE,
 )
-from infrastructure.literature.meta_analysis.metadata import create_citation_distribution_plot
 
 logger = get_logger(__name__)
 
@@ -52,7 +50,6 @@ def create_single_page_abstract(
     - Keyword frequency (middle-left)
     - Metadata completeness (middle-right)
     - Publication timeline (bottom-left)
-    - Citation distribution (bottom-right)
     
     Args:
         aggregator: Optional DataAggregator instance.
@@ -245,32 +242,6 @@ def create_single_page_abstract(
         ax5.text(0.5, 0.5, 'Timeline\n(Not available)', ha='center', va='center')
         ax5.set_title("Publications by Year", fontsize=12, fontweight='bold')
     
-    try:
-        # 6. Citation distribution (bottom-right)
-        ax6 = fig.add_subplot(gs[2, 1])
-        if metadata_data.citation_counts:
-            ax6.hist(metadata_data.citation_counts, bins=30, alpha=0.8, 
-                    color='#6A4C93', edgecolor='#1B4F72', linewidth=0.5)
-            mean_cit = np.mean(metadata_data.citation_counts)
-            median_cit = np.median(metadata_data.citation_counts)
-            ax6.axvline(mean_cit, color='#E63946', linestyle='--', linewidth=1.5, 
-                       label=f'Mean: {mean_cit:.1f}')
-            ax6.axvline(median_cit, color='#2A9D8F', linestyle='--', linewidth=1.5, 
-                       label=f'Median: {median_cit:.1f}')
-            ax6.set_xlabel('Citation Count', fontsize=10, fontweight='medium')
-            ax6.set_ylabel('Frequency', fontsize=10, fontweight='medium')
-            ax6.set_title("Citation Distribution", fontsize=12, fontweight='bold')
-            ax6.legend(fontsize=8, framealpha=0.9)
-            ax6.grid(True, alpha=0.3, axis='y', linestyle='--')
-        else:
-            ax6.text(0.5, 0.5, 'Citations\n(Not available)', ha='center', va='center')
-            ax6.set_title("Citation Distribution", fontsize=12, fontweight='bold')
-    except Exception as e:
-        logger.warning(f"Failed to create citation distribution subplot: {e}")
-        ax6 = fig.add_subplot(gs[2, 1])
-        ax6.text(0.5, 0.5, 'Citations\n(Not available)', ha='center', va='center')
-        ax6.set_title("Citation Distribution", fontsize=12, fontweight='bold')
-    
     return save_plot(fig, output_path)
 
 
@@ -387,15 +358,6 @@ def create_multi_page_abstract(
             pdf.savefig(pdf_fig, bbox_inches='tight')
             plt.close(pdf_fig)
             
-            # Citation distribution
-            citation_path = create_citation_distribution_plot(aggregator=aggregator, format="png")
-            img = Image.open(citation_path)
-            pdf_fig = plt.figure(figsize=(11, 8.5))
-            plt.imshow(img)
-            plt.axis('off')
-            pdf.savefig(pdf_fig, bbox_inches='tight')
-            plt.close(pdf_fig)
-            
         except Exception as e:
             logger.warning(f"Failed to add some pages to multi-page abstract: {e}")
             if not PIL_AVAILABLE:
@@ -405,13 +367,13 @@ def create_multi_page_abstract(
     return output_path
 
 
-def create_comprehensive_abstract(
+def create_graphical_abstract(
     aggregator: Optional[DataAggregator] = None,
     keywords: Optional[List[str]] = None,
     output_path: Optional[Path] = None,
     format: str = "png"
 ) -> Path:
-    """Create comprehensive single-page abstract with all visualizations including loadings.
+    """Create single-page abstract with all visualizations including loadings.
     
     Similar to create_single_page_abstract but includes PCA loadings visualizations.
     
@@ -475,11 +437,7 @@ def create_composite_panel(
     if temporal_data.years:
         available_viz.append(("Publications by Year", "temporal"))
     
-    # 2. Citation distribution
-    if metadata_data.citation_counts:
-        available_viz.append(("Citation Distribution", "metadata"))
-    
-    # 3. Venue distribution
+    # 2. Venue distribution
     if metadata_data.venues:
         available_viz.append(("Venue Distribution", "metadata"))
     
@@ -579,8 +537,8 @@ def create_composite_panel(
     title_text += f"\nTotal Papers: {len(entries)} | Date: {datetime.now().strftime('%Y-%m-%d')}"
     fig.suptitle(title_text, fontsize=FONT_SIZE_TITLE + 2, fontweight='bold', y=0.98)
     
-    # Import advanced visualizations
-    from infrastructure.literature.meta_analysis.advanced_visualizations import (
+    # Import additional visualizations
+    from infrastructure.literature.meta_analysis.additional_visualizations import (
         plot_citation_vs_year,
         plot_venue_trends,
         plot_author_productivity,
@@ -606,22 +564,6 @@ def create_composite_panel(
                 ax.set_ylabel('Publications', fontsize=9)
                 ax.set_title(viz_name, fontsize=11, fontweight='bold')
                 ax.grid(True, alpha=0.3, linestyle='--')
-            
-            elif viz_name == "Citation Distribution":
-                if metadata_data.citation_counts:
-                    ax.hist(metadata_data.citation_counts, bins=30, alpha=0.8,
-                           color='#6A4C93', edgecolor='#1B4F72', linewidth=0.5)
-                    mean_cit = np.mean(metadata_data.citation_counts)
-                    median_cit = np.median(metadata_data.citation_counts)
-                    ax.axvline(mean_cit, color='#E63946', linestyle='--', linewidth=1.5,
-                              label=f'Mean: {mean_cit:.1f}')
-                    ax.axvline(median_cit, color='#2A9D8F', linestyle='--', linewidth=1.5,
-                              label=f'Median: {median_cit:.1f}')
-                    ax.set_xlabel('Citation Count', fontsize=9)
-                    ax.set_ylabel('Frequency', fontsize=9)
-                    ax.set_title(viz_name, fontsize=11, fontweight='bold')
-                    ax.legend(fontsize=7, framealpha=0.9)
-                    ax.grid(True, alpha=0.3, axis='y', linestyle='--')
             
             elif viz_name == "Venue Distribution":
                 top_venues = sorted(metadata_data.venues.items(), key=lambda x: x[1], reverse=True)[:10]

@@ -1,6 +1,13 @@
 import pytest
 import json
+import sys
 from pathlib import Path
+
+# Ensure repo root is in path for test_config_loader import
+repo_root = Path(__file__).parent.parent.parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
 from infrastructure.literature.core import LiteratureConfig
 from infrastructure.literature.sources import SearchResult
 from infrastructure.literature.library.index import LibraryEntry

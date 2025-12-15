@@ -69,9 +69,15 @@ python3 scripts/07_literature_search.py --download-only
 ### Meta-Analysis
 
 ```bash
-# Run meta-analysis
-python3 scripts/07_literature_search.py --meta-analysis --keywords "optimization"
+# Run standard meta-analysis on existing library (no embeddings, no Ollama required)
+python3 scripts/07_literature_search.py --meta-analysis
+
+# Run full meta-analysis with embeddings on existing library (requires Ollama)
+python3 scripts/07_literature_search.py --meta-analysis --with-embeddings
 ```
+
+**Note**: Meta-analysis works only with existing library data. It does not search, download, or extract.
+Use `--search-only`, `--download-only`, or `--extract-text` for those operations.
 
 ### Advanced LLM Operations
 

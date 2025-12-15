@@ -1,6 +1,6 @@
 # Literature Search and Management System - Documentation
 
-Welcome to the comprehensive documentation for the Literature Search and Management System. This documentation provides complete guides, API references, and examples for all system components.
+Welcome to the documentation for the Literature Search and Management System. This documentation provides guides, API references, and examples for all system components.
 
 ## Documentation Structure
 
@@ -20,10 +20,10 @@ Welcome to the comprehensive documentation for the Literature Search and Managem
 - **[Summarizing Papers](guides/summarize-papers.md)** - How to generate summaries
 - **[Meta-Analysis](guides/meta-analysis.md)** - Running meta-analysis
 - **[Configuration](guides/configuration.md)** - System configuration
-- **[Troubleshooting](guides/troubleshooting.md)** - Comprehensive troubleshooting guide
+- **[Troubleshooting](guides/troubleshooting.md)** - Troubleshooting guide
 
 ### Reference
-- **[API Reference](reference/api-reference.md)** - Complete API documentation
+- **[API Reference](reference/api-reference.md)** - API documentation
 - **[CLI Reference](reference/cli-reference.md)** - Command-line interface reference
 - **[Data Formats](reference/data-formats.md)** - Data structure documentation
 
@@ -55,7 +55,7 @@ Welcome to the comprehensive documentation for the Literature Search and Managem
 
 - Check the [Getting Started Guide](getting-started.md) for basic usage
 - Review [Architecture Overview](architecture.md) for system design
-- Consult [API Reference](reference/api-reference.md) for detailed API documentation
+- Consult [API Reference](reference/api-reference.md) for API documentation
 - See module-specific documentation in `infrastructure/` directories
 
 ## Contributing

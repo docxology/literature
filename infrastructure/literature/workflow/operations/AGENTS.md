@@ -87,29 +87,33 @@ run_cleanup(remove_no_pdf=True, delete_orphaned=True)
 
 ### Meta-Analysis Operations (`meta_analysis.py`)
 
-Meta-analysis pipeline execution.
+Meta-analysis on existing library data.
 
 **Functions:**
-- `run_meta_analysis()` - Execute literature search workflow with meta-analysis
-  - Runs search → download → extract → meta-analysis pipeline
+- `run_meta_analysis()` - Execute meta-analysis on existing library data
+  - Analyzes existing citations, PDFs, and extracted text in the library
+  - Does not perform search, download, or extraction (those are handled separately)
   - Performs PCA analysis, keyword analysis, author analysis, and visualizations
-
-**Failed Downloads Tracking:**
-- All download failures during the meta-analysis pipeline are automatically saved
-- Previously failed downloads are **automatically skipped** by default
-- Use `retry_failed=True` to retry previously failed downloads
-- Failures are saved for both regular downloads and retry attempts
-- The download step uses `find_papers_needing_pdf()` which filters out failed downloads unless `retry_failed=True`
+  - Optionally includes Ollama-based embedding analysis (semantic similarity, clustering)
+  - Parameters:
+    - `workflow`: Configured LiteratureWorkflow instance
+    - `interactive`: Whether in interactive mode (default: True)
+    - `include_embeddings` (bool, default: False): Include Ollama embedding analysis
+      - Requires Ollama server running
+      - Requires ≥2 papers with extracted text
+      - Generates embeddings, similarity matrix, clustering, and visualizations
+  - Logs data quality metrics and warnings about missing data
+  - Proceeds with available data even if some papers are missing PDFs or extracted text
 
 **Usage:**
 ```python
 from infrastructure.literature.workflow.operations import run_meta_analysis
 
-# Run meta-analysis pipeline (skips previously failed downloads)
-run_meta_analysis(keywords=["active inference"], limit=25)
+# Run standard meta-analysis on existing library (no embeddings)
+run_meta_analysis(workflow)
 
-# Retry previously failed downloads
-run_meta_analysis(keywords=["active inference"], limit=25, retry_failed=True)
+# Run full meta-analysis with embeddings (requires Ollama)
+run_meta_analysis(workflow, include_embeddings=True)
 ```
 
 ### LLM Operations (`llm_operations.py`)

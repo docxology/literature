@@ -74,6 +74,8 @@ from infrastructure.llm.utils import (
     get_model_info,
     check_model_loaded,
     preload_model,
+    test_ollama_functionality,
+    diagnose_ollama_issues,
 )
 
 # Optional prompt system imports
@@ -166,6 +168,8 @@ __all__ = [
     "get_model_info",
     "check_model_loaded",
     "preload_model",
+    "test_ollama_functionality",
+    "diagnose_ollama_issues",
     # Prompt system (optional)
     "PromptFragmentLoader",
     "PromptComposer",

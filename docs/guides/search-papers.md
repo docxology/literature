@@ -1,6 +1,6 @@
 # Searching Papers Guide
 
-Complete guide to searching for academic papers using the Literature Search system.
+Guide to searching for academic papers using the Literature Search system.
 
 ## Quick Start
 
@@ -107,7 +107,7 @@ for paper in papers:
             print(f"Downloaded: {result}")
 ```
 
-### Complete Workflow
+### Workflow
 
 ```python
 papers = searcher.search("active inference", limit=10)
@@ -141,8 +141,8 @@ for source, status in health_status.items():
 
 ## Best Practices
 
-1. **Use specific keywords** - More specific queries yield better results
-2. **Combine sources** - Use multiple sources for comprehensive coverage
+1. **Use specific keywords** - More specific queries yield more relevant results
+2. **Combine sources** - Use multiple sources for coverage
 3. **Check source health** - Verify sources are available before large searches
 4. **Limit results** - Use appropriate limits to avoid overwhelming results
 5. **Review before adding** - Check results before adding to library
@@ -199,6 +199,6 @@ python3 scripts/07_literature_search.py --download-only --retry-failed
 
 ## See Also
 
-- **[API Reference](../reference/api-reference.md)** - Complete API documentation
+- **[API Reference](../reference/api-reference.md)** - API documentation
 - **[Literature Module Documentation](../infrastructure/literature/AGENTS.md)** - Module documentation
 

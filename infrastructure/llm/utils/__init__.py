@@ -10,6 +10,8 @@ from infrastructure.llm.utils.ollama import (
     get_model_info,
     check_model_loaded,
     preload_model,
+    test_ollama_functionality,
+    diagnose_ollama_issues,
 )
 
 __all__ = [
@@ -23,6 +25,8 @@ __all__ = [
     "get_model_info",
     "check_model_loaded",
     "preload_model",
+    "test_ollama_functionality",
+    "diagnose_ollama_issues",
 ]
 
 

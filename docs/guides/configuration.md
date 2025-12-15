@@ -1,6 +1,6 @@
 # Configuration Guide
 
-Complete guide to configuring the Literature Search and Management System.
+Guide to configuring the Literature Search and Management System.
 
 ## Configuration Methods
 

@@ -25,3 +25,4 @@ pytest tests/infrastructure/literature/
 - [`AGENTS.md`](AGENTS.md) - Complete documentation
 
 
+

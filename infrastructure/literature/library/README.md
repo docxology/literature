@@ -22,6 +22,18 @@ from infrastructure.literature.core import LiteratureConfig
 config = LiteratureConfig()
 index = LibraryIndex(config)
 
+# Get entry
+entry = index.get_entry("smith2024machine")
+
+# Update entry (e.g., add classification metadata)
+if entry:
+    entry.metadata["classification"] = {
+        "category": "core_theory_math",
+        "domain": "neuroscience",
+        "confidence": 0.95
+    }
+    index.update_entry(entry)
+
 # Get all entries
 entries = index.list_entries()
 
@@ -38,7 +50,7 @@ stats = get_library_statistics(config)
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
 - [`../AGENTS.md`](../AGENTS.md) - Literature module overview
 
 

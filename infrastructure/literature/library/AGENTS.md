@@ -13,6 +13,8 @@ JSON-based index for tracking all papers in the library.
 **Key Methods:**
 - `add_entry()` - Add paper to index
 - `get_entry()` - Get entry by citation key
+- `update_entry()` - Update existing entry (e.g., with classification metadata)
+- `update_pdf_path()` - Update PDF path for an entry
 - `list_entries()` - Get all entries
 - `has_paper()` - Check if paper exists
 - `get_stats()` - Get library statistics
@@ -75,6 +77,15 @@ citation_key = index.add_entry(
 
 # Get entry
 entry = index.get_entry(citation_key)
+
+# Update entry (e.g., add classification metadata)
+if entry:
+    entry.metadata["classification"] = {
+        "category": "core_theory_math",
+        "domain": "neuroscience",
+        "confidence": 0.95
+    }
+    index.update_entry(entry)
 
 # List all entries
 entries = index.list_entries()

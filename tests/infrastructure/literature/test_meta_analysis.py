@@ -31,7 +31,6 @@ from infrastructure.literature.meta_analysis.keywords import (
 )
 from infrastructure.literature.meta_analysis.metadata import (
     create_author_contributions_plot,
-    create_citation_distribution_plot,
     create_venue_distribution_plot,
     create_metadata_completeness_plot,
     calculate_completeness_stats,
@@ -349,18 +348,6 @@ class TestMetadataAnalysis:
         mock_save.return_value = output_path
         result = create_author_contributions_plot(
             top_n=10,
-            output_path=output_path,
-            aggregator=aggregator
-        )
-        assert result == output_path
-        mock_save.assert_called_once()
-
-    @patch("infrastructure.literature.meta_analysis.metadata.save_plot")
-    def test_create_citation_distribution_plot(self, mock_save, aggregator, tmp_path):
-        """Test citation distribution plot."""
-        output_path = tmp_path / "citations.png"
-        mock_save.return_value = output_path
-        result = create_citation_distribution_plot(
             output_path=output_path,
             aggregator=aggregator
         )

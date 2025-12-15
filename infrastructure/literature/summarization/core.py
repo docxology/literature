@@ -1,7 +1,7 @@
 """Core summarization engine.
 
 This module provides the main SummarizationEngine that orchestrates
-the complete multi-stage summarization workflow.
+the multi-stage summarization workflow.
 """
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ from infrastructure.literature.summarization.chunker import PDFChunker
 
 if TYPE_CHECKING:
     from infrastructure.llm.core.client import LLMClient
+    from infrastructure.literature.core.config import LiteratureConfig
 
 logger = get_logger(__name__)
 
@@ -34,12 +35,13 @@ logger = get_logger(__name__)
 class SummarizationEngine:
     """Main interface for paper summarization with multi-stage generation.
 
-    Orchestrates the complete summarization workflow including:
+    Orchestrates the summarization workflow including:
     - PDF text extraction with prioritization
     - Context extraction and structuring
     - Multi-stage summary generation (draft + refine)
     - Quality validation
     - Result management
+    - Library index updates (classification storage)
 
     Attributes:
         llm_client: LLM client for summary generation.
@@ -48,6 +50,8 @@ class SummarizationEngine:
         multi_stage_summarizer: Multi-stage summarizer instance.
         validator: Quality validator instance.
         pdf_processor: PDF processor instance.
+        text_extractor: Text extraction instance.
+        config: Literature configuration (used for library index updates).
         max_pdf_chars: Maximum characters to send to LLM.
     """
 
@@ -57,7 +61,8 @@ class SummarizationEngine:
         quality_validator: Optional[SummaryQualityValidator] = None,
         context_extractor: Optional[ContextExtractor] = None,
         prompt_builder: Optional[SummarizationPromptBuilder] = None,
-        max_pdf_chars: Optional[int] = None
+        max_pdf_chars: Optional[int] = None,
+        config: Optional["LiteratureConfig"] = None
     ):
         """Initialize summarization engine.
 
@@ -68,8 +73,11 @@ class SummarizationEngine:
             prompt_builder: Prompt builder instance (created if None).
             max_pdf_chars: Maximum PDF characters to send to LLM.
                           Defaults to 200000 (200K) or LLM_MAX_INPUT_LENGTH env var.
+            config: Optional literature configuration. If None, will be created from environment.
+                    Required for library index updates (e.g., classification storage).
         """
         import os
+        from infrastructure.literature.core.config import LiteratureConfig
         
         self.llm_client = llm_client
         self.validator = quality_validator or SummaryQualityValidator()
@@ -78,6 +86,9 @@ class SummarizationEngine:
         self.pdf_processor = PDFProcessor()
         self.text_extractor = TextExtractor()
         self._last_ref_info: Optional[Dict[str, Any]] = None  # Store ref_info for metadata
+        
+        # Store config (create from environment if not provided)
+        self.config = config or LiteratureConfig.from_env()
         
         # Get max_pdf_chars from parameter, environment variable, or model-aware default
         if max_pdf_chars is not None:
@@ -113,7 +124,7 @@ class SummarizationEngine:
     ) -> SummarizationResult:
         """Generate summary for a single paper with quality validation.
         
-        This method orchestrates the complete summarization workflow:
+        This method orchestrates the summarization workflow:
         1. PDF text extraction (from pre-extracted files or on-the-fly)
         2. Context extraction (abstract, intro, conclusion, key terms)
         3. Multi-stage summary generation (draft + optional refinement)
@@ -2217,20 +2228,41 @@ class SummarizationEngine:
         if summary_result.classification:
             try:
                 from infrastructure.literature.library.index import LibraryIndex
-                library_index = LibraryIndex(self.config)
-                entry = library_index.get_entry(citation_key)
-                if entry:
-                    entry.metadata["classification"] = {
-                        "category": summary_result.classification.category,
-                        "domain": summary_result.classification.domain,
-                        "confidence": summary_result.classification.confidence,
-                        "reasoning": summary_result.classification.reasoning
-                    }
-                    library_index.update_entry(entry)
-                    logger.info(f"[{citation_key}] Updated library entry with classification: {summary_result.classification.category}")
+                
+                # Ensure config is available
+                if not hasattr(self, 'config') or self.config is None:
+                    logger.warning(f"[{citation_key}] Config not available, skipping library classification update")
                 else:
-                    logger.warning(f"[{citation_key}] Library entry not found, cannot store classification")
+                    library_index = LibraryIndex(self.config)
+                    entry = library_index.get_entry(citation_key)
+                    if entry:
+                        entry.metadata["classification"] = {
+                            "category": summary_result.classification.category,
+                            "domain": summary_result.classification.domain,
+                            "confidence": summary_result.classification.confidence,
+                            "reasoning": summary_result.classification.reasoning
+                        }
+                        library_index.update_entry(entry)
+                        logger.info(
+                            f"[{citation_key}] Updated library entry with classification: "
+                            f"{summary_result.classification.category} "
+                            f"(confidence: {summary_result.classification.confidence:.2f})"
+                        )
+                    else:
+                        logger.warning(
+                            f"[{citation_key}] Library entry not found, cannot store classification. "
+                            f"Entry may not have been added to library index."
+                        )
+            except ValueError as e:
+                logger.warning(
+                    f"[{citation_key}] Cannot update library entry: {e}. "
+                    f"Classification will not be stored in library index."
+                )
             except Exception as e:
-                logger.warning(f"[{citation_key}] Failed to update library entry with classification: {e}")
+                logger.warning(
+                    f"[{citation_key}] Failed to update library entry with classification: {e}. "
+                    f"Classification data: category={summary_result.classification.category}, "
+                    f"domain={summary_result.classification.domain}"
+                )
         
         return saved_paths

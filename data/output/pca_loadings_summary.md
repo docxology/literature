@@ -6,187 +6,187 @@ loadings, showing which words contribute most to each principal component.
 ## Overview
 
 - **Total Components Analyzed**: 5
-- **Total Variance Explained**: 32.23%
+- **Total Variance Explained**: 100.00%
 
 ## Component Analysis
 
 ### Principal Component 1 (PC1)
 
-- **Variance Explained**: 8.14%
+- **Variance Explained**: 43.60%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | deep | 0.5493 |
-| 2 | deep active | 0.3594 |
-| 3 | state | 0.1501 |
-| 4 | deep learning | 0.1265 |
-| 5 | agents | -0.1200 |
-| 6 | environment | 0.1185 |
-| 7 | inputs | 0.1183 |
-| 8 | car | 0.1153 |
-| 9 | performance deep | 0.1146 |
-| 10 | variational | 0.1104 |
-| 11 | high dimensional | 0.1103 |
-| 12 | performance | 0.1080 |
-| 13 | deals | 0.1031 |
-| 14 | dimensional | 0.1015 |
-| 15 | produces | 0.1013 |
-| 16 | results | 0.0958 |
-| 17 | agent | 0.0931 |
-| 18 | results model | 0.0912 |
-| 19 | visual | 0.0912 |
-| 20 | perception action | 0.0871 |
+| 1 | learning | 0.2976 |
+| 2 | technical | -0.2971 |
+| 3 | markov | -0.2971 |
+| 4 | bayesian | -0.2591 |
+| 5 | formulation | -0.2177 |
+| 6 | blanket | -0.2177 |
+| 7 | various | -0.2177 |
+| 8 | markov blanket | -0.2177 |
+| 9 | formulation free | -0.2177 |
+| 10 | active | 0.2099 |
+| 11 | active inference | 0.2099 |
+| 12 | deep | 0.1767 |
+| 13 | investigate | 0.1541 |
+| 14 | world | 0.1523 |
+| 15 | bayesian inference | -0.1443 |
+| 16 | complex | 0.1298 |
+| 17 | seen | 0.1298 |
+| 18 | works | -0.1257 |
+| 19 | newer | -0.1257 |
+| 20 | machine learning | 0.1209 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): deep, deep active, state, deep learning, environment
-**Negative contributors** (low loading): agents
+**Positive contributors** (high loading): learning, active, active inference, deep, investigate
+**Negative contributors** (low loading): technical, markov, bayesian, formulation, blanket
 
 ---
 
 ### Principal Component 2 (PC2)
 
-- **Variance Explained**: 6.87%
+- **Variance Explained**: 30.64%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | agent | 0.2707 |
-| 2 | framework | -0.1990 |
-| 3 | rl | -0.1935 |
-| 4 | control | -0.1797 |
-| 5 | reward | -0.1508 |
-| 6 | graph | 0.1442 |
-| 7 | inference agent | 0.1424 |
-| 8 | learning | -0.1379 |
-| 9 | cognitive | 0.1377 |
-| 10 | map | 0.1360 |
-| 11 | autoregressive | 0.1282 |
-| 12 | systems | 0.1275 |
-| 13 | dynamics | 0.1050 |
-| 14 | approaches | -0.1047 |
-| 15 | autoregressive active | 0.1012 |
-| 16 | optimal | -0.1004 |
-| 17 | formulation | -0.1000 |
-| 18 | observed | -0.0955 |
-| 19 | partially observed | -0.0955 |
-| 20 | partially | -0.0949 |
+| 1 | learning | 0.3052 |
+| 2 | seen | -0.2925 |
+| 3 | complex | -0.2925 |
+| 4 | learn | -0.2895 |
+| 5 | world | -0.2502 |
+| 6 | inference | 0.2329 |
+| 7 | active inference | 0.2327 |
+| 8 | active | 0.2327 |
+| 9 | deep | 0.1934 |
+| 10 | variational | 0.1727 |
+| 11 | use | -0.1691 |
+| 12 | systems | -0.1613 |
+| 13 | investigate | 0.1511 |
+| 14 | theory | 0.1478 |
+| 15 | assumptions | -0.1344 |
+| 16 | local | -0.1281 |
+| 17 | quantity | -0.1281 |
+| 18 | detailed | -0.1281 |
+| 19 | finally | -0.1281 |
+| 20 | account | -0.1281 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): agent, graph, inference agent, cognitive, map
-**Negative contributors** (low loading): framework, rl, control, reward, learning
+**Positive contributors** (high loading): learning, inference, active inference, active, deep
+**Negative contributors** (low loading): seen, complex, learn, world, use
 
 ---
 
 ### Principal Component 3 (PC3)
 
-- **Variance Explained**: 6.15%
+- **Variance Explained**: 14.38%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | control | 0.3448 |
-| 2 | rl | -0.2725 |
-| 3 | surprise | 0.2081 |
-| 4 | agents | -0.1754 |
-| 5 | coupled | 0.1613 |
-| 6 | horizon | 0.1603 |
-| 7 | average | 0.1494 |
-| 8 | world | -0.1421 |
-| 9 | tool | -0.1369 |
-| 10 | state | -0.1275 |
-| 11 | inference control | 0.1250 |
-| 12 | time | 0.1193 |
-| 13 | problems | 0.1191 |
-| 14 | autoregressive | 0.1157 |
-| 15 | environments | -0.1112 |
-| 16 | cognitive | -0.1048 |
-| 17 | learning | -0.1045 |
-| 18 | self | 0.1015 |
-| 19 | average surprise | 0.1013 |
-| 20 | discrete | -0.0998 |
+| 1 | variational | 0.4193 |
+| 2 | theory | 0.2939 |
+| 3 | states | -0.2843 |
+| 4 | works | 0.2417 |
+| 5 | newer | 0.2417 |
+| 6 | general | 0.2389 |
+| 7 | additionally | 0.2389 |
+| 8 | use | -0.2203 |
+| 9 | active | -0.2149 |
+| 10 | active inference | -0.2149 |
+| 11 | inference | -0.1817 |
+| 12 | bayesian | -0.1731 |
+| 13 | assumptions | 0.1546 |
+| 14 | deep | -0.1544 |
+| 15 | machine learning | 0.1151 |
+| 16 | machine | 0.1151 |
+| 17 | world | -0.1142 |
+| 18 | complex | 0.0947 |
+| 19 | seen | 0.0947 |
+| 20 | finally | 0.0912 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): control, surprise, coupled, horizon, average
-**Negative contributors** (low loading): rl, agents, world, tool, state
+**Positive contributors** (high loading): variational, theory, works, newer, general
+**Negative contributors** (low loading): states, use, active, active inference, inference
 
 ---
 
 ### Principal Component 4 (PC4)
 
-- **Variance Explained**: 5.67%
+- **Variance Explained**: 11.37%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | cognitive | 0.2315 |
-| 2 | terms | -0.2028 |
-| 3 | autoregressive | -0.1987 |
-| 4 | aif | 0.1628 |
-| 5 | agents | -0.1497 |
-| 6 | coupled | -0.1479 |
-| 7 | inference agents | -0.1477 |
-| 8 | agent | -0.1422 |
-| 9 | representation | -0.1414 |
-| 10 | autoregressive active | -0.1408 |
-| 11 | rl | -0.1400 |
-| 12 | state | -0.1358 |
-| 13 | expected | -0.1340 |
-| 14 | bayesian filtering | -0.1303 |
-| 15 | filtering | -0.1303 |
-| 16 | self | 0.1276 |
-| 17 | reward | -0.1237 |
-| 18 | demonstrate | -0.1160 |
-| 19 | approach | 0.1144 |
-| 20 | step | 0.1141 |
+| 1 | works | 0.3519 |
+| 2 | newer | 0.3519 |
+| 3 | bayesian | -0.3209 |
+| 4 | machine | -0.2175 |
+| 5 | machine learning | -0.2175 |
+| 6 | world | 0.2161 |
+| 7 | point | 0.2089 |
+| 8 | active | 0.1881 |
+| 9 | active inference | 0.1881 |
+| 10 | assumptions | 0.1851 |
+| 11 | theory | -0.1796 |
+| 12 | systems | -0.1748 |
+| 13 | bayesian inference | -0.1600 |
+| 14 | use | -0.1518 |
+| 15 | investigate | -0.1516 |
+| 16 | learn | 0.1501 |
+| 17 | states | -0.1279 |
+| 18 | deep | 0.1221 |
+| 19 | like | 0.1081 |
+| 20 | model | 0.1081 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): cognitive, aif, self, approach, step
-**Negative contributors** (low loading): terms, autoregressive, agents, coupled, inference agents
+**Positive contributors** (high loading): works, newer, world, point, active
+**Negative contributors** (low loading): bayesian, machine, machine learning, theory, systems
 
 ---
 
 ### Principal Component 5 (PC5)
 
-- **Variance Explained**: 5.40%
+- **Variance Explained**: 0.00%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | cognitive | 0.3089 |
-| 2 | aif | 0.2103 |
-| 3 | continuous | 0.1732 |
-| 4 | graph | 0.1721 |
-| 5 | generative models | -0.1659 |
-| 6 | generative | -0.1504 |
-| 7 | tool | -0.1485 |
-| 8 | study | -0.1427 |
-| 9 | gaussian | -0.1421 |
-| 10 | function | -0.1357 |
-| 11 | agents | -0.1326 |
-| 12 | learning | 0.1243 |
-| 13 | state | -0.1242 |
-| 14 | task | 0.1202 |
-| 15 | states | -0.1144 |
-| 16 | prior | -0.1070 |
-| 17 | time | -0.1046 |
-| 18 | distribution | -0.1034 |
-| 19 | planning | 0.1028 |
-| 20 | individual | -0.1015 |
+| 1 | account | 0.6225 |
+| 2 | action | -0.3958 |
+| 3 | technical | 0.1856 |
+| 4 | markov | 0.1856 |
+| 5 | inference | 0.1811 |
+| 6 | newer | -0.1536 |
+| 7 | works | -0.1536 |
+| 8 | use | 0.1523 |
+| 9 | bayesian | -0.1477 |
+| 10 | investigate | -0.1436 |
+| 11 | world | -0.1241 |
+| 12 | theory | 0.1209 |
+| 13 | complex | -0.1165 |
+| 14 | seen | -0.1165 |
+| 15 | blanket | -0.1129 |
+| 16 | various | -0.1129 |
+| 17 | formulation | -0.1129 |
+| 18 | formulation free | -0.1129 |
+| 19 | markov blanket | -0.1129 |
+| 20 | systems | -0.1090 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): cognitive, aif, continuous, graph, learning
-**Negative contributors** (low loading): generative models, generative, tool, study, gaussian
+**Positive contributors** (high loading): account, technical, markov, inference, use
+**Negative contributors** (low loading): action, newer, works, bayesian, investigate
 
 ---
 

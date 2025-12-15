@@ -29,7 +29,7 @@ class OSFParser(BaseHTMLParser):
         Returns:
             True if URL is from OSF.io.
         """
-        return 'osf.io' in url.lower() or '10.3123' in url
+        return 'osf.io' in url.lower() or '10.31234' in url or '10.31219' in url
     
     def extract_pdf_urls(self, html_content: bytes, base_url: str) -> List[str]:
         """Extract PDF URLs from OSF.io HTML content.

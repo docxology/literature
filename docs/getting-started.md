@@ -132,7 +132,7 @@ All outputs are saved to the `data/` directory:
 - **[Architecture Overview](architecture.md)** - Understand system design
 - **[Searching Papers](guides/search-papers.md)** - Detailed search guide
 - **[Summarizing Papers](guides/summarize-papers.md)** - Summarization guide
-- **[API Reference](reference/api-reference.md)** - Complete API documentation
+- **[API Reference](reference/api-reference.md)** - API documentation
 
 ## Troubleshooting
 

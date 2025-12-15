@@ -111,7 +111,14 @@ class LibraryIndex:
     """Manages the library index file for tracking papers.
     
     The index is stored as a JSON file containing all papers added to the
-    library, with metadata for each entry including download status.
+    library, with metadata for each entry including download status, PDF paths,
+    and classification metadata.
+    
+    Key operations:
+    - Add new entries with automatic citation key generation
+    - Update existing entries (e.g., with classification metadata)
+    - Query entries by citation key, DOI, or title
+    - Export library statistics and data
     """
 
     def __init__(self, config: LiteratureConfig):
@@ -316,6 +323,26 @@ class LibraryIndex:
         self._entries[citation_key].pdf_path = pdf_path
         self._save_index()
         logger.debug(f"Updated PDF path for {citation_key}: {pdf_path}")
+
+    def update_entry(self, entry: LibraryEntry) -> None:
+        """Update an existing library entry.
+        
+        Updates the entry in the index and persists changes to disk.
+        The entry is identified by its citation_key.
+        
+        Args:
+            entry: LibraryEntry instance with updated data.
+            
+        Raises:
+            ValueError: If entry with matching citation_key is not found.
+        """
+        citation_key = entry.citation_key
+        if citation_key not in self._entries:
+            raise ValueError(f"Entry not found: {citation_key}")
+        
+        self._entries[citation_key] = entry
+        self._save_index()
+        logger.debug(f"Updated library entry: {citation_key}")
 
     def get_entry(self, citation_key: str) -> Optional[LibraryEntry]:
         """Get an entry by citation key.

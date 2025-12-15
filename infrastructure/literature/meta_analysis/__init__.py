@@ -25,7 +25,6 @@ from infrastructure.literature.meta_analysis.keywords import (
 from infrastructure.literature.meta_analysis.metadata import (
     create_venue_distribution_plot,
     create_author_contributions_plot,
-    create_citation_distribution_plot,
     create_metadata_completeness_plot,
     create_classification_distribution_plot,
     calculate_completeness_stats,
@@ -58,7 +57,7 @@ from infrastructure.literature.meta_analysis.summary import (
 from infrastructure.literature.meta_analysis.graphical_abstract import (
     create_single_page_abstract,
     create_multi_page_abstract,
-    create_comprehensive_abstract,
+    create_graphical_abstract,
     create_composite_panel,
 )
 from infrastructure.literature.meta_analysis.visualizations import (
@@ -70,8 +69,52 @@ from infrastructure.literature.meta_analysis.visualizations import (
     plot_publications_by_year,
     plot_pca_2d,
     plot_pca_3d,
+    plot_embedding_similarity_heatmap,
+    plot_embedding_clusters_2d,
+    plot_embedding_clusters_3d,
+    plot_semantic_search_results,
+    plot_embedding_quality,
+    plot_similarity_distribution,
+    plot_cluster_quality_metrics,
+    plot_silhouette_analysis,
+    plot_embedding_coverage,
+    plot_embedding_outliers,
+    plot_dimensionality_analysis,
+    plot_cluster_size_distribution,
+    plot_similarity_network,
 )
-from infrastructure.literature.meta_analysis.advanced_visualizations import (
+from infrastructure.literature.meta_analysis.embeddings import (
+    EmbeddingData,
+    SimilarityResults,
+    generate_document_embeddings,
+    compute_similarity_matrix,
+    cluster_embeddings,
+    find_similar_papers,
+    reduce_dimensions,
+    export_embeddings,
+    export_similarity_matrix,
+    export_clusters,
+    export_embedding_statistics,
+    export_validation_report,
+    export_clustering_metrics,
+)
+from infrastructure.literature.meta_analysis.embedding_validation import (
+    validate_embedding_quality,
+    validate_embedding_completeness,
+    validate_embedding_dimensions,
+    validate_similarity_matrix,
+    detect_embedding_outliers,
+    validate_all,
+)
+from infrastructure.literature.meta_analysis.embedding_statistics import (
+    compute_embedding_statistics,
+    compute_similarity_statistics,
+    compute_clustering_metrics,
+    compute_dimensionality_analysis,
+    compute_outlier_statistics,
+    compute_all_statistics,
+)
+from infrastructure.literature.meta_analysis.additional_visualizations import (
     plot_citation_vs_year,
     plot_venue_trends,
     plot_author_productivity,
@@ -106,7 +149,6 @@ __all__ = [
     # Metadata analysis
     "create_venue_distribution_plot",
     "create_author_contributions_plot",
-    "create_citation_distribution_plot",
     "create_metadata_completeness_plot",
     "create_classification_distribution_plot",
     "calculate_completeness_stats",
@@ -135,7 +177,7 @@ __all__ = [
     # Graphical abstracts
     "create_single_page_abstract",
     "create_multi_page_abstract",
-    "create_comprehensive_abstract",
+    "create_graphical_abstract",
     "create_composite_panel",
     # Visualization functions
     "plot_pca_loadings_heatmap",
@@ -146,7 +188,7 @@ __all__ = [
     "plot_publications_by_year",
     "plot_pca_2d",
     "plot_pca_3d",
-    # Advanced visualizations
+    # Additional visualizations
     "plot_citation_vs_year",
     "plot_venue_trends",
     "plot_author_productivity",
@@ -159,6 +201,49 @@ __all__ = [
     "create_venue_trends_plot",
     "create_author_productivity_plot",
     "create_publication_heatmap_plot",
+    # Embedding analysis
+    "EmbeddingData",
+    "SimilarityResults",
+    "generate_document_embeddings",
+    "compute_similarity_matrix",
+    "cluster_embeddings",
+    "find_similar_papers",
+    "reduce_dimensions",
+    "export_embeddings",
+    "export_similarity_matrix",
+    "export_clusters",
+    # Embedding visualizations
+    "plot_embedding_similarity_heatmap",
+    "plot_embedding_clusters_2d",
+    "plot_embedding_clusters_3d",
+    "plot_semantic_search_results",
+    "plot_embedding_quality",
+    "plot_similarity_distribution",
+    "plot_cluster_quality_metrics",
+    "plot_silhouette_analysis",
+    "plot_embedding_coverage",
+    "plot_embedding_outliers",
+    "plot_dimensionality_analysis",
+    "plot_cluster_size_distribution",
+    "plot_similarity_network",
+    # Embedding validation
+    "validate_embedding_quality",
+    "validate_embedding_completeness",
+    "validate_embedding_dimensions",
+    "validate_similarity_matrix",
+    "detect_embedding_outliers",
+    "validate_all",
+    # Embedding statistics
+    "compute_embedding_statistics",
+    "compute_similarity_statistics",
+    "compute_clustering_metrics",
+    "compute_dimensionality_analysis",
+    "compute_outlier_statistics",
+    "compute_all_statistics",
+    # Embedding exports
+    "export_embedding_statistics",
+    "export_validation_report",
+    "export_clustering_metrics",
 ]
 
 

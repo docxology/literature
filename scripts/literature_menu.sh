@@ -113,8 +113,9 @@ display_menu() {
     echo -e "${BOLD}5. LLM-Based Analysis (Ollama Local LLM)${NC}"
     echo -e "  5.1 LLM operations ${YELLOW}(prompts for: summarize, literature review, comparisons, etc.)${NC}"
     echo
-    echo -e "${BOLD}6. Meta-Analysis of Library (No LLM)${NC}"
-    echo -e "  6.1 Run meta-analysis ${CYAN}(bibliographic, citations, PCA, word use, source clarity, full text availability)${NC}"
+    echo -e "${BOLD}6. Meta-Analysis of Library${NC}"
+    echo -e "  6.1 Run meta-analysis on existing library ${CYAN}(bibliographic, citations, PCA, word use, source clarity, full text availability)${NC}"
+    echo -e "  6.2 Run meta-analysis with embeddings on existing library ${YELLOW}(includes 6.1 + Ollama semantic analysis)${NC}"
     echo
     echo -e "${BOLD}7. Clear Library Entirely${NC}"
     echo -e "  7.1 Clear library ${RED}(removes all entries, PDFs, summaries, BibTeX, progress files)${NC}"
@@ -162,7 +163,8 @@ handle_menu_choice() {
     fi
     
     # Validate choice format (category.subcategory or single number for category 1 submenu)
-    if [[ ! "$choice" =~ ^[1-7](\.[1-4])?$ ]]; then
+    # Allow 6.2 for meta-analysis with embeddings (special case)
+    if [[ ! "$choice" =~ ^[1-7](\.[1-4])?$ ]] && [[ "$choice" != "6.2" ]]; then
         log_error "Invalid menu choice format: $choice"
         log_info "Please enter a valid option (e.g., 1.1, 4.3) or 0 to exit"
         return 1
@@ -220,6 +222,10 @@ handle_menu_choice() {
         # Category 6: Meta-Analysis
         6.1)
             run_literature_meta_analysis
+            exit_code=$?
+            ;;
+        6.2)
+            run_literature_meta_analysis_with_embeddings
             exit_code=$?
             ;;
         # Category 7: Clear Library

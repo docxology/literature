@@ -42,7 +42,6 @@ create_pca_2d_plot(n_clusters=5)
 ### Metadata Visualization
 - Venue distribution
 - Author contributions
-- Citation distribution
 
 ### PCA Analysis
 - Text feature extraction (TF-IDF)

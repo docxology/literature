@@ -1,14 +1,14 @@
-# Meta-Analysis Module - Complete Documentation
+# Meta-Analysis Module - Documentation
 
 ## Purpose
 
-The meta-analysis module provides comprehensive analysis and visualization tools for literature libraries, including temporal trends, keyword evolution, metadata visualization, and PCA analysis.
+The meta-analysis module provides analysis and visualization tools for literature libraries, including temporal trends, keyword evolution, metadata visualization, and PCA analysis.
 
 ## Components
 
 ### DataAggregator (aggregator.py)
 
-Aggregates library data for analysis with comprehensive logging.
+Aggregates library data for analysis with logging.
 
 **Key Methods:**
 - `aggregate_library_data()` - Collect all library entries
@@ -20,8 +20,8 @@ Aggregates library data for analysis with comprehensive logging.
 - `prepare_classification_data()` - Classification data aggregation (category and domain distributions)
 
 **Recent Improvements:**
-- Enhanced `prepare_text_corpus()` with detailed logging of extracted text vs abstract fallback counts
-- Added comprehensive data quality validation and reporting
+- `prepare_text_corpus()` with detailed logging of extracted text vs abstract fallback counts
+- Added data quality validation and reporting
 - Improved error messages and diagnostics
 
 ### Temporal Analysis (temporal.py)
@@ -51,13 +51,12 @@ Metadata visualization and statistics.
 **Key Functions:**
 - `create_venue_distribution_plot()` - Venue distribution
 - `create_author_contributions_plot()` - Author contributions
-- `create_citation_distribution_plot()` - Citation distribution
 - `create_classification_distribution_plot()` - Paper classification distribution (pie chart)
 - `get_metadata_summary()` - Summary statistics
 
 ### PCA Analysis (pca.py)
 
-Principal component analysis of paper texts with comprehensive logging and error handling.
+Principal component analysis of paper texts with logging and error handling.
 
 **Key Functions:**
 - `extract_text_features()` - TF-IDF feature extraction (returns valid_indices for alignment)
@@ -70,12 +69,42 @@ Principal component analysis of paper texts with comprehensive logging and error
 **Recent Fixes:**
 - Fixed array size mismatch: `extract_text_features()` now returns `valid_indices` to track which documents were kept after filtering empty texts
 - All PCA plotting functions now properly align arrays (titles, years, cluster_labels) with feature_matrix
-- Added comprehensive validation to prevent "boolean index did not match indexed array" errors
-- Enhanced logging throughout feature extraction and PCA computation
+- Added validation to prevent "boolean index did not match indexed array" errors
+- Logging throughout feature extraction and PCA computation
+
+### Embedding Analysis (embeddings.py)
+
+Semantic embedding-based analysis using Ollama's embeddinggemma model. Provides semantic understanding of paper content, complementing TF-IDF-based PCA analysis.
+
+**Key Functions:**
+- `generate_document_embeddings()` - Generate embeddings for all documents in corpus
+- `compute_similarity_matrix()` - Compute cosine similarity matrix from embeddings
+- `cluster_embeddings()` - K-means clustering on embedding space
+- `find_similar_papers()` - Semantic search to find papers similar to a query
+- `reduce_dimensions()` - Dimensionality reduction (UMAP/t-SNE) for visualization
+- `export_embeddings()` - Export embeddings to JSON
+- `export_similarity_matrix()` - Export similarity matrix to CSV
+- `export_clusters()` - Export cluster assignments to JSON
+
+**Data Structures:**
+- `EmbeddingData` - Container for embeddings, citation keys, titles, years
+- `SimilarityResults` - Container for similarity matrix and metadata
+
+**Features:**
+- Automatic text chunking for large documents (handles 2048 token limit)
+- Mean pooling aggregation for document-level embeddings
+- Embedding caching to avoid recomputation
+- Batch processing for efficient API usage
+- Progress tracking for large document sets
+
+**Requirements:**
+- Ollama server running with embeddinggemma model installed
+- `scikit-learn` for clustering and t-SNE
+- `umap-learn` (optional) for UMAP dimensionality reduction
 
 ### Visualizations (visualizations.py)
 
-Plotting utilities for all visualizations with comprehensive error handling and logging.
+Plotting utilities for all visualizations with error handling and logging.
 
 **Key Functions:**
 - `plot_publications_by_year()` - Year-based bar chart (red trend line removed)
@@ -83,13 +112,12 @@ Plotting utilities for all visualizations with comprehensive error handling and 
 - `plot_keyword_cooccurrence()` - Keyword co-occurrence heatmap
 - `plot_venue_distribution()` - Venue distribution
 - `plot_author_contributions()` - Author contributions
-- `plot_citation_distribution()` - Citation distribution histogram
-- `plot_pca_2d()` - 2D PCA plot with enhanced features:
+- `plot_pca_2d()` - 2D PCA plot with features:
   - Confidence ellipses around clusters
   - Distance vectors from cluster centers
   - Word importance vectors overlay
   - Correlation circle for variable contributions
-- `plot_pca_3d()` - 3D PCA plot with enhanced features:
+- `plot_pca_3d()` - 3D PCA plot with features:
   - Confidence ellipsoids around clusters
   - 3D distance vectors
   - 3D word importance vectors
@@ -101,19 +129,23 @@ Plotting utilities for all visualizations with comprehensive error handling and 
 - `plot_author_collaboration_network()` - Author collaboration network
 - `plot_source_distribution()` - Source distribution pie chart
 - `plot_topic_evolution()` - Topic evolution over time
+- `plot_embedding_similarity_heatmap()` - Heatmap of paper-to-paper similarities (embeddings)
+- `plot_embedding_clusters_2d()` - 2D embedding clusters with coloring
+- `plot_embedding_clusters_3d()` - 3D embedding clusters with coloring
+- `plot_semantic_search_results()` - Bar chart of semantic search results
 - `save_plot()` - Save plot to file
 
 **Recent Improvements:**
 - Fixed array size mismatch issues in PCA visualizations (854 vs 853 bug)
-- Added comprehensive array alignment validation
-- Enhanced error handling with detailed diagnostics
+- Added array alignment validation
+- Error handling with detailed diagnostics
 - Added extensive logging throughout visualization pipeline
 - Removed red trend line from publications-by-year chart (bar chart only)
-- Enhanced PCA visualizations with confidence ellipses/ellipsoids, distance vectors, word vectors, and correlation circles
+- PCA visualizations with confidence ellipses/ellipsoids, distance vectors, word vectors, and correlation circles
 
-### Advanced Visualizations (advanced_visualizations.py)
+### Additional Visualizations (additional_visualizations.py)
 
-Additional visualization types for comprehensive meta-analysis.
+Additional visualization types for meta-analysis.
 
 **Key Functions:**
 - `plot_citation_vs_year()` - Scatter plot of citations vs publication year
@@ -136,7 +168,7 @@ Composite visualizations combining multiple plots.
 **Key Functions:**
 - `create_single_page_abstract()` - Single-page composite with 6 visualizations
 - `create_multi_page_abstract()` - Multi-page PDF with one visualization per page
-- `create_comprehensive_abstract()` - Comprehensive abstract (currently uses single-page)
+- `create_graphical_abstract()` - Graphical abstract (currently uses single-page)
 - `create_composite_panel()` - Auto-sized composite panel (NEW):
   - Automatically determines optimal grid size (e.g., 5x4, 6x4)
   - Includes all available visualizations
@@ -177,7 +209,56 @@ from infrastructure.literature.meta_analysis import create_pca_2d_plot
 create_pca_2d_plot(n_clusters=5)
 ```
 
-### Enhanced PCA with Confidence Ellipses and Word Vectors
+### Embedding Analysis
+
+```python
+from infrastructure.literature.meta_analysis import (
+    generate_document_embeddings,
+    compute_similarity_matrix,
+    cluster_embeddings,
+    find_similar_papers,
+    reduce_dimensions,
+    plot_embedding_similarity_heatmap,
+    plot_embedding_clusters_2d,
+)
+
+from infrastructure.literature.meta_analysis.aggregator import DataAggregator
+
+# Generate embeddings
+aggregator = DataAggregator()
+corpus = aggregator.prepare_text_corpus()
+embedding_data = generate_document_embeddings(corpus)
+
+# Compute similarity
+similarity_matrix = compute_similarity_matrix(embedding_data.embeddings)
+
+# Cluster papers
+cluster_labels = cluster_embeddings(embedding_data.embeddings, n_clusters=5)
+
+# Semantic search
+results = find_similar_papers(
+    embedding_data,
+    "machine learning neural networks",
+    top_k=10
+)
+
+# Visualize
+fig = plot_embedding_similarity_heatmap(
+    similarity_matrix=similarity_matrix,
+    citation_keys=embedding_data.citation_keys,
+    titles=embedding_data.titles
+)
+
+# 2D cluster visualization
+embeddings_2d = reduce_dimensions(embedding_data.embeddings, n_components=2)
+fig = plot_embedding_clusters_2d(
+    embeddings_2d=embeddings_2d,
+    cluster_labels=cluster_labels,
+    titles=embedding_data.titles
+)
+```
+
+### PCA with Confidence Ellipses and Word Vectors
 
 ```python
 from infrastructure.literature.meta_analysis import plot_pca_2d
@@ -188,7 +269,7 @@ feature_matrix, feature_names, valid_indices = extract_text_features(corpus)
 pca_data, pca_model = compute_pca(feature_matrix, n_components=2)
 loadings_matrix = pca_model.components_.T
 
-# Create enhanced plot
+# Create plot
 fig = plot_pca_2d(
     pca_data=pca_data,
     titles=titles,
@@ -204,7 +285,7 @@ fig = plot_pca_2d(
 )
 ```
 
-### Advanced Visualizations
+### Additional Visualizations
 
 ```python
 from infrastructure.literature.meta_analysis import (
@@ -214,7 +295,7 @@ from infrastructure.literature.meta_analysis import (
     create_publication_heatmap_plot
 )
 
-# Create various advanced visualizations
+# Create various visualizations
 create_citation_vs_year_plot()
 create_venue_trends_plot(top_n_venues=10)
 create_author_productivity_plot(top_n_authors=20)
@@ -235,10 +316,14 @@ create_composite_panel(max_panels=20)
 - `matplotlib` - Plotting
 - `numpy` - Numerical operations
 - `scikit-learn` - PCA and clustering (optional, for PCA features)
+- `umap-learn` - UMAP dimensionality reduction (optional, for embedding visualizations)
+- `seaborn` - Statistical visualizations (optional, for heatmaps)
 - `networkx` - Network graphs (optional, for collaboration networks)
 - `pandas` - Data manipulation (optional, for correlation matrix)
 - `wordcloud` - Word cloud generation (optional, for word cloud visualization)
 - `PIL/Pillow` - Image processing (optional, for multi-page abstracts)
+- `requests` - HTTP requests (for Ollama API)
+- Ollama server with embeddinggemma model (for embedding analysis)
 
 ## Recent Updates and Fixes
 
@@ -248,8 +333,8 @@ create_composite_panel(max_panels=20)
 - **Impact**: All PCA visualizations now properly align arrays (titles, years, cluster_labels) with feature matrices
 - **Files Changed**: `pca.py`, `pca_loadings.py`, `graphical_abstract.py`, `visualizations.py`
 
-### Enhanced Logging
-- Added comprehensive debug and info logging throughout the pipeline
+### Logging
+- Added debug and info logging throughout the pipeline
 - Logging includes:
   - Feature extraction statistics (samples, features, filtered counts)
   - Array alignment validation
@@ -259,7 +344,7 @@ create_composite_panel(max_panels=20)
 
 ### Improved Error Handling
 - Added array size validation in all plotting functions
-- Enhanced error messages with detailed diagnostics
+- Error messages with detailed diagnostics
 - Full traceback logging for debugging
 - Graceful fallbacks for missing optional dependencies
 
@@ -268,20 +353,38 @@ create_composite_panel(max_panels=20)
 - `plot_source_distribution()` - Pie chart of paper sources
 - `plot_topic_evolution()` - Topic/keyword evolution over time
 - `plot_classification_distribution()` - Pie chart of paper classifications (category and domain)
-- Advanced visualizations module with 8+ new visualization types
+- Additional visualizations module with 8+ visualization types
 - Composite panel generator with auto-sizing
 
-### Enhanced PCA Visualizations
+### PCA Visualizations
 - Confidence ellipses/ellipsoids around clusters
 - Distance vectors from cluster centers to data points
 - Word importance vectors overlaid on PCA space
 - Correlation circles showing variable contributions
 - All features are toggleable via function parameters
 
+### Embedding Analysis
+- Semantic embedding generation using Ollama embeddinggemma model
+- Cosine similarity matrix computation
+- K-means clustering on embedding space
+- Semantic search functionality
+- 2D/3D visualization with UMAP/t-SNE
+- Similarity heatmaps
+- Automatic text chunking for large documents
+- Embedding caching for performance
+- **Comprehensive validation**: Quality checks, completeness validation, dimension validation, similarity matrix validation, outlier detection
+- **Statistics computation**: Embedding statistics, similarity statistics, clustering quality metrics (silhouette score, Davies-Bouldin index, Calinski-Harabasz score), dimensionality analysis
+- **Enhanced visualizations**: Embedding quality plots, similarity distribution, cluster quality metrics, silhouette analysis, embedding coverage, outlier visualization, dimensionality analysis, cluster size distribution, similarity network graphs
+- **Export capabilities**: Statistics (JSON/CSV), validation reports (JSON), clustering metrics (JSON/CSV)
+- **Optional**: Controlled via `include_embeddings` parameter in `run_meta_analysis()`
+- **Menu option**: 6.2 (full meta-analysis with embeddings) vs 6.1 (standard, no embeddings)
+- **CLI flag**: `--with-embeddings` (requires `--meta-analysis`)
+- **Requirements**: Ollama server running, embedding model installed, ≥2 papers with extracted text
+
 ### Documentation
 - Updated all function docstrings with detailed parameter descriptions
-- Added comprehensive error handling documentation
-- Enhanced usage examples
+- Added error handling documentation
+- Usage examples
 
 ## See Also
 

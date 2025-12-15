@@ -168,7 +168,7 @@ def setup_infrastructure() -> Optional[LiteratureWorkflow]:
 
     # Initialize summarizer
     quality_validator = SummaryQualityValidator()
-    summarizer = SummarizationEngine(llm_client, quality_validator)
+    summarizer = SummarizationEngine(llm_client, quality_validator, config=lit_config)
 
     # Initialize progress tracker
     progress_tracker = ProgressTracker(PROGRESS_FILE)
@@ -228,7 +228,12 @@ Examples:
     parser.add_argument(
         "--meta-analysis",
         action="store_true",
-        help="ORCHESTRATED PIPELINE: Search, download, extract, and perform meta-analysis (PCA, keywords, authors, visualizations)"
+        help="Perform meta-analysis on existing library data (PCA, keywords, authors, visualizations). Does not include embedding analysis by default. Does not search, download, or extract - use options 3.1 and 4.1-4.3 for those operations."
+    )
+    parser.add_argument(
+        "--with-embeddings",
+        action="store_true",
+        help="Include Ollama embedding analysis in meta-analysis (requires --meta-analysis). Generates semantic similarity, clustering, and visualizations. Requires Ollama server running."
     )
     parser.add_argument(
         "--search-only",
@@ -304,6 +309,12 @@ Examples:
         parser.print_help()
         print("\nError: Must specify one of --search, --meta-analysis, --search-only, --download-only, --extract-text, --summarize, --cleanup, or --llm-operation")
         return 1
+    
+    # Validate --with-embeddings requires --meta-analysis
+    if args.with_embeddings and not args.meta_analysis:
+        print("\nError: --with-embeddings requires --meta-analysis")
+        parser.print_help()
+        return 1
 
     # Check for conflicting operations
     operation_count = sum([args.search, args.meta_analysis, args.search_only, args.download_only, args.extract_text, args.summarize, args.cleanup, bool(args.llm_operation)])
@@ -371,12 +382,8 @@ Examples:
         elif args.meta_analysis:
             exit_code = run_meta_analysis(
                 workflow,
-                keywords=keywords,
-                limit=args.limit,
-                clear_pdfs=args.clear_pdfs,
-                clear_library=args.clear_library,
                 interactive=True,
-                retry_failed=args.retry_failed
+                include_embeddings=args.with_embeddings
             )
         elif args.summarize:
             exit_code = run_summarize(workflow)

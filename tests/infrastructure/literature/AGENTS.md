@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Comprehensive test suite for literature search and management functionality, including integration tests with real APIs.
+Test suite for literature search and management functionality, including integration tests with APIs.
 
 ## Test Files
 
@@ -10,7 +10,7 @@ Comprehensive test suite for literature search and management functionality, inc
 - `test_core.py` - LiteratureSearch core functionality
 - `test_config.py` - Configuration tests
 - `test_integration.py` - Integration tests
-- `test_literature_integration_real.py` - Real API integration tests
+- `test_literature_integration.py` - API integration tests
 
 ### Source Tests
 - `test_api.py` - API adapter tests
@@ -40,14 +40,15 @@ Comprehensive test suite for literature search and management functionality, inc
 ### Analysis Tests
 - `test_analysis.py` - Paper analysis tests
 - `test_meta_analysis.py` - Meta-analysis tests
+- `test_embeddings.py` - Embedding analysis tests (pure logic, no mocks)
+- `test_embeddings_real.py` - Embedding integration tests with Ollama API
 
 ### CLI Tests
 - `test_literature_cli.py` - CLI interface tests
 - `test_literature_cli_simple.py` - Simple CLI tests
 
 ### LLM Operations Tests
-- `test_llm_operations.py` - LLM operations tests
-- `test_llm_operations_real.py` - Real LLM integration tests
+- `test_llm_operations.py` - LLM operations and integration tests
 - `test_paper_selector.py` - Paper selection tests
 
 ### HTML Parser Tests
@@ -74,7 +75,7 @@ pytest tests/infrastructure/literature/test_core.py
 pytest tests/infrastructure/literature/test_summarizer.py
 
 # Integration tests
-pytest tests/infrastructure/literature/test_literature_integration_real.py
+pytest tests/infrastructure/literature/test_literature_integration.py
 ```
 
 ## Test Coverage
@@ -87,9 +88,26 @@ Comprehensive coverage of:
 - Library management
 - Summarization system (individual components)
 - Workflow orchestration
-- Meta-analysis
+- Meta-analysis (including embedding analysis)
+- Embedding analysis (similarity, clustering, semantic search)
 - CLI interface
 - LLM operations
+
+## Test Philosophy
+
+### No Mocks Policy
+
+All tests use implementations:
+- **No mocks**: Tests use data, computations, and API calls
+- **Embeddings**: Integration tests use Ollama embedding API
+- **File operations**: All file I/O uses filesystem operations
+- **Logging**: All tests include informative logging of operations
+- **Veridical testing**: Tests verify behavior with systems
+
+### Test Categories
+
+1. **Pure Logic Tests** (`test_embeddings.py`): Test mathematical operations, data structures, and algorithms with data (no API calls)
+2. **Integration Tests** (`test_embeddings_real.py`): Test with Ollama API, marked with `@pytest.mark.requires_ollama`
 
 ## See Also
 

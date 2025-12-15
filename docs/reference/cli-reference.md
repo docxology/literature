@@ -1,6 +1,6 @@
 # CLI Reference
 
-Complete command-line interface reference.
+Command-line interface reference.
 
 ## Literature CLI
 

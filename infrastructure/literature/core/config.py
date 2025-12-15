@@ -68,6 +68,11 @@ class LiteratureConfig:
         LITERATURE_MAX_URL_ATTEMPTS_PER_PDF: Override max_url_attempts_per_pdf.
         LITERATURE_MAX_FALLBACK_STRATEGIES: Override max_fallback_strategies.
         LITERATURE_HTML_TEXT_MIN_LENGTH: Override html_text_min_length.
+        LITERATURE_EMBEDDING_MODEL: Override embedding_model.
+        LITERATURE_EMBEDDING_DIMENSION: Override embedding_dimension.
+        LITERATURE_EMBEDDING_CACHE_DIR: Override embedding_cache_dir.
+        LITERATURE_EMBEDDING_CHUNK_SIZE: Override embedding_chunk_size.
+        LITERATURE_EMBEDDING_BATCH_SIZE: Override embedding_batch_size.
     """
     
     # Search settings
@@ -179,6 +184,13 @@ class LiteratureConfig:
     
     # HTML text extraction validation
     html_text_min_length: int = 2000  # Minimum characters for extracted HTML text to be considered a valid paper
+    
+    # Embedding settings
+    embedding_model: str = "embeddinggemma"  # Ollama embedding model name
+    embedding_dimension: int = 768  # Expected embedding dimension (embeddinggemma default)
+    embedding_cache_dir: str = "data/embeddings"  # Directory for caching embeddings
+    embedding_chunk_size: int = 2000  # Maximum tokens per chunk for text splitting
+    embedding_batch_size: int = 10  # Number of texts to process in each batch
 
     @classmethod
     def from_env(cls) -> LiteratureConfig:
@@ -241,5 +253,10 @@ class LiteratureConfig:
             max_url_attempts_per_pdf=int(os.environ.get("LITERATURE_MAX_URL_ATTEMPTS_PER_PDF", "8")),
             max_fallback_strategies=int(os.environ.get("LITERATURE_MAX_FALLBACK_STRATEGIES", "3")),
             html_text_min_length=int(os.environ.get("LITERATURE_HTML_TEXT_MIN_LENGTH", "2000")),
+            embedding_model=os.environ.get("LITERATURE_EMBEDDING_MODEL", "embeddinggemma"),
+            embedding_dimension=int(os.environ.get("LITERATURE_EMBEDDING_DIMENSION", "768")),
+            embedding_cache_dir=os.environ.get("LITERATURE_EMBEDDING_CACHE_DIR", "data/embeddings"),
+            embedding_chunk_size=int(os.environ.get("LITERATURE_EMBEDDING_CHUNK_SIZE", "2000")),
+            embedding_batch_size=int(os.environ.get("LITERATURE_EMBEDDING_BATCH_SIZE", "10")),
         )
 

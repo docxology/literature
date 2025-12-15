@@ -111,9 +111,11 @@ Operation-specific modules split from orchestrator for better modularity and tes
 - `delete_orphaned_files()` - Delete orphaned files with error handling
 
 **operations/meta_analysis.py** - Meta-analysis operations:
-- `run_meta_analysis()` - Execute literature search workflow with meta-analysis
-  - Runs search → download → extract → meta-analysis pipeline
+- `run_meta_analysis()` - Execute meta-analysis on existing library data
+  - Analyzes existing citations, PDFs, and extracted text
+  - Does not search, download, or extract (those are handled separately)
   - Performs PCA analysis, keyword analysis, author analysis, and visualizations
+  - Optional Ollama embedding analysis (semantic similarity, clustering) via `include_embeddings` parameter
 
 **operations/llm_operations.py** - LLM operations:
 - `run_llm_operation()` - Execute advanced LLM operation on selected papers

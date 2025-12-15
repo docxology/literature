@@ -93,7 +93,7 @@ def doi_to_pdf_urls(doi: str) -> List[str]:
 
     # OSF.io (Open Science Framework)
     # Pattern: 10.31234/osf.io/XXXXX or 10.31219/osf.io/XXXXX
-    osf_match = re.search(r'10\.3123[49]/osf\.io/([a-z0-9_]+)', doi, re.IGNORECASE)
+    osf_match = re.search(r'10\.312(?:34|19)/osf\.io/([a-z0-9_]+)', doi, re.IGNORECASE)
     if osf_match:
         osf_id = osf_match.group(1)
         # OSF.io direct download URL (preferred)
@@ -221,8 +221,8 @@ def transform_pdf_url(url: str) -> List[str]:
         # OSF.io direct download URL
         candidates.append(f"https://osf.io/{osf_id}/download")
     
-    # Pattern 2: DOI URLs containing osf.io (doi.org/10.31234/osf.io/XXXXX)
-    osf_doi_match = re.search(r'10\.3123[49]/osf\.io/([a-z0-9_]+)', url, re.IGNORECASE)
+    # Pattern 2: DOI URLs containing osf.io (doi.org/10.31234/osf.io/XXXXX or 10.31219/osf.io/XXXXX)
+    osf_doi_match = re.search(r'10\.312(?:34|19)/osf\.io/([a-z0-9_]+)', url, re.IGNORECASE)
     if osf_doi_match:
         osf_id = osf_doi_match.group(1)
         candidates.append(f"https://osf.io/{osf_id}/download")

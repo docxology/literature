@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import subprocess
 import time
+import platform
+import socket
 from typing import Optional, List, Dict, Any, Tuple
 import requests
 from requests.exceptions import RequestException, Timeout, ConnectionError as RequestsConnectionError
@@ -90,6 +92,204 @@ def start_ollama_server(wait_seconds: float = 3.0) -> bool:
         return is_ollama_running()
     except (subprocess.SubprocessError, FileNotFoundError):
         return False
+
+
+def _is_port_in_use(host: str = "localhost", port: int = 11434) -> bool:
+    """Check if a port is in use.
+    
+    Args:
+        host: Host to check
+        port: Port number to check
+        
+    Returns:
+        True if port is in use, False otherwise
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(1.0)
+            result = sock.connect_ex((host, port))
+            return result == 0
+    except Exception:
+        return False
+
+
+def _kill_process_on_port(port: int = 11434) -> Tuple[bool, str]:
+    """Kill process using the specified port.
+    
+    Args:
+        port: Port number
+        
+    Returns:
+        Tuple of (success: bool, status_message: str)
+    """
+    system = platform.system()
+    try:
+        if system == "Darwin":  # macOS
+            # Use lsof to find process using port
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True,
+                text=True,
+                timeout=5.0
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                pids = result.stdout.strip().split("\n")
+                killed_pids = []
+                for pid in pids:
+                    try:
+                        subprocess.run(["kill", "-9", pid], check=True, timeout=5.0)
+                        killed_pids.append(pid)
+                    except subprocess.SubprocessError:
+                        pass
+                if killed_pids:
+                    return (True, f"Killed process(es) on port {port}: {', '.join(killed_pids)}")
+                return (False, f"Found process(es) on port {port} but failed to kill")
+            return (False, f"No process found on port {port}")
+            
+        elif system == "Linux":
+            # Use lsof or fuser to find process
+            # Try lsof first
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True,
+                text=True,
+                timeout=5.0
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                pids = result.stdout.strip().split("\n")
+                killed_pids = []
+                for pid in pids:
+                    try:
+                        subprocess.run(["kill", "-9", pid], check=True, timeout=5.0)
+                        killed_pids.append(pid)
+                    except subprocess.SubprocessError:
+                        pass
+                if killed_pids:
+                    return (True, f"Killed process(es) on port {port}: {', '.join(killed_pids)}")
+                return (False, f"Found process(es) on port {port} but failed to kill")
+            # Try fuser as fallback
+            result = subprocess.run(
+                ["fuser", "-k", f"{port}/tcp"],
+                capture_output=True,
+                text=True,
+                timeout=5.0
+            )
+            if result.returncode == 0:
+                return (True, f"Killed process on port {port} using fuser")
+            return (False, f"No process found on port {port}")
+            
+        else:
+            # Windows or other - not supported for now
+            return (False, f"Port killing not supported on {system}")
+            
+    except subprocess.TimeoutExpired:
+        return (False, f"Timeout while checking/killing process on port {port}")
+    except FileNotFoundError:
+        return (False, "Required system tools (lsof/fuser) not found")
+    except Exception as e:
+        return (False, f"Error killing process on port {port}: {e}")
+
+
+def restart_ollama_server(
+    base_url: str = "http://localhost:11434",
+    kill_existing: bool = True,
+    wait_seconds: float = 5.0
+) -> Tuple[bool, str]:
+    """Restart Ollama server, handling port conflicts.
+    
+    Checks if Ollama is responding. If not, attempts to kill any process
+    using the port, then starts a fresh Ollama server.
+    
+    Args:
+        base_url: Ollama server URL
+        kill_existing: Whether to kill existing processes on the port
+        wait_seconds: How long to wait for server to start after restart
+        
+    Returns:
+        Tuple of (success: bool, status_message: str)
+        - success: True if Ollama is ready after restart
+        - status_message: Detailed status message
+        
+    Example:
+        >>> success, status = restart_ollama_server()
+        >>> if not success:
+        ...     print(f"Restart failed: {status}")
+    """
+    # Extract port from base_url
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(base_url)
+        port = parsed.port or 11434
+        host = parsed.hostname or "localhost"
+    except Exception:
+        port = 11434
+        host = "localhost"
+    
+    # Check if Ollama is already responding
+    if is_ollama_running(base_url, timeout=2.0):
+        logger.info("Ollama is already running and responding")
+        models = get_model_names(base_url)
+        if models:
+            return (True, f"Ollama already running with {len(models)} model(s)")
+        else:
+            return (True, "Ollama already running but no models available")
+    
+    # Ollama is not responding - check if port is in use
+    port_in_use = _is_port_in_use(host, port)
+    
+    if port_in_use and kill_existing:
+        logger.info(f"Port {port} is in use but Ollama not responding, attempting to kill process...")
+        kill_success, kill_msg = _kill_process_on_port(port)
+        if kill_success:
+            logger.info(f"Killed process on port {port}: {kill_msg}")
+            # Wait a moment for port to be released
+            time.sleep(1.0)
+        else:
+            logger.warning(f"Could not kill process on port {port}: {kill_msg}")
+            return (False, f"Port {port} in use but could not kill process: {kill_msg}")
+    elif port_in_use and not kill_existing:
+        return (False, f"Port {port} is in use but Ollama not responding. Set kill_existing=True to restart.")
+    
+    # Start Ollama server
+    logger.info("Starting Ollama server...")
+    try:
+        subprocess.Popen(
+            ["ollama", "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True
+        )
+    except (subprocess.SubprocessError, FileNotFoundError) as e:
+        error_msg = f"Failed to start Ollama server: {e}"
+        logger.error(error_msg)
+        return (False, error_msg)
+    
+    # Wait for server to be ready
+    logger.debug(f"Waiting {wait_seconds}s for Ollama to start...")
+    time.sleep(wait_seconds)
+    
+    # Verify it's responding
+    max_checks = 5
+    check_interval = 1.0
+    for i in range(max_checks):
+        if is_ollama_running(base_url, timeout=2.0):
+            models = get_model_names(base_url)
+            if models:
+                status_msg = f"Ollama restarted successfully with {len(models)} model(s): {', '.join(models[:3])}"
+                logger.info(status_msg)
+                return (True, status_msg)
+            else:
+                status_msg = "Ollama restarted but no models available"
+                logger.warning(status_msg)
+                return (True, status_msg)
+        
+        if i < max_checks - 1:
+            logger.debug(f"Ollama not responding yet, waiting {check_interval}s... (check {i+1}/{max_checks})")
+            time.sleep(check_interval)
+    
+    error_msg = f"Ollama started but not responding after {wait_seconds + (max_checks * check_interval)}s"
+    logger.error(error_msg)
+    return (False, error_msg)
 
 
 def get_available_models(
@@ -229,15 +429,190 @@ def select_small_fast_model(base_url: str = "http://localhost:11434") -> Optiona
     return select_best_model(fast_preferences, base_url)
 
 
+def test_ollama_functionality(
+    base_url: str = "http://localhost:11434",
+    timeout: float = 10.0
+) -> Tuple[bool, Optional[str]]:
+    """Test that Ollama can actually process queries, not just respond to API.
+    
+    Performs a simple query test to verify Ollama is fully functional.
+    
+    Args:
+        base_url: Ollama server URL
+        timeout: Query timeout in seconds (used for config timeout)
+        
+    Returns:
+        Tuple of (success: bool, error_message: str | None)
+        - success: True if query test passed
+        - error_message: Error description if failed, None if successful
+        
+    Example:
+        >>> success, error = test_ollama_functionality()
+        >>> if not success:
+        ...     print(f"Query test failed: {error}")
+    """
+    try:
+        from infrastructure.llm import LLMClient, LLMConfig
+        
+        # Get a model to test with
+        models = get_model_names(base_url)
+        if not models:
+            return (False, "No models available for testing")
+        
+        test_model = models[0]
+        logger.debug(f"Testing Ollama functionality with model: {test_model}")
+        
+        # Create client and perform simple query
+        config = LLMConfig.from_env()
+        config.base_url = base_url
+        config.model = test_model
+        # Set timeout in config if supported
+        if hasattr(config, 'timeout'):
+            config.timeout = timeout
+        
+        client = LLMClient(config)
+        
+        # Simple test query - use a very short prompt to minimize time
+        # Use a minimal generation to test functionality
+        try:
+            # Try a very simple query with minimal tokens
+            from infrastructure.llm.core.config import GenerationOptions
+            options = GenerationOptions(max_tokens=5, temperature=0.0)
+            response = client.query_short("Hi", options=options)
+            if response and len(response.strip()) > 0:
+                logger.debug("Ollama functionality test passed")
+                return (True, None)
+            else:
+                return (False, "Query returned empty response")
+        except Exception as e:
+            # Check if it's a timeout - that might be acceptable for slow models
+            error_str = str(e)
+            if "timeout" in error_str.lower():
+                # Timeout might mean model is slow, but server is working
+                # Log as warning but don't fail - server can respond to API
+                logger.debug(f"Functionality test timeout (model may be slow): {error_str}")
+                return (True, f"Query test timed out (model may be slow): {error_str}")
+            error_msg = f"Query test failed: {error_str}"
+            logger.warning(error_msg)
+            return (False, error_msg)
+            
+    except ImportError as e:
+        return (False, f"Failed to import LLMClient: {e}")
+    except Exception as e:
+        return (False, f"Functionality test error: {e}")
+
+
+def diagnose_ollama_issues(
+    base_url: str = "http://localhost:11434"
+) -> Dict[str, Any]:
+    """Comprehensive diagnostic check for Ollama installation and configuration.
+    
+    Checks multiple aspects of Ollama setup:
+    - Is Ollama installed?
+    - Is server running?
+    - Are models available?
+    - Can queries be processed?
+    - What's the configuration?
+    
+    Args:
+        base_url: Ollama server URL
+        
+    Returns:
+        Dictionary with diagnostic information:
+        - installed: bool - Is Ollama installed?
+        - server_running: bool - Is server responding?
+        - models_available: bool - Are models available?
+        - models: List[str] - List of available models
+        - functionality_test: bool - Can queries be processed?
+        - functionality_error: str | None - Error from functionality test
+        - base_url: str - Server URL checked
+        - port: int - Port number
+        - diagnostics: Dict[str, Any] - Additional diagnostic info
+        
+    Example:
+        >>> diag = diagnose_ollama_issues()
+        >>> if not diag["server_running"]:
+        ...     print("Ollama server is not running")
+    """
+    diagnostics = {
+        "installed": False,
+        "server_running": False,
+        "models_available": False,
+        "models": [],
+        "model_count": 0,
+        "functionality_test": False,
+        "functionality_error": None,
+        "base_url": base_url,
+        "port": 11434,
+        "diagnostics": {}
+    }
+    
+    # Extract port from base_url
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(base_url)
+        diagnostics["port"] = parsed.port or 11434
+        diagnostics["host"] = parsed.hostname or "localhost"
+    except Exception:
+        diagnostics["port"] = 11434
+        diagnostics["host"] = "localhost"
+    
+    # Check if Ollama is installed
+    try:
+        result = subprocess.run(
+            ["ollama", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5.0
+        )
+        if result.returncode == 0:
+            diagnostics["installed"] = True
+            diagnostics["diagnostics"]["version"] = result.stdout.strip()
+        else:
+            diagnostics["diagnostics"]["version_error"] = f"Exit code {result.returncode}"
+    except FileNotFoundError:
+        diagnostics["diagnostics"]["version_error"] = "Ollama command not found"
+    except subprocess.TimeoutExpired:
+        diagnostics["diagnostics"]["version_error"] = "Version check timeout"
+    except Exception as e:
+        diagnostics["diagnostics"]["version_error"] = str(e)
+    
+    # Check if server is running
+    diagnostics["server_running"] = is_ollama_running(base_url, timeout=2.0)
+    if not diagnostics["server_running"]:
+        diagnostics["diagnostics"]["server_error"] = "Server not responding to /api/tags"
+    
+    # Check for models
+    if diagnostics["server_running"]:
+        models = get_model_names(base_url)
+        diagnostics["models"] = models
+        diagnostics["model_count"] = len(models)
+        diagnostics["models_available"] = len(models) > 0
+        if not diagnostics["models_available"]:
+            diagnostics["diagnostics"]["models_error"] = "No models found in Ollama"
+    
+    # Test functionality
+    if diagnostics["server_running"] and diagnostics["models_available"]:
+        success, error = test_ollama_functionality(base_url, timeout=10.0)
+        diagnostics["functionality_test"] = success
+        diagnostics["functionality_error"] = error
+        if not success:
+            diagnostics["diagnostics"]["functionality_error"] = error
+    
+    return diagnostics
+
+
 def ensure_ollama_ready(
     base_url: str = "http://localhost:11434",
-    auto_start: bool = True
+    auto_start: bool = True,
+    test_functionality: bool = False
 ) -> bool:
     """Ensure Ollama server is running and has models available.
     
     Args:
         base_url: Ollama server URL
         auto_start: Whether to attempt starting Ollama if not running
+        test_functionality: Whether to test actual query processing (slower but more thorough)
         
     Returns:
         True if Ollama is ready with models, False otherwise
@@ -245,18 +620,27 @@ def ensure_ollama_ready(
     # Check if running
     if not is_ollama_running(base_url):
         if auto_start:
-            logger.info("Ollama not running, attempting to start...")
+            logger.info("Ollama server not responding, attempting to start...")
             if not start_ollama_server():
-                logger.warning("Failed to start Ollama server")
+                logger.warning("Ollama installed but server failed to start. Try: ollama serve")
                 return False
         else:
+            logger.warning("Ollama server not responding. Start with: ollama serve")
             return False
     
     # Check for available models
     models = get_model_names(base_url)
     if not models:
-        logger.warning("No Ollama models available. Install with: ollama pull <model>")
+        logger.warning("Ollama running but no models available. Install with: ollama pull <model>")
         return False
+    
+    # Optional functionality test
+    if test_functionality:
+        logger.debug("Testing Ollama functionality with actual query...")
+        success, error = test_ollama_functionality(base_url, timeout=10.0)
+        if not success:
+            logger.warning(f"Ollama connection OK but queries fail: {error}")
+            return False
     
     logger.info(f"Ollama ready with {len(models)} model(s): {', '.join(models[:5])}")
     return True

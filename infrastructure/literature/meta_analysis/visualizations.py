@@ -1715,6 +1715,833 @@ def plot_classification_distribution(
     return fig
 
 
+def plot_embedding_similarity_heatmap(
+    similarity_matrix: np.ndarray,
+    citation_keys: List[str],
+    titles: Optional[List[str]] = None,
+    title: str = "Paper Similarity Matrix",
+    figsize: Tuple[int, int] = (12, 10)
+) -> plt.Figure:
+    """Plot similarity heatmap for embeddings.
+    
+    Args:
+        similarity_matrix: Similarity matrix, shape (n_documents, n_documents).
+        citation_keys: Citation keys for each document.
+        titles: Optional titles for each document (for display).
+        title: Plot title.
+        figsize: Figure size.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    import seaborn as sns
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Create heatmap
+    sns.heatmap(
+        similarity_matrix,
+        xticklabels=citation_keys,
+        yticklabels=citation_keys,
+        cmap='viridis',
+        center=0,
+        vmin=-1,
+        vmax=1,
+        square=True,
+        linewidths=0.5,
+        cbar_kws={"label": "Cosine Similarity"},
+        ax=ax
+    )
+    
+    ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    ax.set_xlabel("Papers", fontsize=FONT_SIZE_LABELS)
+    ax.set_ylabel("Papers", fontsize=FONT_SIZE_LABELS)
+    
+    # Rotate labels for readability
+    plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
+    plt.setp(ax.get_yticklabels(), rotation=0)
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_embedding_clusters_2d(
+    embeddings_2d: np.ndarray,
+    cluster_labels: np.ndarray,
+    titles: List[str],
+    years: Optional[List[Optional[int]]] = None,
+    title: str = "Embedding Clusters (2D)",
+    figsize: Tuple[int, int] = (12, 10)
+) -> plt.Figure:
+    """Plot 2D embedding clusters with coloring.
+    
+    Args:
+        embeddings_2d: 2D reduced embeddings, shape (n_documents, 2).
+        cluster_labels: Cluster labels for each document.
+        titles: Titles for each document.
+        years: Optional years for each document.
+        title: Plot title.
+        figsize: Figure size.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Get unique clusters
+    unique_clusters = np.unique(cluster_labels)
+    n_clusters = len(unique_clusters)
+    
+    # Generate colors for clusters
+    colors = plt.cm.get_cmap(COLORMAP_CATEGORICAL)(np.linspace(0, 1, n_clusters))
+    
+    # Plot points by cluster
+    for i, cluster_id in enumerate(unique_clusters):
+        mask = cluster_labels == cluster_id
+        cluster_data = embeddings_2d[mask]
+        
+        ax.scatter(
+            cluster_data[:, 0],
+            cluster_data[:, 1],
+            c=[colors[i]],
+            label=f"Cluster {int(cluster_id)}",
+            s=MARKER_SIZE,
+            alpha=0.7,
+            edgecolors='black',
+            linewidths=EDGE_WIDTH
+        )
+    
+    ax.set_xlabel("Dimension 1", fontsize=FONT_SIZE_LABELS)
+    ax.set_ylabel("Dimension 2", fontsize=FONT_SIZE_LABELS)
+    ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    ax.legend(fontsize=FONT_SIZE_LEGEND, loc='best')
+    ax.grid(True, alpha=GRID_ALPHA)
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_embedding_clusters_3d(
+    embeddings_3d: np.ndarray,
+    cluster_labels: np.ndarray,
+    titles: List[str],
+    years: Optional[List[Optional[int]]] = None,
+    title: str = "Embedding Clusters (3D)",
+    figsize: Tuple[int, int] = (14, 10)
+) -> plt.Figure:
+    """Plot 3D embedding clusters with coloring.
+    
+    Args:
+        embeddings_3d: 3D reduced embeddings, shape (n_documents, 3).
+        cluster_labels: Cluster labels for each document.
+        titles: Titles for each document.
+        years: Optional years for each document.
+        title: Plot title.
+        figsize: Figure size.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    from mpl_toolkits.mplot3d import Axes3D
+    
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Get unique clusters
+    unique_clusters = np.unique(cluster_labels)
+    n_clusters = len(unique_clusters)
+    
+    # Generate colors for clusters
+    colors = plt.cm.get_cmap(COLORMAP_CATEGORICAL)(np.linspace(0, 1, n_clusters))
+    
+    # Plot points by cluster
+    for i, cluster_id in enumerate(unique_clusters):
+        mask = cluster_labels == cluster_id
+        cluster_data = embeddings_3d[mask]
+        
+        ax.scatter(
+            cluster_data[:, 0],
+            cluster_data[:, 1],
+            cluster_data[:, 2],
+            c=[colors[i]],
+            label=f"Cluster {int(cluster_id)}",
+            s=MARKER_SIZE,
+            alpha=0.7,
+            edgecolors='black',
+            linewidths=EDGE_WIDTH
+        )
+    
+    ax.set_xlabel("Dimension 1", fontsize=FONT_SIZE_LABELS)
+    ax.set_ylabel("Dimension 2", fontsize=FONT_SIZE_LABELS)
+    ax.set_zlabel("Dimension 3", fontsize=FONT_SIZE_LABELS)
+    ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    ax.legend(fontsize=FONT_SIZE_LEGEND, loc='best')
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_semantic_search_results(
+    query_text: str,
+    results: List[Tuple[str, float, str]],
+    title: str = "Semantic Search Results",
+    figsize: Tuple[int, int] = (12, 8)
+) -> plt.Figure:
+    """Plot semantic search results as a bar chart.
+    
+    Args:
+        query_text: Original query text.
+        results: List of (citation_key, similarity_score, title) tuples.
+        title: Plot title.
+        figsize: Figure size.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    if not results:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5, "No results found", ha='center', va='center', fontsize=FONT_SIZE_LABELS)
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold')
+        return fig
+    
+    citation_keys, similarities, titles = zip(*results)
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Create bar chart
+    bars = ax.barh(range(len(results)), similarities, color=plt.cm.viridis(similarities))
+    
+    # Set labels
+    ax.set_yticks(range(len(results)))
+    ax.set_yticklabels([f"{key}\n{t[:50]}..." if len(t) > 50 else f"{key}\n{t}" 
+                        for key, t in zip(citation_keys, titles)],
+                       fontsize=FONT_SIZE_LABELS - 2)
+    ax.set_xlabel("Similarity Score", fontsize=FONT_SIZE_LABELS)
+    ax.set_title(f"{title}\nQuery: {query_text[:100]}...", fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    
+    # Add value labels on bars
+    for i, (bar, sim) in enumerate(zip(bars, similarities)):
+        ax.text(sim + 0.01, i, f"{sim:.3f}", va='center', fontsize=FONT_SIZE_LABELS - 3)
+    
+    ax.grid(True, alpha=GRID_ALPHA, axis='x')
+    ax.set_xlim(0, 1.1)
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_embedding_quality(
+    embeddings: np.ndarray,
+    citation_keys: Optional[List[str]] = None,
+    title: str = "Embedding Quality Analysis",
+    figsize: Tuple[int, int] = (16, 10)
+) -> plt.Figure:
+    """Plot embedding quality metrics including variance per dimension and distribution.
+    
+    Args:
+        embeddings: Embedding vectors, shape (n_documents, embedding_dim).
+        citation_keys: Optional citation keys for labeling.
+        title: Plot title.
+        figsize: Figure size.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=figsize)
+    
+    n_docs, n_dims = embeddings.shape
+    
+    # 1. Variance per dimension
+    ax = axes[0, 0]
+    variances = np.var(embeddings, axis=0)
+    dims = np.arange(n_dims)
+    ax.bar(dims, variances, alpha=0.7, color='#2E86AB', edgecolor='#1B4F72', linewidth=EDGE_WIDTH)
+    ax.set_xlabel('Dimension', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_ylabel('Variance', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_title('Variance per Dimension', fontsize=FONT_SIZE_LABELS, fontweight='bold')
+    ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+    
+    # 2. Distribution of L2 norms
+    ax = axes[0, 1]
+    norms = np.linalg.norm(embeddings, axis=1)
+    ax.hist(norms, bins=50, alpha=0.7, color='#6A4C93', edgecolor='#1B4F72', linewidth=EDGE_WIDTH)
+    ax.axvline(np.mean(norms), color='#E63946', linestyle='--', linewidth=2, label=f'Mean: {np.mean(norms):.3f}')
+    ax.axvline(np.median(norms), color='#2A9D8F', linestyle='--', linewidth=2, label=f'Median: {np.median(norms):.3f}')
+    ax.set_xlabel('L2 Norm', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_ylabel('Frequency', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_title('Distribution of Embedding Norms', fontsize=FONT_SIZE_LABELS, fontweight='bold')
+    ax.legend(fontsize=FONT_SIZE_LEGEND - 1)
+    ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+    
+    # 3. Mean per dimension
+    ax = axes[1, 0]
+    means = np.mean(embeddings, axis=0)
+    ax.bar(dims, means, alpha=0.7, color='#F77F00', edgecolor='#1B4F72', linewidth=EDGE_WIDTH)
+    ax.axhline(0, color='black', linestyle='-', linewidth=0.5, alpha=0.3)
+    ax.set_xlabel('Dimension', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_ylabel('Mean Value', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_title('Mean Value per Dimension', fontsize=FONT_SIZE_LABELS, fontweight='bold')
+    ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+    
+    # 4. Standard deviation per dimension
+    ax = axes[1, 1]
+    stds = np.std(embeddings, axis=0)
+    ax.bar(dims, stds, alpha=0.7, color='#E63946', edgecolor='#1B4F72', linewidth=EDGE_WIDTH)
+    ax.set_xlabel('Dimension', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_ylabel('Standard Deviation', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_title('Standard Deviation per Dimension', fontsize=FONT_SIZE_LABELS, fontweight='bold')
+    ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+    
+    fig.suptitle(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', y=0.995)
+    plt.tight_layout(rect=[0, 0, 1, 0.98])
+    return fig
+
+
+def plot_similarity_distribution(
+    similarity_matrix: np.ndarray,
+    title: str = "Similarity Distribution",
+    figsize: Tuple[int, int] = (12, 8)
+) -> plt.Figure:
+    """Plot histogram of similarity values (excluding diagonal).
+    
+    Args:
+        similarity_matrix: Similarity matrix, shape (n_documents, n_documents).
+        title: Plot title.
+        figsize: Figure size.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    n = similarity_matrix.shape[0]
+    if n > 0:
+        # Exclude diagonal
+        mask = ~np.eye(n, dtype=bool)
+        values = similarity_matrix[mask].flatten()
+    else:
+        values = []
+    
+    if len(values) > 0:
+        ax.hist(values, bins=50, alpha=0.7, color='#2E86AB', edgecolor='#1B4F72', linewidth=EDGE_WIDTH)
+        ax.axvline(np.mean(values), color='#E63946', linestyle='--', linewidth=2, 
+                   label=f'Mean: {np.mean(values):.3f}')
+        ax.axvline(np.median(values), color='#2A9D8F', linestyle='--', linewidth=2, 
+                   label=f'Median: {np.median(values):.3f}')
+        ax.set_xlabel('Cosine Similarity', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+        ax.set_ylabel('Frequency', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+        ax.legend(fontsize=FONT_SIZE_LEGEND)
+        ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+    else:
+        ax.text(0.5, 0.5, 'No similarity data available', ha='center', va='center',
+               fontsize=FONT_SIZE_LABELS)
+    
+    ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    plt.tight_layout()
+    return fig
+
+
+def plot_cluster_quality_metrics(
+    metrics: Dict[str, any],
+    title: str = "Clustering Quality Metrics",
+    figsize: Tuple[int, int] = (12, 8)
+) -> plt.Figure:
+    """Plot bar chart of clustering quality metrics.
+    
+    Args:
+        metrics: Dictionary with clustering metrics (silhouette_score, davies_bouldin_index, etc.).
+        title: Plot title.
+        figsize: Figure size.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    metric_names = []
+    metric_values = []
+    metric_labels = []
+    
+    if metrics.get("silhouette_score") is not None:
+        metric_names.append("Silhouette Score")
+        metric_values.append(metrics["silhouette_score"])
+        metric_labels.append(f"{metrics['silhouette_score']:.3f}")
+    
+    if metrics.get("davies_bouldin_index") is not None:
+        metric_names.append("Davies-Bouldin Index")
+        metric_values.append(metrics["davies_bouldin_index"])
+        metric_labels.append(f"{metrics['davies_bouldin_index']:.3f}")
+    
+    if metrics.get("calinski_harabasz_score") is not None:
+        metric_names.append("Calinski-Harabasz Score")
+        metric_values.append(metrics["calinski_harabasz_score"])
+        metric_labels.append(f"{metrics['calinski_harabasz_score']:.1f}")
+    
+    if metrics.get("inertia") is not None:
+        metric_names.append("Inertia")
+        metric_values.append(metrics["inertia"])
+        metric_labels.append(f"{metrics['inertia']:.1f}")
+    
+    if not metric_names:
+        ax.text(0.5, 0.5, 'No clustering metrics available', ha='center', va='center',
+               fontsize=FONT_SIZE_LABELS)
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        plt.tight_layout()
+        return fig
+    
+    # Normalize values for visualization (0-1 scale)
+    normalized_values = []
+    for i, (name, value) in enumerate(zip(metric_names, metric_values)):
+        if "Silhouette" in name:
+            # Silhouette: -1 to 1, normalize to 0-1
+            normalized_values.append((value + 1) / 2)
+        elif "Davies" in name:
+            # Davies-Bouldin: lower is better, invert and normalize
+            max_val = max(metric_values) if metric_values else 1.0
+            normalized_values.append(1.0 - (value / max_val) if max_val > 0 else 0.5)
+        elif "Calinski" in name or "Inertia" in name:
+            # Higher/lower is better, normalize by max
+            max_val = max(metric_values) if metric_values else 1.0
+            normalized_values.append(value / max_val if max_val > 0 else 0.5)
+        else:
+            normalized_values.append(0.5)
+    
+    y_pos = np.arange(len(metric_names))
+    colors = plt.cm.viridis(np.linspace(0.3, 0.9, len(metric_names)))
+    bars = ax.barh(y_pos, normalized_values, alpha=0.8, color=colors, 
+                   edgecolor='#1B4F72', linewidth=EDGE_WIDTH)
+    
+    # Add value labels
+    for i, (bar, label) in enumerate(zip(bars, metric_labels)):
+        width = bar.get_width()
+        ax.text(width, bar.get_y() + bar.get_height()/2, 
+               f' {label}', va='center', fontsize=FONT_SIZE_LEGEND - 1, fontweight='medium')
+    
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(metric_names, fontsize=FONT_SIZE_LABELS - 1)
+    ax.set_xlabel('Normalized Score', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    ax.set_xlim(0, 1.1)
+    ax.grid(True, alpha=GRID_ALPHA, axis='x', linestyle='--')
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_silhouette_analysis(
+    embeddings: np.ndarray,
+    cluster_labels: np.ndarray,
+    title: str = "Silhouette Analysis",
+    figsize: Tuple[int, int] = (14, 10)
+) -> plt.Figure:
+    """Plot silhouette analysis showing cluster quality per sample.
+    
+    Args:
+        embeddings: Embedding vectors, shape (n_documents, embedding_dim).
+        cluster_labels: Cluster labels for each document.
+        title: Plot title.
+        figsize: Figure size.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    try:
+        from sklearn.metrics import silhouette_samples
+    except ImportError:
+        logger.warning("scikit-learn not available for silhouette analysis")
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5, 'scikit-learn required for silhouette analysis', ha='center', va='center',
+               fontsize=FONT_SIZE_LABELS)
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        plt.tight_layout()
+        return fig
+    
+    n_clusters = len(np.unique(cluster_labels))
+    if n_clusters < 2:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5, 'Need at least 2 clusters for silhouette analysis', ha='center', va='center',
+               fontsize=FONT_SIZE_LABELS)
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        plt.tight_layout()
+        return fig
+    
+    # Compute silhouette scores
+    silhouette_scores = silhouette_samples(embeddings, cluster_labels)
+    unique_labels = np.unique(cluster_labels)
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    y_lower = 10
+    colors = plt.cm.get_cmap(COLORMAP_CATEGORICAL)(np.linspace(0, 1, len(unique_labels)))
+    
+    for i, cluster_id in enumerate(unique_labels):
+        # Get silhouette scores for this cluster
+        cluster_silhouette_scores = silhouette_scores[cluster_labels == cluster_id]
+        cluster_silhouette_scores.sort()
+        
+        size_cluster = len(cluster_silhouette_scores)
+        y_upper = y_lower + size_cluster
+        
+        ax.fill_betweenx(np.arange(y_lower, y_upper), 0, cluster_silhouette_scores,
+                        facecolor=colors[i], edgecolor=colors[i], alpha=0.7)
+        
+        # Label cluster
+        ax.text(-0.05, y_lower + 0.5 * size_cluster, str(int(cluster_id)), fontsize=FONT_SIZE_LABELS - 2)
+        
+        y_lower = y_upper + 10
+    
+    # Add average silhouette score line
+    avg_score = np.mean(silhouette_scores)
+    ax.axvline(avg_score, color='red', linestyle='--', linewidth=2,
+               label=f'Average Score: {avg_score:.3f}')
+    
+    ax.set_xlabel('Silhouette Score', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_ylabel('Cluster Label', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    ax.set_xlim(-1, 1)
+    ax.legend(fontsize=FONT_SIZE_LEGEND)
+    ax.grid(True, alpha=GRID_ALPHA, axis='x', linestyle='--')
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_embedding_coverage(
+    embeddings: np.ndarray,
+    title: str = "Embedding Space Coverage",
+    figsize: Tuple[int, int] = (12, 10)
+) -> plt.Figure:
+    """Visualize embedding space coverage using 2D projection.
+    
+    Args:
+        embeddings: Embedding vectors, shape (n_documents, embedding_dim).
+        title: Plot title.
+        figsize: Figure size.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    try:
+        from sklearn.decomposition import PCA
+    except ImportError:
+        logger.warning("scikit-learn not available for coverage visualization")
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5, 'scikit-learn required for coverage visualization', ha='center', va='center',
+               fontsize=FONT_SIZE_LABELS)
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        plt.tight_layout()
+        return fig
+    
+    if embeddings.shape[0] < 2:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5, 'Insufficient data for coverage visualization', ha='center', va='center',
+               fontsize=FONT_SIZE_LABELS)
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        plt.tight_layout()
+        return fig
+    
+    # Reduce to 2D using PCA
+    pca = PCA(n_components=2)
+    embeddings_2d = pca.fit_transform(embeddings)
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Create scatter plot with density
+    scatter = ax.scatter(embeddings_2d[:, 0], embeddings_2d[:, 1], 
+                        alpha=0.6, s=MARKER_SIZE * 0.5, c='#2E86AB',
+                        edgecolors='black', linewidths=EDGE_WIDTH * 0.5)
+    
+    # Add convex hull to show coverage
+    try:
+        from scipy.spatial import ConvexHull
+        if len(embeddings_2d) >= 3:
+            hull = ConvexHull(embeddings_2d)
+            for simplex in hull.simplices:
+                ax.plot(embeddings_2d[simplex, 0], embeddings_2d[simplex, 1], 
+                       'r--', alpha=0.3, linewidth=1)
+    except ImportError:
+        pass  # scipy not available, skip convex hull
+    
+    explained_var = pca.explained_variance_ratio_
+    ax.set_xlabel(f'PC1 ({explained_var[0]*100:.1f}% variance)', 
+                  fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_ylabel(f'PC2 ({explained_var[1]*100:.1f}% variance)', 
+                  fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    ax.grid(True, alpha=GRID_ALPHA, linestyle='--')
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_embedding_outliers(
+    embeddings: np.ndarray,
+    outlier_indices: List[int],
+    citation_keys: Optional[List[str]] = None,
+    title: str = "Embedding Outliers",
+    figsize: Tuple[int, int] = (14, 10)
+) -> plt.Figure:
+    """Highlight outliers in 2D/3D embedding space.
+    
+    Args:
+        embeddings: Embedding vectors, shape (n_documents, embedding_dim).
+        outlier_indices: List of outlier indices.
+        citation_keys: Optional citation keys for labeling.
+        title: Plot title.
+        figsize: Figure size.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    try:
+        from sklearn.decomposition import PCA
+    except ImportError:
+        logger.warning("scikit-learn not available for outlier visualization")
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5, 'scikit-learn required for outlier visualization', ha='center', va='center',
+               fontsize=FONT_SIZE_LABELS)
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        plt.tight_layout()
+        return fig
+    
+    if embeddings.shape[0] < 2:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5, 'Insufficient data for outlier visualization', ha='center', va='center',
+               fontsize=FONT_SIZE_LABELS)
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        plt.tight_layout()
+        return fig
+    
+    # Reduce to 2D using PCA
+    pca = PCA(n_components=2)
+    embeddings_2d = pca.fit_transform(embeddings)
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Create mask for outliers
+    outlier_mask = np.zeros(len(embeddings), dtype=bool)
+    outlier_mask[outlier_indices] = True
+    
+    # Plot normal points
+    normal_points = embeddings_2d[~outlier_mask]
+    if len(normal_points) > 0:
+        ax.scatter(normal_points[:, 0], normal_points[:, 1],
+                  alpha=0.6, s=MARKER_SIZE * 0.5, c='#2E86AB',
+                  edgecolors='black', linewidths=EDGE_WIDTH * 0.5,
+                  label='Normal')
+    
+    # Plot outliers
+    outlier_points = embeddings_2d[outlier_mask]
+    if len(outlier_points) > 0:
+        ax.scatter(outlier_points[:, 0], outlier_points[:, 1],
+                  alpha=0.9, s=MARKER_SIZE, c='#E63946',
+                  edgecolors='black', linewidths=EDGE_WIDTH,
+                  marker='X', label=f'Outliers ({len(outlier_points)})')
+    
+    explained_var = pca.explained_variance_ratio_
+    ax.set_xlabel(f'PC1 ({explained_var[0]*100:.1f}% variance)', 
+                  fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_ylabel(f'PC2 ({explained_var[1]*100:.1f}% variance)', 
+                  fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    ax.legend(fontsize=FONT_SIZE_LEGEND)
+    ax.grid(True, alpha=GRID_ALPHA, linestyle='--')
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_dimensionality_analysis(
+    dimensionality_data: Dict[str, any],
+    title: str = "Dimensionality Analysis",
+    figsize: Tuple[int, int] = (14, 10)
+) -> plt.Figure:
+    """Plot explained variance and effective dimensions.
+    
+    Args:
+        dimensionality_data: Dictionary from compute_dimensionality_analysis().
+        title: Plot title.
+        figsize: Figure size.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+    
+    explained_var = dimensionality_data.get("explained_variance", [])
+    cumulative_var = dimensionality_data.get("cumulative_variance", [])
+    
+    if not explained_var:
+        for ax in axes:
+            ax.text(0.5, 0.5, 'No dimensionality data available', ha='center', va='center',
+                   fontsize=FONT_SIZE_LABELS)
+        fig.suptitle(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', y=0.995)
+        plt.tight_layout()
+        return fig
+    
+    components = np.arange(1, len(explained_var) + 1)
+    
+    # Plot 1: Explained variance per component
+    ax = axes[0]
+    ax.bar(components, explained_var, alpha=0.7, color='#2E86AB', 
+           edgecolor='#1B4F72', linewidth=EDGE_WIDTH)
+    ax.set_xlabel('Principal Component', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_ylabel('Explained Variance Ratio', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_title('Explained Variance per Component', fontsize=FONT_SIZE_LABELS, fontweight='bold')
+    ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+    
+    # Plot 2: Cumulative explained variance
+    ax = axes[1]
+    ax.plot(components, cumulative_var, marker='o', linewidth=2.5, markersize=8,
+           color='#E63946', alpha=0.8)
+    ax.axhline(0.95, color='#2A9D8F', linestyle='--', linewidth=2, label='95% threshold')
+    ax.axhline(0.99, color='#F77F00', linestyle='--', linewidth=2, label='99% threshold')
+    
+    n_comp_95 = dimensionality_data.get("n_components_95", len(components))
+    n_comp_99 = dimensionality_data.get("n_components_99", len(components))
+    
+    if n_comp_95 <= len(components):
+        ax.axvline(n_comp_95, color='#2A9D8F', linestyle=':', linewidth=1.5, alpha=0.7)
+    if n_comp_99 <= len(components):
+        ax.axvline(n_comp_99, color='#F77F00', linestyle=':', linewidth=1.5, alpha=0.7)
+    
+    ax.set_xlabel('Number of Components', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_ylabel('Cumulative Explained Variance', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_title('Cumulative Explained Variance', fontsize=FONT_SIZE_LABELS, fontweight='bold')
+    ax.set_ylim(0, 1.05)
+    ax.legend(fontsize=FONT_SIZE_LEGEND - 1)
+    ax.grid(True, alpha=GRID_ALPHA, linestyle='--')
+    
+    fig.suptitle(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', y=0.995)
+    plt.tight_layout(rect=[0, 0, 1, 0.98])
+    return fig
+
+
+def plot_cluster_size_distribution(
+    cluster_labels: np.ndarray,
+    title: str = "Cluster Size Distribution",
+    figsize: Tuple[int, int] = (12, 8)
+) -> plt.Figure:
+    """Plot distribution of cluster sizes.
+    
+    Args:
+        cluster_labels: Cluster labels for each document.
+        title: Plot title.
+        figsize: Figure size.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    unique_labels, counts = np.unique(cluster_labels, return_counts=True)
+    
+    # Sort by cluster ID
+    sorted_indices = np.argsort(unique_labels)
+    cluster_ids = unique_labels[sorted_indices]
+    cluster_sizes = counts[sorted_indices]
+    
+    bars = ax.bar(range(len(cluster_ids)), cluster_sizes, alpha=0.8, 
+                 color='#2E86AB', edgecolor='#1B4F72', linewidth=EDGE_WIDTH)
+    
+    # Add value labels
+    for bar, size in zip(bars, cluster_sizes):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+               f'{int(size)}', ha='center', va='bottom',
+               fontsize=FONT_SIZE_LEGEND - 1, fontweight='medium')
+    
+    ax.set_xlabel('Cluster ID', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_ylabel('Number of Documents', fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    ax.set_xticks(range(len(cluster_ids)))
+    ax.set_xticklabels([f'Cluster {int(cid)}' for cid in cluster_ids],
+                       fontsize=FONT_SIZE_LABELS - 2)
+    ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+    
+    plt.tight_layout()
+    return fig
+
+
+def plot_similarity_network(
+    similarity_matrix: np.ndarray,
+    citation_keys: List[str],
+    threshold: float = 0.7,
+    title: str = "Similarity Network",
+    figsize: Tuple[int, int] = (16, 12)
+) -> plt.Figure:
+    """Plot network graph of high-similarity pairs.
+    
+    Args:
+        similarity_matrix: Similarity matrix, shape (n_documents, n_documents).
+        citation_keys: Citation keys for each document.
+        threshold: Similarity threshold for edges.
+        title: Plot title.
+        figsize: Figure size.
+        
+    Returns:
+        Matplotlib figure.
+    """
+    try:
+        import networkx as nx
+    except ImportError:
+        logger.warning("networkx not available for similarity network")
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.text(0.5, 0.5, 'networkx required for similarity network visualization', 
+               ha='center', va='center', fontsize=FONT_SIZE_LABELS)
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        plt.tight_layout()
+        return fig
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Create graph
+    G = nx.Graph()
+    
+    # Add nodes
+    for key in citation_keys:
+        G.add_node(key)
+    
+    # Add edges for high similarity pairs
+    n = similarity_matrix.shape[0]
+    for i in range(n):
+        for j in range(i + 1, n):
+            similarity = similarity_matrix[i, j]
+            if similarity >= threshold:
+                G.add_edge(citation_keys[i], citation_keys[j], weight=similarity)
+    
+    if len(G.edges()) == 0:
+        ax.text(0.5, 0.5, f'No edges found with similarity >= {threshold}', 
+               ha='center', va='center', fontsize=FONT_SIZE_LABELS)
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        plt.tight_layout()
+        return fig
+    
+    # Layout
+    pos = nx.spring_layout(G, k=1, iterations=50, seed=42)
+    
+    # Draw network
+    node_sizes = [G.degree(node) * 200 + 100 for node in G.nodes()]
+    edge_widths = [G[u][v]['weight'] * 2 for u, v in G.edges()]
+    
+    nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color='#2E86AB',
+                          alpha=0.8, ax=ax)
+    nx.draw_networkx_edges(G, pos, width=edge_widths, alpha=0.5, 
+                           edge_color='#1B4F72', ax=ax)
+    
+    # Add labels (only for nodes with high degree to avoid clutter)
+    high_degree_nodes = [n for n in G.nodes() if G.degree(n) >= 2]
+    labels = {n: n[:20] + '...' if len(n) > 20 else n for n in high_degree_nodes}
+    nx.draw_networkx_labels(G, pos, labels, font_size=8, font_weight='bold', ax=ax)
+    
+    ax.set_title(f"{title}\n(Threshold: {threshold})", 
+                fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+    ax.axis('off')
+    
+    plt.tight_layout()
+    return fig
+
+
 def save_plot(fig: plt.Figure, output_path: Path) -> Path:
     """Save plot to file.
     

@@ -113,12 +113,25 @@ class TestHTMLTextExtractor:
         extractor = HTMLTextExtractor()
         text = extractor.extract_text(html)
         
-        # Check that headings appear before their content
+        # Verify all expected content is present
+        assert "Main Title" in text, f"Main Title not found in extracted text: {text!r}"
+        assert "Section 1" in text, f"Section 1 not found in extracted text: {text!r}"
+        assert "Paragraph 1" in text, f"Paragraph 1 not found in extracted text: {text!r}"
+        assert "Section 2" in text, f"Section 2 not found in extracted text: {text!r}"
+        assert "Paragraph 2" in text, f"Paragraph 2 not found in extracted text: {text!r}"
+        
+        # Check that headings appear before their content (structure preservation)
         main_title_pos = text.find("Main Title")
         section1_pos = text.find("Section 1")
         para1_pos = text.find("Paragraph 1")
         
-        assert main_title_pos < section1_pos < para1_pos
+        assert main_title_pos >= 0, "Main Title not found in extracted text"
+        assert section1_pos >= 0, "Section 1 not found in extracted text"
+        assert para1_pos >= 0, "Paragraph 1 not found in extracted text"
+        assert main_title_pos < section1_pos < para1_pos, (
+            f"Structure not preserved: Main Title at {main_title_pos}, "
+            f"Section 1 at {section1_pos}, Paragraph 1 at {para1_pos}"
+        )
     
     def test_extract_cleans_whitespace(self):
         """Test that excessive whitespace is cleaned."""
@@ -160,14 +173,17 @@ class TestHTMLTextExtractor:
     
     def test_extract_with_bs4_fallback(self):
         """Test that regex fallback works when BeautifulSoup4 unavailable."""
-        # Mock BeautifulSoup4 as unavailable
-        with patch('infrastructure.literature.pdf.html_extractor.HAS_BS4', False):
-            extractor = HTMLTextExtractor()
-            html = b"<html><body><p>Test content</p></body></html>"
-            text = extractor.extract_text(html)
-            
-            # Should still extract text using regex
-            assert "Test content" in text or len(text) > 0
+        # Create extractor with bs4 disabled (simulating unavailability)
+        extractor = HTMLTextExtractor(has_bs4=False)
+        html = b"<html><body><p>Test content</p></body></html>"
+        text = extractor.extract_text(html)
+        
+        # Should still extract text using regex fallback
+        # With lowered threshold (> 3 chars), "Test content" (12 chars) should be extracted
+        assert len(text) > 0, f"Regex fallback returned empty text. Extracted: {text!r}"
+        assert "Test content" in text, (
+            f"Expected 'Test content' in extracted text, got: {text!r}"
+        )
 
 
 class TestOSFParser:

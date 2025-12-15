@@ -286,9 +286,13 @@ class TestClearLibrary:
         mock_entry = Mock()
         mock_entry.citation_key = "test2024"
         
+        # Create a mock index file path
+        index_file = tmp_path / "library.json"
+        index_file.write_text('{"version": "1.0", "updated": "2024-01-01", "count": 1, "entries": {"test2024": {}}}')
+        
         mock_library_index = Mock()
         mock_library_index.list_entries.return_value = [mock_entry]
-        mock_library_index.remove_entry = Mock()
+        mock_library_index.index_path = index_file
         
         mock_config = Mock()
         mock_config.from_env.return_value = mock_config
@@ -308,7 +312,12 @@ class TestClearLibrary:
         assert not summary1.exists()
         assert not progress_file.exists()
         assert not bibtex_file.exists()
-        assert mock_library_index.remove_entry.called
+        # Verify index file was deleted and recreated (implementation deletes and recreates, doesn't call remove_entry)
+        assert index_file.exists()  # Should be recreated as empty
+        import json
+        index_data = json.loads(index_file.read_text())
+        assert index_data['count'] == 0
+        assert index_data['entries'] == {}
 
     def test_clear_library_interactive_cancelled(self, tmp_path, monkeypatch):
         """Test interactive mode with cancellation."""

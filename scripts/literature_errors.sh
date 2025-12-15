@@ -152,3 +152,4 @@ capture_command_output() {
     
     return $exit_code
 }
+

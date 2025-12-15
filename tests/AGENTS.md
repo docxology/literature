@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The tests module provides comprehensive test coverage for all infrastructure modules. Tests follow a no-mocks policy, using real data and computations.
+The tests module provides test coverage for all infrastructure modules. Tests follow a no-mocks policy, using data and computations.
 
 ## Test Organization
 
@@ -18,11 +18,25 @@ tests/
 
 ### No Mocks Policy
 
-All tests use real data and real computations:
-- No MagicMock, mocker.patch, or unittest.mock
-- Real LLM responses when possible
-- Real file operations
-- Real API calls (with graceful skipping)
+**All tests use implementations - no mocks are ever used.**
+
+This policy ensures:
+- **Veridical testing**: Tests verify behavior with systems
+- **Data**: All tests use data structures and computations
+- **API calls**: Integration tests use Ollama API and file operations
+- **Comprehensive logging**: All tests include informative logging of operations
+- **Factual verification**: Tests verify system behavior, not mocked responses
+
+**Prohibited:**
+- No `MagicMock`, `mocker.patch`, or `unittest.mock`
+- No fake data or simulated responses
+- No mocked API calls or file operations
+
+**Required:**
+- Implementations with data
+- API calls (with graceful skipping if service unavailable)
+- File operations with temporary directories
+- Informative logging of all test operations
 
 ### Test Categories
 

@@ -4,15 +4,34 @@ Complete guide to running meta-analysis on your literature library.
 
 ## Overview
 
-Meta-analysis tools provide comprehensive analysis of your literature library, including temporal trends, keyword evolution, metadata visualization, and PCA analysis.
+Meta-analysis tools provide comprehensive analysis of your **existing** literature library, including temporal trends, keyword evolution, metadata visualization, and PCA analysis.
+
+**Important**: Meta-analysis works only with existing library data (citations, PDFs, extracted text). It does not search, download, or extract. Use options 3.1 and 4.1-4.3 for those operations.
+
+There are two modes available:
+- **Standard meta-analysis** (option 6.1): Bibliographic analysis, citations, PCA, word use, source clarity, full text availability. No LLM/Ollama required.
+- **Full meta-analysis with embeddings** (option 6.2): Includes all standard analysis plus Ollama-based semantic embedding analysis (similarity, clustering, semantic search). Requires Ollama server running.
 
 ## Quick Start
 
 ### Command Line
 
 ```bash
-# Run meta-analysis
-python3 scripts/07_literature_search.py --meta-analysis --keywords "optimization"
+# Run standard meta-analysis on existing library (no embeddings)
+python3 scripts/07_literature_search.py --meta-analysis
+
+# Run full meta-analysis with embeddings on existing library (requires Ollama)
+python3 scripts/07_literature_search.py --meta-analysis --with-embeddings
+```
+
+### Interactive Menu
+
+```bash
+# Start interactive menu
+./run_literature.sh
+
+# Select option 6.1 for standard meta-analysis
+# Select option 6.2 for full meta-analysis with embeddings
 ```
 
 ### Python API
@@ -130,10 +149,78 @@ create_pca_2d_plot(pca_result, clusters)
 create_pca_3d_plot(pca_result, clusters)
 ```
 
+## Embedding Analysis
+
+When using `--with-embeddings` (option 6.2), comprehensive semantic analysis is performed:
+
+### Core Features
+- **Document embeddings**: Generate semantic embeddings using Ollama embeddinggemma model
+- **Similarity matrix**: Compute cosine similarity between all paper pairs
+- **Clustering**: K-means clustering on embedding space
+- **Visualizations**: 2D/3D cluster visualizations using UMAP/t-SNE
+
+### Validation & Quality Assurance
+- **Quality validation**: Check for zero vectors, NaN/Inf values, low-variance dimensions
+- **Completeness validation**: Verify embedding coverage and missing documents
+- **Dimension validation**: Ensure consistent embedding dimensions
+- **Similarity matrix validation**: Verify symmetry, diagonal, and value ranges
+- **Outlier detection**: Identify statistical outliers using multiple methods
+
+### Statistics & Metrics
+- **Embedding statistics**: Distribution stats (mean, std, min, max per dimension)
+- **Similarity statistics**: Distribution analysis with percentiles
+- **Clustering metrics**: Silhouette score, Davies-Bouldin index, Calinski-Harabasz score, inertia
+- **Dimensionality analysis**: Effective dimensions, explained variance, PCA on embeddings
+- **Outlier statistics**: Outlier detection and analysis
+
+### Enhanced Visualizations
+- **Quality plots**: Variance per dimension, norm distributions, mean/std per dimension
+- **Similarity distribution**: Histogram of similarity values
+- **Cluster quality metrics**: Bar chart of clustering quality scores
+- **Silhouette analysis**: Per-sample silhouette scores visualization
+- **Embedding coverage**: Space coverage visualization with convex hull
+- **Outlier visualization**: Highlight outliers in 2D/3D space
+- **Dimensionality analysis**: Explained variance plots, effective dimensions
+- **Cluster size distribution**: Distribution of cluster sizes
+- **Similarity network**: Network graph of high-similarity pairs
+
+### Export Capabilities
+- **Statistics export**: JSON and CSV formats
+- **Validation reports**: Comprehensive validation results in JSON
+- **Clustering metrics**: Quality metrics in JSON and CSV formats
+
+**Requirements:**
+- Ollama server running (`ollama serve`)
+- Embedding model installed (`ollama pull embeddinggemma`)
+- At least 2 papers with extracted text
+
+**Output files (embedding analysis):**
+- `embeddings.json` - Document embeddings
+- `embedding_similarity_matrix.csv` - Similarity matrix
+- `embedding_clusters.json` - Cluster assignments
+- `embedding_validation_report.json` - Validation results
+- `embedding_statistics.json` - Comprehensive statistics (JSON)
+- `embedding_statistics.csv` - Comprehensive statistics (CSV)
+- `clustering_metrics.json` - Clustering quality metrics (JSON)
+- `clustering_metrics.csv` - Clustering quality metrics (CSV)
+- `embedding_quality.png` - Quality metrics visualization
+- `similarity_distribution.png` - Similarity histogram
+- `embedding_coverage.png` - Space coverage visualization
+- `dimensionality_analysis.png` - Dimensionality plots
+- `embedding_outliers.png` - Outlier visualization (if outliers detected)
+- `embedding_similarity_heatmap.png` - Similarity heatmap
+- `similarity_network.png` - Similarity network graph (for smaller collections)
+- `cluster_quality_metrics.png` - Clustering metrics bar chart
+- `silhouette_analysis.png` - Silhouette plot
+- `cluster_size_distribution.png` - Cluster size distribution
+- `embedding_clusters_2d.png` - 2D cluster visualization
+- `embedding_clusters_3d.png` - 3D cluster visualization (if ≥3 papers)
+
 ## Output Files
 
 Meta-analysis outputs are saved to `data/output/`:
 
+### Standard Analysis (always generated)
 - `publications_by_year.png` - Publication timeline
 - `keyword_frequency.png` - Keyword frequency plot
 - `keyword_evolution.png` - Keyword evolution plot
@@ -145,6 +232,26 @@ Meta-analysis outputs are saved to `data/output/`:
 - `pca_3d.png` - 3D PCA visualization
 - `meta_analysis_summary.json` - Summary data
 - `meta_analysis_summary.md` - Text summary
+
+### Embedding Analysis (only with --with-embeddings)
+- `embeddings.json` - Document embeddings
+- `embedding_similarity_matrix.csv` - Similarity matrix
+- `embedding_clusters.json` - Cluster assignments
+- `embedding_validation_report.json` - Validation results
+- `embedding_statistics.json` / `.csv` - Comprehensive statistics
+- `clustering_metrics.json` / `.csv` - Clustering quality metrics
+- `embedding_quality.png` - Quality metrics visualization
+- `similarity_distribution.png` - Similarity histogram
+- `embedding_coverage.png` - Space coverage visualization
+- `dimensionality_analysis.png` - Dimensionality plots
+- `embedding_outliers.png` - Outlier visualization (if detected)
+- `embedding_similarity_heatmap.png` - Similarity heatmap
+- `similarity_network.png` - Similarity network graph
+- `cluster_quality_metrics.png` - Clustering metrics bar chart
+- `silhouette_analysis.png` - Silhouette plot
+- `cluster_size_distribution.png` - Cluster size distribution
+- `embedding_clusters_2d.png` - 2D cluster visualization
+- `embedding_clusters_3d.png` - 3D cluster visualization
 
 ## Configuration
 
@@ -173,6 +280,8 @@ keyword_data = extract_keywords_over_time(
 2. **Keyword selection** - Use relevant keywords for focused analysis
 3. **Year filtering** - Filter by relevant time periods
 4. **Visualization review** - Review generated visualizations for insights
+5. **Embedding analysis** - Use option 6.2 (with embeddings) for semantic similarity analysis. Requires Ollama and extracted text from PDFs.
+6. **Standard analysis** - Use option 6.1 (standard) for faster analysis without LLM dependencies
 
 ## See Also
 

@@ -251,8 +251,8 @@ This report documents a comprehensive review of the literature search and manage
   - test_library_index.py
   - test_literature_cli_simple.py
   - test_literature_cli.py
-  - test_literature_integration_real.py
-  - test_llm_operations_real.py
+  - test_literature_integration.py
+  - test_llm_operations.py
   - test_llm_operations.py
   - test_logging.py
   - test_meta_analysis.py

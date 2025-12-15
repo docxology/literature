@@ -395,7 +395,8 @@ engine = SummarizationEngine(
     quality_validator=validator,  # Optional: custom validator
     context_extractor=extractor,   # Optional: custom extractor
     prompt_builder=builder,        # Optional: custom builder (auto-detects model size)
-    max_pdf_chars=None            # Optional: None = auto-detect from model size
+    max_pdf_chars=None,           # Optional: None = auto-detect from model size
+    config=None                   # Optional: LiteratureConfig (created from env if None)
 )
 ```
 
@@ -736,6 +737,7 @@ if not result.success:
 **Properties:**
 - `quality_validator` - Quality validator instance
 - `max_pdf_chars` - Maximum PDF characters to process
+- `config` - Literature configuration (used for library index updates)
 
 ### MultiStageSummarizer
 

@@ -68,8 +68,9 @@ show_help() {
     echo "5. LLM-Based Analysis (Ollama Local LLM):"
     echo "  5.1  LLM operations (prompts for: summarize, literature review, comparisons, etc.)"
     echo
-    echo "6. Meta-Analysis of Library (No LLM):"
-    echo "  6.1  Run meta-analysis (bibliographic, citations, PCA, word use, etc.)"
+    echo "6. Meta-Analysis of Library:"
+    echo "  6.1  Run meta-analysis on existing library (bibliographic, citations, PCA, word use, etc.)"
+    echo "  6.2  Run meta-analysis with embeddings on existing library (includes 6.1 + Ollama semantic analysis)"
     echo
     echo "7. Clear Library Entirely:"
     echo "  7.1  Clear library (removes all entries, PDFs, summaries, BibTeX, progress files)"

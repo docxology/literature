@@ -47,8 +47,9 @@
 #      4.3 Both (download then extract)
 #   5. LLM-Based Analysis (Ollama Local LLM)
 #      5.1 LLM operations (prompts for: summarize, literature review, comparisons, etc.)
-#   6. Meta-Analysis of Library (No LLM)
-#      6.1 Run meta-analysis (bibliographic, citations, PCA, word use, source clarity, full text availability)
+#   6. Meta-Analysis of Library
+#      6.1 Run meta-analysis on existing library (bibliographic, citations, PCA, word use, source clarity, full text availability)
+#      6.2 Run meta-analysis with embeddings on existing library (includes 6.1 + Ollama semantic analysis)
 #   7. Clear Library Entirely
 #      7.1 Clear library (removes all entries, PDFs, summaries, BibTeX, progress files)
 #

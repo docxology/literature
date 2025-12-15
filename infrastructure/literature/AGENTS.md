@@ -1273,7 +1273,6 @@ The `meta_analysis/` module provides comprehensive analysis and visualization to
 **Metadata Visualization** (`metadata.py`):
 - Venue distribution
 - Author contributions
-- Citation distribution
 - Source statistics
 
 **PCA Analysis** (`pca.py`):

@@ -274,7 +274,8 @@ engine = SummarizationEngine(
     quality_validator=validator,  # Optional: custom validator
     context_extractor=extractor,   # Optional: custom extractor
     prompt_builder=builder,        # Optional: custom builder (auto-detects model size)
-    max_pdf_chars=None            # Optional: None = auto-detect from model size
+    max_pdf_chars=None,           # Optional: None = auto-detect from model size
+    config=None                   # Optional: LiteratureConfig (created from env if None)
 )
 ```
 
