@@ -26,7 +26,7 @@ results = source.search("machine learning", limit=10)
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
 - [`../AGENTS.md`](../AGENTS.md) - Literature module overview
 
 

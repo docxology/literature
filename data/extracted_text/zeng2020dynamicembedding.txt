@@ -1,0 +1,1334 @@
+DynamicEmbedding: Extending TensorFlow for
+Colossal-Scale Applications
+Yun Zeng
+Google
+xzeng@google.com
+Siqi Zuo
+Google
+siqiz@google.com
+Dongcai Shen
+Google
+dongcai@google.com
+Abstract
+One of the limitations of deep learning models with sparse features today stems
+from the predeﬁned nature of their input, which requires a dictionary be deﬁned
+prior to the training. With this paper we propose both a theory and a working
+system design which remove this limitation, and show that the resulting models are
+able to perform better and efﬁciently run at a much larger scale. Speciﬁcally, we
+achieve this by decoupling a model’s content from its form to tackle architecture
+evolution and memory growth separately. To efﬁciently handle model growth, we
+propose a new neuron model, called DynamicCell, drawing inspiration from from
+the free energy principle [ 15] to introduce the concept of reaction to discharge
+non-digestive energy, which also subsumes gradient descent based approaches as
+its special cases. We implement DynamicCell by introducing a new server into
+TensorFlow to take over most of the work involving model growth. Consequently, it
+enables any existing deep learning models to efﬁciently handle arbitrary number of
+distinct sparse features (e.g., search queries), and grow incessantly without redeﬁn-
+ing the model. Most notably, one of our models, which has been reliably running
+in production for over a year, is capable of suggesting high quality keywords for ad-
+vertisers of Google Smart Campaigns [37] and achieved signiﬁcant accuracy gains
+based on a challenging metric – evidence that data-driven, self-evolving systems
+can potentially exceed the performance of traditional rule-based approaches.
+1 Introduction
+“And while growth is a somewhat vague word for a very complex matter, ... it deserves to be studied in relation to
+form: whether it proceed by simple increase of size without obvious alteration of form, or whether it so proceed
+as to bring about a gradual change of form and the slow development of a more or less complicated structure.”
+— D’Arcy Wentworth Thompson in On Growth and Form
+1.1 Motivation
+Big data applications are facing an increasingly large and diverse set of potential inputs for their machine
+learning models. Existing libraries for deep learning (e.g., [1, 5, 22, 31]) mostly focus on minimizing certain loss
+functions deﬁned by static models, leading to challenges of implementing models that can grow and self-evolve
+(e.g., [ 34]). While there is increasing popularity of the automatic process of searching for optimal neural network
+architectures [48] or model evolutions [38], the process for a model to grow is usually ignored. In this paper,
+we introduce a system called DynamicEmbedding that is capable of growing itself by learning from potentially
+unlimited novel input, which could be useful in scenarios where focusing on the most frequently occurring data
+may still discard too much useful information.
+To understand a fundamental limitation among existing designs of deep learning libraries, let us consider a simple
+example of training a skip-gram model [27] (a.k.a., Word2Vec) based on new articles that emerge everyday from
+Preliminary White Paper. Work in progress.
+arXiv:2004.08366v1  [cs.AI]  17 Apr 2020
+online newspapers. The training instances here for the model are tuples of words that are next to each other
+(cooccurrences), and the desired outcome is a mapping from each word to a vector space (or embedding) in
+which semantically similar words are close to each other. A common pre-processing step for implementing the
+Word2Vec algorithm is to deﬁne adictionary of variables that contains all the words whose embeddings should
+be learned. The requirement of a dictionary before training is what limits the model to grow, either into handling
+never seen words or into increasing the dimensionality of the embedding.
+1.2 Core claims
+In an attempt to search for a framework that better accommodates model growth, we start from a recent work [47]
+that treats input/output of a neural network layer as sufﬁcient statistics (embeddings) of certain distribution,
+and further connect it to the free energy principle [15] by proposing a new neuron model called DynamicCell.
+Intuitively, it allows a neural network layer to minimize its free energy by both regulating internal state and
+taking actions. In addition, when the input contains non-digestive energy, it also discharges it through reaction,
+in order to maintain a stable internal state. We show that this slight modiﬁcation to the free-energy principle
+allows us to connect it to traditional gradient descent based approaches. As a result, an input signal to a layer
+can be processed either continuously, or combinatorially. For example, when a novel input feature (e.g., a new
+word) is seen from the input, a layer could dynamically allocate an embedding for it and send it to upstream
+layers for further processing.
+To implement the above ideas, some major changes to TensorFlow [ 1] are needed. Speciﬁcally, a new set
+of operations are added to TensorFlow’s Python API to directly take symbolic strings as input, as well as
+to “intercept” the forward (upstream) and backward (downstream) signals when running a model. These
+operations then talk to a new server called DynamicEmbedding Service (DES) to process the content part of a
+model. During a forward execution of a model, these operations retrieve the underlying ﬂoating point values
+(embeddings) for their layer input from DES, and pass them to the layer output. Similarly during backward
+execution, the computed gradients or any other information, are passed into DES for updating internal states
+based on algorithms customizable by our users.
+In fact, DES plays a key role in expanding the capacity of TensorFlow, reﬂected in the following aspects:
+• Virtually unlimited capacity for embedding data : by collaborating with external storage systems
+such as Bigtable [10] or Spanner [11], it pushes a model’s capacity to the limit of storage1. In fact,
+our system is designed to be modular to work with any storage system that supports key/value data
+lookup/update.
+• Flexible gradient descent update : DES can keep global information about a layer, such as word
+frequencies or average gradient changes, to help it decide when to update an embedding. Gradient
+descent update is no longer a homogeneous process for every variable, and each layer can maintain
+their own “homeostasis” [35] by taking proper actions2. Meanwhile it is also guaranteed that our new
+system is backward compatible with any gradient descent optimizers (e.g., SGD [33], AdaGrad [14],
+Momentum [3]).
+• Efﬁciency: Computational/memory load on DES is automatically distributed into its worker machines
+in the cloud. Training speed is proportional to the number of Tensorﬂow workers, and model capacity
+is decided by the number of DynamicEmbedding workers.
+• Reliability: With DES, a TensorFlow model becomes very small as most data are saved to external
+storage like Bigtable. Therefore training a large model becomes resilient to machine failures that are
+due to exceeded resources (memory or CPU).
+• Inherent support for transfer or multitask learning: By taking the embedding data out of TensorFlow,
+multiple models can share the same layer, simply by using the same operation name and DES
+conﬁguration. Therefore, model sharing becomes a norm rather than an option3.
+Our DynamicEmbedding system has been proven to be particularly important in large-scale deep learning
+systems, and has been robustly running in multiple applications for more than one year. Its implementation
+guarantees that a TensorFlow model with DynamicEmbedding runs at least as fast as without it (assuming
+sufﬁcient reliability in the remote storage system), with additional beneﬁts like much bigger capacity, less
+code to write, and much less data pre-processing work. The major overhead for our engineers to switch to
+1Among our internal communications with multiple teams inside Google, what most engineers are excited
+about our system is its ﬂexibility in training a model directly on Bigtable, or any other external storage.
+2According to the free-energy principle [ 15], homeostasis is a biological system’s resistance to disorder,
+carried out by an active inference process to minimize surprises. Our systems allows each layer (neuron) to take
+its own actions to maintain its “homeostasis”.
+3Note that TensorFlow’s TF Hub component can also achieve similar goal.
+2
+TensorFlow API
+ DynamicEmbedding Master
+- dynamic_embedding lookup()
+- compute_sampled_logits()
+- save(), restore()
+   . . .
+- Lookup(), Update()
+- Sample()
+- Export(), Import()
+   . . .
+DynamicEmbedding Worker
+Candidate Sampling
+Embedding Store
+Gradient Update
+DynamicEmbedding Service
+Figure 1: DynamicEmbedding system overview. It extends the capacity of TensorFlow by introducing a few
+new APIs to process id-to-dense or dense-to-id operations directly without requiring a dictionary. These APIs
+talk to DynamicEmbedding Master during forward and backward executions of a TensorFlow computation
+graph, which in turn divide the work and distribute them into different DynamicEmbedding Workers.
+DynamicEmbedding is the new APIs to learn and conﬁguration details for external storages like Bigtable or
+Spanner, which we are trying to simplify as much as possible.
+In the past two years since our system was launched, we have migrated many popular models, especially those
+involving sparse features before training, to enjoy the beneﬁt of continual growth from input. For example,
+with upgraded Google Inception model for image annotation [39], it can learn from labels obtained from the
+enormous search queries; with upgraded Google Neural Machine Translation (GNMT) model for translation [46],
+it has been applied for translating sentences into ad descriptions, in multiple languages; our upgraded Word2Vec
+model now keeps mapping an ever growing repository of search queries into their embedding space, allowing us
+to quickly ﬁnd semantically similar queries to any root query, in any language.
+By adopting DynamicEmbedding, we ﬁnd training a single model without much data pre-processing is sufﬁcient
+to achieve satisfactory performance. In particular, one of our sparse feature models for suggesting keywords
+from website content (in any languages) achieved highly accurate results compared to other rule-based systems –
+an evidence that by allowing a system to self-evolve driven by data, it is possible to quickly outperform those
+that are evolved by human tunings.
+System overview Fig. 1 illustrates an overview of our extended components added to TensorFlow. The
+overall goal is to let existing TensorFlow APIs only handle the static (form) part of a model: deﬁning nodes,
+their connections and passing data between them, and hand the task of trainable variable lookup/update/sample
+to our DynamicEmbedding Service (DES) to allow them be constructed and grow dynamically. Besides, we also
+need to deﬁne a new set of Python APIs that directly take string Tensors as input and output their embeddings,
+or vice versa 4. These TensorFlow APIs directly talk to a component called DynamicEmbedding Master (DEM),
+which in turn distributes the actual job into DynamicEmbedding Workers (DEWs). DEWs are responsible
+for embedding lookup/update/sample, communicating to external cloud storage such as Bigtable or Spanner,
+updating embedding values based on various gradient descent algorithms to be backward compatible, etc.
+Paper organization The rest of this paper is organized as follows: we ﬁrst introduce our new neural network
+model in Sec. 2; The design and implementation details of DynamicEmbedding are discussed next, including its
+TensorFlow APIs (Sec. 3.1) and various components of DynamicEmbedding Service (Sec. 3.2); Results from
+real-world applications are demonstrated in Sec. 4; Finally, we conclude our work in Sec. 5.
+2 Mathematical Formulation
+A basic idea in the free energy principle stipulates that a biological system tends to minimize “surprise” that is
+deﬁned as log 1
+P(s|m) , where sis current internal and external state of a system and mis an internal model that
+explains s. We can connect such an idea to neural networks, by redeﬁning “surprise” as the difference (measured
+by KL-divergence) between a system’s state distribution with and without its contextual input, denoted asP(w|c)
+and P(w), respectively5. Compared to the original formulation mentioned above, our new treatment can be
+implemented at a cell level, and eliminates the need for an internal, predictive model mto explain state s, which
+itself can be a complex process. We will show that the back-propagation algorithm belongs to a general process
+of free-energy minimization in the embedding space, which brings a new outlook to the artiﬁcial neural network
+4Previously this needs to be done by ﬁrst deﬁning ﬂoating variables for these string input/output.
+5For example, if cdenotes very low temperature felt from the environment by a dog, its internal state would
+change dramatically to protect itself from freezing (a death threat). A big difference between P(w) and P(w|c)
+would cause a biological system either adjust itself to adapt to the environment (e.g., by growing more fur), or
+take actions to change the sensory input (e.g., by migrating to a warmer place).
+3
+(ANN) as we know it: an ANN is a group of inter-connected neurons minimizing it own free energy6. In the rest
+of this section, we will explain in details our new treatment of neural networks and starting from next section, we
+will show the practical impact brought by it, i.e., a new system design and improved performance in real-world
+applications.
+2.1 Exponential family, embedding and artiﬁcial neural networks
+The idea of using neural networks to represent the embeddings of sparse features has been widely explored in
+language related models [4, 27]. In essence, a layer in a neural network is nothing but a representation of the
+sufﬁcient statistics of its variables for a certain distribution P(w1,...,w n|c1,...,c m). [47] further generalizes
+such an idea to connect with many existing deep neural network models by considering their probabilistic forms,
+and derived a new equation in the embedding space that takes into account the relevance of contextual input
+to the output. For example, a layer in a neural network can be regarded as a representation of the distribution
+P(w|c) in the embedding space, where cis the contextual input to the layer and wis the output. By further
+assuming P(w|c) ∝exp(⟨⃗ w,⃗ c⟩)7, where ⃗ wand ⃗ crepresent the embeddings of wand c, respectively, then a
+layer simply computes ⃗ wbased on ⃗ c.
+This challenges the conventional wisdom that neurons communicate with each other based on single action
+potentials, represented as 1D functions (either binary or continuous). Instead, it favors a more realistic view
+that neurons actually communicate by their ﬁring patterns [ 9, 20], such that a single neuron does not just
+communicate one single bit. [47] employs probability as a universal language for describing the distributions of
+the ﬁring patterns, and uses embeddings (sufﬁcient statistics) to represent their approximate forms.
+One obvious advantage of this alternative view of deep neural networks is modeling power, as already demon-
+strated in [47]. Nevertheless, if we narrowly conﬁne AI to deﬁning compositions of activation functions, no
+matter how much meaning we give to them, they always fall into solving problems with very similar forms:
+min
+θ={θ1,...,θn}
+∑
+x∈D
+L(x,θ) ≡
+∑
+x∈D
+f1(f2(...f n(x,θn),... ; θ2),... ; θ1),n ∈N, (1)
+where Ddenotes the whole or a mini-batch of training data. The gradients of Eq. 1 can be computed by applying
+the chain rule to the learnable parameter set θi for each fi,i = 1,...,n :
+∂L(x,θ)
+∂θi
+= ∂L(x,θ)
+∂fi
+∂fi
+∂θi
+= ∂L(x,θ)
+∂f1
+∂f1
+∂f2
+... ∂fi−1
+∂fi
+∂fi
+∂θi
+(2)
+The algorithm for computing the gradients values of ∂L(x,θ)
+∂fi
+and ∂L(x,θ)
+∂θi
+recursively from f1 down to fn is
+called back-propagation. Deﬁning a loss function then solving it by the back-propagation algorithm is now a de
+facto approach in artiﬁcial neural networks.
+From the above process, one can see that nothing prevents us from changing the dimensions of xor θi,i ∈
+{1,2,...,n }if the back-propagation algorithm is run on one batch at a time. However, the designs of existing
+deep learning libraries have not considered this as an essential feature. In the rest of this section, we propose a
+new framework that accounts for model growth.
+2.2 Need for growth
+A basic requirement for an intelligent system (biological or artiﬁcial) is the ability to process novel information
+from sensory input. When handling a novel input in a neural network, it is necessary to convert it into a
+representation that can be processed by a loss function like Eq. 1 with x ∈Rm. In particular, if the input
+involves discrete objects such as words, it is necessary to map them to an embedding space ﬁrst. A naive
+explanation for this necessity is from a neural network point of view: a discrete input ccan be represented as
+a characteristic (one-hot) vector ⃗ c0/1 = [0,..., 1,..., 0]T, and through a linear activation layer it becomes
+W⃗ c0/1 = Wi, where Wi represents the ith column of the real matrix W, or equivalently,c’s embedding. Such
+an interpretation can explain what limits the implementations of deep neural networks with sparse input values
+and why a dictionary is always needed (i.e., a dictionary essentially deﬁnes W).
+In practice, the dimension of the characteristic vector ⃗ c0/1 (i.e., number of columns in W) can grow to be
+arbitrarily large and the embedding dimension (i.e., number of rows in W) should also grow accordingly. To see
+why the embedding dimension should grow, we resort to the sufﬁcient statistics point of view for neural network
+layers [47] and a basic fact that the value for each dimension of an embedding must be bounded 8. This said,
+6To some extent, this hints why a life’s form can range from prokaryotes (single-celled organism) to complex
+ones like sapiens – any number of self-interested, surprising minimizing cells can form a life if they can improve
+the overall survival rate. Therefore, a corporate like Google, is also a form of life, as suggested in [17].
+7From the most general form P(w|c) ∝exp(E(⃗ w,⃗ c)) and the Taylor’s theorem for multivariable func-
+tions [2], one can always approximate P(w|c) by exp(⟨⃗ w,⃗ c⟩)/Z(⃗ c) where ⃗ wmay also depend on ⃗ c.
+8This is true for both machines, whose ﬂoating point representation is bounded by number of bits (e.g., 64),
+and biological systems, whose voltage or ﬁring frequency of signals cannot exceed certain bound (E = mc2).
+4
+c w
+wc
+Internal State Change
+Downstream Reaction
+Embedding GrowthReaction Feedback
+ActionInput
+Upstream Action Change
+InternalDownstream Upstream
+Figure 2: In our DynamicCell model, we build a basic unit of life (cell) by introducing reaction into the free
+energy principle. A basic activity of life is still to maintain its homeostasis. In addition, it should also “react” to
+unexpected input as a way to discharge the excessive energy that cannot be processed by changing internal states
+or actions. For example, laughing and crying are means to discharge good and bad surprises, respectively, which
+by themselves do not contribute to survival. In other words, life reacts.
+let us assume a layer of neural network represent the distribution P(w|c) ∝exp(⟨⃗ w,⃗ c⟩). Then two inputs c1
+and c2 are considered different, if their corresponding distributions are sufﬁciently apart from each other. Let
+Pc1 (w) ≡P(w|c1) and Pc2 (w) ≡P(w|c2), this can be represented as
+DKL(Pc1 ||Pc2 ) ≡
+∫
+w
+P(w|c1)log P(w|c1)
+log P(w|c2) >δ, (3)
+where DKL(P|Q) denotes the KL-divergence between two distributions P and Q, and δ >0 is a threshold. By
+substituting the embedding form of P(w|c), i.e., P(w|c) ∝exp(⟨⃗ w,⃗ c⟩), into the above equation, we obtain:
+DKL(Pc1 ||Pc2 ) ∝
+∫
+w
+P(w|c1)⟨⃗ w,⃗ c1 −⃗ c2⟩. (4)
+Geometrically, it computes an average length of the vector ⃗ walong the direction ⃗ c1 −⃗ c2. Since the length of ⃗ c
+is bounded, the only way to always satisfy the inequality of Eq. 3 when the number of distinct cincreases is
+to increase the dimensions of ⃗ cand ⃗ w. Intuitively, it simply says that in order to ﬁt more objects in a bounded
+space such that they are sufﬁcient far apart from each other, one would have to expand to higher dimensions.
+2.3 A new neuron model: DynamicCell
+Now that we have addressed why an AI system should grow, another imperative question is how: how come
+a group of neurons, connected to each other only through input/output signals, work together to achieve an
+overall state of survival? An ideal neuron model should not just explain how a single cell works, but also be
+generalizable to groups of cells (organisms), or even to groups of organisms. Even better, it should also explain
+the success of existing approaches widely used in deep learning, e.g., the back-propagation algorithm.
+2.3.1 Motivations from free energy principle
+The free energy principle [15] developed for understanding the inner workings of the brain provides us with
+some clues on how to build a more uniﬁed model for neural network learning. In essence, it assumes a biological
+system is enclosed by a Markov blanket that separates the internal state from the external environment, and
+communications only occur through the sensory input and actions. The overall goal of the biological system is
+to maintain a stable state (homeostasis), both internally and externally, or mathematically, to minimize the free
+energy (surprises) from inside and outside.
+However, if an organism, enclosed by a Markov blanket, can only minimize the free energy through changing
+internal states and/or interacting with the environment, what if both means failed? For example, when a person
+heard about a tragic news and there is no action can be taken, changing internal state can only disrupt the
+homeostasis of a body. Also from physics point of view, if information and energy are interchangeable [ 41]
+and the total energy is conserved, the discharge of excessive, non-digestive energy is also an essential way of
+maintaining homeostasis.
+Hence, we can simply improve the idea of free energy principle by including reaction into the picture (Fig. 2),
+which is essential according to the law of conservation of energy in physics. In our new model, each cell or
+a group of them (organism) can act according to the same principle: minimize the free energy (surprise from
+input ⃗ c) through change of internal states and/or actions, and the excessive non-digestive energy that cannot be
+minimized is discharged via reaction. Here the action signal ⃗ wis received by other upstream cells inside the
+same Markov blanket, and can only affect upstream feedback
+ 
+w. Note that the action signal ⃗ where is different
+from physical actions taken by an organism to interact with the environment. Under our model, physical actions
+can be activated either by upstream signal ⃗ w(e.g., to motor neurons) to do useful work (e.g., running away from
+threats), or by downstream signal
+ 
+c to discharge extra surprises (e.g., via laughing or crying).
+5
+2.3.2 Formulation
+To formulate the above ideas in a mathematical form, we resort to [47] again as a starting point for building a
+new neuron model. Overall, a neuron represents the distribution P(w|c) and according to [47], its input and
+output signals can be approximately represented by their embeddings, e.g., P(w|c) = 1
+Z(⃗ c) exp(⟨⃗ w,⃗ c⟩) where
+⃗ wmay depend on ⃗ c, and Z(⃗ c) =∑
+⃗ wexp(⟨⃗ w,⃗ c⟩). Given this assumption, we can represent the minimization
+of free energy, or surprise, into two parts: internal and external.
+Internal state homeostasis The stability of a cell’s internal state is reﬂected in the action state ⃗ win Fig. 2.
+The long-term behavior of a cell should be independent of its context c(context-free) and therefore can be
+represented as the distribution P⃗ w≡P(w). Hence the free energy, or surprise, on the internal state of a cell
+from a given input ccan be simply represented as
+DKL(P⃗ w||Pc) =
+∑
+x
+P⃗ w(x) logP⃗ w(x)
+P(x|c), (5)
+and surprise minimization means adjusting internal parameters of P(w|c) such that P(w|c) ≈P(w). To see
+how surprise minimization can be implemented in the embedding space, let us apply the sufﬁcient statistics
+representation of P(w|c) and rearrange Eq. 5 as follows:
+DKL(P⃗ w||Pc) =−
+∑
+x
+P⃗ w(x)⟨⃗ w,⃗ c⟩+ logZ(⃗ c) −H(P⃗ w) (6)
+where H(·) denotes the entropy of the given distribution and should be relatively stable. To minimize Eq. 6, a
+cell needs to reach a state where the gradient of DKL(P⃗ w||Pc) with respect to input cis zero:
+∂DKL(P⃗ w||Pc)
+∂⃗ c = 0⇔−
+∑
+x
+P⃗ w(x)∂⟨⃗ w,⃗ c⟩
+∂⃗ c+ ∂log Z(⃗ c)
+∂⃗ c ≈0
+⇔⟨⃗ w⟩Pc ≈⟨⃗ w⟩P⃗ w (7)
+where we assume ∂⟨⃗ w,⃗ c⟩/∂⃗ c≈⃗ w. Note that this is similar in form as the contrastive divergence algorithm [19],
+though they are derived based on completely different assumptions ([19] assumes a neuron outputs 0/1 action
+potentials whereas in our case a neuron outputs the embedding that represents the distribution of its ﬁring
+patterns).
+Upstream state homeostasis The difference between upstream and downstream is that the state of the
+former is expected to be stable9. To measure the stability of upstream states, one can treat the whole complex
+process of information processing in the upstream as a blackbox and simply measure its deviation from usual
+distribution, namely:
+DKL(P w||P⃗ w) =
+∑
+x
+P w(x) log P w(x)
+P(x|w), (8)
+where P w represents the distribution of the upstream feedback signal
+ 
+w(Fig. 2). Similar to Eq. 7, we can obtain
+the condition for stable upstream state as:
+∂DKL(P w||P⃗ w)
+∂⃗ w = 0⇔⟨
+ 
+w⟩P⃗ w≈⟨
+ 
+w⟩P w
+. (9)
+Hence by changing internal state of P(w|c), a cell can optimize both Eq. 6 and Eq. 8 to minimize its overall
+surprise. An equilibrium is a balance between internal state and actions.
+Reaction From the above analysis, the free energy is minimized when both Eq. 7 and 9 are satisﬁed. However,
+it is a natural tendency for the entropy of the overall state of a system to increase, so an enclosed organic
+system should expect constant upcoming surprises from the input. When these surprises cannot be minimized by
+changing internal states (Eq. 7) or taking actions (Eq. 9), they must be discharged out of the system in some way,
+i.e., through reaction
+ 
+c. For example, one choice of the total additional energy can be represented as
+ 
+c ≈(|⟨
+ 
+w⟩P w
+−⟨
+ 
+w⟩P⃗ w|2 + |⟨⃗ w⟩P⃗ w−⟨⃗ w⟩Pc |2)/2 ≥(⟨
+ 
+w⟩P w
+−⟨
+ 
+w⟩P⃗ w) ◦(⟨⃗ w⟩P⃗ w−⟨⃗ w⟩Pc ), (10)
+where |·| 2 represents the element-wise square and ◦is also an element-wise product. In the following, we
+will see that this form is chosen purely for the convenience of connecting it to gradient descent update for loss
+functions. There exists many other possibilities in deﬁning reaction, which is not a major focus of this paper.
+9From the point of view of behavioral psychology, this is consistent with an organism’s natural tendency to
+distinguish “us” from “them” [36].
+6
+Connection to gradient descent update Finally, let us take a look at how the above process subsumes
+conventional loss minimization using gradient descent as its special case. To see this, we can simply wire the
+action signal ⃗ wto a loss function L(⃗ w) and let
+ 
+wreturn the evaluation of the loss (i.e.,
+ 
+w= L(⃗ w)). From the
+above relations and by taking the ﬁnite difference step to be 1 in gradient approximation, we obtain
+∂DKL(P⃗ w||Pc)
+∂⃗ c ≈⟨⃗ w⟩P⃗ w−⟨⃗ w⟩Pc ≈∂⃗ w
+∂⃗ c (11)
+∂DKL(P w||P⃗ w)
+∂⃗ w ≈⟨
+ 
+w⟩P w
+−⟨
+ 
+w⟩P⃗ w≈⟨L(⃗ w)⟩P w
+−⟨L(⃗ w)⟩P⃗ w≈∂L(⃗ w)
+∂⃗ w (12)
+Finally, from Eq. 10, we arrive at the familiar form of gradient:
+ 
+c ≈∂L(⃗ w)
+∂⃗ w·∂⃗ w
+∂⃗ c= ∂L
+∂⃗ c (13)
+This is consistent with progresses in cognitive science that real brains actually do some form of back-
+propagations [44].
+3 System Design
+3.1 Tensorﬂow API Design
+Recall that now each layer/neuron in a neural network is considered to represent certain distribution P(w|c) in
+the embedding space with cas the input and wthe output. For intermediate layers between input and output, c
+is already represented as an embedding ⃗ cand one only needs to deﬁne a function that computes ⃗ w. In such a
+case, we can just use the same computational graph in TensorFlow for forward (Input and Action in Fig. 2) and
+backward (Feedback and Reaction in Fig. 2) executions, and non-gradients based update can be achieved via
+slight changes to the function tf.gradients. For example, a typical DynamicCell node can be deﬁned as
+1 d e f m y _ c e l l _ f o r w a r d ( c ) :
+2 " " " R e t u r n s a c t i o n w" " "
+3
+4 @ops . R e g i s t e r G r a d i e n t ( " MyCellForward " )
+5 d e f my_cell_backward ( op , w_feedback ) :
+6 " " " R e t u r n s r e a c t i o n c _ f e e d b a c k " " "
+However, special cares are needed when one ofwand cinvolves sparse features (e.g., words), as it may happen at
+the input or output layer (e.g., a softmax output layer that predicts a word). Existing TensorFlow implementation
+always requires a dictionary and string-to-index conversions (e.g., via tf.nn.embedding_lookup or tf.math.top_k),
+which is incompatible with our philosophy that the users only need to deﬁne the form of P(w|c) without
+worrying about its content. In fact, these input/output operations are the key to enabling Tensorﬂow to handle
+ever-growing distinct input/output values by transferring the job of content processing to DynamicEmbedding
+service (DES). In addition, to let Tensorﬂow seamlessly work with DES, we use a single protocol buffer to
+encode all the conﬁgurations, which is represented as the input argument de_conﬁg in our Tensorﬂow APIs.
+3.1.1 Sparse input
+As mentioned above, allowing TensorFlow to directly take any string as input can be very beneﬁcial. Here we
+call the process to convert any string input into its embedding dynamic embedding, with its TensorFlow API
+deﬁned as
+1 d e f dynamic_embedding_lookup ( keys , d e _ c o n f i g , name ) :
+2 " " " R e t u r n s t h e embeddings o f g i v e n keys . " " "
+where keys is a string tensor of any shape, andde_conﬁg contains the necessary information about the embedding,
+including the desired embedding dimension, initialization method (when the key is ﬁrst seen), and storage of the
+embedding, etc. Also the name and the conﬁg can uniquely identify the embedding to facilitate data sharing.
+3.1.2 Sparse output
+When a neural network outputs sparse features, it is usually used in an inference problem: arg maxwP(w|c),
+where cis input from previous layer, represented as ⃗ cin a neural network. According to Sec. 2.1, if we assume
+P(w|c) ∝exp(⟨⃗ w,⃗ c⟩) where ⃗ wis the embedding of w, then arg maxwP(w|c) = arg maxw⟨⃗ w,⃗ c⟩, which is
+simply the closest point (measured by the dot product) to the input query ⃗ camong the embeddings of all the
+values of w. In fact, the softmax function that is commonly used in neural network is closely related to our
+7
+formulation. To see this, let us assume the set of all possible values of wto be W, and ∀a∈W, the softmax
+probability can be represented as
+P(w= a|c) = exp(⃗ cT ⃗ wa + ba)∑
+k∈Wexp(⃗ cT ⃗ wk + bk) =
+exp(⟨
+[
+⃗ c
+1
+]
+,
+[
+⃗ wa
+ba
+]
+⟩)
+∑
+k∈Wexp(⟨
+[
+⃗ c
+1
+]
+,
+[
+⃗ wk
+bk
+]
+⟩)
+, (14)
+which falls into our special case if we let dim(⃗ w) = dim(⃗ c) + 1where dim(·) denotes the dimension of a
+vector.
+However, when the number of elements in Wis very large, it is inefﬁcient to compute the cross entropy loss
+for softmax output as it requires the computation of Eq. 14 for all values of w. Fortunately, efﬁcient negative
+sampling method has already been well studied [21]. All we have to do is to support it in DES.
+Candidate negative sampling To allow potentially unlimited number of output values, we follow the
+implementation of tf.nn.sampled_softmax_loss to deﬁne an internal function that returns the logit values (⃗ cT ⃗ wk+
+bk,wk ∈Wsampled) of negative samples from given activation positive keys and⃗ c. The API can be deﬁned as
+1 d e f _ c o m p u t e _ s a m p l e d _ l o g i t s ( pos_keys , c , num_sampled , d e _ c o n f i g , name ) :
+2 " " " R e t u r n s sampled l o g i t s and keys from g i v e n p o s i t i v e l a b e l s . " " "
+Here num_sampled is a positive number and the sampling strategy is deﬁned in de_conﬁg.
+TopK retrieval Whereas candidate negative sampling is needed during training, during inference, we would
+like to compute arg maxwP(w|c) = arg maxw⟨⃗ w,⃗ c⟩as mentioned above, and in practice it is more common
+to retrieve the top-k nearest points to given input (e.g., for beam search in language inference). The interface for
+TopK retrieval is deﬁned as
+1 d e f t o p _ k ( c , k , d e _ c o n f i g , name ) :
+2 " " " R e t u r n s t o p k c l o s e s t l a b e l s t o g i v e n a c t i v a t i o n c . " " "
+Behind the scene, the function should call the DynamicEmbedding server to ﬁnd the keys whose embeddings are
+closest to
+[
+⃗ c
+1
+]
+.
+3.1.3 Saving/restoring models
+Finally, during model training, a model needs to be periodically saved. Since we have moved most of model data
+out of TensorFlow’s graph, it is important to maintain the consistency between the checkpoints saved by both
+TensorFlow and DynamicEmbedding. On the API side, each time a DynamicEmbedding related API is called,
+the corresponding embedding data information, uniquely identiﬁable by (name, de_conﬁg) should be stored
+in a global variable. Checkpoint saving/loading for DynamicEmbedding would be very similar to TensorFlow,
+namely,
+1 s a v e _ p a t h = s a v e ( path , c k p t )
+2 r e s t o r e ( s a v e _ p a t h )
+If the user uses the automatic training framework in TensorFlow, such as tf.estimator, saving/loading the model
+is automatically handled by our high-level APIs. But if they want to do it in a low level fashion, they will need
+to call the above functions along with TensorFlow’s corresponding I/O functions.
+3.1.4 A Word2Vec model with DynamicEmbedding
+In summary, the TensorFlow API change to support DynamicEmbedding is very straightforward, and the job for
+model construction is also simpliﬁed. As an example, a Word2Vec model can be deﬁned with only a few lines of
+code:
+1 t o k e n s = t f . p l a c e h o l d e r ( t f . s t r i n g , [ None , 1 ] )
+2 l a b e l s = t f . p l a c e h o l d e r ( t f . s t r i n g , [ None , 1 ] )
+3 emb_in = dynamic_embedding_lookup ( t o k e n s , d e _ c o n f i g , ’ emb_in ’ )
+4 l o g i t s , l a b e l s = _ c o m p u t e _ s a m p l e d _ l o g i t s ( l a b e l s , emb_in , 10000 ,
+d e _ c o n f i g , ’ emb_out ’ )
+5 c r o s s _ e n t = t f . nn . s o f t m a x _ c r o s s _ e n t r o p y _ w i t h _ l o g i t s _ v 2 ( l a b e l s , l o g i t s )
+6 l o s s = t f . reduce_sum ( c r o s s _ e n t )
+Note that the need for a dictionary is completely removed.
+8
+3.2 DynamicEmbedding Service Design
+As shown in Fig. 1, our DynamicEmbedding Service (DES) involves two parts: DynamicEmbedding Master
+(DEM) and DynamicEmbedding Workers (DEWs). The TensorFlow APIs deﬁned in the previous section only
+communicate with DEM, which in turn distributes the real work into different DEWs. To achieve both efﬁciency
+and ever growing model, each worker in DEWs should balance between local caching and remote storage. In
+this section, we discuss different aspects of DES in its current form.
+3.2.1 Embedding storage
+As discussed in Sec. 2, communications among neurons are represented as sufﬁcient statistics of their ﬁring
+patterns (embeddings), which are simply vectors of ﬂoating values. These ﬁring patterns are discrete in nature
+and can be represented by string ids. Hence the storage of these embedding data only involves (key, value) pairs,
+and not surprisingly, we use protocol buffer to facilitate data transfer and keep additional information for each
+embedding like string id, frequency, etc.
+When certain data is passed into a node deﬁned by our TensorFlow API, it would talk to DES to do the actual
+job. For example, during the forward pass of running the dynamic_embedding_look op (Sec. 3.1.1), a batch of
+strings are passed into a node in the computation graph of TensorFlow, and it in turn asks DEM to process the
+actual lookup job. During the backward pass, the feedback signal (e.g., gradients with respect to its output) is
+passed into the registered backward node and it also needs to talk to DEM for data update.
+To allow for scalable embedding lookup/update, we design a component called EmbeddingStore that is dedicated
+to communicating with multiple storage systems available inside Google. Each supported storage system
+implements the same interface with basic operations like Lookup(), Update(), Sample(), Import(), Export().
+For example, an InProtoEmbedding implements the EmbeddingStore interface by saving the whole data into
+a protocol buffer format, which can be used for local tests and training small data set. An SSTableEmbedding
+loads the data into the memories of DEWs during training and saves them to immutable but potentially very
+large ﬁles in Google File System (GFS) [16]. A BigtableEmbedding allows the data to be stored both in local
+cache and remote, mutable and highly scalable Bigtables [10]. therefore enabling fast recovery from worker
+failure as it does not need to wait until all the previous data are loaded before accepting new requests.
+3.2.2 Embedding update
+In our framework, embedding updates may happen during both forward and backward passes (Fig. 2). For the
+backpropagation algorithm, updates only occur when backward feedback with the information ∂L/∂warrives.
+To guarantee that our system is completely compatible with any existing gradient descent algorithms ( e.g.,
+tf.train.GradientDescentOptimizer or tf.train.AdagradOptimizer), we need to implement each of them inside
+DEWs. Fortunately, we can simply reuse the same code implemented in TensorFlow to guarantee consistency.
+One caveat is that many gradient descent algorithms, such as Adagrad [14], keeps global information about each
+value that should be consistent between gradient updates. In our case, this means we need additional information
+stored in the embedding.
+Long-short term memory When a learning system is capable of processing data that spans a long period
+(e.g., months or years), it is important to address the topic of long-short term memory since if certain features
+only show up momentarily or have not been updated for a long time, it may not help with inference accuracy.
+On the other hand, some momentary input may contains valuable information that needs special treatment, an
+unbiased learning system should be able to process those low frequency data. In the following, we propose two
+basic techniques for managing the lifetime of the embedding data.
+• Frequency cutoff: Each time an embedding is updated, a counter is incremented to record its update
+frequency. Therefore we can decide if this embedding should be saved to a permanent storage (e.g.
+Bigtable) based on a cutoff value on its frequency. For training that involves multiple epoches, it is
+TensorFlow’s job to tell if an example is seen for the ﬁrst time.
+• Bloom ﬁlter: Another popular approach that achieves similar effect of pruning off low frequency
+data, only more memory efﬁcient, is to use bloom ﬁlter [7]. We implemented this feature also for the
+purpose of compatibility with existing linear systems that can already handle large amount of data, but
+with much less complex models than deep networks.
+3.2.3 Top-k sampling
+During model inference, it is important to efﬁciently retrieve the top k closest embeddings from given input
+activation, where the distance is measured by dot product as shown in Sec. 3.1.2. This can be efﬁciently done both
+accurately and approximately for very large number of input (e.g. [45]). We employ existing implementations
+available inside Google to let each worker in DEWs returns its own top k embeddings to DEM. Assuming there
+9
+are nDEWs, then DEM would select the top-k closest points among the n×kcandidate vectors. This way,
+both accuracy and efﬁciency are guaranteed if k≪mwhere mis the total number of keys.
+3.2.4 Candidate sampling
+Sampling can be tricky if they are stored in remote storage such as Bigtable. This is why we need metadata
+to store the necessary information for us to efﬁciently sample candidates. At the very least we should support
+sampling strategies used by two existing Tensorﬂow ops: tf.nn.sampled_softmax_loss (based on a partition
+strategy) and tf.contrib.text.skip_gram_sample (based on frequency). If we want to achieve even better word
+embedding, higher order information such as PMI (probability of mutual information) or count of cooccurrence
+should also be computed or sampled accordingly ([30]). Therefore, these bookkeeping information needs to be
+processed during embedding lookup for efﬁcient sampling.
+Here we decide to re-implement candidate sampling in DES due to the following concerns: (i) It is not easy to
+reuse TensorFlow code as they assume every embedding has a unique index in an integer array. (ii) The original
+implementation does not consider multiple label output, due to the fact it separates true labels and sampled labels
+(To meet the constraint that all variables must be deﬁned before training, it requires number of true labels from
+the input such that each input must have exactly the same true labels. This is an overly strict requirement for
+many realistic, multiple-label training).
+In our new design, to still meet the requirement that the graph should be ﬁxed while allowing varying number of
+true_labels from each input, we simply merge positive and negative examples and let the user decide the value of
+num_samples. Our interface becomes:
+1 c l a s s C a n d i d a t e S a m p l e r {
+2 p u b l i c :
+3 s t r u c t S a m p l e d R e s u l t {
+4 s t r i n g i d ;
+5 b o o l i s _ p o s i t i v e ;
+6 f l o a t prob ;
+7 } ;
+8 s t d : : v e c t o r < SampledResult > Sample (
+9 c o n s t s t d : : v e c t o r < s t r i n g >& p o s i t i v e _ i d s , c o n s t i n t num_sampled ,
+10 c o n s t i n t r a n g e ) c o n s t ;
+11 } ;
+Therefore, our new candidate sampling also addresses a limitation in TensorFlow’s implementation, leading to
+better handling of multi-label learning.
+3.2.5 Distributed computation
+Distribution is straightforward given that each embedding data requires a unique string id as its lookup key
+(Sec. 3.2.1). Each time the DEM receives a request from the TensorFlow API it partitions the data based on their
+ids and distribute the work into different DEWs (lookup, update, sample, etc). Here each worker is responsible
+for a unique subset of the total universe of keys, and after recovered from machine failures, it should still
+be able to identify the subset of keys it is responsible for. This is possible with Google’s Borg system [ 43]
+as each worker inside a server can uniquely identify its own shard number. For example, when there are n
+workers, the ith worker (i= 0,1,...,n −1) would be responsible for those embeddings with keys satisfying
+mod(hash(key),n) =i. For efﬁcient candidate sampling, DEM should bookkeep metadata about each worker
+and decide the number of samples needed from each worker.
+3.2.6 Serving with scale
+Serving a TensorFlow model with DynamicEmbedding needs some special care since the embedding data need
+to be retrieved efﬁciently for large size (>100G). It is no longer feasible to ﬁt them in local machines. Therefore,
+besides the most straightforward serving by DynamicEmbedding service, we should also support more robust
+design to handle large embedding data. Towards robust model serving, the following two optimizations are
+considered.
+Sandbox mode During model serving, all the embedding data sources are known and the external storage is
+not updated. Therefore, it is reasonable that we provide some protection to prevent the server from serving other
+requests and accidentally update the storage. Also our training is usually done stage by stage to guarantee data
+quality by version control. The solution is to provide a sandbox mode for DynamicEmbedding server, using a
+few ﬂags to control the source of data. This way, no other training job is able to call the DynamicEmbedding
+server.
+10
+02468 10
+Training Steps 105
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8Loss
+TensorFlow
+GrowMind
+02468 10
+Training Steps 105
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7Loss
+TensorFlow
+GrowMind
+02468 10
+Training Steps 105
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7Loss
+TensorFlow
+GrowMind
+(a) SGD [33] (b) AdaGrad [14] (c) Momentum [3]
+Figure 3: (Best viewed in color) Comparison between TensorFlow and DynamicEmbedding in solving the
+same Word2Vec model on the same training dataset using different gradient descent algorithms, which veriﬁes
+DynamicEmbedding is backward compatible.
+Remote storage lookup with local cache If the training job has already saved the embedding data into a
+remote storage system, this scheme allows serving without starting any servers from DynamicEmbedding, i.e.,
+it becomes a standalone TensorFlow model. Speciﬁcally, a local process can play the role of DEM and each
+embedding lookup directly talks to remote storage system. Also the embedding data is stored in local cache,
+whose size depends on the available memory for TensorFlow jobs. To further reduce latency, it is important that
+we group a batch of keys into one single lookup call.
+4 Experimental Results
+Our DynamicEmbedding system is evaluated on a few aspects: (i) Backward compatibility with TensorFlow for
+gradient descent based models (Sec. 4.1); (ii) Model accuracy compared with models with limited dictionary
+size (Ses. 4.2); and (iii) System performance in terms of memory usage and training speed (Sec. 4.3). In the end,
+we will present a colossal-scale model for keyword targeting in Sec. 4.4.
+4.1 Backward compatibility with TensorFlow for gradient updates
+First of all, we would like to verify the correctness of our implementation by showing that our system is
+completely backward compatible with TensorFlow among gradient descent based tasks. Recall that DynamicEm-
+bedding not only takes care of the embedding lookup of each layer, but is also responsible for the embedding
+update, which includes gradient descent as its special case. From a library user’s perspective, this should not
+bring any difference between TensorFlow with and without DynamicEmbedding, in terms of training results.
+We verify that this is indeed the case for the Word2Vec model [27] with three different gradient descent algorithms:
+SGD [33], Adagrad [14], and Momentum [3]. To guarantee that both TensorFlow and DynamicEmbedding run
+exactly the same model, we let DynamicEmbedding Manager take the same dictionary used by the TF-Word2Vec
+as its input ﬁlter and only process those input from the given dictionary. For all other input, they would be
+mapped to a special input, i.e., “oov” (out-of-vocab) – using the same trick as existing dictionary based models.
+We also guarantee that all other hyper-parameters, such as learning rate, batch size, are exactly the same between
+them.
+Fig. 3 illustrates the comparisons in accuracy among three different gradient descent algorithms. Because the
+embeddings are initialized randomly, we cannot expect their accuracy be matched perfectly. Nevertheless, for the
+ﬁrst 1M training steps, both TensorFlow and DynamicEmbedding yield very close results for all three gradient
+descent algorithms.
+4.2 Model benchmarks
+Ever since DynamicEmbedding was ﬁrst developed around early 2018, we have upgraded a number of popular
+models to enjoy ever growing feature size. The following is a partial list of models we have built.
+DE-Word2Vec The skip-gram model [27] is upgraded by replacing its input with our dynamic embedding
+layer (Sec. 3.1.1) and its output with our sampled logits layer (Sec. 3.1.2). It is therefore capable of mapping any
+word (n-grams), regardless of language, into the same high-dimensional vector space. This model can map any
+11
+search query into an embedding to upgrade Google Search’s related search10 feature based on semantic rather
+than syntactic similarity.
+DE-Seq2Seq A seq2seq model predicts a sentence from another input sentence (e.g., in translation). Here
+we have upgraded the Google Neural Machine Translation (GNMT) model [46] with attention mechanism to
+take a sequence of words as input (implemented by our dynamic embedding layer) and output a sequence of
+words (the output layer is implemented by our sampled logits layer). This model allows us to improve Google
+Translate by including a much larger vocabulary than previously used.
+DE-Sparse2Seq This is in essence similar to the Google Transformer model [42], which considers input as
+a bag of words and the output is generated by a recurrent neural network with attention mechanism. Similar to
+the two models mention above, we replace both input and output of the original model with our corresponding
+new DynamicEmbedding components. We applied this model to suggest ad headlines and descriptions11 from
+sparse features on a website and it can cover all languages using a single model.
+DE-Image2Label The input to the model is an image and the output is a label (e.g. a phrase or a description).
+In our new model, we ﬁrst let each image go through the Inception model [ 39] and connect its output (an
+embedding of the image) to our sampled logits layer (Sec. 3.1.2). This way, our model can be trained on arbitrary
+(image, label) pairs. We have applied this model to suggest a very large set of image labels available from
+Google Image Search, whose distinct label set is in the order of hundreds of millions.
+DE-Sparse2Label An image is a highly structured input as it can always be normalized into a ﬁxed size.
+However, there is a plethora of unstructured data in the world that contains multiple possible input sources.
+For example, a webpage may contain texts, tables, images organized in a hierarchical way and there are many
+potential labeling for its content. Our DE-Sparse2Label model maps each of the source labels (may contain an
+unknown number of sparse values) into an embedding using the CA-SEM model [47] and let it go through a few
+ResNet-like layers (i.e., CA-RES model [47]) for further processing, then output a sparse label (e.g., a query
+that leads to this webpage). Here both the input and output use our DynamicEmbedding components to achieve
+ever-growing sparse feature size. This model has been successfully applied in our ad keyword suggestion system
+and its detail is discussed in Sec. 4.4.
+DE-BERT This is the DynamicEmbedding counterpart of the BERT model [13] for natural language process-
+ing (NLP), which no longer requires a predeﬁned maximal input length (e.g., 512 or 1024) or preprocessing the
+input into wordpieces [46]. Our model is able to learn from any continuously growing text corpus (e.g. online
+articles) and accordingly an ever-growing embedding repository is maintained for various downstream NLP
+applications.
+4.2.1 Model accuracy
+Now let us turn to another important aspect of DynamicEmbedding: model accuracy, and address the following
+question: Can a model with sufﬁciently large capacity bring better accuracy?
+Theoretically, the answer is afﬁrmative as more data simply means more experience and therefore a major
+concern in machine learning, i.e. generalization, would be eliminated if the training data can already cover most
+cases. However, this is based on the assumption that the model is powerful enough to “memorize”12 any number
+of input data, which is exactly what DynamicEmbedding promises to offer.
+Practically, the above argument actually has been conﬁrmed that a reduced number of “oov” (out-of-vocab)
+tokens with a sufﬁcient large dataset can indeed improve the accuracy signiﬁcantly (e.g., [ 32]). In this subsection,
+we evaluate DynamicEmbedding’s ability to process more input/output features, as well as to make more accurate
+predictions, than its TensorFlow counterparts.
+Given that DynamicEmbedding is completely backward compatible with TensorFlow in terms of system
+performance and model accuracy, it is time to focus on the additional value it offers. Needless to say, a model
+with ever-growing capacity can directly help with recall in model prediction: a system that can predict 100M
+possible outputs is obviously more desirable than one that can only predict 1M. However, it is also possible
+that a system with larger capacity also makes less accurate predictions. In this subsection, we show that larger
+capacity often guarantees more accurate results.
+Theoretically speaking, using a single “oov”, “missing” or “unk” token to take care of those out-of-vocab features
+would unavoidably lead to degrade in model accuracy. The absence of words in a sentence may dramatically
+10https://support.google.com/trends/answer/4355000?hl=en
+11https://support.google.com/google-ads/answer/1704389?hl=en
+12This may be a poor choice of word as a neural network model always processes the data as a distribution,
+based on our sufﬁcient statistics point of view.
+12
+02468 10
+Training Steps 105
+0
+0.2
+0.4
+0.6
+0.8
+1
+Accuracy
+size = 9988
+size = 30739
+size = 566796
+size = unlimited
+01234
+Training Steps 106
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9Top-100 Accuracy
+size = 21833
+size = 111565
+size = 221209
+(a) Word2Vec (c) Sparse2Seq
+Figure 4: (Best viewed in color) The effect of dictionary size on prediction accuracy for two different models.
+change its meaning, and it is completely possible that different sentences are treated as equal in a language related
+model (e.g., the Seq2Seq model). Also a dictionary is often chosen based on frequency rather than importance,
+and it is known that high frequency words are often less informative, which is why the term frequency-inverse
+document frequency (TF-IDF) was invented in information retrieval [25]13. Besides, our system also provides
+long-short-term memory components to handle noisy or uninformative inputs. Therefore, it is safe to abandon
+the concept of dictionary all together when using DynamicEmbedding.
+Fig. 4 (a) illustrates the comparison in prediction accuracy between Word2Vec models with and without
+restrictions in dictionary. Here we use the same training and test datasets for both models (total ﬁle size∼300M),
+and only change the input dictionary size. As expected, larger dictionary size consistently lead to better accuracy.
+We also tested the impact of dictionary size on the WMT 2016 dataset (total ﬁle size ∼1.6G) using our
+Sparse2Seq model as show in Fig. 4 (b). The top-100 accuracy for the testing data during training is used for the
+comparison. Again, dictionary size is proven to be an important factor for achieving better accuracy, although
+the improvement seems to be marginal after the size is above a certain threshold.
+4.3 System benchmarks
+Two metrics that are considered important for a learning system are overall training speed, measured by global
+steps per second (GSS) and resource usage, measured by memory usage and CPU rates, etc. A large GSS is
+critical for training on big dataset and fast iteration for model development; a small usage of memory/cpu can
+guarantee training stability (e.g., less machine failures due to exceeded resources).
+Our ﬁrst benchmark dataset consists of cooccurring search query data for the Word2Vec model [27]. To allow
+TensorFlow and DynamicEmbedding be compared side by side, we created a dictionary of size 727K based on
+queries’ frequency for a conventional Word2Vec model. For our new DynamicEmbedding based model, we
+simply feed the data without any dictionary. Fig. 5(a) and Fig. 6(a) illustrate comparisons on memory usage and
+GSS between the two models, respectively, which share exactly the same hyperparameters (e.g., batch size is 64,
+learning rate is 0.01 and embedding dimension is 100) except that DE-Word2Vec does not have a dictionary.
+It can been seen that the memory requirement for TensorFlow is marvelously reduced to 1% −10% and the
+memory for DynamicEmbedding workers remains stable regardless of the worker number (close to the total
+embedding data size, i.e., ∼20G). Also GSS only depends on the number of TensorFlow workers. Note that the
+training dataset is quite challenging for memory as each batch may contain 30M to 50M embedding keys due to
+large cooccurrence size (many queries may leads to the same website).
+Fig. 5(b) and Fig. 6(b) show another benchmark on the Google Inception model [ 39] trained with GPU
+acceleration. Our model is trained with up to 16 machines equipped with NVIDIA Tesla P100 GPU. In this case,
+only the output softmax layer involves potentially unlimited number of labels. Fig. 5(b) and Fig. 6(b) are the
+performance comparisons between TensorFlow and DynamicEmbedding with different worker sizes. We see the
+same trend as above that GSS only depends on the number of TensorFlow workers, and DynamicEmbedding
+is running a bit faster than its TensorFlow counterpart, as its candidate sampling is distributed into different
+DynamicEmbedding workers.
+As a more complex example, we re-implemented the full GNMT model [46] using DynamicEmbedding’s APIs.
+GNMT is a recurrent neural network model that involves sparse features (words) on both input and output, and
+the number of features can range from one to hundreds. Fig. 5(c) and Fig. 6(c) illustrate the performances
+13This is consistent with the idea proposed by context-aware machine learning [ 47], in which “oov” is
+redeﬁned as the context-free part of a word/sentence.
+13
+0010501
+Number of TensorFlow Workers
+0
+1000
+2000
+3000
+4000
+5000
+6000
+7000
+8000
+Total Memory Usage (GB)
+TensorFlow (vocab size: 727639)
+DynamicEmbedding with 10 workers
+DynamicEmbedding with 20 workers
+7764
+1164
+382 19112625 26 131 203
+6184
+Number of TensorFlow with GPU Workers
+0
+10
+20
+30
+40
+50
+60
+70
+80
+Total Memory Usage (GB)
+TensorFlow with vocabulary size 28886
+DynamicEmbedding with 10 workers
+DynamicEmbedding with 20 workers
+17
+35
+15 15
+3435
+78
+68
+65
+0010501
+Number of TensorFlow Workers
+0
+50
+100
+150
+200
+250Total Memory Usage (GB)
+TensorFlow with vocabulary size 297781
+DynamicEmbedding with 10 workers
+DynamicEmbedding with 20 workers
+45
+22 23
+139
+7668
+242
+123
+152
+(a) Word2Vec (DE workers mem.: 30G) (b) Image2Label (DE workers mem.: 5G) (c) Seq2Seq (DE workers mem.: 14G)
+Figure 5: (Best viewed in color) Comparisons in memory usage between TensorFlow and DynamicEmbedding
+for three different models. It can be seen that the larger the distinct feature size (or vocabulary size), the more
+total memory (TensorFlow workers + DynamicEmbedding workers) that can be saved by DynamicEmbedding.
+Also the total memory consumed by DynamicEmbedding is independent of its number of workers.
+0010501
+Number of TensorFlow Workers
+0
+1
+2
+3
+4
+5
+6
+Global Steps per Second (GSS)
+TensorFlow
+DynamicEmbedding with 10 workers
+DynamicEmbedding with 20 workers
+618 4
+Number of TensorFlow Workers
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+Global Steps per Second (GSS)
+TensorFlow
+DynamicEmbedding with 10 workers
+DynamicEmbedding with 20 workers
+0010501
+Number of TensorFlow Workers
+0
+5
+10
+15
+20
+25
+30
+35
+40
+45
+50Global Steps per Second (GSS)
+TensorFlow
+DynamicEmbedding with 10 workers
+DynamicEmbedding with 20 workers
+(a) Word2Vec (b) Image2Label (c) Seq2Seq
+Figure 6: (Best viewed in color) Comparisons in training speed between TensorFlow and DynamicEmbedding
+for three different models. From our experience, both DynamicEmbedding and TensorFlow achieve comparable
+GSS. DynamicEmbedding is often more stable due to less model loading time and less often worker reschedule
+since the model sizes for TensorFlow have become much smaller.
+evaluation, which shows DynamicEmbedding’s ability to reduce memory usage while maintaining the same
+level of GSS.
+In sum, DynamicEmbedding is able to dramatically reduce the memory usage of TensorFlow workers when
+the dictionary size goes up, as it has moved most of the content part of a model into DES. The total memory
+usage for the DES only depends on the total size of the embedding, or it can be even lower if only part of the
+embeddings are loaded into memory (Fig. 5). Increasing the number of DynamicEmbedding workers only
+helps parallelism, whereas increasing TensorFlow workers would lead to increase of total memory, as multiple
+copies of the embedding data are distributed into different workers. In terms of training speed measured by GSS,
+DynamicEmbedding and TensorFlow are quite comparable for gradient descent based optimization (Fig. 6).
+4.4 DE-Sparse2Label model for Google Smart Campaigns
+As DynamicEmbedding is designed to solve real-world problems with extremely large scale, we demonstrate
+one of our efforts in keyword suggestion for Google Smart Campaign advertisers [37]. Google Smart Campaign
+is devoted to automating the process of online advertising by smart algorithms powered by AI technologies.
+One of the major steps in campaign optimization is to recommend relevant keywords based on the content of
+advertisers’ websites provided during signup14. Although there are billions of ⟨webpage, keyword⟩examples
+from Google Search everyday, not every advertiser’s website has been visited by sufﬁcient number of users.
+Therefore, our goal is to learn from existing webpage-to-keyword matching examples and generalize it to new
+websites from our advertisers where allowed.
+Fig. 7 shows the architecture of our keyword suggestion model. The input to our model is a list of sparse features
+of a webpage from different annotators to identify its various topics (e.g., freebase entities [8]) and representative
+keywords. Because each feature can have multiple values, we employ the context-aware CA-BSFE model
+introduced in [47] that composites the embeddings of different sparse feature values based on weights that are
+related to their context-freeness. After the embeddings of each feature is computed, they are concatenated and
+fed into the higher hidden layer, which we employ the ResNet-like CA-RES model [ 47] to further ﬁlter out
+14https://www.google.com/adwords/express/
+14
+n-dim
++
+×
++
+×
+CA-EM Cell
+×
++
+×
+CA-EM Cell
+f1
+Feature 1
+fn
+v0
+ n-dim
++
+×
++
+×
+CA-EM Cell
+×
++
+×
+CA-EM Cell
+c 1
+Feature M
+c k
+v0
+Default Value
+NN Layer
+×
+ ×
++CA-NN Layer
+σ 1 - σ
+w1
+Default Value
+NN Layer
+×
+ ×
++CA-NN Layer
+σ 1 - σ
+wl
+CA-RES
+DE
+Softmax 
+Layer
+Concatenation of Embeddings
+CA-BSFE CA-BSFE
+Figure 7: Architecture of our DE-Sparse2Label model for keyword suggestion. The input to the model are
+various sparse features from a website. The target for the model is simply a keyword. Both the input and target
+contain potentially unlimited number of feature values.
+irrelevant information. At the very top, we use the sampled softmax layer implemented by DynamicEmbedding
+to handle arbitrary number of output keywords as training target.
+One important feature of our model is that it is capable of suggesting keywords for websites in more than 20
+languages that are supported by Google Smart Campaigns. Previously without DynamicEmbedding, we were
+only able to launch one model per language with a very limited keyword dictionary size (<1M). DE-Sparse2Label
+is the ﬁrst all-language model we have ever trained and it turns out to work remarkably well: ad groups15 with
+DynamicEmbedding suggested keywords are able to outperform those non-DynamicEmbedding models in key
+metrics such as click through rate (CTR), etc (DynamicEmbedding wins 49 out of a total of 72 revaluation
+metrics we used for dozens of different countries that we evaluated). Hence, we have proven that it is no longer
+necessary to partition the data based on languages, which is a common practice among large-scale applications.
+Data and model sizes Our training data are simply ⟨website, keywords⟩pairs from Google Search. We
+only select those popular and commercially related ones for training. Our model has been fed with new training
+data every month and its size (TensorFlow variables + DynamicEmbedding embeddings) has been automatically
+growing from a few gigabytes to hundreds of gigabytes in less than six months. Fig. 8 compares existing “large”
+models’ parameter sizes with our model at different checkpoints (ann-dimensional embedding is considered to
+have nparameters in the traditional view), and our model has already far exceeded any existing known models
+in size.
+4.4.1 Quality evaluation
+One challenge of evaluating the quality of our model suggested keywords is the discrepancy between keyword
+and query, as the suggested keywords may not be exactly mapped to Google search queries. The matching
+between keywords to queries is controlled by match type 16 and by using the default broad match option, our
+selection of keywords needs to be very speciﬁc (e.g., “wedding” is considered a bad keyword for a website that
+does wedding photography).
+To accurately measure the real impact of our suggested keywords to Smart Campaign Advertisers, we employed
+a very strict metric as follows: after a keyword is served to Google search query, we directly ask 5 different
+trained human evaluators to give a score between [−100,100] to rate the match between the search query
+and advertiser’s website (Fig. 9). The average of the 5 scores is used as the ﬁnal score for each example. To
+evaluate the overall quality of nsuch query-to-webpage examples (a.k.a., impressions), denoted as I, we use the
+15https://support.google.com/google-ads/answer/6298?hl=en
+16https://support.google.com/google-ads/answer/7478529?hl=en
+15
+Inception
+ResNet
+GPT-2 Language Model
+DistBelief Image Model
+DE-Sparse2Label (Feb 2019)
+DE-Sparse2Label (Nov 2019)
+DE-Sparse2Label (Feb 2020)
+0 25000 50000 75000 100000 125000
+6.8M
+19.4M
+1500M
+1700M
+59265M
+100844M
+124964M
+Figure 8: Comparison in model size among different models, namely Inception [ 39], ResNet [18], GPT-2
+language model [32], DistBelief image model [12] and our DE-Sparse2Label model (Fig. 7).
+Dissatisfaction Likely Dissatisfaction Possible Satisfaction Possible Satisfaction Likely
+0 50 100-50-100
+Figure 9: Keyword quality evaluation design. We ask 5 human raters to evaluate the extent of search query to
+website match by giving a score between [−100,100] and computes their average as the ﬁnal rating. The ﬁnal
+GB ratio of an overall evaluation is computed as the number of examples with score ≥50 (good match) over the
+number of examples with score ≤0 (bad match). See appendix how each of the four categories are evaluated.
+following GB ratio17:
+GB(I) =|{i|score(i) ≥50,i ∈I}|
+|{i|score(i) ≤0,i ∈I}|, (15)
+where score(i) ∈[−100,100] denotes the average score from 5 different raters for impression i. Note that our
+model is completely unaware of such good/bad labeling.
+We run the above mentioned evaluation experiment on 387,151 impressions (i.e., website →keyword →search
+query tuples). Besides the keywords suggested from its softmax output layer, our model also yields a score for
+each ⟨webpage, keyword⟩pair as a conﬁdence of the relatedness of the given keyword to the webpage. Here the
+score is computed as the cosine distance between webpage and keyword embeddings computed through our
+model. Therefore by using different threshold values (i.e., only serve keywords with keyword-to-webpage scores
+greater than the given threshold), we can expect to control the quality of the suggested keywords. Note that our
+model is able to score any ⟨webpage, keyword⟩pairs.
+Fig. 10 (a) shows the distribution of the scores for good (score ≥50) and bad (score ≤0) matches respectively.
+Although the two distributions overlap signiﬁcantly when scores are low (e.g., below 0.6), our model becomes
+extremely accurate at telling good keywords apart from bad ones when the scores are higher (e.g., above 0.7). To
+see this, we compared the GB ratio versus different threshold values between our model and other rule-based
+scoring algorithms in Fig. 10 (b), where we denote these algorithms as RB1, RB2 and RB3, respectively. We
+measured the precision/recall tradeoff using the ROC curve based on the total good and bad examples for
+different threshold values (Fig. 10 (b)). Here the true positive rate for each threshold is computed as the number
+of kept good keywords over all possible good keywords. Likewise, the false positive rate is computed as the
+number of kept bad keywords, above a given threshold, over all possible bad keywords. It can be seen that our
+model underperforms traditional rule-based systems slightly under lower thresholds but signiﬁcantly outperforms
+others at higher thresholds (when true positive rate becomes smaller). In practice, this implies that as most of our
+advertisers need no more than a few thousands keywords, we may be able to guarantee our suggested keywords
+have extremely high accuracy if our model is used to score all possible keywords.
+Lastly, after our system is fully deployed into production for nearly a year, our post-launch human evaluation
+on real trafﬁc conﬁrms that the keywords suggested by our model achieves the highest GB ratio, as well as the
+17This metric was originally proposed by Google Dynamic Search Ads team: https://support.google.
+com/google-ads/answer/2471185?hl=en
+16
+0 0.2 0.4 0.6 0.8 1
+False Positive Rate
+0
+0.2
+0.4
+0.6
+0.8
+1
+True Positive Rate
+ROC Curves
+GM-Sparse2Label
+RB1
+RB2
+RB3
+(a) (c)
+Figure 10: (Best viewed in color) The candidate website to keyword matches contain more good than bad
+ones and the histograms of the cosine scores from our model indicates that it can identify those good ones quite
+reliably when the scores are higher than certain threshold (e.g., 0.7) as shown in (a). In contrast, we compared
+the GB ratio versus threshold between our model and other rule-based scoring systems available inside Google
+on the same dataset and (b) shows the ROC curve based on good/bad keywords kept from different thresholds.
+lowest bad ratio (percentage of bad keywords over all served keywords), among various keyword sources used in
+Smart Campaigns.
+5 Conclusion
+We demonstrated a preliminary implementation of our new cell model, DynamicCell, has already extended the
+capacity of TensorFlow signiﬁcantly through delegation to external storage systems, resulting in a system that
+clearly outperforms its rule-based counterparts. We hope that these solutions can be used in a wide variety of
+ML applications which face challenges around ever-growing scale in data inputs. There may also be future
+improvements as we look at what we can learn across machine learning, neuroscience and system design etc.
+Hopefully, by going across these disciplines, we will make faster progresses in AI together.
+Acknowledgments
+Our work received constructive reviews and active helps from multiple teams inside Google. First of all, we
+are deeply indebted to Chao Cai, our team leader, for not only coordinating the communications among all the
+authors, internal reviewers and approvers, but also proposing numerous edits to improve this paper’s readability.
+We also thank everyone from Google Adwords Express (a.k.a. Google Smart Campaigns) team, in particular
+our team founder Xuefu Wang, for building a vibrant working environment for innovation. Our 2017 summer
+intern Liming Huang built the ﬁrst prototype of our DE-Seq2Seq model. Our 2018 summer interns, Brian
+Xu and Yu Wang, contributed tremendously in the developments of DE-Image2Label and DE-Sparse2Label
+models. Our 2019 summer intern Ruolin Jia applied our DE-Sparse2Seq model to an automated product. We
+also thank Google Brain team’s Alexandre Passos for providing valuable comments on the comparisons between
+TensorFlow’s Eager mode and our work, Rohan Anil for suggesting us to implement bloom ﬁlter for embedding
+update, and Kai Chen for working relentlessly with us on developing the ﬁrst version of Sparse2Label model
+using TensorFlow. Multiple teams from Google Research provided helpful suggestions at different stages of its
+development: Li Zhang, Nicolas Mayoraz and Steffen Rendle provided positive reviews on DynamicEmbedding’s
+initial design, encouraging us to further pursue its implementation; Dave Dopson, Ruiqi Guo and David Simcha
+were very responsive in helping us resolve technical issues during the development of TopK component; Da-
+Cheng Juan, Chun-Ta Lu and Allan Heydon are actively collaborating with us in expanding the functionalities of
+DynamicEmbedding for a new semi-supervised learning framework, and are working with Jan Dlabal, Futang
+Peng and Zhe Li to enable DynamicEmbedding to work with TPU in their image-related projects. We would like
+to give our special thanks to Moshe Lichman and Dan Hurt for their very insightful and timely reviews on the
+theory and system parts of the paper, respectively, which led to important ﬁnal touches. Last but not least, our
+leadership team Chao Cai, Sunita Verma, Sugato Basu, Sunil Kosalge, Adam Juda, Shivakumar Venkataraman,
+Jerry Dischler, Samy Bengio and Jeffrey Dean provided valuable comments during our internal review process.
+Appendix: Instructions for human evaluation of website to search query match quality
+The instructions below elaborate on how the four categories in Fig. 9 are rated.
+• Satisfaction Likely: To receive this rating, a landing page must offer just what the user looked for. If
+the user wants car reviews, it should offer car reviews. If the user wants car reviews about a speciﬁc
+17
+model, it should offer car reviews about exactly that model. If the user wants a category of product,
+the landing page should be devoted to or include that exact category of product. For a Satisfaction
+Likely rating, what the user is looking for should be apparent with no additional action needed by the
+user. It is permissible, however, to click on a link to get detailed information.
+• Satisfaction Possible: Use this rating if the page is satisfactory but does not immediately present ex-
+actly what the user seeks. If the product or service is for sale on the site, but a search or straightforward
+navigation is required to ﬁnd the item, select a rating of Satisfaction Possible rather than Satisfaction
+Likely. If the site offers a very plausible substitute for a particular product speciﬁed in the query, it
+may receive a rating of Satisfaction Possible or lower. If the query is a search for information, and
+this information can be found without too much trouble on the advertiser site but is not on the landing
+page, use Satisfaction Possible. The one exception here being if the user could have found that same
+information on the search results page before clicking on the ad. If that is the case, the landing page
+does not deserve a positive rating.
+• Dissatisfaction Possible: (i) If the page is marginally related to the query and you think that there’s a
+small chance the user would be interested. (ii) If the page can eventually lead to what the user wants,
+but only through many clicks or through clicks that lead to an entirely different website. (iii) If the page
+offers something that you think the user might be interested in, but not what the user was looking for
+and not especially close to it. For example, if the user is looking for baseball gloves, and the landing
+page offers athletic socks, there’s probably some chance that the user might be interested. However,
+it’s not what the user was looking for, and not all that close to it, so it deserves Dissatisfaction Possible.
+(iv) If the page can eventually give the user what he or she is looking for, but the process is protracted
+and difﬁcult.
+• Dissatisfaction Likely: (i) If the page has nothing to do with the query. (ii) If the query is for a
+product or service, and neither the product/service nor anything close to it can be purchased from
+the page. (iii) If the query or a word in the query has two meanings, it is clear which meaning is
+intended by the user, and the advertiser responds to the wrong meaning. For example, [cars 2] refers
+to a movie. A page for a car dealership is clearly a bad landing page for this query, even if it might be
+a good result for [car sales]. (iv) If the page looks like a scam, you think users could be harmed by
+it, or it either attempts to trick the user into downloading something by labeling a download button
+in a confusing way or tries to download a ﬁle without action by the user. (v) If the page loads but
+is completely unusable (for example, because some content does not load, or page doesn’t display
+properly). If enough of the page does not load at all (for example, you encounter a 404 error), use the
+Error Did Not Load ﬂag instead of a rating. (vi) If the page is very bad for any other reason.
+References
+[1] Martín Abadi, Paul Barham, Jianmin Chen, Zhifeng Chen, Andy Davis, Jeffrey Dean, Matthieu Devin,
+Sanjay Ghemawat, Geoffrey Irving, Michael Isard, Manjunath Kudlur, Josh Levenberg, Rajat Monga,
+Sherry Moore, Derek G. Murray, Benoit Steiner, Paul Tucker, Vijay Vasudevan, Pete Warden, Martin
+Wicke, Yuan Yu, and Xiaoqiang Zheng. Tensorﬂow: A system for large-scale machine learning. In
+Proceedings of the 12th USENIX Conference on Operating Systems Design and Implementation (OSDI),
+pages 265–283, 2016.
+[2] Tom Apostol. Mathematical analysis. Addison Wesley, 2 edition, 1974.
+[3] Yoshua Bengio, Nicolas Boulanger-Lewandowski, and Razvan Pascanu. Advances in optimizing recurrent
+networks. In ICASSP, pages 8624–8628. IEEE, 2013.
+[4] Yoshua Bengio, Réjean Ducharme, Pascal Vincent, and Christian Jauvin. A neural probabilistic language
+model. Journal of machine learning research, 3(Feb):1137–1155, 2003.
+[5] J. Bergstra, O. Breuleux, F. Bastien, P. Lamblin, R. Pascanu, G. Desjardins, J. Turian, D. Warde-Farley,
+and Y . Bengio. Theano: a CPU and GPU math expression compiler. InSciPy, 2010.
+[6] Dimitri P. Bertsekas. Convex Optimization Theory. Athena Scientiﬁc, 2009.
+[7] Burton H. Bloom. Space/time trade-offs in hash coding with allowable errors. Commun. ACM, 13(7), July
+1970.
+[8] Kurt Bollacker, Colin Evans, Praveen Paritosh, Tim Sturge, and Jamie Taylor. Freebase: A collaboratively
+created graph database for structuring human knowledge. In Proceedings of the 2008 ACM SIGMOD
+International Conference on Management of Data, SIGMOD ’08, pages 1247–1250, 2008.
+[9] György Buzsáki. Rhythms of the brain. Oxford University Press, 2011.
+18
+[10] Fay Chang, Jeffrey Dean, Sanjay Ghemawat, Wilson C. Hsieh, Deborah A. Wallach, Mike Burrows, Tushar
+Chandra, Andrew Fikes, and Robert E. Gruber. Bigtable: A distributed storage system for structured data.
+In 7th USENIX Symposium on Operating Systems Design and Implementation (OSDI), pages 205–218,
+2006.
+[11] James C. Corbett, Jeffrey Dean, Michael Epstein, Andrew Fikes, Christopher Frost, JJ Furman, Sanjay
+Ghemawat, Andrey Gubarev, Christopher Heiser, Peter Hochschild, Wilson Hsieh, Sebastian Kanthak,
+Eugene Kogan, Hongyi Li, Alexander Lloyd, Sergey Melnik, David Mwaura, David Nagle, Sean Quinlan,
+Rajesh Rao, Lindsay Rolig, Dale Woodford, Yasushi Saito, Christopher Taylor, Michal Szymaniak, and
+Ruth Wang. Spanner: Google’s globally-distributed database. In OSDI, 2012.
+[12] Jeffrey Dean, Greg S. Corrado, Rajat Monga, Kai Chen, Matthieu Devin, Quoc V . Le, Mark Z. Mao,
+Marc’Aurelio Ranzato, Andrew Senior, Paul Tucker, Ke Yang, and Andrew Y . Ng. Large scale distributed
+deep networks. In NIPS, 2012.
+[13] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. BERT: pre-training of deep
+bidirectional transformers for language understanding. CoRR, abs/1810.04805, 2018.
+[14] John Duchi, Elad Hazan, and Yoram Singer. Adaptive subgradient methods for online learning and
+stochastic optimization. Journal of Machine Learning Research, 12:2121–2159, 2011.
+[15] Karl Friston, James Kilner, and Lee Harrison. A free energy principle for the brain. Journal of Physiology-
+Paris, 100:70–87, 2006.
+[16] Sanjay Ghemawat, Howard Gobioff, and Shun-Tak Leung. The google ﬁle system. In Proceedings of the
+19th ACM Symposium on Operating Systems Principles, pages 20–43, 2003.
+[17] Yuval Noah Harari. Sapiens: A Brief History of Humankind. Harper, 2015.
+[18] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition.
+In Computer Vision and Pattern Recognition (CVPR), 2015.
+[19] Geoffrey E. Hinton. Training products of experts by minimizing contrastive divergence. Neural Computa-
+tion, 14(8):1771–1800, 2002.
+[20] Eugene M. Izhikevich. Dynamical Systems in Neuroscience: The Geometry of Excitability and Bursting.
+MIT press, 2007.
+[21] Sébastien Jean, Kyunghyun Cho, Roland Memisevic, and Yoshua Bengio. On using very large target
+vocabulary for neural machine translation. In Proceedings of the 53rd Annual Meeting of the Association
+for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing,
+2015.
+[22] Yangqing Jia, Evan Shelhamer, Jeff Donahue, Sergey Karayev, Jonathan Long, Ross Girshick, Sergio
+Guadarrama, and Trevor Darrell. Caffe: Convolutional architecture for fast feature embedding. In
+Proceedings of ACM Multimedia, pages 675–678, 2014.
+[23] Ray Kurzweil. How to Create a Mind: The Secret of Human Thought Revealed. Viking, 2012.
+[24] David Lovelock and Hanno Rund. Tensors, Differential Forms, and Variational Principles . Dover
+Publications, 1989.
+[25] C.D. Manning, P Raghavan, and H Schutze. An Introduction to Information Retrieval. 2008.
+[26] Viktor Mayer-Schönberger and Kenneth Cukier. Big Data: A Revolution That Will Transform How We
+Live, Work, and Think. Eamon Dolan/Houghton Mifﬂin Harcourt, 2013.
+[27] Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey Dean. Efﬁcient estimation of word representations
+in vector space. CoRR, abs/1301.3781, 2013.
+[28] Mehryar Mohri, Afshin Rostamizadeh, and Ameet Talwalkar. Foundations of Machine Learning. The MIT
+Press, 2 edition, 2018.
+[29] German Ignacio Parisi, Ronald Kemker, Jose L. Part, Christopher Kanan, and Stefan Wermter. Continual
+lifelong learning with neural networks: A review. CoRR, abs/1802.07569, 2018.
+[30] Jeffrey Pennington, Richard Socher, and Christopher Manning. Glove: Global vectors for word repre-
+sentation. In Proceedings of the 2014 conference on empirical methods in natural language processing
+(EMNLP), pages 1532–1543, 2014.
+19
+[31] PyTorch, 2018. http://pytorch.org.
+[32] Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. Language models
+are unsupervised multitask learners. OpenAI, 2019.
+[33] Herbert Robbins and Sutton Monro. A stochastic approximation method. Annals of Mathematical Statistics,
+22(3), 1951.
+[34] Andrei A. Rusu, Neil C. Rabinowitz, Guillaume Desjardins, Hubert Soyer, James Kirkpatrick, Koray
+Kavukcuoglu, Razvan Pascanu, and Raia Hadsell. Progressive neural networks. CoRR, abs/1606.04671,
+2016.
+[35] David E. Sadava, David M. Hillis, H. Craig Heller, and Sally D. Hacker. Life: The Science of Biology. W.
+H. Freeman, 11 edition, 2016.
+[36] Robert M. Sapolsky. Behave: The Biology of Humans at Our Best and Worst. Penguin Press, 2017.
+[37] Kim Spalding. Google ads, helping small businesses do more, 2018. https://blog.google/outreach-
+initiatives/small-business/google-ads-helping-businesses/.
+[38] Kenneth O. Stanley and Risto Miikkulainen. Evolving neural networks through augmenting topologies.
+Evolutionary Computation, 10(2):99–127, 2002.
+[39] Christian Szegedy, Wei Liu, Yangqing Jia, Pierre Sermanet, Scott E. Reed, Dragomir Anguelov, Dumitru
+Erhan, Vincent Vanhoucke, and Andrew Rabinovich. Going deeper with convolutions. In Computer Vision
+and Pattern Recognition (CVPR), 2015.
+[40] Naftali Tishby and Noga Zaslavsky. Deep learning and the information bottleneck principle. In IEEE
+Information Theory Workshop, 2015.
+[41] Shoichi Toyabe, Takahiro Sagawa, Masahito Ueda, Eiro Muneyuki, and Masaki Sano. Experimental
+demonstration of information-to-energy conversion and validation of the generalized jarzynski equality.
+Nature Physics, 6:988–992, 2010.
+[42] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz
+Kaiser, and Illia Polosukhin. Attention is all you need. In Advances in Neural Information Processing
+Systems (NIPS), pages 5998–6008. 2017.
+[43] Abhishek Verma, Luis Pedrosa, Madhukar R. Korupolu, David Oppenheimer, Eric Tune, and John Wilkes.
+Large-scale cluster management at Google with Borg. In Proceedings of the European Conference on
+Computer Systems (EuroSys), 2015.
+[44] James C.R. Whittington and Rafal Bogacz. Theories of error back-propagation in the brain. Trends in
+Cognitive Sciences, 2019.
+[45] Xiang Wu, Ruiqi Guo, Ananda Theertha Suresh, Sanjiv Kumar, Daniel N Holtmann-Rice, David Simcha,
+and Felix Yu. Multiscale quantization for fast similarity search. In I. Guyon, U. V . Luxburg, S. Ben-
+gio, H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett, editors, Advances in Neural Information
+Processing Systems 30, pages 5745–5755. 2017.
+[46] Yonghui Wu, Mike Schuster, Zhifeng Chen, Quoc V . Le, Mohammad Norouzi, Wolfgang Macherey, Maxim
+Krikun, Yuan Cao, Qin Gao, Klaus Macherey, Jeff Klingner, Apurva Shah, Melvin Johnson, Xiaobing
+Liu, Lukasz Kaiser, Stephan Gouws, Yoshikiyo Kato, Taku Kudo, Hideto Kazawa, Keith Stevens, George
+Kurian, Nishant Patil, Wei Wang, Cliff Young, Jason Smith, Jason Riesa, Alex Rudnick, Oriol Vinyals,
+Greg Corrado, Macduff Hughes, and Jeffrey Dean. Google’s neural machine translation system: Bridging
+the gap between human and machine translation. CoRR, abs/1609.08144, 2016.
+[47] Yun Zeng. Context aware machine learning. CoRR, abs/1901.03415, 2019.
+[48] Barret Zoph and Quoc V . Le. Neural architecture search with reinforcement learning. CoRR,
+abs/1611.01578, 2016.
+20

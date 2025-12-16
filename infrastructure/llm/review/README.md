@@ -25,7 +25,7 @@ review = generate_review(manuscript_text, review_type="executive_summary")
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
 - [`../../llm/README.md`](../../llm/README.md) - LLM module overview
 
 

@@ -4,7 +4,7 @@ Literature search and management functionality.
 
 ## Overview
 
-The literature module provides comprehensive tools for searching scientific papers, downloading PDFs, managing references, and generating AI-powered summaries.
+The literature module provides tools for searching scientific papers, downloading PDFs, managing references, and generating AI-powered summaries.
 
 ## Key Components
 
@@ -85,7 +85,7 @@ Publisher-specific PDF URL extraction:
 
 ### Reporting (`reporting/`)
 
-Comprehensive reporting:
+Reporting:
 - LiteratureReporter for multi-format export
 - JSON, CSV, HTML export formats
 - Library statistics and summaries
@@ -201,7 +201,7 @@ reporter.export_library_report(
 
 ## See Also
 
-- **[Literature Module Documentation](../infrastructure/literature/AGENTS.md)** - Complete documentation
+- **[Literature Module Documentation](../infrastructure/literature/AGENTS.md)** - Documentation
 - **[Searching Papers Guide](../guides/search-papers.md)** - Search guide
 - **[Summarizing Papers Guide](../guides/summarize-papers.md)** - Summarization guide
 - **[Meta-Analysis Guide](../guides/meta-analysis.md)** - Meta-analysis guide

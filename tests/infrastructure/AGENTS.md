@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The infrastructure tests module provides comprehensive test coverage for all infrastructure layer modules, organized by module structure.
+The infrastructure tests module provides test coverage for all infrastructure layer modules, organized by module structure.
 
 ## Test Organization
 
@@ -42,7 +42,7 @@ tests/infrastructure/
 - Streaming support
 
 **Test Documentation:**
-- `tests/infrastructure/llm/AGENTS.md` - Complete LLM test documentation
+- `tests/infrastructure/llm/AGENTS.md` - LLM test documentation
 - `tests/infrastructure/llm/README.md` - Quick reference
 
 ### Literature Tests (`literature/`)

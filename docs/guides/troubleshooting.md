@@ -92,6 +92,7 @@ if not is_loaded:
 - Requests timing out
 - Slow responses
 - "Streaming timeout after X seconds" errors during summarization
+- "Failed to generate embedding" errors with timeout messages
 
 **Solutions:**
 
@@ -99,7 +100,16 @@ if not is_loaded:
 # Increase timeout in environment
 export LLM_TIMEOUT=120  # 2 minutes instead of default 60s for general LLM requests
 export LLM_SUMMARIZATION_TIMEOUT=900  # 15 minutes for long papers (default: 600s)
+export LITERATURE_EMBEDDING_TIMEOUT=180.0  # 3 minutes for embedding generation (default: 120s)
 ```
+
+**Embedding Timeout Issues:**
+If embedding generation times out during meta-analysis:
+1. Increase embedding timeout: `export LITERATURE_EMBEDDING_TIMEOUT=180.0`
+2. Increase retry attempts: `export LITERATURE_EMBEDDING_RETRY_ATTEMPTS=5`
+3. Enable Ollama restart on timeout: `export LITERATURE_EMBEDDING_RESTART_OLLAMA_ON_TIMEOUT=true`
+4. Check Ollama server status: `ollama ps`
+5. Verify embedding model is installed: `ollama list | grep embeddinggemma`
 
 **Adaptive Timeout:**
 The summarization system uses adaptive timeouts based on prompt size:
@@ -169,10 +179,10 @@ else:
 **Retry Previously Failed Downloads:**
 ```bash
 # Retry failed downloads when downloading
-python3 scripts/07_literature_search.py --download-only --retry-failed
+python3 scripts/literature_search.py --download-only --retry-failed
 
 # Retry failed downloads in full search workflow
-python3 scripts/07_literature_search.py --search --retry-failed --keywords "machine learning"
+python3 scripts/literature_search.py --search --retry-failed --keywords "machine learning"
 ```
 
 **Check Failed Downloads:**
@@ -229,11 +239,11 @@ PDF DOWNLOAD SUMMARY
 
 **Check Library Integrity:**
 ```bash
-# Validate library structure
-python3 -m infrastructure.literature.core.cli library validate
-
 # Show library statistics
 python3 -m infrastructure.literature.core.cli library stats
+
+# List library entries
+python3 -m infrastructure.literature.core.cli library list
 ```
 
 **Common Issues:**
@@ -246,10 +256,7 @@ python3 -m infrastructure.literature.core.cli library stats
 **Remove Papers Without PDFs:**
 ```bash
 # Clean up library (removes entries without PDFs)
-python3 scripts/07_literature_search.py --cleanup
-
-# Or via CLI
-python3 -m infrastructure.literature.core.cli library cleanup --no-pdf
+python3 scripts/literature_search.py --cleanup
 ```
 
 **Backup Before Cleanup:**
@@ -274,8 +281,8 @@ cp data/library.json data/references.bib backup/
 # Backup current library
 cp data/library.json data/library.json.backup
 
-# Validate library
-python3 -m infrastructure.literature.core.cli library validate
+# Check library statistics
+python3 -m infrastructure.literature.core.cli library stats
 
 # If corrupted, restore from backup
 cp data/library.json.backup data/library.json
@@ -521,6 +528,203 @@ from infrastructure.literature import LiteratureSearch
 searcher = LiteratureSearch()
 health = searcher.check_all_sources_health()
 # Check which sources are healthy
+```
+
+## Embedding Generation Issues
+
+### Hung Ollama (Embedding Endpoint Stuck)
+
+**Symptoms:**
+- Embedding generation times out even on small texts (<100 chars)
+- General Ollama API responds (`/api/tags` works) but embeddings fail
+- Timeout errors: "Timeout after Xs (text length: Y)"
+- Process appears to hang during embedding generation
+
+**Root Cause:**
+Ollama embedding endpoint (`/api/embed`) can become hung while the general API still responds. This is detected by testing the embedding endpoint specifically.
+
+**Solutions:**
+
+1. **Automatic Recovery** (enabled by default):
+   ```python
+   # System automatically detects and recovers
+   # Configuration (defaults shown):
+   embedding_restart_ollama_on_timeout = True
+   embedding_force_restart_on_timeout = True
+   embedding_test_endpoint_on_restart = True
+   ```
+
+2. **Manual Restart**:
+   ```bash
+   # Check if Ollama is running
+   ollama ps
+   
+   # Kill Ollama process
+   pkill ollama
+   
+   # Restart Ollama
+   ollama serve
+   
+   # In another terminal, verify embedding endpoint
+   curl -X POST http://localhost:11434/api/embed \
+     -d '{"model":"embeddinggemma","input":"test"}' \
+     --max-time 10
+   ```
+
+3. **Python Check**:
+   ```python
+   from infrastructure.llm.utils.ollama import test_embedding_endpoint
+   from infrastructure.llm.core.embedding_client import EmbeddingClient
+   
+   # Test embedding endpoint
+   success, error = test_embedding_endpoint(timeout=10.0)
+   if not success:
+       print(f"Embedding endpoint hung: {error}")
+       # Force restart
+       from infrastructure.llm.utils.ollama import restart_ollama_server
+       restart_ollama_server(test_embedding=True, kill_existing=True)
+   
+   # Or use EmbeddingClient
+   client = EmbeddingClient()
+   is_ok, error_msg = client.check_embedding_endpoint(timeout=10.0)
+   if not is_ok:
+       print(f"Embedding endpoint hung: {error_msg}")
+   ```
+
+### Embedding Timeouts
+
+**Symptoms:**
+- Timeouts on large texts (>4000 chars)
+- "Timeout after Xs (text length: Y)" errors
+
+**Solutions:**
+
+1. **Automatic Chunking** (enabled by default):
+   - Texts >4000 chars are automatically chunked
+   - Chunk size: 1000 tokens (~4000 chars) by default
+   - Configure: `LITERATURE_EMBEDDING_CHUNK_SIZE=1000`
+
+2. **Adaptive Timeouts**:
+   - Timeout scales with text length: `min(config_timeout, max(30s, text_length/50))`
+   - Minimum 30s for hung detection
+   - Configure base timeout: `LITERATURE_EMBEDDING_TIMEOUT=60.0`
+
+3. **Increase Timeout**:
+   ```bash
+   export LITERATURE_EMBEDDING_TIMEOUT=120.0  # 2 minutes
+   ```
+
+### Checkpoint Resume After Interruption
+
+**Symptoms:**
+- Embedding generation interrupted (Ctrl+C, crash, timeout)
+- Want to resume without regenerating completed embeddings
+
+**Solutions:**
+
+1. **Automatic Resume** (enabled by default):
+   - Checkpoint file: `data/embeddings/.embedding_progress.json`
+   - Automatically detected and loaded on next run
+   - Skips pre-flight validation when resuming
+
+2. **Manual Checkpoint Management**:
+   ```python
+   from pathlib import Path
+   import json
+   
+   # Check checkpoint
+   checkpoint_file = Path("data/embeddings/.embedding_progress.json")
+   if checkpoint_file.exists():
+       with open(checkpoint_file) as f:
+           checkpoint = json.load(f)
+       print(f"Completed: {len(checkpoint['completed_indices'])}/{checkpoint['total_documents']}")
+   
+   # Delete checkpoint to start fresh
+   checkpoint_file.unlink()
+   ```
+
+3. **Resume from Checkpoint**:
+   ```python
+   # Just run embedding generation again - checkpoint is automatically loaded
+   from infrastructure.literature.meta_analysis.embeddings import generate_document_embeddings
+   
+   embedding_data = generate_document_embeddings(
+       corpus,
+       config=config,
+       use_cache=True  # Required for checkpoint resume
+   )
+   ```
+
+### Configuration for Embedding Issues
+
+**Environment Variables:**
+
+```bash
+# Timeout settings
+export LITERATURE_EMBEDDING_TIMEOUT=60.0  # Base timeout (seconds)
+export LITERATURE_EMBEDDING_RETRY_ATTEMPTS=3  # Retry attempts
+export LITERATURE_EMBEDDING_RETRY_DELAY=2.0  # Initial retry delay (seconds)
+
+# Chunking settings
+export LITERATURE_EMBEDDING_CHUNK_SIZE=1000  # Tokens per chunk
+export LITERATURE_EMBEDDING_BATCH_SIZE=10  # Texts per batch
+
+# Recovery settings
+export LITERATURE_EMBEDDING_RESTART_OLLAMA_ON_TIMEOUT=true  # Auto-restart on timeout
+export LITERATURE_EMBEDDING_FORCE_RESTART_ON_TIMEOUT=true  # Force kill hung processes
+export LITERATURE_EMBEDDING_TEST_ENDPOINT_ON_RESTART=true  # Test embedding endpoint on restart
+```
+
+**Python Configuration:**
+
+```python
+from infrastructure.literature.core.config import LiteratureConfig
+
+config = LiteratureConfig()
+config.embedding_timeout = 120.0  # 2 minutes
+config.embedding_retry_attempts = 5
+config.embedding_chunk_size = 1000
+config.embedding_restart_ollama_on_timeout = True
+config.embedding_force_restart_on_timeout = True
+config.embedding_test_endpoint_on_restart = True
+```
+
+### Debugging Embedding Issues
+
+**Enable Debug Logging:**
+
+```python
+import logging
+from infrastructure.core.logging_utils import get_logger
+
+logger = get_logger(__name__)
+logger.setLevel(logging.DEBUG)
+```
+
+**Check Embedding Endpoint Health:**
+
+```python
+from infrastructure.llm.utils.ollama import test_embedding_endpoint, diagnose_ollama_issues
+
+# Test embedding endpoint
+success, error = test_embedding_endpoint(timeout=10.0)
+print(f"Embedding endpoint: {'OK' if success else f'FAILED: {error}'}")
+
+# Full diagnostics
+diagnostics = diagnose_ollama_issues()
+print(diagnostics)
+```
+
+**Monitor Embedding Generation:**
+
+```python
+# Progress is logged automatically
+# Look for:
+# - "Phase 1/3: Checking cache..."
+# - "Phase 2/3: Loading cached..."
+# - "Phase 3/3: Generating embeddings..."
+# - "Still processing..." (heartbeat every 30s)
+# - Checkpoint saves after each successful embedding
 ```
 
 ## Performance Issues

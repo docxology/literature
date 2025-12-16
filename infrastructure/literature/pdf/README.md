@@ -32,7 +32,7 @@ pdf_path = handler.download_paper(search_result)
 - Multiple fallback strategies (Unpaywall, arXiv, bioRxiv, OSF.io)
 - **HTML text extraction fallback**: When PDFs are unavailable, extracts text from HTML pages
 - OSF.io (Open Science Framework) support with direct download URL transformation
-- Enhanced publisher-specific URL patterns (MDPI, IEEE, Preprints.org)
+- Publisher-specific URL patterns (MDPI, IEEE, Preprints.org)
 - Citation key-based file naming
 - **Failed download tracking**: Automatic tracking of failures with retry capability
 

@@ -11,7 +11,7 @@ The LLM core module provides the foundational components for interacting with lo
 Main interface for querying LLMs with multiple response modes:
 - **Standard queries**: Conversational queries with context
 - **Short responses**: Brief answers (< 150 tokens)
-- **Long responses**: Comprehensive answers (> 500 tokens)
+- **Long responses**: Detailed answers (> 500 tokens)
 - **Structured responses**: JSON-formatted with schema validation
 - **Raw queries**: Direct prompts without modification
 - **Streaming**: Real-time response generation
@@ -45,6 +45,60 @@ Multi-turn conversation management:
 ### ResponseSaver (`response_saver.py`)
 
 Response saving utilities for persistence and debugging.
+
+### EmbeddingClient (`embedding_client.py`)
+
+Client for generating text embeddings using Ollama embedding models.
+
+**Key Features:**
+- Single and batch embedding generation
+- Automatic text chunking for large documents (handles 2048 token limit)
+- Document-level embedding aggregation via mean pooling
+- Embedding caching support
+- Request monitoring with progress updates
+- Automatic Ollama restart on timeout/hung state
+- Adaptive timeout scaling based on text length
+
+**Key Methods:**
+- `generate_embedding(text)` - Generate embedding for single text
+- `generate_embeddings_batch(texts)` - Generate embeddings for multiple texts
+- `generate_document_embedding(text, chunk_size=None)` - Generate document-level embedding with automatic chunking
+- `check_connection(timeout=5.0)` - Check Ollama server availability
+- `check_embedding_endpoint(timeout=10.0)` - Verify embedding endpoint is working
+
+**RequestMonitor (`embedding_client.py`)**
+
+Background monitoring for long-running embedding requests:
+- Periodic progress updates (heartbeat logging)
+- Timeout warning thresholds (50%, 75%, 90%)
+- Non-blocking background thread monitoring
+
+**Usage:**
+```python
+from infrastructure.llm.core.embedding_client import EmbeddingClient
+
+# Initialize client
+client = EmbeddingClient(
+    embedding_model="embeddinggemma",
+    cache_dir=Path("data/embeddings"),
+    chunk_size=2000,
+    timeout=120.0
+)
+
+# Generate single embedding
+embedding = client.generate_embedding("Machine learning is fascinating")
+
+# Generate batch embeddings
+embeddings = client.generate_embeddings_batch(["Text 1", "Text 2", "Text 3"])
+
+# Generate document-level embedding (auto-chunks large texts)
+doc_embedding = client.generate_document_embedding(long_text)
+```
+
+**Configuration:**
+- Uses `LLMConfig` for base configuration
+- Embedding-specific settings via constructor parameters
+- Environment variables: `LITERATURE_EMBEDDING_MODEL`, `LITERATURE_EMBEDDING_CACHE_DIR`, etc.
 
 ## Usage Examples
 
@@ -153,5 +207,6 @@ except ContextLimitError as e:
 
 - [`README.md`](README.md) - Quick reference
 - [`../../llm/AGENTS.md`](../../llm/AGENTS.md) - LLM module overview
-- [`../client.py`](client.py) - LLMClient implementation
+- [`client.py`](client.py) - LLMClient implementation
+- [`embedding_client.py`](embedding_client.py) - EmbeddingClient implementation
 

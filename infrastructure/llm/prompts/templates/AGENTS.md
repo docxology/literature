@@ -21,7 +21,7 @@ Templates for paper summarization:
 - Full paper summarization
 - Section-specific summaries
 
-## Usage
+## Usage Examples
 
 Templates are loaded and composed via `PromptComposer`:
 

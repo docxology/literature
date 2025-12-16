@@ -30,7 +30,7 @@ urls = extract_pdf_urls_modular(html_content, base_url)
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
 - [`../AGENTS.md`](../AGENTS.md) - Literature module overview
 
 

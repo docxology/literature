@@ -403,7 +403,7 @@ This report documents a comprehensive review of the literature search and manage
 ### 6.3 Workflow Documentation
 
 #### ✅ Script Documentation
-- ✅ `scripts/07_literature_search.py` - Referenced in docs
+- ✅ `scripts/literature_search.py` - Referenced in docs
 - ✅ `run_literature.sh` - Referenced in docs
 - ✅ Workflow operations documented
 

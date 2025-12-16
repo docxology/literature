@@ -100,6 +100,22 @@ export LLM_LONG_MAX_TOKENS=16384  # Maximum tokens for long responses
 # Summarization
 export MAX_PARALLEL_SUMMARIES=1
 export LLM_SUMMARIZATION_TIMEOUT=600
+
+# Embedding settings (for meta-analysis with embeddings)
+export LITERATURE_EMBEDDING_MODEL="embeddinggemma"  # Embedding model name (default: embeddinggemma)
+export LITERATURE_EMBEDDING_DIMENSION=768  # Embedding dimension (default: 768)
+export LITERATURE_EMBEDDING_TIMEOUT=120.0  # Timeout for embedding requests (longer than LLM timeout for large texts)
+export LITERATURE_EMBEDDING_RETRY_ATTEMPTS=3  # Number of retry attempts for failed embedding requests
+export LITERATURE_EMBEDDING_RETRY_DELAY=2.0  # Initial delay between retries (exponential backoff)
+export LITERATURE_EMBEDDING_RESTART_OLLAMA_ON_TIMEOUT=true  # Whether to attempt Ollama restart on timeout
+export LITERATURE_EMBEDDING_FORCE_RESTART_ON_TIMEOUT=true  # Whether to force kill hung Ollama processes on timeout
+export LITERATURE_EMBEDDING_TEST_ENDPOINT_ON_RESTART=true  # Whether to test embedding endpoint when restarting Ollama
+export LITERATURE_EMBEDDING_CACHE_DIR="data/embeddings"  # Directory for caching embeddings
+export LITERATURE_EMBEDDING_CHUNK_SIZE=2000  # Maximum tokens per chunk for text splitting
+export LITERATURE_EMBEDDING_BATCH_SIZE=10  # Number of texts to process in each batch
+export LITERATURE_EMBEDDING_MAX_TEXT_LENGTH=250000  # Maximum character length for documents to embed (documents exceeding this are skipped)
+export LITERATURE_EMBEDDING_TIMEOUT_MULTIPLIER_FOR_LONG_DOCS=2.0  # Timeout multiplier for long documents (default: 2.0)
+export LITERATURE_EMBEDDING_CHUNK_SIZE_REDUCTION_THRESHOLD=100000  # Character threshold for reducing chunk size (default: 100000)
 ```
 
 ### Logging

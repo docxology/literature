@@ -29,10 +29,10 @@ pip install -e .
 
 ```bash
 # Interactive search
-python3 scripts/07_literature_search.py --search
+python3 scripts/literature_search.py --search
 
 # Search with keywords
-python3 scripts/07_literature_search.py --search --keywords "machine learning,deep learning"
+python3 scripts/literature_search.py --search --keywords "machine learning,deep learning"
 ```
 
 ### 2. Download PDFs
@@ -40,14 +40,14 @@ python3 scripts/07_literature_search.py --search --keywords "machine learning,de
 PDFs are automatically downloaded when papers are added to the library. You can also download for existing entries:
 
 ```bash
-python3 scripts/07_literature_search.py --download-only
+python3 scripts/literature_search.py --download-only
 ```
 
 ### 3. Generate Summaries
 
 ```bash
 # Generate summaries for existing PDFs
-python3 scripts/07_literature_search.py --summarize
+python3 scripts/literature_search.py --summarize
 ```
 
 **Note:** Requires Ollama to be running. Start with `ollama serve`.
@@ -161,10 +161,10 @@ To retry previously failed downloads, use the `--retry-failed` flag:
 
 ```bash
 # Retry failed downloads when downloading
-python3 scripts/07_literature_search.py --download-only --retry-failed
+python3 scripts/literature_search.py --download-only --retry-failed
 
 # Retry failed downloads in full search workflow
-python3 scripts/07_literature_search.py --search --retry-failed --keywords "machine learning"
+python3 scripts/literature_search.py --search --retry-failed --keywords "machine learning"
 ```
 
 **Checking Failed Downloads:**
@@ -187,11 +187,11 @@ The failed downloads tracker includes:
 ### Library Issues
 
 ```bash
-# Validate library
-python3 -m infrastructure.literature.core.cli library validate
+# Show library statistics
+python3 -m infrastructure.literature.core.cli library stats
 
-# Clean up
-python3 scripts/07_literature_search.py --cleanup
+# Clean up library (remove papers without PDFs)
+python3 scripts/literature_search.py --cleanup
 ```
 
 ## See Also

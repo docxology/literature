@@ -1,6 +1,6 @@
 # Reporting Module
 
-Comprehensive reporting with JSON/CSV/HTML export.
+Reporting with JSON/CSV/HTML export.
 
 ## Components
 
@@ -24,7 +24,7 @@ reporter.generate_workflow_report(workflow_result, format="all")
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
 - [`../AGENTS.md`](../AGENTS.md) - Literature module overview
 
 

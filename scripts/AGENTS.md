@@ -6,7 +6,7 @@ The scripts module contains orchestrator scripts that coordinate literature proc
 
 ## Components
 
-### Literature Search Orchestrator (`07_literature_search.py`)
+### Literature Search Orchestrator (`literature_search.py`)
 
 Main orchestrator for literature search and summarization operations:
 
@@ -23,7 +23,7 @@ Main orchestrator for literature search and summarization operations:
 - Interactive keyword input
 - Progress tracking
 - Parallel summarization support
-- Comprehensive error handling
+- Error handling
 - Environment-based configuration
 
 ### Bash Utilities (`bash_utils.sh`)
@@ -40,40 +40,40 @@ Shared bash utilities for script orchestration:
 
 ```bash
 # Interactive search
-python3 scripts/07_literature_search.py --search
+python3 scripts/literature_search.py --search
 
 # Search with specific keywords
-python3 scripts/07_literature_search.py --search --keywords "machine learning,deep learning"
+python3 scripts/literature_search.py --search --keywords "machine learning,deep learning"
 
 # Search with custom limit
-python3 scripts/07_literature_search.py --search --limit 50 --keywords "optimization"
+python3 scripts/literature_search.py --search --limit 50 --keywords "optimization"
 ```
 
 ### Generate Summaries
 
 ```bash
 # Summarize existing PDFs
-python3 scripts/07_literature_search.py --summarize
+python3 scripts/literature_search.py --summarize
 
 # Search and summarize
-python3 scripts/07_literature_search.py --search --summarize
+python3 scripts/literature_search.py --search --summarize
 ```
 
 ### Download PDFs
 
 ```bash
 # Download PDFs for existing entries
-python3 scripts/07_literature_search.py --download-only
+python3 scripts/literature_search.py --download-only
 ```
 
 ### Meta-Analysis
 
 ```bash
 # Run standard meta-analysis on existing library (no embeddings, no Ollama required)
-python3 scripts/07_literature_search.py --meta-analysis
+python3 scripts/literature_search.py --meta-analysis
 
 # Run full meta-analysis with embeddings on existing library (requires Ollama)
-python3 scripts/07_literature_search.py --meta-analysis --with-embeddings
+python3 scripts/literature_search.py --meta-analysis --with-embeddings
 ```
 
 **Note**: Meta-analysis works only with existing library data. It does not search, download, or extract.
@@ -83,13 +83,13 @@ Use `--search-only`, `--download-only`, or `--extract-text` for those operations
 
 ```bash
 # Generate literature review
-python3 scripts/07_literature_search.py --llm-operation review
+python3 scripts/literature_search.py --llm-operation review
 
 # Science communication
-python3 scripts/07_literature_search.py --llm-operation communication
+python3 scripts/literature_search.py --llm-operation communication
 
 # Comparative analysis
-python3 scripts/07_literature_search.py --llm-operation compare
+python3 scripts/literature_search.py --llm-operation compare
 ```
 
 ## Configuration
@@ -134,6 +134,6 @@ The orchestrator provides:
 
 - [`README.md`](README.md) - Quick reference
 - [`../infrastructure/literature/AGENTS.md`](../infrastructure/literature/AGENTS.md) - Literature module documentation
-- [`07_literature_search.py`](07_literature_search.py) - Implementation
+- [`literature_search.py`](literature_search.py) - Implementation
 
 

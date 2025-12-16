@@ -119,7 +119,7 @@ This report provides a comprehensive review of all documentation files across th
 
 2. **Script Option Documentation** (LOW PRIORITY)
    - **File**: `docs/reference/cli-reference.md`
-   - **Issue**: Missing some script options from `scripts/07_literature_search.py`:
+   - **Issue**: Missing some script options from `scripts/literature_search.py`:
      - `--retry-failed` option not documented
      - `--clear-pdfs` option not documented
      - `--clear-summaries` option not documented
@@ -226,7 +226,7 @@ None identified - no critical issues that prevent system operation.
 
 2. **Missing Script Options in CLI Reference**
    - **File**: `docs/reference/cli-reference.md`
-   - **Issue**: Some `scripts/07_literature_search.py` options not documented
+   - **Issue**: Some `scripts/literature_search.py` options not documented
    - **Fix**: Add missing options to CLI reference
    - **Priority**: Medium - reduces discoverability
 
@@ -372,7 +372,7 @@ None identified - no critical issues that prevent system operation.
 ### Short-term Improvements (Medium Priority)
 
 1. **Add Missing Script Options**
-   - **Action**: Document all `scripts/07_literature_search.py` options in CLI reference
+   - **Action**: Document all `scripts/literature_search.py` options in CLI reference
    - **Rationale**: Improves discoverability of features
    - **File**: `docs/reference/cli-reference.md`
 

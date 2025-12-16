@@ -69,7 +69,7 @@
 #
 # TROUBLESHOOTING
 # ===============
-# - Python script not found: Ensure scripts/07_literature_search.py exists
+# - Python script not found: Ensure scripts/literature_search.py exists
 # - Ollama not running: Start with 'ollama serve' for summarization/LLM ops
 # - Permission errors: Check write permissions for data/ directory
 # - Network errors: Verify internet connection for search/download operations
@@ -116,7 +116,7 @@ source "$SCRIPT_DIR/scripts/literature_cli.sh"
 # ============================================================================
 
 readonly COVERAGE_THRESHOLD=60
-readonly PYTHON_SCRIPT="scripts/07_literature_search.py"
+readonly PYTHON_SCRIPT="scripts/literature_search.py"
 readonly MAX_TEST_OUTPUT_LINES=20
 readonly MAX_FAILED_TEST_LINES=20
 

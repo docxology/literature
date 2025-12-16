@@ -15,11 +15,11 @@ Test suite for literature search and management functionality, including integra
 ### Source Tests
 - `test_api.py` - API adapter tests
 - `test_unpaywall.py` - Unpaywall integration tests
-- `test_sources_comprehensive.py` - Comprehensive source adapter tests (all sources)
+- `test_sources_comprehensive.py` - Source adapter tests (all sources)
 
 ### PDF Tests
 - `test_pdf_handler_simple.py` - Basic PDF handler tests
-- `test_pdf_handler_comprehensive.py` - Comprehensive PDF tests
+- `test_pdf_handler_comprehensive.py` - PDF tests
 - `test_pdf_handler_fallbacks.py` - PDF fallback strategy tests
 
 ### Library Tests
@@ -52,7 +52,7 @@ Test suite for literature search and management functionality, including integra
 - `test_paper_selector.py` - Paper selection tests
 
 ### HTML Parser Tests
-- `test_html_parsers.py` - Comprehensive HTML parser tests (ACM, Elsevier, IEEE, Springer, Wiley, Generic)
+- `test_html_parsers.py` - HTML parser tests (ACM, Elsevier, IEEE, Springer, Wiley, Generic)
 
 ### Summarization Component Tests
 - `test_summarization_components.py` - Individual summarization component tests (chunker, context_extractor, etc.)
@@ -80,9 +80,9 @@ pytest tests/infrastructure/literature/test_literature_integration.py
 
 ## Test Coverage
 
-Comprehensive coverage of:
+Coverage of:
 - Core search functionality
-- Source adapters (all sources comprehensively tested)
+- Source adapters (all sources tested)
 - HTML parsers (all publisher-specific parsers)
 - PDF handling and fallbacks
 - Library management

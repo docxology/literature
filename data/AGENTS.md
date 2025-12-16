@@ -10,6 +10,7 @@ The `data/` directory serves as the central repository for academic literature s
 data/
 ├── library.json          # JSON index of all papers with metadata
 ├── references.bib        # BibTeX bibliography file
+├── summarization_progress.json # Summarization progress tracking (auto-generated)
 ├── failed_downloads.json # Failed PDF download attempts (for retry, auto-generated)
 ├── pdfs/                 # Downloaded PDF files (named by citation key)
 │   ├── smith2024machine.pdf
@@ -19,6 +20,9 @@ data/
 │   ├── smith2024machine_summary.md
 │   ├── jones2023deep_summary.md
 │   └── ...
+├── extracted_text/       # Extracted text from PDFs
+├── embeddings/           # Cached embedding files (JSON) for semantic analysis
+├── output/               # Meta-analysis outputs and visualizations
 ├── AGENTS.md             # This detailed documentation
 └── README.md             # Quick reference guide
 ```
@@ -128,10 +132,10 @@ Automatically tracks failed PDF download attempts for retry capability:
 **Usage:**
 ```bash
 # Retry failed downloads
-python3 scripts/07_literature_search.py --download-only --retry-failed
+python3 scripts/literature_search.py --download-only --retry-failed
 
 # Or use interactive prompts (automatically prompts if failures exist)
-python3 scripts/07_literature_search.py --search
+python3 scripts/literature_search.py --search
 ```
 
 ### Summaries (`summaries/`)
@@ -164,7 +168,7 @@ AI-generated paper summaries using local LLM integration:
 ```
 
 **Skip Existing Summaries:**
-The summarization workflow automatically detects and skips generation for papers that already have summary files. When running `scripts/07_literature_search.py`:
+The summarization workflow automatically detects and skips generation for papers that already have summary files. When running `scripts/literature_search.py`:
 
 1. **File existence check** - Before generating a summary, the workflow checks if `data/summaries/{citation_key}_summary.md` already exists
 2. **Automatic skip** - If the file exists, summarization is skipped and the existing file is used
@@ -210,11 +214,11 @@ python3 -m infrastructure.literature.core.cli search "neural networks" --sources
 ```bash
 # Interactive search and summarize with LLM
 ./run_literature.sh                # Interactive menu (select search or summarize)
-python3 scripts/07_literature_search.py --search     # Search for papers
-python3 scripts/07_literature_search.py --summarize  # Generate summaries
+python3 scripts/literature_search.py --search     # Search for papers
+python3 scripts/literature_search.py --summarize  # Generate summaries
 # Or directly:
-python3 scripts/07_literature_search.py --search     # Search for papers
-python3 scripts/07_literature_search.py --summarize  # Generate summaries
+python3 scripts/literature_search.py --search     # Search for papers
+python3 scripts/literature_search.py --summarize  # Generate summaries
 ```
 
 **Workflow:**
@@ -432,4 +436,4 @@ python3 -m infrastructure.literature.core.cli library rebuild
 - [`../infrastructure/literature/AGENTS.md`](../infrastructure/literature/AGENTS.md) - Literature search implementation
 - [`../infrastructure/literature/README.md`](../infrastructure/literature/README.md) - CLI usage guide
 - [`../infrastructure/llm/AGENTS.md`](../infrastructure/llm/AGENTS.md) - LLM summarization details
-- [`../scripts/07_literature_search.py`](../scripts/07_literature_search.py) - Literature search thin orchestrator
+- [`../scripts/literature_search.py`](../scripts/literature_search.py) - Literature search thin orchestrator

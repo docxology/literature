@@ -431,7 +431,7 @@ def run_meta_analysis(
             else:
                 step_start = time.time()
                 logger.info("Generating embedding analysis...")
-                from infrastructure.literature.meta_analysis.embeddings import (
+                from infrastructure.literature.llm.embeddings import (
                     generate_document_embeddings,
                     compute_similarity_matrix,
                     cluster_embeddings,
@@ -466,14 +466,14 @@ def run_meta_analysis(
                     plot_cluster_size_distribution,
                     plot_similarity_network,
                 )
-                from infrastructure.literature.meta_analysis.embeddings import (
+                from infrastructure.literature.llm.embeddings import (
                     export_embedding_statistics,
                     export_validation_report,
                     export_clustering_metrics,
                 )
                 
                 # Generate embeddings
-                logger.info("Generating document embeddings (this may take a while)...")
+                logger.info("Checking embedding cache and generating missing embeddings...")
                 embedding_data = generate_document_embeddings(
                     corpus,
                     config=workflow.literature_search.config,
@@ -521,7 +521,8 @@ def run_meta_analysis(
                 from infrastructure.literature.meta_analysis.embedding_validation import validate_similarity_matrix
                 sim_validation = validate_similarity_matrix(
                     similarity_matrix,
-                    citation_keys=embedding_data.citation_keys
+                    citation_keys=embedding_data.citation_keys,
+                    embeddings=embedding_data.embeddings
                 )
                 validation_results["similarity"] = sim_validation
                 

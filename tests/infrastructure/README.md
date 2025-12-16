@@ -16,7 +16,7 @@ pytest tests/infrastructure/
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
 
 
 

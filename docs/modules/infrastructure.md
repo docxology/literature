@@ -1,6 +1,6 @@
 # Infrastructure Layer Module
 
-Complete documentation for the infrastructure layer.
+Documentation for the infrastructure layer.
 
 ## Overview
 
@@ -125,7 +125,7 @@ All modules support environment variable configuration. See [Configuration Guide
 
 - **[Getting Started](../getting-started.md)** - Quick start guide
 - **[Architecture Overview](../architecture.md)** - System architecture
-- **[API Reference](../reference/api-reference.md)** - Complete API documentation
+- **[API Reference](../reference/api-reference.md)** - API documentation
 - **[Core Module](core.md)** - Foundation utilities
 - **[LLM Module](llm.md)** - Local LLM integration
 - **[Literature Module](literature.md)** - Literature search and management

@@ -24,7 +24,7 @@ This policy ensures:
 - **Veridical testing**: Tests verify behavior with systems
 - **Data**: All tests use data structures and computations
 - **API calls**: Integration tests use Ollama API and file operations
-- **Comprehensive logging**: All tests include informative logging of operations
+- **Logging**: All tests include informative logging of operations
 - **Factual verification**: Tests verify system behavior, not mocked responses
 
 **Prohibited:**
@@ -82,26 +82,26 @@ pytest -m requires_ollama
 
 ### Core Module
 - 17 test files (including test_logging_formatters.py, test_config_validator.py)
-- Comprehensive coverage of all utilities
+- Coverage of all utilities
 - Exception handling tests
 - Configuration tests (loader, CLI coverage, validator)
 - Logging formatter tests
 
 ### LLM Module
-- 24 test files (added test_review_components.py, test_templates_comprehensive.py)
+- 24 test files (added test_review_components.py, test_templates.py)
 - 88%+ coverage
 - Pure logic and integration tests
 - Template and validation tests
 - Review component tests
-- Template module comprehensive tests
+- Template module tests
 
 ### Literature Module
-- 35 test files (added test_html_parsers.py, test_sources_comprehensive.py, test_summarization_components.py)
-- Comprehensive coverage
+- 35 test files (added test_html_parsers.py, test_sources.py, test_summarization_components.py)
+- Coverage
 - Integration tests with real APIs
 - Workflow and orchestration tests
 - HTML parser tests
-- Source adapter comprehensive tests
+- Source adapter tests
 - Summarization component tests
 
 ### Validation Module

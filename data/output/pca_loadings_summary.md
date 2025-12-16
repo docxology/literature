@@ -6,187 +6,187 @@ loadings, showing which words contribute most to each principal component.
 ## Overview
 
 - **Total Components Analyzed**: 5
-- **Total Variance Explained**: 7.82%
+- **Total Variance Explained**: 7.96%
 
 ## Component Analysis
 
 ### Principal Component 1 (PC1)
 
-- **Variance Explained**: 2.11%
+- **Variance Explained**: 2.43%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | free energy | 0.3527 |
-| 2 | energy | 0.3509 |
-| 3 | free | 0.3466 |
-| 4 | expected | 0.1749 |
-| 5 | active inference | 0.1598 |
-| 6 | inference | 0.1574 |
-| 7 | energy principle | 0.1510 |
-| 8 | principle | 0.1508 |
-| 9 | expected free | 0.1482 |
-| 10 | active | 0.1406 |
-| 11 | efe | 0.1321 |
-| 12 | variational | 0.1318 |
-| 13 | data | -0.1311 |
-| 14 | activity | -0.1221 |
-| 15 | human | -0.1031 |
-| 16 | agents | 0.0980 |
-| 17 | fep | 0.0881 |
-| 18 | agent | 0.0859 |
-| 19 | minimization | 0.0837 |
-| 20 | rl | 0.0818 |
+| 1 | energy | 0.3029 |
+| 2 | free energy | 0.2982 |
+| 3 | free | 0.2898 |
+| 4 | fep | 0.2631 |
+| 5 | principle | 0.2591 |
+| 6 | energy principle | 0.2490 |
+| 7 | active | -0.2095 |
+| 8 | active inference | -0.2054 |
+| 9 | inference | -0.1797 |
+| 10 | systems | 0.1127 |
+| 11 | mechanics | 0.1044 |
+| 12 | agent | -0.1020 |
+| 13 | agents | -0.0919 |
+| 14 | learning | -0.0898 |
+| 15 | bayesian | 0.0872 |
+| 16 | quantum | 0.0868 |
+| 17 | planning | -0.0848 |
+| 18 | bayesian mechanics | 0.0800 |
+| 19 | brain | 0.0775 |
+| 20 | physics | 0.0768 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): free energy, energy, free, expected, active inference
-**Negative contributors** (low loading): data, activity, human
+**Positive contributors** (high loading): energy, free energy, free, fep, principle
+**Negative contributors** (low loading): active, active inference, inference, agent, agents
 
 ---
 
 ### Principal Component 2 (PC2)
 
-- **Variance Explained**: 1.66%
+- **Variance Explained**: 1.76%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | navigation | 0.1851 |
-| 2 | learning | 0.1845 |
-| 3 | agent | 0.1823 |
-| 4 | environments | 0.1544 |
-| 5 | agents | 0.1515 |
-| 6 | planning | 0.1499 |
-| 7 | exploration | 0.1480 |
-| 8 | active inference | 0.1463 |
-| 9 | active | 0.1441 |
-| 10 | energy principle | -0.1390 |
-| 11 | free energy | -0.1381 |
-| 12 | principle | -0.1324 |
-| 13 | energy | -0.1304 |
-| 14 | aif | 0.1245 |
-| 15 | free | -0.1237 |
-| 16 | systems | -0.1199 |
-| 17 | deep | 0.1189 |
-| 18 | bayesian | -0.1164 |
-| 19 | inference | 0.1162 |
-| 20 | model | 0.1145 |
+| 1 | active inference | 0.2877 |
+| 2 | active | 0.2681 |
+| 3 | inference | 0.2674 |
+| 4 | free | 0.2194 |
+| 5 | energy | 0.2167 |
+| 6 | free energy | 0.2154 |
+| 7 | expected | 0.1613 |
+| 8 | data | -0.1534 |
+| 9 | agents | 0.1522 |
+| 10 | activity | -0.1512 |
+| 11 | expected free | 0.1347 |
+| 12 | agent | 0.1342 |
+| 13 | human | -0.1308 |
+| 14 | efe | 0.1187 |
+| 15 | rl | 0.1109 |
+| 16 | variational | 0.1063 |
+| 17 | control | 0.1039 |
+| 18 | deep | 0.0995 |
+| 19 | planning | 0.0978 |
+| 20 | cognitive | -0.0972 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): navigation, learning, agent, environments, agents
-**Negative contributors** (low loading): energy principle, free energy, principle, energy, free
+**Positive contributors** (high loading): active inference, active, inference, free, energy
+**Negative contributors** (low loading): data, activity, human, cognitive
 
 ---
 
 ### Principal Component 3 (PC3)
 
-- **Variance Explained**: 1.39%
+- **Variance Explained**: 1.30%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | control | 0.3226 |
-| 2 | perception | 0.1839 |
-| 3 | deep | 0.1756 |
-| 4 | action | 0.1560 |
-| 5 | active inference | 0.1331 |
-| 6 | motor | 0.1329 |
-| 7 | deep active | 0.1191 |
-| 8 | predictive | 0.1186 |
-| 9 | inference | 0.1181 |
-| 10 | robot | 0.1175 |
-| 11 | state | 0.1156 |
-| 12 | active | 0.1152 |
-| 13 | robotics | 0.1138 |
-| 14 | brain | 0.1127 |
-| 15 | efe | -0.1125 |
-| 16 | activity | -0.1122 |
-| 17 | body | 0.1111 |
-| 18 | data | -0.1083 |
-| 19 | agents | -0.1070 |
-| 20 | cognitive | 0.1062 |
+| 1 | control | 0.2830 |
+| 2 | navigation | -0.1882 |
+| 3 | agents | -0.1774 |
+| 4 | exploration | -0.1739 |
+| 5 | perception | 0.1683 |
+| 6 | inference | 0.1604 |
+| 7 | deep | 0.1579 |
+| 8 | agent | -0.1525 |
+| 9 | brain | 0.1516 |
+| 10 | aif | -0.1465 |
+| 11 | active inference | 0.1429 |
+| 12 | active | 0.1397 |
+| 13 | environments | -0.1355 |
+| 14 | action | 0.1132 |
+| 15 | curiosity | -0.1106 |
+| 16 | multi | -0.1097 |
+| 17 | estimation | 0.1071 |
+| 18 | decision | -0.0985 |
+| 19 | neural | 0.0974 |
+| 20 | theory | 0.0956 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): control, perception, deep, action, active inference
-**Negative contributors** (low loading): efe, activity, data, agents
+**Positive contributors** (high loading): control, perception, inference, deep, brain
+**Negative contributors** (low loading): navigation, agents, exploration, agent, aif
 
 ---
 
 ### Principal Component 4 (PC4)
 
-- **Variance Explained**: 1.35%
+- **Variance Explained**: 1.27%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | ai | 0.2181 |
-| 2 | data | -0.2139 |
-| 3 | cognitive | 0.2119 |
-| 4 | navigation | 0.1891 |
-| 5 | deep | -0.1822 |
-| 6 | self | 0.1611 |
-| 7 | activity | -0.1345 |
-| 8 | control | -0.1334 |
-| 9 | agents | 0.1200 |
-| 10 | intelligence | 0.1156 |
-| 11 | cognition | 0.1145 |
-| 12 | agent | 0.1099 |
-| 13 | predictive | 0.1089 |
-| 14 | problem | -0.1088 |
-| 15 | exploration | 0.1085 |
-| 16 | systems | 0.1065 |
-| 17 | environments | 0.1036 |
-| 18 | algorithm | -0.1015 |
-| 19 | embodied | 0.0976 |
-| 20 | collective | 0.0961 |
+| 1 | model | 0.1820 |
+| 2 | fep | 0.1662 |
+| 3 | learning | 0.1656 |
+| 4 | navigation | 0.1634 |
+| 5 | cognitive | 0.1537 |
+| 6 | bayesian | -0.1469 |
+| 7 | predictive | 0.1332 |
+| 8 | brain | 0.1297 |
+| 9 | motor | 0.1295 |
+| 10 | self | 0.1259 |
+| 11 | activity | -0.1255 |
+| 12 | data | -0.1240 |
+| 13 | human | 0.1233 |
+| 14 | world | 0.1098 |
+| 15 | environment | 0.1057 |
+| 16 | robot | 0.1054 |
+| 17 | perception | 0.1046 |
+| 18 | predictive coding | 0.1014 |
+| 19 | coding | 0.1009 |
+| 20 | ai | 0.1008 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): ai, cognitive, navigation, self, agents
-**Negative contributors** (low loading): data, deep, activity, control, problem
+**Positive contributors** (high loading): model, fep, learning, navigation, cognitive
+**Negative contributors** (low loading): bayesian, activity, data
 
 ---
 
 ### Principal Component 5 (PC5)
 
-- **Variance Explained**: 1.31%
+- **Variance Explained**: 1.20%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | ai | 0.2939 |
-| 2 | inference | 0.2132 |
-| 3 | active inference | 0.2049 |
-| 4 | active | 0.1999 |
-| 5 | object | -0.1625 |
-| 6 | navigation | -0.1582 |
-| 7 | model | -0.1426 |
-| 8 | agents | 0.1391 |
-| 9 | free energy | -0.1220 |
-| 10 | control | 0.1214 |
-| 11 | neural | -0.1208 |
-| 12 | systems | 0.1197 |
-| 13 | robot | -0.1187 |
-| 14 | energy | -0.1167 |
-| 15 | free | -0.1150 |
-| 16 | goal directed | -0.1133 |
-| 17 | goal | -0.1130 |
-| 18 | decision | 0.1129 |
-| 19 | consciousness | 0.1103 |
-| 20 | directed | -0.1078 |
+| 1 | ai | 0.3640 |
+| 2 | systems | 0.2016 |
+| 3 | intelligence | 0.1796 |
+| 4 | agents | 0.1587 |
+| 5 | active inference | 0.1538 |
+| 6 | deep | -0.1449 |
+| 7 | data | -0.1411 |
+| 8 | cognitive | 0.1409 |
+| 9 | inference | 0.1362 |
+| 10 | active | 0.1331 |
+| 11 | artificial | 0.1257 |
+| 12 | object | -0.1240 |
+| 13 | cognition | 0.1197 |
+| 14 | model | -0.1139 |
+| 15 | human | 0.1117 |
+| 16 | learning | -0.1060 |
+| 17 | artificial intelligence | 0.1044 |
+| 18 | activity | -0.1020 |
+| 19 | consciousness | 0.1009 |
+| 20 | state | -0.0988 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): ai, inference, active inference, active, agents
-**Negative contributors** (low loading): object, navigation, model, free energy, neural
+**Positive contributors** (high loading): ai, systems, intelligence, agents, active inference
+**Negative contributors** (low loading): deep, data, object, model, learning
 
 ---
 

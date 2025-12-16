@@ -28,7 +28,7 @@ is_valid, errors = validator.validate_complete(response, mode="structured")
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
 - [`../../llm/README.md`](../../llm/README.md) - LLM module overview
 
 

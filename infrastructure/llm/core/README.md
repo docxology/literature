@@ -28,7 +28,7 @@ response = client.query("What is machine learning?")
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
 - [`../../llm/README.md`](../../llm/README.md) - LLM module overview
 
 

@@ -6,6 +6,7 @@ How-to guides for common tasks.
 
 - **[Searching Papers](search-papers.md)** - Guide to searching for academic papers
 - **[Summarizing Papers](summarize-papers.md)** - Guide to generating AI-powered summaries
+- **[LLM Operations](llm-operations.md)** - Advanced multi-paper LLM operations (reviews, comparisons, gap analysis)
 - **[Meta-Analysis](meta-analysis.md)** - Running meta-analysis on your library
 - **[Configuration](configuration.md)** - System configuration guide
 - **[Troubleshooting](troubleshooting.md)** - Troubleshooting guide

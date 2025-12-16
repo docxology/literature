@@ -465,7 +465,8 @@ class TestEmbeddingValidation:
         assert results["diagonal_all_one"] is True
         assert results["range_valid"] is True
         assert -1.0 <= results["min_value"] <= 1.0
-        assert -1.0 <= results["max_value"] <= 1.0
+        # Allow for floating point precision errors (1.0 + epsilon)
+        assert -1.0 <= results["max_value"] <= 1.0 + 1e-10
         logger.info("Similarity matrix validation test passed")
     
     def test_detect_embedding_outliers(self):

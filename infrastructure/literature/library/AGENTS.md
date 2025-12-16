@@ -1,4 +1,4 @@
-# Library Module - Complete Documentation
+# Library Module - Documentation
 
 ## Purpose
 
@@ -31,7 +31,7 @@ JSON-based index for tracking all papers in the library.
 Statistics and display utilities.
 
 **Functions:**
-- `get_library_statistics()` - Get comprehensive statistics
+- `get_library_statistics()` - Get statistics
 - `format_library_stats_display()` - Format for display
 
 ### ReferenceManager (references.py)
@@ -54,7 +54,27 @@ Cleanup operations for library maintenance.
 **Functions:**
 - `clear_pdfs()` - Remove all PDFs
 - `clear_summaries()` - Remove all summaries
-- `clear_library()` - Complete library cleanup
+- `clear_library()` - Library cleanup
+
+## Configuration
+
+The library module uses configuration from `LiteratureConfig`:
+
+### Environment Variables
+
+- `LITERATURE_LIBRARY_INDEX` - JSON index file path (default: `data/library.json`)
+- `LITERATURE_BIBTEX_FILE` - BibTeX file path (default: `data/references.bib`)
+
+### Programmatic Configuration
+
+```python
+from infrastructure.literature.core import LiteratureConfig
+
+config = LiteratureConfig(
+    library_index_file="custom/library.json",
+    bibtex_file="custom/references.bib"
+)
+```
 
 ## Usage Examples
 

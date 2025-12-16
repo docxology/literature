@@ -20,7 +20,7 @@ Functions for Ollama server and model management:
 #### Server Management
 
 - **`start_ollama_server()`** - Start Ollama server if not running
-- **`check_ollama_health()`** - Comprehensive health check
+- **`check_ollama_health()`** - Health check
 
 #### Model Operations
 

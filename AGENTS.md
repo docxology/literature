@@ -1,4 +1,4 @@
-# Literature Search and Management System - Complete Documentation
+# Literature Search and Management System - Documentation
 
 ## Overview
 
@@ -8,7 +8,7 @@ This is a **standalone repository** for academic literature search, PDF manageme
 
 ### Standalone Design
 
-This repository is completely independent and self-contained:
+This repository is independent and self-contained:
 - **No dependencies** on external template or manuscript systems
 - **Duplicated shared infrastructure** (`infrastructure/core/`, `infrastructure/llm/`) for independence
 - **Separate bibliography** (`data/references.bib`) from any manuscript system
@@ -20,7 +20,7 @@ This repository is completely independent and self-contained:
 literature/
 ├── run_literature.sh              # Main orchestrator (interactive menu)
 ├── scripts/                        # Orchestrator scripts
-│   ├── 07_literature_search.py    # Literature search orchestrator
+│   ├── literature_search.py      # Literature search orchestrator
 │   └── bash_utils.sh               # Shared bash utilities
 ├── infrastructure/                 # Core modules
 │   ├── __init__.py                 # Package exports
@@ -51,9 +51,12 @@ literature/
 ├── data/                           # Data directory
 │   ├── library.json                # Paper metadata index
 │   ├── references.bib              # BibTeX bibliography
+│   ├── summarization_progress.json # Summarization progress tracking
+│   ├── failed_downloads.json      # Failed download tracking
 │   ├── pdfs/                       # Downloaded PDFs
 │   ├── summaries/                  # AI-generated summaries
 │   ├── extracted_text/             # Extracted PDF text
+│   ├── embeddings/                 # Cached embedding files (JSON)
 │   └── output/                     # Meta-analysis outputs
 └── docs/                           # Documentation
 ```
@@ -153,7 +156,7 @@ Local LLM-powered paper summarization:
 
 **Usage:**
 ```bash
-python3 scripts/07_literature_search.py --summarize
+python3 scripts/literature_search.py --summarize
 ```
 
 **Output:** Markdown summaries in `data/summaries/{citation_key}_summary.md`
@@ -169,7 +172,7 @@ Analysis tools for paper collections:
 
 **Usage:**
 ```bash
-python3 scripts/07_literature_search.py --meta-analysis --keywords "optimization"
+python3 scripts/literature_search.py --meta-analysis --keywords "optimization"
 ```
 
 ## Workflow Operations
@@ -185,19 +188,19 @@ python3 scripts/07_literature_search.py --meta-analysis --keywords "optimization
 
 ```bash
 # Search only (add to bibliography)
-python3 scripts/07_literature_search.py --search-only --keywords "machine learning"
+python3 scripts/literature_search.py --search-only --keywords "machine learning"
 
 # Download PDFs
-python3 scripts/07_literature_search.py --download-only
+python3 scripts/literature_search.py --download-only
 
 # Extract text from PDFs
-python3 scripts/07_literature_search.py --extract-text
+python3 scripts/literature_search.py --extract-text
 
 # Generate summaries
-python3 scripts/07_literature_search.py --summarize
+python3 scripts/literature_search.py --summarize
 
 # Meta-analysis
-python3 scripts/07_literature_search.py --meta-analysis --keywords "AI"
+python3 scripts/literature_search.py --meta-analysis --keywords "AI"
 ```
 
 ## Configuration
@@ -307,9 +310,12 @@ python3 -m infrastructure.literature.core.cli search "machine learning" --limit 
 python3 -m infrastructure.literature.core.cli library stats
 python3 -m infrastructure.literature.core.cli library list
 python3 -m infrastructure.literature.core.cli library export --output export.json
+```
 
-# Cleanup
-python3 -m infrastructure.literature.core.cli library cleanup --no-pdf
+**Note:** Library cleanup is performed via the orchestrator script:
+```bash
+# Clean up library (remove papers without PDFs)
+python3 scripts/literature_search.py --cleanup
 ```
 
 ## Data Management
@@ -328,7 +334,7 @@ cp data/library.json data/references.bib backup/
 
 ```bash
 # Remove papers without PDFs
-python3 scripts/07_literature_search.py --cleanup
+python3 scripts/literature_search.py --cleanup
 
 # Validate library
 python3 -m infrastructure.literature.core.cli library validate
@@ -338,11 +344,11 @@ python3 -m infrastructure.literature.core.cli library validate
 
 ### Standalone Operation
 
-This repository is designed to operate **completely independently**:
+This repository is designed to operate independently:
 
 - **No manuscript dependencies**: Bibliography is separate and independent
 - **Self-contained infrastructure**: All required modules duplicated
-- **Independent testing**: Complete test suite included
+- **Independent testing**: Test suite included
 - **Standalone documentation**: All docs reflect standalone structure
 
 ### Bibliography Separation
@@ -361,7 +367,7 @@ The bibliography file (`data/references.bib`) is **separate** from any manuscrip
 cat data/failed_downloads.json
 
 # Retry downloads
-python3 scripts/07_literature_search.py --download-only
+python3 scripts/literature_search.py --download-only
 ```
 
 ### LLM Issues

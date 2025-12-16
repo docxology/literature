@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The validation module provides comprehensive output validation for LLM responses, including JSON validation, structure checking, format compliance, and repetition detection.
+The validation module provides output validation for LLM responses, including JSON validation, structure checking, format compliance, and repetition detection.
 
 ## Components
 
@@ -13,7 +13,7 @@ Main validation class with methods for:
 - **Length validation**: Check response length against requirements
 - **Structure validation**: Validate against JSON schemas
 - **Citation extraction**: Extract citations from responses
-- **Comprehensive validation**: Complete validation pipeline
+- **Validation**: Validation pipeline
 
 ### Format Validation (`format.py`)
 
@@ -50,7 +50,7 @@ validator = OutputValidator()
 data = validator.validate_json(response)
 ```
 
-### Comprehensive Validation
+### Validation
 
 ```python
 from infrastructure.llm.validation import OutputValidator

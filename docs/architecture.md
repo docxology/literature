@@ -36,7 +36,7 @@ The system is organized into logical, independent modules:
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Scripts Layer                         │
-│  (Thin orchestrators: 07_literature_search.py)          │
+│  (Thin orchestrators: literature_search.py)          │
 └─────────────────────────────────────────────────────────┘
                           │
                           ▼
@@ -211,13 +211,16 @@ data/
 ├── pdfs/                     # Downloaded PDFs
 ├── summaries/                # AI-generated summaries
 ├── extracted_text/           # Extracted PDF text
-├── output/                   # Meta-analysis outputs
+├── embeddings/               # Cached embedding files (JSON)
+└── output/                   # Meta-analysis outputs
+
+literature/                   # LLM operation outputs (created at repo root)
 └── llm_outputs/              # Advanced LLM operation results
-    ├── literature_reviews/
-    ├── science_communication/
-    ├── comparative_analysis/
-    ├── research_gaps/
-    └── citation_networks/
+    ├── review_outputs/
+    ├── communication_outputs/
+    ├── compare_outputs/
+    ├── gaps_outputs/
+    └── network_outputs/
 ```
 
 ## Extension Points

@@ -1,6 +1,6 @@
 # LLM Module
 
-Local LLM integration for research assistance with flexible response modes and comprehensive configurability.
+Local LLM integration for research assistance with flexible response modes and configurability.
 
 ## Features
 
@@ -11,7 +11,7 @@ Local LLM integration for research assistance with flexible response modes and c
 - **Research Templates**: Pre-built prompts for common research tasks
 - **Streaming Responses**: Real-time response generation
 - **Environment Configuration**: Full configuration via OLLAMA_* and LLM_* env vars
-- **Comprehensive Validation**: Output quality and format checking
+- **Validation**: Output quality and format checking
 - **Command-Line Interface**: Interactive queries from terminal
 
 ## Quick Start

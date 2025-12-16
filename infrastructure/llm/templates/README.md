@@ -18,7 +18,7 @@ prompt = template.render(text=paper_text)
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
 - [`../../llm/README.md`](../../llm/README.md) - LLM module overview
 
 

@@ -7,7 +7,7 @@ Tools for searching papers, downloading PDFs, and managing citations.
 - **Multi-source Search**: Unified search across arXiv and Semantic Scholar
 - **PDF Management**: Automatic downloading with citation key naming
 - **HTML Parsing**: Automatic PDF URL extraction from publisher landing pages
-- **Enhanced Logging**: Structured progress tracking with timing and statistics
+- **Logging**: Structured progress tracking with timing and statistics
 - **Reference Management**: BibTeX generation with deduplication
 - **Library Index**: JSON-based tracking of all papers with metadata
 - **Environment Configuration**: Load settings from environment variables
@@ -71,13 +71,13 @@ python3 -m infrastructure.literature.core.cli library stats
 # Export library
 python3 -m infrastructure.literature.core.cli library export --output export.json
 
-# NEW: Clean up library
-python3 scripts/07_literature_search.py --cleanup
+# Clean up library
+python3 scripts/literature_search.py --cleanup
 
-# NEW: Advanced LLM operations
-python3 scripts/07_literature_search.py --llm-operation review
-python3 scripts/07_literature_search.py --llm-operation communication
-python3 scripts/07_literature_search.py --llm-operation compare
+# Advanced LLM operations
+python3 scripts/literature_search.py --llm-operation review
+python3 scripts/literature_search.py --llm-operation communication
+python3 scripts/literature_search.py --llm-operation compare
 ```
 
 ## Configuration

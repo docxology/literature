@@ -4,7 +4,7 @@ Local LLM integration for research assistance.
 
 ## Overview
 
-The LLM module provides a unified interface for interacting with local large language models (via Ollama) to assist with research tasks. It offers flexible response modes, comprehensive validation, and conversation context management.
+The LLM module provides a unified interface for interacting with local large language models (via Ollama) to assist with research tasks. It offers flexible response modes, validation, and conversation context management.
 
 ## Key Components
 
@@ -189,6 +189,6 @@ See [Configuration Guide](../guides/configuration.md) for environment variables 
 
 ## See Also
 
-- **[LLM Module Documentation](../infrastructure/llm/AGENTS.md)** - Complete documentation
+- **[LLM Module Documentation](../infrastructure/llm/AGENTS.md)** - Documentation
 - **[API Reference](../reference/api-reference.md)** - API documentation
 

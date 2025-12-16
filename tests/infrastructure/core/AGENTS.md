@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Comprehensive test suite for infrastructure core utilities, covering all foundation modules.
+Test suite for infrastructure core utilities, covering all foundation modules.
 
 ## Test Files
 
@@ -45,7 +45,7 @@ pytest tests/infrastructure/core/ --cov=infrastructure.core
 
 ## Test Coverage
 
-Comprehensive coverage of:
+Coverage of:
 - Configuration management
 - Logging system (including formatters)
 - Exception handling

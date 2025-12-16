@@ -75,7 +75,36 @@ infrastructure/
 - **Comprehensive APIs** - well-documented public interfaces
 - **Extensible** - easy to add new sources, analyzers, etc.
 
-## Usage
+## Configuration
+
+All infrastructure modules support environment variable configuration. Key environment variables:
+
+### Core Module
+- `LOG_LEVEL` - Logging level (0=DEBUG, 1=INFO, 2=WARN, 3=ERROR, default: 1)
+- `NO_EMOJI` - Disable emoji output (default: enabled for TTY)
+
+### LLM Module
+- `OLLAMA_HOST` - Ollama server URL (default: http://localhost:11434)
+- `OLLAMA_MODEL` - Default model name (default: gemma3:4b)
+- `LLM_TEMPERATURE` - Generation temperature (default: 0.7)
+- `LLM_MAX_TOKENS` - Maximum tokens per response (default: 2048)
+- `LLM_CONTEXT_WINDOW` - Context window size (default: 131072)
+- `LLM_TIMEOUT` - Request timeout in seconds (default: 60)
+- `LLM_SEED` - Random seed for reproducibility (optional)
+
+### Literature Module
+- `LITERATURE_DEFAULT_LIMIT` - Results per source per search (default: 25)
+- `LITERATURE_MAX_RESULTS` - Maximum total results (default: 100)
+- `LITERATURE_SOURCES` - Comma-separated sources (default: arxiv,semanticscholar)
+- `LITERATURE_DOWNLOAD_DIR` - PDF download directory (default: data/pdfs)
+- `LITERATURE_BIBTEX_FILE` - BibTeX file path (default: data/references.bib)
+- `LITERATURE_LIBRARY_INDEX` - JSON index file path (default: data/library.json)
+- `LITERATURE_USE_UNPAYWALL` - Enable Unpaywall fallback (default: true)
+- `UNPAYWALL_EMAIL` - Email for Unpaywall API (required if enabled)
+
+See module-specific AGENTS.md files for complete configuration documentation.
+
+## Usage Examples
 
 ### Importing Infrastructure Modules
 

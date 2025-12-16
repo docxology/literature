@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
 from infrastructure.core.logging_utils import get_logger
-from infrastructure.literature.meta_analysis.embeddings import EmbeddingData
+from infrastructure.literature.llm.embeddings import EmbeddingData
 
 logger = get_logger(__name__)
 

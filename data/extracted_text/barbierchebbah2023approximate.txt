@@ -1,0 +1,3556 @@
+Approximate information maximization for bandit
+games
+Alex Barbier–Chebbah
+Institut Pasteur, Université Paris Cité
+Epimethee INRIA Paris France
+CNRS UMR 3571, Paris France
+alex.barbier-chebbah@pasteur.fr
+Christian L. Vestergaard
+Institut Pasteur, Université Paris Cité
+Epimethee INRIA Paris France
+CNRS UMR 3571, Paris France
+Jean-Baptiste Masson
+Institut Pasteur, Université Paris Cité
+Epimethee INRIA Paris France
+CNRS UMR 3571, Paris France
+Etienne Boursier
+INRIA, Université Paris Saclay
+LMO, Orsay, France
+Abstract
+Entropy maximization and free energy minimization are general physics principles
+for modeling dynamic systems. Notable examples include modeling decision-
+making within the brain using the free-energy principle, optimizing the accuracy-
+complexity trade-off when accessing hidden variables with the information bottle-
+neck principle [Tishby et al., 2000], and navigation in random environments using
+information maximization [Vergassola et al., 2007]. Building on this principle,
+we propose a new class of bandit algorithms that maximize an approximation to
+the information of a key variable within the system. To this end, we develop an
+approximated, analytical physics-based representation of the entropy to forecast
+the information gain of each action and greedily choose the one with the largest
+information gain. This method yields strong performances in classical bandit
+settings. Motivated by its empirical success, we prove its asymptotic optimality for
+the multi-armed bandit problem with Gaussian rewards. Since it encompasses the
+system’s properties in a single, global functional, this approach can be efficiently
+adapted to more complex bandit settings. This calls for further investigation of
+information maximization approaches for bandit problems.
+1 Introduction
+Multi-armed bandit problems have attracted wide attention in the past decades. They embody
+the challenge of balancing exploration and exploitation and have been applied to various settings
+such as online recommendation [Bresler et al., 2014], medical trials [Thompson, 1933], dynamic
+pricing [Den Boer, 2015], and reinforcement learning-based decision making [Silver et al., 2016,
+Ryzhov et al., 2012]. Besides the classic stochastic version of the multi-armed bandit problem, many
+subsequent extensions have been developed, providing richer models for specific applications. These
+extensions include linear bandits [Li et al., 2010], many-armed bandits [Bayati et al., 2020], and
+pure exploration problems such as thresholding bandits [Locatelli et al., 2016] or top-K bandits
+[Kalyanakrishnan et al., 2012, Kaufmann et al., 2016].
+In the classic setting, an agent chooses an arm at each time step and observes a stochastic reward.
+Since they only observe the payoff of the chosen arm, the agent should regularly explore suboptimal
+arms. This is often referred to as the exploration-exploitation trade-off. An agent can exploit its
+Preprint. Under review.
+arXiv:2310.12563v3  [stat.ML]  29 Nov 2024
+current knowledge to optimize gains by drawing the current empirically best arm or exploring other
+arms to potentially increase future gains.
+Optimal strategies are characterized asymptotically by the Lai and Robbins bound [Lai et al., 1985].
+Among them, upper confidence bound [UCB, Auer, 2000, Garivier and Cappé, 2011] methods
+greedily pull the arm maximizing some tuned confidence index; Thompson sampling [Kaufmann
+et al., 2012a, Agrawal and Goyal, 2013] relies on sampling mean rewards from a posterior distribution
+and chooses the arm with the largest random sample; deterministic minimum empirical divergence
+[DMED, Honda and Takemura, 2010] builds on a balance between the maximum likelihood of an
+arm being the best and the posterior expectation of the regret.
+Even if these approaches efficiently utilize current available information, they do not aim directly
+to acquire more information. We highlight, however, the information directed sampling approach
+(IDS) of Russo and Van Roy [2014], which relies on a measure of the information gain of the
+optimal actions. By leveraging an information measure that consistently captures the specific problem
+structure, IDS can address general classes of problems, particularly those with a complex information
+structure where classic bandit methods fall short. Surprisingly, IDS can even outperform UCB
+and Thompson sampling in classic bandit problems. However, like DMED, this method explicitly
+balances information gain with expected losses induced by exploration, and the efficiency of pure
+information-maximizing strategies thus remains to be proven.
+Information-maximization approaches provide a decision-making strategy in which the agent tries to
+maximize information about one or more relevant stochastic variables. The information-maximizing
+principle has shown to be efficient in a broad range of domains [Helias and Dahmen, 2020, Parr et al.,
+2022, Hernández-Lobato et al., 2015, Vergassola et al., 2007] where decisions have to be taken in
+fluctuating or unknown environments. These domains include, e.g., robotics applications [Zhang
+et al., 2015], where the ability to share approximate information improves collective decisions, and
+the search for olfactory sources in turbulent flows [Masson, 2013, Reddy et al., 2022].
+In the specific setting of bandit problems, information maximization has shown promising empirical
+results, and heuristic arguments support its asymptotic optimality [Reddy et al., 2016, Barbier-
+Chebbah et al., 2023]. As IDS, they leverage information structure to provide a versatile decision
+framework with the capability to address various bandits settings. However, the efficiency of such
+a “pure exploration” strategy in terms of regret minimization has yet to be proven, and it has been
+previously argued that it would result in a linear regret [Russo and Van Roy, 2014]. Moreover,
+current information-based algorithms often rely on complex numerical integration, leading to high
+computational costs, a significant challenge that information-based methods must overcome. In
+this context, we aim to leverage new strategies derived from information maximization principles
+focusing on global observables, i.e. variables depending on more than one bandit arm, that alleviate
+the computational burden of numerical evaluation of complex functionals and to rigorously prove
+their efficiency.
+Contributions. Our main contribution is introducing a new class of asymptotically optimal algo-
+rithms that rely on approximations of a functional representing the current information of interest
+about the whole bandit system. This approach is based on the entropy of the posterior mean value of
+the best arm, for which we provide an approximate expression to enable robust, easily tunable, and
+extendable algorithms with a direct analytical formulation. We focus here on the multi-armed bandit
+problem with Gaussian rewards, for which we derive a simple approximate information maximization
+algorithm (AIM) and provide an upper bound on its pseudo-regret, ensuring that AIM is asymptoti-
+cally optimal. The information from each arm is incorporated in a unique entropy functional, which
+shows promise for tackling more complex bandit settings such as linear bandit or many-armed bandits.
+Thus, our main motivation is to design an analytical functional-based algorithmic principle, which can
+potentially address problems with more correlated information structures in the future. Additionally,
+another strength of AIM lies in its short-time behavior, where it shows strong performances as we
+illustrate numerically for both Bernoulli and Gaussian rewards.
+Organization. In Section 2, we briefly review the K-armed bandit setting. Section 3 presents the
+general principle of information maximization approaches, originally inspired by both the information
+bottleneck principle and navigation in turbulent plumes. Section 4 upper bounds the regret of AIM,
+showing it attains Lai and Robbin’s asymptotic bound. In Section 5, the performance of AIM is
+2
+numerically compared with known baselines on multiple examples. Finally, Section 6 discusses
+extensions of AIM to various bandit settings.
+2 Setting
+We consider the classic K-armed stochastic bandit game. In each round t, the agent selects an arm
+at ∈ [K] = {1, . . . , K} among a set of K choices solely based on the rewards of the previously
+pulled arms. The chosen arm k then returns a stochastic reward Xt(k), drawn independently of the
+previous rounds, according to a distribution νk of mean µk. We denote by Nk(t) the number of times
+the arm k has been pulled. When clear from context, we omit the dependence on t for simplicity.
+The goal of the agent is to maximize its cumulative reward, or equivalently, to minimize its pseudo-
+regret up to round T, defined as
+R(T) = µ∗T −
+TX
+t=1
+E[µat], (1)
+where µ∗ = maxi∈[K] µi. Hence, the agent will optimize its choice of at relying on the previous
+observations up to t. For a large family of reward distributions, the asymptotic pseudo-regret is
+lower-bounded for any uniformly good policy by
+lim inf
+T→∞
+R(T)
+ln(T) ≥
+X
+k,µk<µ∗
+µ∗ − µk
+DKL(νk∥νk∗), (2)
+where k∗ ∈ argmaxi∈[K] µi,, and DKL(νk∥νk∗) denotes the Kullback-Leibler divergence be-
+tween the reward distributions of the arms k and k∗ [Lai et al., 1985]. In the particular case of
+Gaussian rewards with equal variances, i.e., νi = N(µi, σ2), the Kullback-Leibler divergence is
+DKL(νk∥νk∗) = (µ∗ − µk)2/(2σ2).
+3 Information maximization strategies
+Here, we introduce entropy-based, information maximization strategies and their underlying physical
+principles. We then detail approximations leading to an analytical and simplified entropy functional,
+which is the basis of the AIM algorithm.
+3.1 Algorithm design principle: physical intuition
+We aim to design a functional encompassing the current available information of the full system.
+Inspired by the information maximization principle [Vergassola et al., 2007, Reddy et al., 2016]
+which has revealed effective in taxis strategies where the agent needs to find an emitting odour source
+[Martinez et al., 2014, Cardé, 2021, Murlis et al., 1992], we rely on an entropic functional for policy
+decision. More precisely, we choose Smax, the entropy of the posterior distribution of the value of
+the maximal mean reward, denoted pmax.
+The algorithm relies on an arbitrary prior distribution on the arm mean rewards. With independent
+arm priors, the posterior distribution of the value of the maximal mean reward can be expressed as
+pmax(θ)dθ = dP
+
+max
+k
+µk = θ | Ft−1
+
+=
+KX
+k=1
+dP(µk = θ|Ft−1)
+Y
+j̸=k
+P(µj ≤ θ|Ft−1), (3)
+where Ft−1 = σ(X1(a1), . . . , Xt−1(at−1)) denotes the filtration associated to the observations up
+to time t − 1. The associated entropy reads
+Smax = −
+Z
+Θ
+pmax(θ) lnpmax(θ)dθ, (4)
+where Θ = [µinf, µsup] is the support of pmax (which depends on the nature of the game and can
+be infinite). Note that, as exemplified by Equation (3), pmax includes the arms’ priors and directly
+3
+depends on the reward distributions.1 The entropy, Smax, is a measure of the information carried by
+all arms in a single functional, providing a global state description of the game.
+Our policy aims to minimize the entropy of pmax. For that, it greedily chooses the arm providing the
+largest expected decrease in entropy, conditioned on the current knowledge of the game,
+argmin
+k∈[K]
+E[Smax(t) − Smax(t − 1) | Ft−1, at = k] . (5)
+Similar to Thompson sampling, it relies on a Bayesian representation. Yet, it distinguishes itself by
+providing a deterministic decision procedure given past observations. We stress that Smax quantifies
+the available information about the average reward of the best arm. This choice contrasts with using
+the entropy of the probability of the best arm, which is known to overexplore and is suboptimal for
+regret minimization [Reddy et al., 2016]. Because of this suboptimality, approaches based on the
+information on the best arm fix this concern by including the expected regret in the functional to
+favor exploitation [Russo and Van Roy, 2014]. Furthermore, we argue that by the definition of pmax,
+the information carried by the arms’ posteriors is sufficiently mixed to ensure an optimal behaviour,
+as proved in Section 4. Since the policy aims to maximize the information about the best arm’s mean,
+it mainly pulls the current best arm to learn more about its value. On the contrary, policies aiming to
+identify the best arm pull worse empirical arms more often because they are only concerned about
+the arms’ order.
+The information maximization policy based on Equation (5) has been empirically shown to be
+competitive with state-of-the-art algorithms [Reddy et al., 2016] and robust to variations of the
+prior [Reddy et al., 2016, Barbier-Chebbah et al., 2023] in classic bandit games. However, while
+Equation (5) can be numerically evaluated, it cannot be computed in closed form, preventing the
+gradient from being analytically tractable. This makes intricate to theoretically bound the regret
+even in the two-armed setting and it also prevents the policy’s extension to more complicated bandit
+settings. Additionally, it induces a high computational cost [a trait shared with IDS Russo and
+Van Roy, 2014], which becomes disadvantageous when considering a large number of arms and at
+large times (when pmax is peaked), where one has to manage vanishing numerical precision, making
+the numerical integration even longer. Finally, the integral form of Smax prevents fine-tuning, which
+could prove crucial for achieving or surpassing the empirical state-of-the-art performances.
+A second simplified and analytical functional mirroring Smax has to be derived to address these
+concerns. This analytical result strengthens the information maximization principle, both by providing
+novel algorithms that are analytical, tractable and computationally efficient while conserving the main
+advantages of the exact entropy [Reddy et al., 2016] and by making theoretical analysis tractable.
+3.2 Main elements of the entropy analytical approximation
+Here, we devise a set of approximations of pmax and Smax to get a tractable analytical algorithm.
+Given that the best empirical arm and the worse empirical arms have notably distinct contributions to
+pmax (Figure 1(a)), we approximate pmax while considering the current arms’ order. We sort them
+based on their current posterior means, labelling the highest one as Mt (with an empirical reward of
+ˆµMt) and At = [K] \ {Mt} the set of worse empirical arms. Of course, Mt might differ from the
+actual optimal arm k∗ due to the randomness in the observed rewards. We focus on approximating
+Equations (3) and (4) when the best empirical arm has already been extensively drawn more often
+than the other arms.
+The entropy is then decomposed into two tractable terms corresponding to distinct behaviors of
+pmax(θ) when θ varies:
+˜Smax = ˜Sbody + ˜Stail, (6)
+The first term, ˜Sbody, approximates the contribution around the mode of pmax, while the second
+term, ˜Stail, quantifies the information carried by the tail of pmax (corresponding to high rewards, see
+Figure 1). Each of these terms then corresponds to a part of the entropy where the dominant term of
+Equation (3) is distinct (see Appendix A.1 for details).
+1In the remainder of the paper, we consider an improper uniform prior over R, as often considered with
+Gaussian rewards.
+4
+More precisely, by denoting pi(θ)dθ = dP(µi = θ | Ft) the mean posterior density of the associated
+arm i, the tail term is approximated as:
+˜Stail = −
+X
+m∈At
+Z µsup
+˜µeq,m
+pm(θ) lnpm(θ)dθ. (7)
+where ˜µeq,m, given in Appendix A.6, approximates ¯µeq,m, the value of θ where the empirical best
+arm Mt and the selected worse arm m have the same probability of being the best arm (see red and
+orange curves in Figure 1(b)). Here, pm(θ) is the posterior density of the current worse arm evaluated
+at θ. Roughly, because the better empirical arm has been predominantly drawn, pMt(θ) decays faster
+than pm(θ), resulting in a tail term (see Equation (7)) whose main contribution is the worse empirical
+arm. The approximate entropy of the body component is:
+˜Sbody = −
+Z
+Θ
+ 
+1 −
+X
+m∈At
+[1 − Cm(θ)]
+
+pMt(θ) lnpMt(θ)dθ (8)
+where Ci(θ) = P(θ > µi | Ft) is the cumulative posterior probability of the mean of the arm i.
+Equation (8) is the leading-order term of the mode of pmax, which is mainly contributed to by the
+best empirical arm.
+This approximation of Equation (3) is good when the best empirical arm has been extensively drawn
+compared to the worse empirical ones, corresponding to the situation encountered asymptotically for
+uniformly good algorithms. Surprisingly, the approximation captured by Equation (6) is still accurate
+enough outside this asymptotic regime to provide a high-performance decision scheme.
+0.2 0.4 0.6 0.8
+θ
+10−5
+10−4
+10−3
+10−2
+10−1
+100
+101
+P(µi = θ)
+pmax
+pMt
+pm
+ˆµMt
+ˆµm
+0.75 0.80 0.85 0.90
+θ
+10−5
+10−4
+10−3
+10−2
+10−1
+100
+P(µi = θ)
+pmax
+pMtCm
+pmCMt
+¯µeq,m
+˜µeq,m
+Body
+Tail
+Body
+Tail
+(b)
+Figure 1: (a) Posterior distributions of a two-armed bandit with Gaussian rewards. The dotted lines
+represent the individual posterior distributions of each arm, pMt and pm, while the continuous line
+represents the posterior of the maximum mean reward of all arms, pmax (Equation (3)). (b) Zoom of
+(a) around the point ¯µeq,m where both arms have the same posterior probability of being the best one.
+pMtCm (pmCMt) is the probability that the maximal value is given by the better (worse) empirical
+arm, and ˜µeq,m is the approximation to ¯µeq,m given in Appendix A.6.
+For Gaussian reward distributions, one can derive an analytical expression for ˜µeq (see Appendix A.2
+for details), Equations (7) and (8) can be computed exactly (see Appendix A.4). However, at this
+stage, even if we have already obtained a closed-form expression for Smax, it remains too involved to
+directly compute its exact (discrete) gradient for our decision policy. To finally derive a simplified
+gradient, we retain only the asymptotic terms of Equations (7) and (8) and of the obtained gradient
+(see Appendix A.5 for derivation details). Finally, the expression of our approximate difference of
+gradients of the entropy, whether calculated along a given worse empirical armk or along the best
+empirical arm, reads:
+∆Mt,k = 1
+2 ln( NMt
+NMt + 1) + 1
+2NMt
+min
+ 
+1
+2
+AtX
+m
+erfc (δ˜µeq,m) , 1 − 1
+K
+!
++ Q(N−1
+k , ln(NMt), δ˜µeq,k)e−δ˜µ2
+eq,k +
+AtX
+m
+P(N1/2
+m , N−1
+Mt , ln(NMt), δ˜µeq,m)e−δ˜µ2
+eq,m
+(9)
+5
+where Q and P are polynomials given in Appendix A.6 and δ˜µeq,i =
+√Ni(˜µeq,i−ˆµi)√
+2σ2 are standardized
+variables with ˜µeq,i given in Appendix A.6. In words, ∆Mt,k approximates the difference
+∆Mt,k ≈ E[Smax(t + 1) | Ft, at+1 = Mt] − E[Smax(t + 1) | Ft, at+1 = k] ,
+which is directly related to greedily maximizing the entropy decrease, described in Equation (5).
+The decision procedure can be summarized as follows: if ∆Mt,k is negative for all k ∈ At, the
+better empirical arm is chosen as it reduces the most the expected value of the approximate entropy.
+Inversely, if at least one value∆Mt,k is positive, the arm k maximizing ∆Mt,k is chosen.
+In conclusion, we have derived an analytical expression for the information available about the
+maximum expected reward of all arms. We isolated an analytically tractable gradient acting as a
+decision procedure that eluded previous approximated information derivations [Barbier-Chebbah
+et al., 2023]. Our scheme leads to an efficient numerical implementation by eliminating numerical
+integrals, substantially improving the computational speed of information maximization, a crucial
+challenge for information methods, which is also stressed by Russo and Van Roy [2014] for the IDS
+algorithm. We now provide the full implementation of AIM and bound its regret in the next section.
+3.3 Approximate information maximization algorithm
+The pseudo-code for the AIM algorithm is presented in Alg. 1 below.
+Algorithm 1:AIM Algorithm for K Gaussian arms
+Draw each arm once, observe reward Xt(t) and update statistics ˆµt
+for t = K + 1 to T do // Arm selection
+if NMt ≤ Nm then at ← Mt
+else
+Mt ← argmaxk∈[K] ˆµk
+Evaluate m = argmaxk∈At ∆Mt,k following Equation (9)
+if ∆Mt,m ≤ 0 then at ← Mt
+else at ← m
+Pull at and observe Xt(at)
+ˆµat ← ˆµatNat+Xt(at)
+Nat+1 , Nat ← Nat + 1 // Update statistics
+The best empirical arm is drawn by default if there exists one empirical arm m that has been drawn
+more frequently NMt ≤ Nm. In such a case, both entropy components in Equation (6) are mainly
+contributed to by Mt.
+4 Regret bound
+This section provides theoretical guarantees on the performance of AIM. More precisely, Theorem 1
+below states that AIM is asymptotically optimal on the multi-armed bandits problem with Gaussian
+rewards.
+Theorem 1. For Gaussian reward distributions with varianceσ2, the regret of AIM satisfies for any
+mean vector µµµ ∈ RK
+lim sup
+T→∞
+R(T)
+ln(T) ≤
+X
+k,µk<µ∗
+2σ2
+µ∗ − µk
+,
+where µ∗ = maxk∈[K] µk.
+With Gaussian rewards, the asymptotic regret of AIM thus exactly reaches the lower bound of Lai
+et al. [1985] given by Equation (2). A non-asymptotic version of Theorem 1 is given by Theorem 2 in
+Appendix B. We briefly sketch the proof idea below and refer to Appendix B for the complete proof.
+Sketch of the proof.We assume for sake of clarity in this sketch that µ1 > µk for any k ≥ 2. The
+structure of the proof is similar to the one found in Kaufmann et al. [2012a]. In particular, the first
+6
+main step shows that the optimal arm is pulled at least
+√
+t times with high probability. This result
+holds because otherwise, the contribution of arm 1 to the tail of the distribution would dominate the
+contribution of other arms in the approximate information. In that case, pulling the first arm would
+naturally lead to a larger decrease in entropy, which ensures that the optimal arm is always pulled a
+significant amount of times.
+Then, we only need to work in the asymptotic regime where arm 1 is pulled at least
+√
+t times and we
+aim at bounding the number of pulls on the arm k ≥ 2. Additionally, we restrict ourselves to a large
+number (in log(T)) of pulls on arm k and automatically count the pulls before that point in the regret.
+As a consequence, we can show that with high probability:
+ˆµMt ≥ µ∗ −
+s
+6σ2 ln t√
+t and ˆµk ≤ µk + ε
+for some arbitrary ε >0. An important property of entropy is that it approximates the behaviour of
+the bound of Lai et al. [1985]. More precisely, in the asymptotic regime, the difference of the entropy
+increments behaves as
+∆Mt,k ≈ − 1
+2NMt
++ Q(Nk)e−
+Nk(µ1−µk)2
+2σ2 +
+X
+i̸=Mt
+P(Ni)e−Ni(µ1−µi)2
+2σ2 , (10)
+where Qk and Pi are polynomials that also depend on extra variables (see Equation 9). Manipulating
+these polynomial terms altogether is intricate, but we can still show that if the arm k is pulled, this
+means the term e−
+Nk(µ1−µk)2
+2σ2 somewhat dominates the other exponents in the sum of Equation (10).
+This then implies that Nk is of order at most 2σ2 ln T
+(µ∗−µk)2 , as arm k is only pulled if ∆Mt,k ≥ 0.
+Our policy is deterministic at each time step while displaying a logarithmic regret, showing that
+intuitions from Russo and Van Roy [2014] of linear regrets for stationary (in the sense they only
+depend on the posterior distribution) deterministic algorithms was inexact. Moreover, our regret
+bound is frequentist, in opposition to the Bayesian regret bound obtained for IDS [Russo and Van Roy,
+2014]. As a consequence, AIM does not need a well-specified prior: using a uniform prior, as
+done in our work, is a well-suited choice. Also, the required form of the entropy for the proof is
+general. The algorithm yields an optimal regret as long as we are guaranteed that the optimal arm is
+pulled a significant amount of times with high probability and that the asymptotic regime behaves
+as Equation (10). Hence, Theorem 1 will hold for a large family of entropy approximations [and
+likely for generalizations to free energies too, as in Masson, 2013] as long as the approximation is
+accurate enough to not yield trivial behaviors in the short time regime. Additionally, the approximate
+framework devised here allows fine-tuning the formulas to improve short-time performance all the
+while ensuring asymptotic optimality by keeping the correct asymptotic terms.
+5 Experiments
+This section investigates the empirical performance of AIM (Alg. 1) on numerical examples. All
+details of the numerical experiments are given in Appendix D.
+We start by considering two arms with Gaussian rewards [Honda and Takemura, 2010] of unit
+variance and means µk drawn uniformly from [0, 1]. Figure 2 compares the Bayesian regret (i.e.,
+the regret averaged over all values of (µ1, µ2) in [0, 1] × [0, 1]) of Alg. 1 with the state-of-the-
+art algorithms UCB-tuned, Thompson sampling, Thompson sampling+, KLUCB++, and MED
+[Kaufmann et al., 2012b, Pilarski et al., 2021, Cappé et al., 2013, Jin et al., 2022, Honda and
+Takemura, 2011, Ménard and Garivier, 2017]. We refer to Appendix D.4 for an overview and detailed
+descriptions of these bandit algorithms. The Bayesian regret of AIM empirically scales as log (T).
+Its long-time performance matches Thompson sampling, as implied by Theorem 1, while relying on
+a (conditionally) deterministic decision process. Additionally, AIM outperforms Thompson sampling
+at both short and intermediate times (see Appendix D.5.3 for finer measurements). AIM particularly
+outperforms Thompson sampling when the arms are difficult to distinguish due to their mean rewards
+being close (see examples in Appendix D.5.1 with single instance regret experiments).
+AIM yields strong performance in both two-armed Gaussian and 50-armed Gaussian rewards case,
+as predicted by our theoretical analysis. We now aim to extend our method to other bandit settings.
+7
+101 103 105 107
+t
+0
+50
+100
+150
+200
+250⟨R(t)⟩
+AIM
+Thompson
+Thompson+
+Med
+UCB-Tuned
+KLUCB++
+101 103 105
+t
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+AIM
+Thompson
+Thompson+
+Med
+KLUCB
+KLUCB++
+Gaussian rewards
+K = 50
+(a) (b)
+Gaussian rewards, K = 2
+Figure 2: Evolution of the Bayesian regret for (a) 2-armed and (b) 50-armed bandit with Gaussian
+rewards under a uniform mean prior. Regret is averaged over 8000 for (a) and 2000 runs for (b)
+Confidence intervals show the standard deviation.
+Figure 3 presents the performance of AIM when adapted to Bernoulli rewards [Pilarski et al., 2021]
+with arm means drawn uniformly in [0, 1]. This adaptation is described in detail in Section 6 below.
+The performance of AIM is comparable to Thompson sampling here. Additionally, AIM performs
+comparably to Thompson sampling for close mean rewards (see Appendix D.5.2). Additionally, for
+50 arms with Bernoulli rewards AIM’s short-time efficiency is comparable to Thompson sampling,
+and it is significantly more efficient at intermediary times while showing the same logarithmic scaling
+at long times as Thompson sampling.
+Hence, our algorithm shows strong empirical performances compared to state-of-the-art baselines
+for both Bernoulli and Gaussian rewards while providing outstanding effectiveness when facing
+multiple arms with Bernoulli rewards. Experiments suggest that AIM displays the same typical
+worst-case regret as Thompson sampling (which is minimax optimal up to
+√
+ln K for sub-Gaussian
+rewards), but proving a theoretical bound remains challenging and left for future work. Of note,
+similar observations are drawn in Appendices D.5.1 and D.5.2 for non-Bayesian versions of the regret,
+with fixed bandit instances. These observations support the robustness of AIM and its potential for
+extensions to more complex bandit settings.
+101 103 105 107
+t
+0
+10
+20
+30
+40
+50⟨R(t)⟩
+AIM
+Thompson
+Thompson+
+Med
+KLUCB
+KLUCB++
+101 103 105 107
+t
+0
+50
+100
+150
+200
+250
+300 AIM
+Thompson
+Thompson+
+Med
+KLUCB
+KLUCB++
+Bernoulli rewards, K = 2, Bernoulli rewards, K = 50
+(a) (b)
+Figure 3: Evolution of the Bayesian regret for (a) 2-armed and (b) 50-armed bandit with Bernoulli
+rewards under a uniform mean prior. The regret is averaged over16000 runs for (a) and 2000 runs
+for (b). Confidence intervals show the standard deviation.
+8
+6 Extensions
+We apply our information maximisation approach to Bernoulli bandits both with two and with many
+arms, where it shows strong empirical performances (see Figure 3 above). This section describes the
+extensions of AIM to this case and discusses potential extensions to more general bandit settings.
+Exponential family bandits. Since Equation (3) explicitly relies on the arms’ posterior distributions,
+information maximization methods can be directly extended to various reward distributions. In
+particular, when the reward distributions belong to the exponential family [see Korda et al., 2013,
+and Appendix C.1 for details on such distributions], an asymptotic and analytical expression of the
+entropy can be derived for the case of uniform priors (see Appendix C for more details), yielding
+˜Smax = 1
+2 ln(2π¯σ2
+i )
+"
+1 − e−NmKL(ˆθmt,˜θeq)
+Nm∂2KL(ˆθmt, ˜θeq)
+p
+2π¯σ2m
+#
++ KL(ˆθmt, ˜θeq)e−NmKL(ˆθmt,˜θeq)
+∂2KL(ˆθmt, ˜θeq)
+p
+2π¯σ2m
+. (11)
+Here KL(ˆθi, ˜θeq) is the Kullback-Leibler divergence between the reward distribution parameterized by
+ˆθi and ˜θeq where θ is the family parameter, and ∂2KL denotes its derivative w.r.t. the second variable.
+All the steps leading to Equations (7) and (8) in Section 3 are not specific to Gaussian rewards. The
+main difference lies in their asymptotic simplifications obtained afterwards with Laplace’s method.
+Our implementation of AIM to Bernoulli rewards (a specific case of the exponential family) with
+Equation (11) shows comparable performance to state-of-the-art algorithms (see Figure 2), supporting
+its adaptability to general settings. We believe that AIM should be optimal for all exponential family
+reward distributions and general prior distributions and that similar proof techniques can be used (see
+Appendix C for a detailed discussion). However, significant work still remains to ensure that the
+asymptotic regime, where all arms have been sufficiently drawn, is reached for any reward distribution
+and will be addressed in future work.
+Other bandit settings. Here, we provide a quick overview of several other bandit settings for
+which approximate information maximization, adapted to the specific bandit problem, should provide
+efficient algorithms. First, we emphasize that AIM’s partitioning between body and tail components
+remains relevant even when dealing with heavy-tailed [Lee et al., 2023] or non-parametric reward
+distributions [Baudry et al., 2020]. It should thus be able to provide strong guarantees in these settings,
+similarly to Thompson sampling. Secondly, let us stress that information can also be quantified
+for unpulled arms, which may prove crucial when facing large numbers of arms. The agent could
+quantify the information of the “reservoir” of unpulled arms to anticipate the information gained from
+exploring these unpulled arms. Additionally, if the agent has access to the remaining time, it can not
+only evaluate the expected information gain when pulling an arm for a single round but also evaluate
+the information gain of multiple pulls of the same arm. We believe that such a consideration might be
+pivotal when facing many arms, since the limited amount of time does not allow to pull all the arms
+[Bayati et al., 2020] sufficiently. Thirdly, in linear bandits, where arms are correlated with each other
+[Li et al., 2010], AIM will be efficient because pulling a specific direction provides information on
+correlated directions, the shared information gain could be leveraged by information-based methods
+to yield strong performances. Finally, we could consider pure exploration problems [Bubeck et al.,
+2011, Locatelli et al., 2016, Kalyanakrishnan et al., 2012] where the agent’s goal is directly linked to
+an information gain, thus making the information maximization principle an inherent candidate when
+a suitable entropy is derived from the underlying bandit structure and problem objective.
+A last advantage of AIM lies in its possible extension to multiple constraints that would be introduced
+using Lagrange multipliers (or borrowed from physics reasoning by defining free energy), further
+improving its adaptability to various settings and specific requirements.
+7 Conclusion
+This paper introduces a new algorithm class, Approximate Information Maximization (AIM), which
+leverages approximate information maximization of the whole bandit system to achieve optimal
+regret performances. This approach builds on the entropy of the posterior of the arms’ maximal
+mean, from which we extract a simplified and analytical functional at the core of the decision scheme.
+It enables easily tunable and tractable algorithms, which we prove to be optimal for multi-armed
+9
+Gaussian bandits. Numerical experiments for Bernoulli rewards with two or several arms emphasize
+the robustness and efficiency of AIM. An additional strength of AIM lies in its efficiency at short times
+and when the arms have close mean rewards where it outperforms existing state-of-the art. Further
+research should focus on adjusting the information maximization framework to more complex bandit
+settings, including many-armed bandits, linear bandits and thresholding bandits, where appropriately
+selected information measures can efficiently apprehend the games’ structure and correlations.
+10
+References
+Shipra Agrawal and Navin Goyal. Thompson Sampling for Contextual Bandits with Linear Payoffs.
+In Proceedings of the 30th International Conference on Machine Learning, pages 127–135. PMLR,
+May 2013.
+P. Auer. Using upper confidence bounds for online learning. In Proceedings 41st Annual Symposium
+on Foundations of Computer Science, pages 270–279, Redondo Beach, CA, USA, 2000. IEEE
+Comput. Soc. ISBN 978-0-7695-0850-4. doi: 10.1109/SFCS.2000.892116.
+Alex Barbier-Chebbah, Christian L. Vestergaard, and Jean-Baptiste Masson. Approximate information
+for efficient exploration-exploitation strategies, July 2023.
+Dorian Baudry, Emilie Kaufmann, and Odalric-Ambrym Maillard. Sub-sampling for efficient non-
+parametric bandit exploration. In Proceedings of the 34th International Conference on Neural
+Information Processing Systems, NIPS’20, pages 5468–5478, Red Hook, NY , USA, December
+2020. Curran Associates Inc. ISBN 978-1-71382-954-6.
+Mohsen Bayati, Nima Hamidi, Ramesh Johari, and Khashayar Khosravi. Unreasonable effectiveness
+of greedy algorithms in multi-armed bandit with many arms. Advances in Neural Information
+Processing Systems, 33:1713–1723, 2020.
+Guy Bresler, George H Chen, and Devavrat Shah. A latent source model for online collaborative
+filtering. Advances in neural information processing systems, 27, 2014.
+Sébastien Bubeck, Rémi Munos, and Gilles Stoltz. Pure exploration in finitely-armed and continuous-
+armed bandits. Theoretical Computer Science, 412(19):1832–1852, April 2011. ISSN 0304-3975.
+doi: 10.1016/j.tcs.2010.12.059.
+Olivier Cappé, Aurélien Garivier, Odalric-Ambrym Maillard, Rémi Munos, and Gilles Stoltz. Kull-
+back–Leibler upper confidence bounds for optimal sequential allocation. The Annals of Statistics,
+41(3):1516–1541, June 2013. ISSN 0090-5364, 2168-8966. doi: 10.1214/13-AOS1119.
+Ring T. Cardé. Navigation Along Windborne Plumes of Pheromone and Resource-Linked Odors.
+Annual Review of Entomology, 66(1):317–336, 2021. doi: 10.1146/annurev-ento-011019-024932.
+Arnoud V . Den Boer. Dynamic pricing and learning: historical origins, current research, and new
+directions. Surveys in operations research and management science, 20(1):1–18, 2015.
+Aurélien Garivier. Informational confidence bounds for self-normalized averages and applications.
+In 2013 IEEE Information Theory Workshop (ITW), pages 1–5. IEEE, 2013.
+Aurélien Garivier and Olivier Cappé. The kl-ucb algorithm for bounded stochastic bandits and
+beyond. In Proceedings of the 24th annual conference on learning theory, pages 359–376. JMLR
+Workshop and Conference Proceedings, 2011.
+Moritz Helias and David Dahmen. Statistical Field Theory for Neural Networks , volume 970 of
+Lecture Notes in Physics. Springer International Publishing, Cham, 2020. ISBN 978-3-030-46443-1
+978-3-030-46444-8. doi: 10.1007/978-3-030-46444-8.
+José Miguel Hernández-Lobato, Michael A. Gelbart, Matthew W. Hoffman, Ryan P. Adams, and
+Zoubin Ghahramani. Predictive entropy search for Bayesian optimization with unknown constraints.
+In Proceedings of the 32nd International Conference on International Conference on Machine
+Learning - Volume 37, ICML’15, pages 1699–1707, Lille, France, July 2015. JMLR.org.
+Junya Honda and Akimichi Takemura. An Asymptotically Optimal Bandit Algorithm for Bounded
+Support Models. In Adam Tauman Kalai and Mehryar Mohri, editors, COLT 2010 - The 23rd
+Conference on Learning Theory, Haifa, Israel, June 27-29, 2010, pages 67–79. Omnipress, 2010.
+Junya Honda and Akimichi Takemura. An asymptotically optimal policy for finite support models in
+the multiarmed bandit problem. Mach Learn, 85(3):361–391, December 2011. ISSN 1573-0565.
+doi: 10.1007/s10994-011-5257-4.
+11
+Tianyuan Jin, Pan Xu, Xiaokui Xiao, and Anima Anandkumar. Finite-Time Regret of Thompson Sam-
+pling Algorithms for Exponential Family Multi-Armed Bandits. Advances in Neural Information
+Processing Systems, 35:38475–38487, December 2022.
+Shivaram Kalyanakrishnan, Ambuj Tewari, Peter Auer, and Peter Stone. PAC Subset Selection in
+Stochastic Multi-armed Bandits. Proceedings of the 29th International Conference on Machine
+Learning, ICML 2012, 1, January 2012.
+Emilie Kaufmann, Nathaniel Korda, and Rémi Munos. Thompson sampling: An asymptotically
+optimal finite-time analysis. In International conference on algorithmic learning theory, pages
+199–213. Springer, 2012a.
+Emilie Kaufmann, Nathaniel Korda, and Rémi Munos. Thompson Sampling: An Asymptoti-
+cally Optimal Finite-Time Analysis. In Nader H. Bshouty, Gilles Stoltz, Nicolas Vayatis, and
+Thomas Zeugmann, editors, Algorithmic Learning Theory , Lecture Notes in Computer Sci-
+ence, pages 199–213, Berlin, Heidelberg, 2012b. Springer. ISBN 978-3-642-34106-9. doi:
+10.1007/978-3-642-34106-9_18.
+Emilie Kaufmann, Olivier Cappé, and Aurélien Garivier. On the complexity of best-arm identification
+in multi-armed bandit models. J. Mach. Learn. Res., 17(1):1–42, January 2016. ISSN 1532-4435.
+Nathaniel Korda, Emilie Kaufmann, and Remi Munos. Thompson sampling for 1-dimensional
+exponential family bandits. In Proceedings of the 26th International Conference on Neural
+Information Processing Systems - Volume 1, NIPS’13, pages 1448–1456, Red Hook, NY , USA,
+December 2013. Curran Associates Inc.
+Tze Leung Lai, Herbert Robbins, et al. Asymptotically efficient adaptive allocation rules. Advances
+in applied mathematics, 6(1):4–22, 1985.
+Jongyeong Lee, Junya Honda, Chao-Kai Chiang, and Masashi Sugiyama. Optimality of thompson
+sampling with noninformative priors for pareto bandits. arXiv preprint arXiv:2302.01544, 2023.
+Lihong Li, Wei Chu, John Langford, and Robert E Schapire. A contextual-bandit approach to
+personalized news article recommendation. In Proceedings of the 19th international conference on
+World wide web, pages 661–670, 2010.
+Andrea Locatelli, Maurilio Gutzeit, and Alexandra Carpentier. An optimal algorithm for the Thresh-
+olding Bandit Problem. In Proceedings of The 33rd International Conference on Machine Learning,
+pages 1690–1698. PMLR, June 2016.
+Dominique Martinez, Lotfi Arhidi, Elodie Demondion, Jean-Baptiste Masson, and Philippe Lucas.
+Using Insect Electroantennogram Sensors on Autonomous Robots for Olfactory Searches. JoVE
+(Journal of Visualized Experiments), (90):e51704, August 2014. ISSN 1940-087X. doi: 10.3791/
+51704.
+Jean-Baptiste Masson. Olfactory searches with limited space perception. Proceedings of the National
+Academy of Sciences, 110(28):11261–11266, July 2013. doi: 10.1073/pnas.1221091110.
+Pierre Ménard and Aurélien Garivier. A minimax and asymptotically optimal algorithm for stochastic
+bandits. In Proceedings of the 28th International Conference on Algorithmic Learning Theory,
+pages 223–237. PMLR, October 2017.
+John Murlis, Joseph S. Elkinton, and Ring T. Cardé. Odor Plumes and How Insects Use Them.Annual
+Review of Entomology, 37(1):505–532, January 1992. doi: 10.1146/annurev.en.37.010192.002445.
+Edward W. Ng and Murray Geller. A table of integrals of the Error functions. J. RES. NATL. BUR.
+STAN. SECT. B. MATH. SCI., 73B(1):1, January 1969. ISSN 0098-8979. doi: 10.6028/jres.073B.
+001.
+Thomas Parr, Giovanni Pezzulo, and Karl J. Friston. Active Inference: The Free Energy Principle
+in Mind, Brain, and Behavior . The MIT Press, March 2022. ISBN 978-0-262-36997-8. doi:
+10.7551/mitpress/12441.001.0001.
+12
+Sebastian Pilarski, Slawomir Pilarski, and Dániel Varró. Optimal Policy for Bernoulli Bandits:
+Computation and Algorithm Gauge. IEEE Transactions on Artificial Intelligence , 2(1):2–17,
+February 2021. ISSN 2691-4581. doi: 10.1109/TAI.2021.3074122.
+Gautam Reddy, Antonio Celani, and Massimo Vergassola. Infomax Strategies for an Optimal Balance
+Between Exploration and Exploitation. Journal of Statistical Physics, 163(6):1454–1476, April
+2016. doi: 10.1007/s10955-016-1521-0.
+Gautam Reddy, Venkatesh N. Murthy, and Massimo Vergassola. Olfactory Sensing and Navigation
+in Turbulent Environments. Annual Review of Condensed Matter Physics, 13:191–213, March
+2022. doi: 10.1146/annurev-conmatphys-031720-032754.
+Daniel Russo and Benjamin Van Roy. Learning to Optimize via Information-Directed Sampling. In
+Z. Ghahramani, M. Welling, C. Cortes, N. Lawrence, and K. Q. Weinberger, editors,Advances in
+Neural Information Processing Systems, volume 27. Curran Associates, Inc., 2014.
+Ilya O. Ryzhov, Warren B. Powell, and Peter I. Frazier. The Knowledge Gradient Algorithm for a
+General Class of Online Learning Problems. Operations Research, 60(1):180–195, February 2012.
+ISSN 0030-364X. doi: 10.1287/opre.1110.0999.
+David Silver, Aja Huang, Chris J. Maddison, Arthur Guez, Laurent Sifre, George van den Driessche,
+Julian Schrittwieser, Ioannis Antonoglou, Veda Panneershelvam, Marc Lanctot, Sander Dieleman,
+Dominik Grewe, John Nham, Nal Kalchbrenner, Ilya Sutskever, Timothy Lillicrap, Madeleine
+Leach, Koray Kavukcuoglu, Thore Graepel, and Demis Hassabis. Mastering the game of Go
+with deep neural networks and tree search. Nature, 529(7587):484–489, January 2016. ISSN
+1476-4687. doi: 10.1038/nature16961.
+William R Thompson. On the likelihood that one unknown probability exceeds another in view of
+the evidence of two samples. Biometrika, 25(3-4):285–294, 1933.
+Naftali Tishby, Fernando C. Pereira, and William Bialek. The information bottleneck method, April
+2000.
+Massimo Vergassola, Emmanuel Villermaux, and Boris I. Shraiman. ‘Infotaxis’ as a strategy for
+searching without gradients. Nature, 445(7126):406–409, January 2007. ISSN 1476-4687. doi:
+10.1038/nature05464.
+Siqi Zhang, Dominique Martinez, and Jean-Baptiste Masson. Multi-Robot Searching with Sparse
+Binary Cues and Limited Space Perception.Frontiers in Robotics and AI, 2, 2015. ISSN 2296-9144.
+13
+Appendix
+Table of Contents
+A Towards an analytical approximation of the entropy 14
+A.1 The partitioning approximation . . . . . . . . . . . . . . . . . . . . . . . . . . 14
+A.2 Asymptotics of the intersection point . . . . . . . . . . . . . . . . . . . . . . . 16
+A.3 Closed-form expressions for the main mode’s contribution . . . . . . . . . . . . 16
+A.4 Closed form and asymptotic expression for the tail’s entropy . . . . . . . . . . . 18
+A.5 Derivation of the increment for the closed-form expression of entropy . . . . . . 18
+A.6 Final expression for the increment comparison . . . . . . . . . . . . . . . . . . 21
+B Proof of Theorem 1 21
+B.1 Auxiliary Lemmas . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23
+C Generalization of the information maximization approximation 27
+C.1 Asymptotic expression for exponential family rewards . . . . . . . . . . . . . . 28
+C.2 The partitioning approximation . . . . . . . . . . . . . . . . . . . . . . . . . . 29
+C.3 Asymptotic intersection point . . . . . . . . . . . . . . . . . . . . . . . . . . . 29
+C.4 Generalization of the main mode’s contribution . . . . . . . . . . . . . . . . . . 29
+C.5 Generalized expression for the entropy tail . . . . . . . . . . . . . . . . . . . . 30
+C.6 Generalized form of the entropy approximation . . . . . . . . . . . . . . . . . . 30
+C.7 Derivation of the increment for the closed-form expression of entropy . . . . . . 31
+D Numerical experiments 31
+D.1 Numerical settings . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31
+D.2 AIM implementation details . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+D.3 Information maximization approximation for Bernoulli rewards with more than
+two arms . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 34
+D.4 Overview of baseline bandit algorithms . . . . . . . . . . . . . . . . . . . . . . 35
+D.5 Additional experiments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 36
+A Towards an analytical approximation of the entropy
+In this section, we recapitulate all the steps leading to the analytical expression constitutive of our
+AIM algorithm. We stress, that it involves exact derivations but also simplifications to considerably
+simplify the final form of AIM. Therefore, alternative approaches could lead to a slightly different
+version of AIM. However, our chosen method retains the essential features which emerges in the
+asymptotic regime while providing a simple version of AIM.
+A.1 The partitioning approximation
+We start by commenting on the partition scheme and the approximations leading to the following
+body/tail expressions. We first recall the expression for pmax(θ), with the arms ordered along Mt,
+pmax(θ) =
+
+pMt(θ)
+AtY
+m
+Cm(θ) +
+AtX
+m
+CMt(θ)pm(θ)
+AtY
+j̸=m
+Cj(θ)
+
+. (12)
+where we remind that Cm(θ) is the cumulative posterior probability of the mean of arm m
+Because of its dependency along all arms, there is no unique dominant term in Equation (12), and
+distinct regimes emerge depending on θ and the state of the game. Then, we assume to isolate distinct
+regimes contributing asymptotically to the entropy while significantly simplifying them. It will
+considerably simplify the derivation of an analytical expression for the body/tail components in the
+next section. The next paragraphs will then present heuristic arguments justifying our simplification
+scheme.
+14
+We start by rewriting the exact entropy expression isolatingMt:
+Smax = −
+Z
+Θ
+pMt(θ)
+AtY
+m
+Cj(θ) ln
+
+pMt(θ)
+AtY
+j
+Cj(θ) +
+AtX
+m
+pm(θ)CMt(θ)
+AtY
+j̸=m
+Cj(θ)
+
+dθ
+−
+AtX
+m
+Z
+Θ
+pi(θ)CMt(θ)
+AtY
+j̸=m
+Cj(θ) ln
+
+pMt(θ)
+AtY
+j
+Cj(θ) +
+AtX
+m
+pm(θ)CMt(θ)
+AtY
+j̸=m
+Cj(θ)
+
+dθ.
+(13)
+Let us briefly comment on the different contributions to Equation (13). We aim to keep the leading
+orders of pmax(θ) when NMt ≫ Nm ≫ 1 and ˆµMt > ˆµm for all m in the set of current worse
+empirical arms At. Here, the posterior distributions are assumed uni-modal. The first term is
+the leading order in the vicinity of the mode of ˆµMt. Also, since NMt > Nm, pMt(θ) is more
+concentrated than all pm(θ), resulting in the dominance of the second term in the distribution’s tail
+(i.e., for high rewards).
+We now decompose the entropy in the body/tail components defined in the main text, the first term
+of Equation (13) will form the body component, and the sum over all worse empirical arms will
+compose the tail. We now define ¯µeq,m the intersection point associated to the arm m verifying
+Cm(¯µeq,m)pMt(¯µeq,m) = CMt(¯µeq,m)pm(¯µeq,m). Then, in the asymptotic regime, ¯µeq,m will verify
+pm(θ) ≫ pMt(θ) for θ > ¯µeq,m and pm(θ) ≪ pMt(θ) for θ < ¯µeq,m. Again, we will assume to
+neglect the transition regime where ¯µeq,m ∼ θ where both distributions are of the same order because
+it is narrow (in the asymptotic regime) and has very little influence on the total value of the entropy.
+To get the body component, we consider the first term of Equation (13). We neglect all the inner terms
+inside the logarithm which is then dominated byMt. Next, by noticing thatCi(θ) ≈ 1 is in the vicinity
+of ˆµMt, we make a first-order expansion of the remaining product along all the worse empirical arms.
+Since the inner term of the body component is negligible forθ >min({¯µeq,m, m∈ At}) (because of
+its dependency along pMt), we ignore that our simplification is no more valid in this specific regime
+without loss of consistency. Taken together we obtain the body expression of the main text:
+˜Sbody = −
+Z
+Θ
+ 
+1 −
+AtX
+m
+[1 − Cm(θ)]
+
+pMt(θ) lnpMt(θ)dθ. (14)
+Then, we consider the additional terms (each denoted as m) in Equation (13). First, each term of the
+sum is negligible to the first one forθ <¯µeq,m, we then only keep the upper part of the integral where
+θ >¯µeq,m. Because Nm ≫ 1 and θ >min({¯µeq,m, i̸= Mt}) > ˆµMt > ˆµj, we approximate all the
+cumulative by one. Finally, to get a simplified expression for the increment, we assume to neglect all
+the posterior distributions except for pi(θ) inside the logarithm of the i-th term and approximates
+¯µeq,m (see next section) which leads to the tail expression:
+˜Stail = −
+AtX
+m
+Z µsup
+˜µeq,m
+pm(θ) lnpm(θ)dθ. (15)
+note that some of these posterior distributions (j ̸= m, Mt) are not negligible compared to pm(θ)
+at a given θ. However, this cross-information between current suboptimal arms is asymptotically
+negligible regarding the decision procedure (which largely resumes as balancing exploiting the best
+empirical solution compared to exploring worse empirical arms) while unnecessarily complicating
+the increment evaluation.
+Finally, we obtain the full expression of the entropy approximation:
+˜Smax = −
+Z
+Θ
+
+1 −
+AtX
+m
+[1 − Cm(θ)]
+
+pMt(θ) lnpMt(θ)dθ −
+AtX
+m
+Z µsup
+˜µeq,m
+pi(θ) lnpi(θ)dθ. (16)
+15
+A.2 Asymptotics of the intersection point
+In this section, we derive the asymptotic expression of the intersection point (defined above as ˜µeq,m)
+where the distributions Cm(˜µeq,m)pMt(˜µeq,m) and CMt(˜µeq,m)pm(˜µeq,m) intersect (at their highest
+value if they intersect more than once). Here, we consider Gaussian rewards and the intersection
+between Mt and a given worse empirical arm denoted m. The exact equation verified by the
+intersection point ¯µeq,m is:
+p
+NMte−
+NMt(¯µeq,m−ˆµMt)2
+2σ2
+√
+2πσ2
+1
+2
+
+1 + erf
+√Nm(¯µeq,m − ˆµm)√
+2σ2
+
+=
+√Nme−
+Nm(¯µeq,m−ˆµm)2
+2σ2
+√
+2πσ2
+1
+2
+"
+1 + erf
+ p
+NMt(¯µeq,m − ˆµMt)√
+2σ2
+!#
+.
+(17)
+Taking the logarithm of Equation (17) and normalizing the last term leads to:
+Nm(¯µeq,m − ˆµm)2
+2σ2 − NMt(¯µeq,m − ˆµMt)2
+2σ2 + 1
+2 ln NMt
+Nm
++ ln
+
+
+1 + erf
+√Nm(¯µeq,m−ˆµm)√
+2σ2
+
+1 + erf
+√
+NMt(¯µeq,m−ˆµMt)√
+2σ2
+
+
+ = 0.
+(18)
+The distributions are uni-modal, and assuming that ˆµMt > ˆµm, NMt > Nm and recalling that ¯µeq,m
+is the highest intersection, we get that ¯µeq,m > ˆµMt > ˆµm. Both error functions are then bounded in
+[0, 1], making the last term bounded as well. We then approximate ¯µeq,m with ˜µeq,m by neglecting
+the last term, which leads to the following solution:
+˜µeq,m = ˆµMt + Nm(ˆµMt − ˆµm)
+NMt − Nm
++
+s
+NMtNm
+(NMt − Nm)2 (ˆµMt − ˆµm)2 + σ2
+NMt − Nm
+ln
+NMt
+Nm
+
+.
+(19)
+Note that Equation (19) relies on both ˆµMt > ˆµm and NMt > Nm. For NMt ≤ Nm, even if the
+above ˜µeq,m can be computed, it does not quantify the tail contribution. As a matter of fact, for
+NMt ≤ Nm, the tail is always dominated by pMt, which means that it has already been included in
+the main mode ˜Sbody. Then, in this specific configuration, we take the contribution of the arm m to
+˜Stail equals to 0 (in other words ˜µeq,m = µsup).
+A.3 Closed-form expressions for the main mode’s contribution
+Here, we derive the ˜Sbody expression given in the main text for Gaussian rewards distribution.
+Inserting the Gaussian form of the posterior into Equation (8) gives:
+˜Sbody = −
+Z +∞
+−∞
+p
+NMte−
+NMt(θ−ˆµMt)2
+2σ2
+√
+2πσ2
+
+−1
+2 ln(2πσ2
+NMt
+) − NMt(θ − ˆµMt)2
+2σ2
+
+×
+ 
+1 −
+AtX
+m
+1
+2
+
+1 − erf
+√Nm(θ − ˆµm)√
+2σ2
+!
+dθ,
+(20)
+We integrate the constant part of the first term, denoted T1 by the use of the following identity [Ng
+and Geller, 1969]:
+Z ∞
+−∞
+
+1 + erf
+θ − θ1√2V1
+ e−(θ−θ2)2
+2V2
+√2πV2
+dθ =
+
+1 + erf
+ θ2 − θ1√
+2√V2 + V1
+
+, (21)
+which leads to
+16
+T1 = 1
+2 ln
+ 2πσ2
+NMt
+Z +∞
+−∞
+p
+NMte−
+NMt(θ−ˆµMt)2
+2σ2
+√
+2πσ2
+
+1 − 1
+2
+AtX
+m
+1 − erf
+√Nm(θ − ˆµm)√
+2σ2
+
+dθ
+= 1
+2 ln
+ 2πσ2
+NMt
+
+1 −
+AtX
+m
+1
+2
+
+1 − erf
+
+
+√Nm(ˆµMt − ˆµm)q
+2σ2( 1
+NMt
++ 1
+Nm
+)
+
+
+
+
+
+
+= 1
+2 ln
+ 2πσ2
+NMt
+
+1 −
+AtX
+m
+1
+2erfc
+
+
+√Nm(ˆµMt − ˆµm)q
+2σ2( 1
+NMt
++ 1
+Nm
+)
+
+
+
+
+(22)
+Next, we separate the second term in two parts T2,1 and T2,2, first :
+T2,1 =
+Z +∞
+−∞
+p
+NMte−
+NMt(θ−ˆµMt)2
+2σ2
+√
+2πσ2
+NMt(θ − ˆµMt)2
+2σ2 dθ = 1
+2. (23)
+Then, we integrate by parts the remaining term T2,2 to obtain:
+T2,2 = −
+AtX
+m
+Z ∞
+−∞
+N3/2
+Mt (θ − ˆµMt)2
+4σ2
+e−
+NMt(θ−ˆµMt)2
+2σ2
+√
+2πσ2
+
+1 − erf
+√Nm(θ − ˆµm)√
+2σ2
+
+dθ
+= −
+AtX
+m
+Z ∞
+−∞
+1
+4
+p
+NMte−
+NMt(θ−ˆµMt)2
+2σ2
+√
+2πσ2
+
+1 − erf
+√Nm(θ − ˆµm)√
+2σ2
+
+− (θ − ˆµMt)
+2
+p
+NMtNme−
+NMt(θ−ˆµMt)2
+2σ2 −Nm(θ−ˆµm)2
+2σ2
+2πσ2 dθ
+= −
+AtX
+Mt
+1
+4erfc
+
+ ˆµMt − ˆµmq
+2σ2( 1
+NMt
++ 1
+Nm
+)
+
+ − (ˆµMt − ˆµm)σ2
+2NMt
+√
+2π( σ2
+NMt
++ σ2
+Nm
+)3/2 e
+−
+(ˆµMt−ˆµm)2
+2σ2( 1
+NMt
++ 1
+Nm )
+,
+(24)
+where we also rely on the identity of Equation (21).
+Combining Equations (22) to (24) leads to the analytical expression of the body component.
+˜Sbody = 1
+2 ln(2πσ2e
+NMt
+)
+"
+1 − 1
+2
+AtX
+m
+erfc
+ p
+NmNMt(ˆµMt − ˆµm)p
+2σ2(Nm + NMt)
+!#
+−
+AtX
+m
+p
+NMtN3/2
+m (ˆµMt − ˆµm)
+2σ
+√
+2π(NMt + Nm)3/2 e
+−
+NmNMt(ˆµMt−ˆµm)2
+2σ2(Nm+NMt)
+.
+(25)
+To finally get an asymptotic and simplified expression of the body component, we neglect the second
+term. Then, since ˜µeq,m −→
+NMt→∞
+ˆµMt and Nm ≪ NMt asymptotically, we approximate the first
+term as:
+˜Sb = 1
+2 ln(2πσ2e
+NMt
+)
+"
+1 − 1
+2
+AtX
+m
+erfc
+√Nm(˜µeq,m − ˆµm)√
+2σ2
+#
+. (26)
+This last approximation will enable to provide an analytically tractable gradient without altering the
+asymptotic behavior expected at large times for the entropy measure.
+17
+A.4 Closed form and asymptotic expression for the tail’s entropy
+The contribution from the tail can be derived exactly and reads:
+˜Stail =
+AtX
+m
+Z ∞
+˜µeq,m
+√Nme−Nm(θ−ˆµm)2
+2σ2
+√
+2πσ2
+1
+2 ln(2πσ2
+Nm
+) + Nm(θ − ˆµm)2
+2σ2
+
+dθ
+=
+AtX
+m
+1
+4 ln
+2πσ2e
+Nm
+
+erfc
+√Nm(˜µeq,m − ˆµm)√
+2σ2
+
++
+√Nm(˜µeq,m − ˆµm)
+2
+√
+2πσ2 e−
+Nm(˜µeq,m−ˆµm)2
+2σ2 .
+(27)
+To get a simplified analytical expression of the tail component, we only keep the second term since it
+dominates the others asymptotically,
+˜St =
+AtX
+m
+√Nm(˜µeq,m − ˆµm)
+2
+√
+2πσ2 e−
+Nm(˜µeq,m−ˆµm)2
+2σ2 . (28)
+Taken altogether, Equations (26) and (28) lead to the desired simplified approximation of the entropy:
+˜Sm = ˜Sb + ˜St. (29)
+A.5 Derivation of the increment for the closed-form expression of entropy
+Since Equations (26) and (28) exhibit simple closed-form expressions, it becomes possible to derive
+an explicit expression of its expected increment. Here, we again consider continuous Gaussian reward
+distributions.
+We start by deriving the increment along the better empirical arm, ∆Mt
+˜Sm. The posterior of the
+reward obtained at time t + 1 is approximated as a Gaussian of variance σ2 and centred around ˆµMt,
+leading to:
+∆Mt
+˜Sm =
+Z ∞
+−∞
+e− µ2
+2σ2
+√
+2πσ2
+
+˜Sm(ˆµMt + µ
+NMt + 1, NMt + 1, ...) − ˜Sm(ˆµMt, NMt, ...)
+
+dµ. (30)
+where the dots runs over all the worse empirical arms variables remaining constant when the best
+empirical arm is drawn at time t + 1.
+For the sake of simplicity, we neglect the variations of all the subdominant terms inside
+all ˜µeq,m meaning we approximate them as ˜µeq,m(ˆµMt + µ
+NMt+1 , NMt + 1 , ˆµm, Nm) ≈
+˜µeq,m(ˆµMt, NMt, ˆµm, Nm) + µ
+NMt+1 , after observing a reward µ when pulling the arm Mt for
+the (NMt +1)th time.
+By use of the identity Equation (21), the gradient of the body component ∆Mt
+˜Sb can be rewritten as:
+∆Mt
+˜Sb = 1
+2 ln( 2πσ2e
+NMt + 1)
+
+1 − 1
+2
+AtX
+m
+erfc
+
+
+√Nm(˜µeq,m − ˆµm)
+√
+2σ2
+q
+1 + Nm
+(NMt+1)2
+
+
+
+
+− 1
+2 ln(2πσ2e
+NMt
+)
+"
+1 − 1
+2
+AtX
+m
+erfc
+√Nm(˜µeq,m − ˆµm)√
+2σ2
+#
+.
+(31)
+18
+The increment of the tail component along the better empirical arm can be calculated as:
+∆Mt
+˜St =
+AtX
+m
+Z ∞
+−∞
+e− µ2
+2σ2
+√
+2πσ2
+√Nm( µ
+NMt+1 + ˜µeq,m − ˆµm)
+2
+√
+2πσ2 e−
+Nm(˜µeq,m+ µ
+NMt+1 −ˆµm)2
+2σ2 dµ
+−
+AtX
+m
+√Nm(˜µeq,m − ˆµm)
+2
+√
+2πσ2 e−
+Nm(˜µeq,m−ˆµm)2
+2σ2
+=
+AtX
+m
+e
+−Nm
+(˜µeq,m−ˆµm)2
+2σ2
+ 
+1+ Nm
+(1+NMt)2
+! r
+Nm
+8πσ2
+(˜µeq,m − ˆµm)
+(1 + Nm
+(NMt+1)2 )3/2
+−
+AtX
+m
+√Nm(˜µeq,m − ˆµm)
+2
+√
+2πσ2 e−
+Nm(˜µeq,m−ˆµm)2
+2σ2 .
+(32)
+Next, we consider the increment evaluation along a given worse empirical arm denoted by k,
+∆k ˜Sm =
+Z ∞
+−∞
+e− µ2
+2σ2
+√
+2πσ2
+
+˜Sm(..., ˆµk + µ
+Nk + 1, Nk + 1, ...) − ˜Sm(..., ˆµk, Nk, ...)
+
+dµ. (33)
+We here also neglect the variations of the subdominant term inside ˜µeq,m. We start by considering
+the increment of the body component:
+∆k ˜Sb = 1
+2 ln(2πσ2e
+NMt
+)
+"
+1 − 1
+2erfc
+ 
+(Nk + 1)(˜µeq,k − ˆµk)p
+2σ2(Nk + 2)
+!#
+− 1
+2 ln(2πσ2e
+NMt
+)
+
+1 − 1
+2erfc
+√Nk(˜µeq,k − ˆµk)√
+2σ2
+
+.
+(34)
+Of note, all other terms in the sum independent of index k remain constant, showing no increment.
+Finally, we consider the associated tail component of the increment along k:
+∆k ˜St =
+Z ∞
+−∞
+e− µ2
+2σ2
+√
+2πσ2
+√Nk + 1( µ
+Nk+1 + ˜µeq,k − ˆµk)
+2
+√
+2πσ2 e−
+(Nk+1)(˜µeq,k+ µ
+Nk+1 −ˆµk)2
+2σ2 dµ
+−
+√Nk(˜µeq,k − ˆµk)
+2
+√
+2πσ2 e−
+Nk(˜µeq,k−ˆµk)2
+2σ2
+= e−
+(Nk+1)2
+(Nk+2)
+(˜µeq,k−ˆµk)2
+2σ2 (1 + Nk)2 (˜µeq,k − ˆµk)√
+8πσ2(2 + Nk)3/2
+−
+√Nk(˜µeq,k − ˆµk)
+2
+√
+2πσ2 e−
+Nk(˜µeq,k−ˆµk)2
+2σ2
+(35)
+As for the body increment, all other terms in the sum independent of indexk remain constant, showing
+no increment.
+Taken altogether, Equations (31), (32), (34) and (35) lead to the final analytical expression of the
+increment:
+19
+∆Mt,k =1
+2 ln( NMt
+NMt + 1) − 1
+4 ln( 2πσ2e
+NMt + 1)
+AtX
+m
+erfc
+
+
+√Nm(˜µeq,m − ˆµm)q
+2σ2(1 + Nm
+(NMt+1)2 )
+
+
++ 1
+4 ln(2πσ2
+NMt
+)
+AtX
+m
+erfc
+p
+Nm
+˜µeq,m − ˆµm√
+2σ2
+
++
+AtX
+m
+e
+−Nm
+(˜µeq,m−ˆµm)2
+2σ2(1+ Nm
+(1+NMt)2 )
+r
+Nm
+8πσ2
+(˜µeq,m − ˆµm)
+(1 + Nm
+(NMt+1)2 )3/2
+−
+AtX
+m
+√Nm(˜µeq,m − ˆµm)√
+8πσ2 e−
+Nm(˜µeq,m−ˆµm)2
+2σ2
++ 1
+4 ln(2πσ2e
+NMt
+)
+"
+erfc
+ 
+(Nk + 1)(˜µeq,k − ˆµk)p
+2σ2(2 + Nk)
+!
+− erfc
+p
+Nk
+˜µeq,k − ˆµk√
+2σ2
+#
+− e−
+(Nk+1)2
+(Nk+2)
+(˜µeq,k−ˆµk)2
+2σ2 (1 + Nk)2 (˜µeq,k − ˆµk)√
+8πσ2(2 + Nk)3/2 +
+√Nk(˜µeq,k − ˆµk)
+2
+√
+2πσ2 e−
+Nk(˜µeq,k−ˆµk)2
+2σ2
+(36)
+To obtain a simplified expression, we expand to the first order each component of the different
+components of Equation (36) denoted T1, T2, T3, T4. The former is given by:
+T1 = −1
+4 ln( 2πσ2e
+NMt + 1)
+AtX
+m
+erfc
+
+
+√Nm(˜µeq,m − ˆµm)q
+2σ2(1 + Nm
+(NMt+1)2 )
+
+
++ 1
+4 ln(2πσ2e
+NMt
+)
+KX
+m̸=Mt
+erfc
+p
+Nm
+˜µeq,m − ˆµm√
+2σ2
+
+≈
+AtX
+m
+1
+4NMt
+erfc
+√Nm(˜µeq,m − ˆµm)√
+2σ2
+
+− 1
+4 ln(2πσ2e
+NMt
+) Nm
+N2
+Mt
+√Nm(˜µeq,m − ˆµm)√
+2πσ2 e−
+Nm(˜µeq,m−ˆµm)2
+2σ2 .
+(37)
+Next we consider the second component, which reads:
+T2 =
+AtX
+m
+e
+−Nm
+(˜µeq,m−ˆµm)2
+2σ2(1+ Nm
+(1+NMt)2 )
+r
+Nm
+8πσ2
+(˜µeq,m − ˆµm)
+(1 + Nm
+(NMt+1)2 )3/2
+−
+AtX
+m
+√Nm(˜µeq,m − ˆµm)
+2
+√
+2πσ2 e−
+Nm(˜µeq,m−ˆµm)2
+2σ2
+≈
+AtX
+m
+e−Nm
+(˜µeq,m−ˆµm)2
+2σ2
+r
+Nm
+8πσ2 (˜µeq,m − ˆµm)
+
+−3
+2
+Nm
+N2
+Mt
++ (˜µeq,m − ˆµm)2
+2σ2
+N2
+m
+N2
+Mt
+
+.
+(38)
+Next we consider the third term, denoted T3, which reads:
+T3 = 1
+4 ln(2πσ2e
+NMt
+)
+"
+erfc
+ 
+(Nk + 1)(˜µeq,k − ˆµk)p
+2σ2(2 + Nk)
+!
+− erfc
+p
+Nk
+˜µeq,k − ˆµk√
+2σ2
+#
+≈ −1
+4 ln(2πσ2e
+NMt
+) 1
+N2
+k
+√Nk(˜µeq,k − ˆµk)√
+2πσ2
+
+e−
+Nk(˜µeq,k−ˆµk)2
+2σ2
+(39)
+20
+Finally, the last term T4 reads
+T4 = −e−
+(Nk+1)2
+(Nk+2)
+(˜µeq,k−ˆµk)2
+2σ2 (1 + Nk)2 (˜µeq,k − ˆµk)√
+8πσ2(2 + Nk)3/2 +
+√Nk(˜µeq,k − ˆµk)
+2
+√
+2πσ2 e−
+Nk(˜µeq−ˆµk)2
+2σ2
+≈ e−Nk
+(˜µeq,k−ˆµk)2
+2σ2
+r
+Nk
+8πσ2 (˜µeq,k − ˆµk)
+ 1
+Nk
++ 1
+Nk
+(˜µeq,k − ˆµk)2
+2σ2
+
+.
+(40)
+Taken altogether, we finally obtain the following simplified increment :
+∼
+∆Mt,k = 1
+2 ln( NMt
+NMt + 1) + 1
+2NMt
+AtX
+m
+1
+2erfc
+√Nm(˜µeq,m − ˆµm)√
+2σ2
+
++
+AtX
+m
+N3/2
+m (˜µeq,m − ˆµm)√
+2πσ2N2
+Mt
+e−Nm
+(˜µeq,m−ˆµm)2
+2σ2
+1
+4 ln( NMt
+2πσ2e) − 3
+4 + Nm(˜µeq,m − ˆµm)2
+4σ2
+
++ ˜µeq,k − ˆµk√2πσ2Nk
+e−Nk
+(˜µeq,k−ˆµk)2
+2σ2
+ 1
+4Nk
+ln( NMt
+2πσ2e) + 1
+2 + (˜µeq,k − ˆµk)2
+4σ2
+
+(41)
+By noticing that the sum of second term should account for the tail contribution along the body
+increment, it shouldn’t be allowed to be superior to one. Then we assume to bound it by taking the
+minimum compared to 1 − 1/K.
+A.6 Final expression for the increment comparison
+Taken altogether, it leads to expression used for AIM for multiple gaussian arms:
+∆Mt,k = 1
+2 ln( NMt
+NMt + 1) + 1
+2NMt
+min
+ AtX
+m
+1
+2erfc
+√Nm(˜µeq,m − ˆµm)√
+2σ2
+
+, 1 − 1
+K
+!
++
+AtX
+m
+N3/2
+m (˜µeq,m − ˆµm)√
+2πσ2N2
+Mt
+e−Nm
+(˜µeq,m−ˆµm)2
+2σ2
+1
+4 ln( NMt
+2πσ2e) − 3
+4 + Nm(˜µeq,m − ˆµm)2
+4σ2
+
++ ˜µeq,k − ˆµk√2πσ2Nk
+e−Nk
+(˜µeq,k−ˆµk)2
+2σ2
+ 1
+4Nk
+ln( NMt
+2πσ2e) + 1
+2 + (˜µeq,k − ˆµk)2
+4σ2
+
+(42)
+with
+˜µeq,i = ˆµMt + Ni(ˆµMt − ˆµi)
+NMt − Ni
++
+vuutNMtNi(ˆµMt − ˆµi)2
+(NMt − Ni)2 +
+σ2 ln
+
+NMt
+Ni
+
+NMt − Ni
+. (43)
+B Proof of Theorem 1
+This section provides the complete proof of Theorem 1. More precisely, it proves the more refined
+Theorem 2 below.
+Theorem 2. For any multi-armed bandits with Gaussian rewards of varianceσ2 and mean vector
+µµµ ∈ RK, for any ε ∈ (0, 1
+2 ), there exists a constant C(µµµ, ε) ∈ R depending solely on µµµ and ε such
+that for any T ∈ N
+R(T) ≤
+X
+k,µk<µ∗
+"
+2σ2 ln T
+(1 − ε)(µ∗ − µk) + 2σ2 ln lnT
+(1 − ε)(µ∗ − µk)
+#
++ C(µµµ, ε).
+21
+Proof. We denote in the whole proof M∗ = {k ∈ [K] | µk = µ∗}. For ∆k = µ∗ − µk, the regret
+can then be written as
+R(T) =
+X
+k,∆k>0
+∆kE[Nk(T)] .
+We decompose this expectation in 4 terms as follows
+E[Nk(T)] ≤
+TX
+t=1
+P
+
+∀i ∈ M∗, Ni(t) ≤
+√
+t
+
++
+TX
+t=1
+P
+ 
+ˆµk(t) ≥ µ∗ −
+s
+6σ2 ln t√
+t , at = k
+!
++
+TX
+t=1
+P
+ 
+∃i ∈ M∗, ˆµi(t) ≤ µi −
+s
+6σ2 ln t
+Ni(t)
+!
++
+TX
+t=1
+P(Ek(t)) ,
+where
+Ek(t) :=
+(
+∃i ∈ M∗, Ni(t) ≥
+√
+t and ˆµi(t) ≥ µ∗ −
+s
+6σ2 ln t
+Ni(t) ≥ ˆµk(t), at = k
+)
+.
+This inequality comes simply by noticing the event {at = k} is included in the union of the 4 other
+events. Lemmas 1, 3 and 4 allow to respectively bound the first, second and third sums by a constant
+C(µµµ) depending solely on µµµ, so that
+E[Nk(T)] ≤
+TX
+t=1
+P(Ek(t)) + C(µµµ).
+Thanks to Lemma 5, there exist constants t(µµµ), n(µµµ) depending solely on K and ∆k such that
+TX
+t=1
+P(Ek(t)) ≤ t(µµµ) +
+TX
+t=1
+P(G1(t)) + P(G2(t)) ,
+where
+G1(t) = {µk − ˆµk(t) ≤ −ε∆k, at = k},
+G2(t) = {Nk(t) ≤ 2σ2
+(1 − 2ε)2∆2
+k
+ 
+ln t + ln lnt
+
++ n(µµµ), at = k}.
+Now, we bound individually the sum corresponding to each of these 2 events. The first one can
+be bounded using Hoeffding’s inequality. Indeed, for independent random variables Zk(n) ∼
+N(µk, σ2), it reads as:
+TX
+t=1
+P(µk − ˆµk(t) ≤ −ε∆k, at = k) ≤
+TX
+n=1
+P
+ 
+1
+n
+nX
+i=1
+Zk(i) − µk ≥ ε∆k
+!
+≤
+TX
+n=1
+e−
+nε2∆2
+k
+2σ2
+≤ 1
+e
+ε2∆2
+k
+2σ2 −1
+.
+The bound of the second term is bounded as
+TX
+t=1
+P(Ek(t)) ≤ E
+" TX
+t=1
+1{Nk(t) ≤ 2σ2
+(1 − 2ε)2∆2
+k
+ 
+ln t + ln lnt
+
++ n(µµµ), at = k}
+#
+≤ 2σ2
+(1 − 2ε)2∆2
+k
+ 
+ln T + ln lnT
+
++ n(µµµ) + 1.
+Wrapping up everything finally yields that for some constant C(µµµ, ε) depending solely on µµµ, ε,
+R(T) ≤ 2σ2
+(1 − 2ε)2∆k
+(ln T + ln lnT) + C(µµµ, ε).
+This concludes the proof of Theorem 2 with the reparameterization ε ← 1 − (1 − 2ε)2.
+22
+B.1 Auxiliary Lemmas
+Similarly to the proof of Thompson sampling, the first part of the proof shows that the optimal arm is
+at least pulled a polynomial number of times with high probability. We recall that we denote in this
+whole section M∗ = arg maxk µk.
+Lemma 1. There exists a constant C0(µµµ) depending solely on the mean vector µµµ such that
+∞X
+t=1
+P(∀i ∈ M∗, Ni(t) ≤
+√
+t) ≤ C0(µµµ).
+Proof. Let t0(µµµ) be a large constant that depends solely on µµµ. In the remaining of the proof, we
+assume at some points that t0(µµµ) is chosen large enough (but only larger than a threshold depending
+on µµµ) such that some inequalities hold. We also assume in the following, without loss of generality,
+that µ1 = µ∗, i.e., 1 ∈ M∗.
+Assume that for t ≥ t0(µµµ), Ni(t) ≤
+√
+t for all i ∈ M∗. Let then k be the most pulled arm at time t,
+i.e., k ∈ argmaxj Nj(t) (if multiple arms maximise the number of pulls, we select the one such that
+its last pull happened the earliest). Necessarily Nk(t) ≥ t
+K . We can choose t0(µµµ) large enough so
+that t
+K >
+√
+t and thus ∆k > 0. Let t′ ≤ t be the last time k was pulled. By design, k also maximised
+the number of pulls then, so that k ∈ argmaxj ˆµj(t′). Moreover, Ni(t′) ≤
+√
+t for all i ∈ M∗ and
+Nk(t′) ≥ t
+K − 1. For t0(µµµ) large enough, this yields Nk(t′) ≥ Ni(t′) for all i ∈ M∗ and at′ = k.
+The arm k is thus pulled at time t′, in particular because Sk ≥ S1 (i.e., ∆k,1S ≤ 0), where
+Sk = 1
+2 ln
+
+1 + 1
+Nk(t′)
+
+− 1
+2Nk(t′) min
+
+1
+2
+X
+i̸=k
+erfc
+ p
+Ni(t′)(˜µeq,i − ˆµi)√
+2σ2
+!
+, 1 − 1
+K
+
+,
+S1 =
+X
+i̸=k
+r
+Ni(t′)
+2πσ2 (˜µeq,i − ˆµi) e−Ni(t′)
+(˜µeq,i−ˆµi)2
+2σ2
+1
+4 ln(Nk(t′)
+2πσ2e ) Ni(t′)
+N2
+k (t′) − 3
+4
+Ni(t′)
+N2
+k (t′) + (˜µeq,i − ˆµi)2
+4σ2
+N2
+i (t′)
+N2
+k (t′)
+
++ e−N1(t′)
+(˜µeq,1−ˆµ1)2
+2σ2
+r
+N1(t′)
+2πσ2 (˜µeq,1 − ˆµ1)
+1
+4 ln(Nk(t′)
+2πσ2e ) 1
+N2
+1 (t′) + 1
+2N1(t′) + 1
+N1(t′)
+(˜µeq,1 − ˆµ1)2
+4σ2
+
+.
+To simplify, note thatSk ≤ 1
+2Nk(t′) . Moreover since Nk(t′) ≥ t
+K − 1 ≥ 2πe4σ2 for a large enough
+choice of t0(µµµ), S1 can be easily lower bounded as
+S1 ≥ 1
+2
+(˜µeq,1 − ˆµ1)p
+2πσ2N1(t′)
+e−
+N1(t′)(˜µeq,1−ˆµ1)2
+2σ2 .
+So we finally have the following inequality at time t′:
+1
+N2(t′) ≥ (˜µeq − ˆµ1)p
+2πσ2N1(t′)
+e−
+N1(t′)(˜µeq−ˆµ1)2
+2σ2 . (44)
+Recall that N2(t′) ≥ t
+K − 1, so that Equation (44) can be rewritten as
+N1(t′) ≥ ( t
+K − 1) ˜x√π e−˜x2
+, (45)
+where ˜x =
+√
+N1(t′)(˜µeq−ˆµ1)√
+2σ2 . In the following, we will show that ˜x ∈ [˜xmin, ˜xmax] ⊂ R+. By
+analysing the variations of x 7→ xe−x2
+, this will imply that
+N1(t′) ≥
+t
+K − 1√π min{˜xmine−˜x2
+min , ˜xmaxe−˜x2
+max }. (46)
+For the lower bound, the definition of ˜µeq,1 and the fact that N1(t′) ≥ 1 directly implies that
+˜x ≥
+vuut ln(Nk(t′)
+N1(t′) )
+2(Nk(t′)
+N1(t′) − 1)
+= Ω
+ r
+ln(t)
+t
+!
+.
+23
+Moreover, by subadditivity of the square root:
+˜x ≤
+r
+N1(t′)
+2σ2 (ˆµ2 − ˆµ1)
+ 
+1 + N1(t′) +
+p
+N1(t′)Nk(t′)
+Nk(t′) − N1(t′)
+!
++
+vuut N1(t′) ln(Nk(t′)
+N1(t′) )
+2(Nk(t′) − N1(t′)) (47)
+≤
+r
+N1(t′)
+2σ2 (ˆµk − ˆµ1)
+
+1 + Kt−1
+4
+
++ O
+ p
+K ln(t)
+t
+1
+4
+!
+. (48)
+Let us now consider the events, for ∆min = minj,∆j>0 ∆j,
+H∗(t) :=
+(
+∃i ∈ M∗, ∃s ≤ t, ˆµi(s) − µi ≤ −
+s
+2σ2(ln(t) − ln ln(t))
+Ni(s) − ∆min
+3
+)
+, (49)
+Hk(t) :=
+
+∃s ≤ t, t
+K − 1 ≤ Nk(s) ≤ t and ˆµk(s) − µk ≥ ∆k
+3
+
+. (50)
+Assume in the following that ¬H∗(t) ∩ ¬Hk(t). This implies that
+ˆµk − ˆµ1 ≤ −∆k
+3 +
+s
+2σ2(ln(t) − ln ln(t))
+N1(s) . (51)
+In particular, r
+N1(t′)
+2σ2 (ˆµ2 − ˆµ1) ≤
+p
+ln(t) − ln ln(t),
+which implies that ˜x ≤
+p
+ln(t) − ln ln(t) + O
+
+K
+p
+ln(t)t−1
+4
+
+. Using the lower and upper bounds
+on ˜x, we have thanks to Equation (46) that under ¬H∗(t) ∩ ¬Hk(t),
+N1(t′) = Ω(ln
+3
+2 (t)
+K ).
+For a large enough choice of t0(µµµ), this last equality along with Equation (51) actually yield
+ˆµk − ˆµ1 < 0, which contradicts the beginning of the proof (k being best empirical arm at time t′).
+By contradiction, we thus showed the following event inclusion for t ≥ t0(µµµ):n
+∀i ∈ M∗, Ni(t) ≤
+√
+t
+o
+⊂ H∗(t) ∪ Hk(t). (52)
+Lemma 1 then follows, thanks to Lemma 2 below,
+∞X
+t=1
+P(∀i ∈ M∗, Ni(t) ≤
+√
+t) ≤ t0(µµµ) +
+∞X
+t=t0(µµµ)+1
+P(H∗(t)) + P(Hk(t)).
+Lemma 2. For any b ∈ (0, 1) and the events H∗(t), Hk(t) defined in Equations (49) and (50), there
+exist constants c1 and c2 depending solely on µµµ such that
+∞X
+t=1
+P(H∗(t)) ≤ c1 and
+∞X
+t=1
+P(Hk(t)) ≤ c2 for any k ̸∈ M∗.
+Proof. The two bounds directly result from Hoeffding’s inequality. Consider independent random
+variables (Zj(n))n∈N,j∈[K] where Zj(n) ∼ N(µj, σ2). Let us first bound the probability of Hk(t),
+which is simpler.
+P(Hk(t)) ≤
+tX
+n=⌈t−tb−1⌉
+P
+ nX
+i=1
+(Zk(i) − µk) ≥ n∆k
+3
+!
+≤
+tX
+n=⌈ t
+K −1⌉
+e−
+n∆2
+k
+18σ2
+≤ e−
+⌈ t
+K −1⌉∆2
+k
+18σ2
+1 − e−
+∆2
+k
+18σ2
+.
+24
+The second inequality of Lemma 2 then follows by noting that the last term is summable over t. For
+the second bound, we also have by Hoeffding’s inequality
+P(H∗(t)) ≤
+X
+j∈M∗
+∞X
+n=1
+P
+ nX
+i=1
+(Zj(i) − µj) ≤ −
+p
+2nσ2(ln(t) − ln ln(t)) − n∆min
+3
+!
+≤
+X
+j∈M∗
+∞X
+n=1
+exp
+
+−ln(t) + ln ln(t) −
+p
+2nσ2(ln(t) − ln ln(t))∆min
+3σ2 − n∆2
+min
+18σ2
+
+≤ |M∗|ln(t)
+t exp
+
+−
+p
+2(ln(t) − ln ln(t)) ∆min
+3
+√
+σ2
+ ∞X
+n=1
+e−
+n∆2
+min
+18σ2 .
+The last sum is obviously finite. Moreover,
+p
+2(ln(t) − ln ln(t)) = ω(ln ln(t)), so that
+exp
+
+−
+p
+2(ln(t) − ln ln(t)) ∆min
+3
+√
+σ2
+
+= O
+
+1
+lnα(t)
+
+for any α > 0. By comparison with series
+of the form 1
+n lnα(n) , the term ln(t)
+t exp
+
+−
+p
+2(ln(t) − ln ln(t)) ∆2
+3
+√
+σ2
+
+is summable over t, which
+leads to the first bound of Lemma 2.
+Lemma 3. For any k ̸∈ M∗, there exists a constant C1(µµµ) depending solely on µµµ such that
+∞X
+t=1
+P
+ 
+ˆµk(t) ≥ µ∗ −
+s
+6σ2 ln t√
+t , at = k
+!
+≤ C1(µµµ).
+Proof. A union bound on the sum yields for any T ∈ N
+TX
+t=1
+P
+ 
+ˆµ2(t) ≥ µ∗ −
+s
+6σ2 ln t√
+t , at = k
+!
+≤
+TX
+t=1
+tX
+n=0
+P
+ 
+ˆµk(t) ≥ µ∗ −
+s
+6σ2 ln t√
+t , Nk(t) = n, Nk(t + 1) = n + 1
+!
+≤
+TX
+n=0
+TX
+t=n
+P
+
+
+ˆµk(t) ≥ µ∗ −
+s
+6σ2 mins≥n ln s√s , Nk(t) = n, Nk(t + 1) = n + 1
+| {z }
+:=G1(t,n)
+
+
+.
+Now note that the G1(t, n) are disjoint for different t. In particular,
+TX
+t=n
+P(G1(t, n)) = P
+ 
+∃t ∈ [n, T], ˆµk(t) ≥ µ∗ −
+r
+6σ2 mins≥n ln s
+sb , N2(t) = n
+!
+.
+For independent random variables Zk(n) ∼ N(µk, σ2), we have by independence of the Xt and at,
+and then by Hoeffding inequality:
+TX
+t=1
+P
+ 
+ˆµk(t) ≥ µ∗ −
+s
+6σ2 ln t√
+t , at = k
+!
+≤ 1 +
+TX
+n=1
+P
+ 
+1
+n
+nX
+i=1
+(Zk(i) − µk) ≥ ∆k −
+s
+6σ2 mins≥n ln s√s
+!
+,
+≤ 1 +
+TX
+n=1
+exp
+
+−
+n
+
+∆k −
+q
+6σ2 mins≥n ln s√s )
+2
+2σ2
+
+.
+Obviously, this sum can be bounded for any T ∈ N by a constant solely depending on ∆k.
+Lemma 4. For any i ∈ [K], there exists a universal constant C2 such that
+∞X
+t=0
+P
+ 
+ˆµi(t) ≤ µi −
+s
+6σ2 ln t
+Ni(t) )
+!
+≤ C2.
+25
+Proof. This is a direct consequence of Garivier [2013], which states that for Gaussian rewards with
+variance σ2:
+P(Ni(t)(ˆµi(t) − µi)2
+2σ2 ≥ (1+α) lnt) ≤ 2
+ ln t
+ln(1 + η)
+
+t−(1−η2
+16 )(1+α) for any t ∈ N∗ and α, η >0.
+In particular with α = 2 = η, this implies
+P
+ 
+ˆµi(t) ≤ µi −
+s
+6σ2 ln t
+Ni(t)
+!
+≤ 2ln(t) + 1
+ln(3) t−9
+4 .
+This term is obviously summable so that there exists a constant C2 such that
+∞X
+t=1
+P
+ 
+ˆµ1(t) ≤ µ1 −
+s
+6σ2 ln t
+N1(t)
+!
+≤ C2.
+Lemma 4 directly follows by the inclusion of the considered events.
+For any k ̸∈ M∗, Lemma 5 below gives an event inclusion for the eventEk(t) that we recall here,
+Ek(t) :=
+(
+∃i ∈ M∗, Ni(t) ≥
+√
+t and ˆµi(t) ≥ µ∗ −
+s
+6σ2 ln t
+Ni(t) ≥ ˆµk(t), at = k,
+)
+.
+Lemma 5. There exist constantst(µµµ) and n(µµµ) depending solely on µµµ such that for any k ̸∈ M∗, t≥
+t(µµµ) and ε ∈ (0, 1
+3 ),
+Ek(t) ⊂ {µk − ˆµk(t) ≤ −ε∆k, at = k} ∪ {Nk(t) ≤ 2σ2
+(1 − 2ε)2∆2
+k
+ 
+ln t + ln lnt
+
++ n(µµµ), at = k}.
+Proof. Assume in the following that Ek(t) holds for some t ≥ t(µµµ). Let i ∈ [K] be an arm
+maximising the empirical mean at time t. Necessarily ˆµi(t) ≥ µ∗ −
+q
+6σ2 ln t
+Ni(t) . Moreover, at = k so
+that i also maximises the number of pulls, in particular Ni(t) ≥ t
+K . Moreover, as we pull the arm k,
+Sk ≥ Si where
+Si = 1
+2 ln
+
+1 + 1
+Ni(t)
+
+− 1
+2Ni(t) min
+
+1
+2
+X
+j̸=i
+erfc
+ p
+Nj(t)(˜µeq,j − ˆµj)√
+2σ2
+!
+, 1 − 1
+K
+
+,
+Sk = gk(t)Qk(t) +
+X
+j̸=i
+gj(t)Pj(t),
+(53)
+where for all j ̸= i
+gj(t) =
+r
+Nj(t)
+2πσ2 (˜µeq,j − ˆµj) e−Nj(t)
+(˜µeq,j−ˆµj)2
+2σ2 ,
+Pj(t) =
+"
+1
+4 ln( Ni(t)
+2πσ2e) Nj(t)
+N2
+i (t) − 3
+4
+Nj(t)
+N2
+i (t) + (˜µeq,j − ˆµj)2
+4σ2
+N2
+j (t)
+N2
+i (t)
+#
+and Qj(t) =
+"
+1
+4 ln( Ni(t)
+2πσ2e) 1
+N2
+j (t) + 1
+2Nj(t) + 1
+Nj(t)
+(˜µeq,j − ˆµj)2
+4σ2
+#
+.
+Also note that as we pull the arm k, we have for any j ≤ i,
+gj(t)Qj(t) ≤ gk(t)Qk(t). (54)
+As a consequence, we can write for any δ >0 and ˜xj =
+q
+Nj(t)
+2σ2 (˜µeq,j − ˆµj):
+gj(t)Pj(t) ≤ gj(t)
+
+ln(t) Nj(t)
+4N2
+i (t)
+
++ ˜x3
+je−˜x2
+j
+Nj(t)
+2N2
+i (t)
+≤ gj(t)
+
+2 ln(t) + 1
+δ
+ Nj(t)
+2N2
+i (t) + Nj(t)
+2N2
+i (t)δ,
+26
+where we used the fact that ˜x3
+je−˜x2
+j ≤ ˜xje
+−˜x2
+j
+δ + δ. Moreover, note that for t(µµµ) large enough,
+Qj(t) ≥ 1
+2Nj(t) . As a consequence,
+gj(t)Pj(t) = gj(t)
+
+2 ln(t) + 1
+δ
+ Nj(t)
+2N2
+i (t)Qj(t)Qj(t) + Nj(t)
+2N2
+i (t)δ
+≤ Qj(t)gj(t)
+
+2 ln(t) + 1
+δ
+
++ Kδ
+2t
+≤ Qk(t)gk(t)
+
+2 ln(t) + 1
+δ
+
++ Kδ
+2t ,
+where the last inequality comes from Equation (54). In particular,
+Sk ≤ K
+
+2 ln(t) + 1
+δ
+
+Qk(t)gk(t) + K2δ
+2t . (55)
+Also, Si ≥ 1
+2t − K2
+4t2 since Ni(t) ≥ t
+K and ln(1 + x) ≥ x − x2
+2 for x ∈ [0, 1].
+Now assume that µk − ˆµk(t) ≥ −ε∆k. It then holds
+˜µeq,k − ˆµk(t) ≥ ˆµi(t) − ˆµk(t)
+≥ ∆k + µk − ˆµk(t) −
+s
+6σ2 ln t√
+t
+≥ (1 − ε)∆k −
+s
+6σ2 ln t√
+t .
+Again, we can choose t(µµµ) large enough so that ˜µeq,k − ˆµk(t) ≥ (1 − 2ε)∆k. Moreover, note that
+the functions x 7→ e−x2
+x , x7→ xe−x2
+, x7→ x3e−x2
+are all decreasing on an interval of the form
+[M, +∞]. As a consequence, we can choose n(µµµ) large enough so that
+√
+n(µµµ)((1−2ε)∆k)2
+√
+2σ2 ≥ M. If
+Nk(t) ≥ n(µµµ), we then have from Equation (55), for a constant c(K, ∆k) solely depending on K
+and ∆k:
+Sk ≤ c(K, ∆k)e−
+Nk(t)(1−2ε)2∆2
+k
+2σ2
+
+ln t + 1
+δ
+
++ K2δ
+2t .
+The inequality Sk ≥ Si then implies, thanks to the above bounds:
+c(K, ∆k)e−
+Nk(t)(1−2ε)2∆2
+k
+2σ2
+
+ln t + 1
+δ
+
+≥ 1 − K2δ
+2t − K2
+4t2 .
+In particular, for δ = 1
+2K2 ,
+Nk(t) ≤ 2σ2
+(1 − 2ε)2∆2
+k
+(ln t + ln lnt + O (1)) ,
+where the O hides constants depending in K and ∆k. This concludes the proof of Lemma 5 as we
+just shown that if Ek(t) holds, at least one of the two following events holds when Nk(t) ≥ n(µµµ):
+• µk − ˆµk(t) ≤ −ε∆k
+• Nk(t) ≤ 2σ2
+(1−2ε)2∆2
+k
+(ln t + ln lnt + O (1)).
+C Generalization of the information maximization approximation
+In this section, we will generalize the approach derived in Appendix A to bandit settings with a
+reward distribution belonging to the exponential family. We will retrace all the previous steps made in
+Appendix A, insisting on the differences with the Gaussian reward case. We will also discuss bandit
+settings with non-uniform priors and with more than two arms.
+27
+C.1 Asymptotic expression for exponential family rewards
+We derive an asymptotic expression for the one-dimensional canonical exponential family from which
+we will derive an analytical approximation of the entropy. We thus focus on a reward distribution
+density f with respect to some reference measure ν belonging to some one-dimensional canonical
+exponential family, i.e.,
+f(x|θ) = A(x) exp
+ 
+T(x)θ − F(θ)
+
+, (56)
+where F is twice differentiable and strictly convex. Additionally, let us recall that the Kullback-Leibler
+divergence verifies: [Korda et al., 2013]:
+KL(θ, θ′) = F(θ′) − F(θ) − F′(θ)(θ′ − θ), (57)
+where KL(θ, θ′) is the Kullback-Leibler divergence between the reward distribution parameterized
+by θ and the one parameterized by θ′.
+Given a prior π(θ) and the reward realizations (x1, . . . , xn), the associated posterior distribution on
+θ, denoted p, reads:
+p(θ|x1, .., xn) = 1
+C π(θ) exp
+ 
+θ
+nX
+k=1
+T(xk) − nF(θ)
+!
+, (58)
+where C =
+R
+π(θ) exp (θ PT(xk) − nF(θ)) dθ is a normalization constant. Next, we derive the
+maximum a posteriori for the parameter θ, denoted ˆθl, which verifies:
+nX
+i=1
+T(xi) = nF′(ˆθl) − π′(ˆθl)
+π(ˆθl)
+. (59)
+At this stage, we assume that there exits such ˆθl verifying Equation (59). In practice, for a reward
+distribution that does not meet this criteria, one can replace ˆθl by a series ˆθn,l which, for sufficiently
+large values of n, asymptotically conforms to the aforementioned definition. For example, a Bernoulli
+arm that consistently fails under a uniform prior, will result in an undefined ˆθl. To address this, one
+may redefine ˆθl such that (1 +Pi = 1nT(xi)) = (n + 2)F′(ˆθl), effectively replacing the empirical
+mean in Equation (59) with the posterior mean.
+Replacing the sum in Equation (58) leads to
+p(θ|x1, .., xn) = 1
+C π(θ) exp
+ 
+θnF ′(ˆθl) − θ π′(ˆθl)
+π(ˆθl)
+− nF(θ)
+!
+= enˆθlF′(ˆθl)−nF(ˆθl)
+C π(θ)e
+−θ
+π′(ˆθl)
+π(ˆθl) e−nKL(ˆθl,θ)
+= 1
+C2
+π(θ)e
+−θ
+π′(ˆθl)
+π(ˆθl) e−nKL(ˆθl,θ),
+(60)
+where C2 also acts as a normalization constant of Equation (60). For n ≫ 1, the distribution
+concentrates in the vicinity of ˆθl from which we will derive the asymptotic scaling of C2. We then
+integrate Equation (60) after a change of variable θ(u) = ˆθl + u√n ,
+1 =
+Z
+Θ
+p(θ|x1, .., xn)dθ =
+Z (θb−ˆθl)√n
+−(θb−ˆθl)√n
+1
+C2
+√nπ(ˆθl + u√n)e
+−(ˆθl+ u√n )
+π′(ˆθl)
+π(ˆθl) e−nKL(ˆθl,ˆθl+ u√n )du
++
+Z −θb
+µinf
+p(θ|x1, .., xn)dθ +
+Z µsup
+θb
+p(θ|x1, .., xn).dθ
+(61)
+Taking (θb − ˆθl) ∼ n−b with b <1/2, we get rid of the tail components in the asymptotic limit.
+Secondly, by noticing that F′′(ˆθl)
+2 = lim
+θ→ˆθl
+K(ˆθl, θ)/|θ − ˆθl|2 from Equation (57), we make an
+expansion to the lowest order of the Kullback-Leibler divergence, which gives:
+1 = lim
+θ→ˆθl
+Z (θb−ˆθl)√n
+−(θb−ˆθl)√n
+1
+C2
+√nπ(ˆθl)e
+−ˆθl
+π′(ˆθl)
+π(ˆθl) e
+−
+F′′(ˆθl)u2
+2
+ˆθl+O
+
+1√n
+
+du. (62)
+28
+Thus, we obtain:
+C2 ∼
+√
+2πq
+nF′′(ˆθl)
+π(ˆθl)e
+−ˆθl
+π′(ˆθl)
+π(ˆθl) . (63)
+Of note, the gaussian limit also gives that ¯σ2
+i ∼ F′′(ˆθl)−1N−1
+i .
+Thus, we assume to develop an approximation scheme for a posterior distribution pi asymptotically
+verifying:
+pi(θ) ∼
+Ni→∞
+s
+1
+2π¯σ2
+i
+H(θ, ˆθl)e−NiKL(ˆθl,θ), (64)
+where H is a function accounting for the prior distribution. For the following, we take a uniform
+prior on Θ, which leads to H(θ, ˆθl) = 1.
+In the following, we will denote ˆµMt and ˆµm as the maximum a posteriori estimates associated to
+their respective arms (instead of the empirical means).
+C.2 The partitioning approximation
+Since all the steps leading to the partitioning approximation are independent of the type of reward
+distribution, ˜Stail and ˜Sbody have the same general form as given in Appendix A.1. Here, we consider
+all the distributions under θ parameter for which we replace ˆµMt, ˆµm and ˜µeq by there equivalents
+ˆθmt, ˆθMt and ˜θeq.
+C.3 Asymptotic intersection point
+By use of Equation (64), the equation verified by the intersection point ¯θeq asymptotically reads:
+e−NMtKL(ˆθMt,¯θeq)
+q
+2π¯σ2
+Mt
+Z ¯θeq
+µinf
+e−NmKL(ˆθmt,θ′)
+p
+2π¯σ2m
+dθ′ = e−NmKL(ˆθmt,¯θeq)
+p
+2π¯σ2m
+Z ¯θeq
+µinf
+e−NMtKL(ˆθMt,θ′)
+q
+2π¯σ2
+Mt
+dθ′.
+(65)
+Taking the logarithm of Equation (65) leads to
+NmKL(ˆθmt, ¯θeq) − NMtKL(ˆθMt, ¯θeq) + 1
+2 ln ¯σ2
+m
+¯σ2
+Mt
++ ln
+R ¯θeq
+µinf
+q
+¯σ2
+Mte−NmKL(ˆθmt,θ′)dθ′
+R ¯θeq
+µinf
+p
+¯σ2me−NMtKL(ˆθMt,θ′)dθ′
+= 0.
+(66)
+Employing the same arguments as the ones exposed in Appendix A.2, we approximate ¯θeq by
+neglecting the last term. Furthermore, in the considered asymptotic scaling regime (NMt ≫ Nm),
+¯θeq will be in the vicinity of ˆθMt where a Gaussian expansion of the Kullback-Leibler divergence
+is relevant (see Equation (61)). Thus, we approximate KL(ˆθmt, ˜θeq) by KL(ˆθmt, ˆθMt) and expand
+KL(ˆθMt, ¯θeq) to lowest order in ˜θeq (with ¯σ2
+i ∼ F′′(ˆθl)−1N−1
+i ), leading to:
+˜θeq = ˆθMt +
+s
+2¯σ2
+Mt
+
+NmKL(ˆθmt, ˆθMt) + 1
+2 ln ¯σ2m
+¯σ2
+Mt
+
+. (67)
+C.4 Generalization of the main mode’s contribution
+We start by recalling the expression for the body component of the entropy:
+˜Sbody = −
+Z
+Θ
+pMt(θ)Cm(θ) lnpMt(θ)dθ. (68)
+Without any additional information on the expression for KL, Equation (68) cannot be computed in a
+closed form. Thus, we will rely on the asymptotic scaling NMt ≫ Nm ≫ 1 to provide a tractable
+29
+expression. First, we neglect variations of Cm(θ) in Equation (68) integral by evaluating it at ˜µeq.
+Then, by noticing that the resulting integral is the entropy of the better empirical arm’s mean, we
+approximate it by its leading order, proportional to ln(2π¯σ2
+Mt)/2:
+˜Sbody ≈ 1
+2 ln(2π¯σ2
+Mt)
+"
+1 −
+Z µsup
+¯θeq
+e−NmKL(ˆθmt,θ′)
+p
+2π¯σ2m
+dθ′
+#
+. (69)
+We finally consider the last integral in Equation (69). By noticing that it is concentrated in the vicinity
+of ˜µeq for Nm ≫ 1, we Taylor expand KL(ˆθmt, θ′) at ˜µeq to obtain:
+Z µsup
+¯θeq
+e−NmKL(ˆθmt,θ′)
+p
+2π¯σ2m
+dθ ≈ e−NmKL(ˆθmt,˜µeq)
+p
+2π¯σ2m
+Z µsup
+¯θeq
+e−Nm(θ′−˜µeq)∂2KL(ˆθmt,˜µeq)dθ′
+≈ e−NmKL(ˆθmt,˜µeq)
+p
+2π¯σ2mNm∂2KL(ˆθmt, ˜µeq)
+.
+(70)
+Inserting Equation (70) into Equation (69) leads to the body component:
+˜Sb = 1
+2 ln(2π¯σ2
+Mt)
+"
+1 − e−NmKL(ˆθmt,˜θeq)
+p
+2π¯σ2mNm∂2KL(ˆθmt, ˜θeq)
+#
+. (71)
+C.5 Generalized expression for the entropy tail
+We start by recalling the expression for the tail component:
+˜Stail = −
+Z µsup
+˜θeq
+pm(θ) lnpm(θ)dθ. (72)
+As for Equation (70), we Taylor expand KL(ˆθmt, θ′) at ˜θeq in the exponential term to obtain:
+˜St = −ln pm(˜θeq) e−NmKL(ˆθmt,˜θeq)
+p
+2π¯σ2mNm∂2KL(ˆθmt, ˜θeq)
+. (73)
+Keeping the leading order of −ln pm(˜θeq) ∼ NmKL(ˆθmt, ˜θeq) leads to the expected tail expression
+used in the main text.
+C.6 Generalized form of the entropy approximation
+To summarize, by combining Equations (71) and (73) we obtain an asymptotic expression for
+exponential family bandits with a uniform prior:
+˜Smax = 1
+2 ln(2π¯σ2
+Mt)
+"
+1 − e−NmKL(ˆθmt,˜θeq)
+Nm∂2KL(ˆθmt, ˜θeq)
+p
+2π¯σ2m
+#
++ KL(ˆθmt, ˜θeq)e−NmKL(ˆθmt,˜θeq)
+∂2KL(ˆθmt, ˜θeq)
+p
+2π¯σ2m
+.
+(74)
+Finally, depending implementation, we propose for convenience to replace in ˜Smax the maximum a
+posteriori estimates of each arm by either their empirical mean, their mean posterior values or the
+maximum of the log-likelihood. This does not alter the algorithm’s efficiency in practice, while it
+may simplify the implementation procedure for specific reward distributions.
+Note that all these steps can be adapted to non-uniform priors (in particular by multiplying the tail
+by the prior effects evaluated in ˜θeq). Finally, let us underline that our approximation scheme holds
+for any posterior distributions verifying Equation (64), a property we believe to be shared for more
+general reward distributions.
+30
+C.7 Derivation of the increment for the closed-form expression of entropy
+First, we stress there is no unique guideline to compute the expected increment of Equation (74), and
+multiple solutions emerge depending on the type of the reward distribution. In particular, if the reward
+distribution is continuous, one could integrate the increment as it has been done for Gaussian rewards
+above. But, if the integration cannot be solved analytically, one could approximate the increments by
+taking discrete reward values of the order of ±σ. Similarly, if the reward takes discrete values, the
+increments are already discrete, but asymptotic simplifications or taking the continuous limit can also
+be considered.
+Finally, if the increment evaluation is discrete or approximated, one could encounter rare cases where
+the algorithm gets trapped. It could occur when the algorithm observes a worse suboptimal arm close
+to the best empirical arm when it has already extensively been drawn. Because the entropy could
+increase drastically if an arm inversion occurs, the gradient signs may occasionally switch, leading to
+the failure of the minimization procedure. To prevent such cases, we change the decision procedure
+by maximizing the entropy variation rather than its direct minimization. An example is given for the
+implementation of Bernoulli rewards in the next section.
+Lastly, depending on the reward distribution it may be straightforward to express the increments
+along the usual empirical or posterior mean as opposed to the family parameter ˆθ. Often, this can be
+achieved through a basic variable transformation. The Bernoulli distribution example provided below
+serves as an illustration of this approach.
+D Numerical experiments
+Here, we provide all the information regarding numerical experiments. This includes details on
+the numerical settings, implementation details for AIM in the investigated settings, an overview of
+investigated classical bandit algorithms, and additional experiments focusing on close-arm means.
+D.1 Numerical settings
+In Figure 1, the posterior distributions are drawn with ˆµMt ≈ 0.65, N1(t) = 374 , ˆµm ≈ 0.29,
+Nm = 26, where µi and Ni(t) are, respectively, the empirical mean and number of draws of armi
+and have been obtained with the AIM algorithm.
+For the Gaussian two-armed cases in Figure 2 the arm means are chosen from a uniform grid in
+(0, 1) × (0, 1) using a Sobol sequence (we have avoided the values 0 and 1 but it has no impact on
+the obtained results). The regret is averaged over 8192 games and observed during 108 steps to attest
+the logarithmic scaling. For Bernoulli rewards with two-armed Figure 3, the regret is averaged over
+16384 games and observed during 108 steps. It is worth noting that for Gaussian rewards, the prior
+information of arm means being only between 0 and 1 is not given to AIM nor to the Thompson
+sampling algorithm to allow a direct comparison.
+For the fifty-armed case in Figures 2 and 3, the arm means are drawn from a uniform prior, and the
+regret is averaged over 2000 games and observed during 106 steps in Figure 2 and 107 in Figure 3.
+For close arm means in Figures 4 and 5, the mean values are fixed with µ1 = 0.79 and µ2 = 0.8, but
+this prior information is not given to the investigated algorithms. The regret is averaged over 105
+games and observed during 106 steps.
+For the two-armed cases in Figures 6 and 7, the arm means are chosen from a uniform grid in
+(0, 1)×(0, 1) using a Sobol sequence. The regret is averaged over more than105 games and observed
+during 106 steps to enhance measurement accuracy.
+Finally, in the fifty-armed case in Figure 8, the arm means are drawn from a uniform prior, and
+the regret is averaged over 4.104 games and observed during 5.104 steps to enhance measurement
+accuracy.
+Of note, for all the experiments, seed values are not shared throughout the algorithms. To obtain a
+sufficient number of runs, the code was parallelized on a cluster (asynchronously), with each run
+operating independently while ensuring that seed values are not common between runs. Because it
+31
+relies on an analytical expression, AIM shows an execution time of the same order of Thompson
+sampling (measured three times slower for two-armed Bernoulli rewards).
+For completeness, an implementation of AIM for both Bernoulli and Gaussian rewards and more than
+two arms are given in the supplementary material (AIM Bernoulli bandits and AIM Gaussian
+folders).
+D.2 AIM implementation details
+Here, we recap below AIM setups for the different settings evoked in the main text.
+D.2.1 Approximate information maximization for the two arm Gaussian rewards
+Specifically for the two-armed case, one can simplifies the expressions given in the main text. ˜µeq
+defined the value of θ where both arms have the same probability of being the maximal one and reads
+˜µeq = ˆµMt + Nm(ˆµMt − ˆµm)
+NMt − Nm
++
+s
+NMtNm(ˆµMt − ˆµm)2
+(NMt − Nm)2 + σ2
+NMt − Nm
+ln
+NMt
+Nm
+
+. (75)
+Hence, following identical approximations of the ones derived in Appendix A.1for Gaussian reward
+distributions, the tail component given by Equation (7) simplifies into:
+˜Stail = 1
+4 ln(2πσ2e
+Nm
+)erfc
+√Nm(˜µeq − ˆµm)√
+2σ2
+
++
+√Nm(˜µeq − ˆµm)
+2
+√
+2πσ2 e−
+−Nm(˜µeq−ˆµm)2
+2σ2 . (76)
+Similarly for ˜Sbody, we obtain:
+˜Sbody = 1
+2 ln
+2πσ2e
+NMt
+
+×
+"
+1 − 1
+2erfc
+ p
+NmNMt(ˆµMt − ˆµm)p
+2σ2(Nm + NMt)
+!#
+−
+p
+NMtN3/2
+m (ˆµMt − ˆµm)
+2σ
+√
+2π(NMt + Nm)3/2 e
+−
+NmNMt(ˆµMt−ˆµm)2
+2σ2(Nm+NMt)
+.
+(77)
+Finally, it allows us to derive the approximation of the gradient difference of the entropy for the
+two-armed case:
+∆ = 1
+2 ln( Nm
+Nm + 1) + 1
+4NMt
+erfc
+√Nm(˜µeq − ˆµm)√
+2σ2
+
++
+√Nm(˜µeq − ˆµm)√
+2πσ2 ×
+e−
+Nm(˜µeq−ˆµm)2
+2σ2
+2N2
+Mt − 3N2
+m
+4NmN2
+Mt
++ 1
+4 ln
+ NMt
+2πσ2e
+ N3
+m + N2
+Mt
+N2mN2
+Mt
++ (N3
+m + N2
+Mt)(˜µeq − ˆµm)2
+4σ2NmN2
+Mt
+
+,
+(78)
+and the associated pseudo-code used for Figures 2, 4 and 6 is presented in Alg. 2 below.
+D.2.2 Approximate information maximization for Bernoulli rewards
+We denote by ¯µi the posterior mean, given by:
+E
+
+XB(ri+1,Ni−ri+1)
+
+= ri + 1
+Ni + 2 = ¯µi, (79)
+where ri is the cumulative reward at time t , Ni the number of draws and XB(a,b) follows a Beta
+distribution with parameters (a, b). The variance verifies:
+Var
+
+XB(ri+1,Ni−ri+1)
+
+= ri + 1
+Ni + 2
+Ni − ri + 1
+Ni + 2
+1
+Ni + 3
+= ¯µi(1 − ¯µi)
+¯Ni
+,
+(80)
+32
+Algorithm 2:AIM Algorithm for 2 Gaussian arm
+Draw each arm once; observe reward Xt(t) and update statistics
+ˆµt ← Xt(t), Nt ← 1 ∀t ∈ {1, 2}
+for t = 3 to T do
+/* Arm selection */
+Mt ← argmaxk=1,2 ˆµk, m ← argmink=1,2 ˆµk;
+if NMt ≤ Nm then
+at ← Mt
+else
+Evaluate ∆ following Equation (9) ;
+if ∆ < 0 then
+at ← Mt
+elseat ← m
+Pull at and observe Xt(at)
+/* Update statistics */
+ˆµat ← ˆµatNat+Xt(at)
+Nat+1 , Nat ← Nat + 1
+where ¯Ni = Ni + 3.
+For Bernoulli rewards, we approximate the gradient as follows:
+|∆i ˜Smax| =
+
+¯µi( ¯Ni − 1) − 1
+¯Ni − 3
+˜Smax( ¯µi ¯Ni + 1 − ¯µi
+¯Ni
+, ¯Ni + 1, ¯µj, ¯Nj)
++
+¯Ni − 2 − ¯µi( ¯Ni − 1)
+¯Ni − 3
+˜Smax( ¯µi( ¯Ni − 1)
+¯Ni
+, ¯Ni + 1, ¯µj, ¯Nj) − ˜Smax(¯µi, ¯Ni, ¯µj, ¯Nj)
+,
+(81)
+with ˜Smax given by Equation (74) expressed along µ with µ = eθ
+1+eθ . For Bernoulli rewards the
+equation reads:
+˜Smax(¯µMt, ¯NMt, ¯µm, ¯Nm) =
+ 
+1 − e− ¯NmKL(¯µm,˜µeq)
+√Nm∂2KL(¯µm, ˜µeq)
+p
+2π¯µm(1 − ¯µm)
+!
+1
+2 ln
+2π¯µMt(1 − ¯µMt)
+¯NMt
+
++
+p ¯NmKL(¯µm, ˜µeq)e− ¯NmKL(¯µm,˜µeq)
+∂2KL(¯µm, ˜µeq)
+p
+2π¯µm(1 − ¯µm)
+,
+(82)
+with KL(θ, θ′) = θ ln(θ/θ′) + (1− θ) ln([1− θ]/[1 − θ′]) and σ2
+i = ¯µi(1−¯µi)
+¯Ni
+.
+Briefly, the expected gradient is evaluated along arm i with a returned reward equal to 1 with
+probability ¯µi( ¯Ni−1)−1
+¯Ni−3 (which is the empirical mean) or equal to 0 with probability 1 − ¯µi( ¯Ni−1)−1
+¯Ni−3 .
+Of note, by adding absolute values, we seek to maximize the entropy variation rather than its direct
+minimization to avoid falling into an entrapment scenario (see Appendix C.7 for further discussion).
+We draw some additional observations on the practical implementation of the code. First, in the
+gradient evaluation of ∆i following Equation (81) we may find a ˜µeq value to be undefined (because
+Nm > NMt or ˜µeq,i > 1), which is unusable for Bernoulli rewards. In this case, ˜µeq,i is taken to be
+equal to 1, resulting in Smax = 1
+2 ln
+
+2π¯µMt(1−¯µMt)
+¯NMt
+
+.
+Second, at large times, noticing that the better empirical arm is drawn extensively, one can increment
+the algorithm by multiple steps at a time to speed up AIM . Indeed, let us assume that the better
+empirical arm is drawn T times successively while always returning a null reward, which is the worst
+scenario for the returned reward of the better empirical arm. Then, if the increment evaluation at
+t + T of Alg. 3 still returns Mt, then it ensures that all increment evaluations between [t, t+ T] of
+33
+Algorithm 3:AIM Algorithm for 2 Bernoulli arm
+Draw each arm once; observe reward Xt(t) and update statistics
+¯µt ← Xt(t)+1
+3 , ¯Nt ← 4 ∀t ∈ {1, 2}
+for t = 3 to T do
+/* Arm selection */
+Mt ← argmaxk=1,2 ¯µk, m ← argmink=1,2 ¯µk;
+if NMt ≤ Nm then
+at ← Mt
+else
+Evaluate ∆ = |∆Mt
+˜Smax| − |∆m ˜Smax| following Equation (81) ;
+if ∆ > 0 then
+at ← Mt
+elseat ← m
+Pull at and observe Xt(at)
+/* Update statistics */
+¯µat ← ¯µat( ¯Nat−1)+Xt
+¯Nat
+, ¯Nat ← ¯Nat + 1
+Alg. 3 will always return Mt independently of its returned rewards. Then, using a dichotomy search
+on the variable T, we can diminish the number of increment evaluations of AIM at large times, thus
+improving AIM’s performance.
+D.3 Information maximization approximation for Bernoulli rewards with more than two
+arms
+We start by reminding the obtained entropy approximation for more than two arms:
+˜Smax = −
+Z
+Θ
+ 
+1 −
+KX
+i̸=Mt
+[1 − Ci(θ)]
+
+pMt(θ) lnpMt(θ)dθ −
+KX
+i̸=Mt
+Z µsup
+˜µeq,i
+pi(θ) lnpi(θ)dθ. (83)
+We first consider the increment along a worse empirical arm, which simplifies :
+|∆i ˜Smax| = ∆i
+
+−
+Z
+Θ
+Ci(θ)pMt(θ) lnpMt(θ)dθ −
+Z µsup
+˜µeq,i
+pi(θ) lnpi(θ)dθ
+
+, (84)
+which is exactly the increment evaluated in the two-armed case given in Equation (82).
+Finally, we consider the increment along the better empirical arm. For simplicity, we neglect ˜µeq,i
+variations for the increments evaluation. By use of Equation (82) we obtain
+|∆MtSmax| =
+1 −
+KX
+i̸=Mt
+e− ¯NmKL(¯µi,˜µeq)
+√Nm∂2KL(¯µi, ˜µeq)
+p
+2π¯µi(1 − ¯µi)
+
+∆MtH(¯µMt, ¯NMt)
+, (85)
+where
+∆MtH(¯µi, ¯Ni)
+ =
+
+¯µi( ¯Ni − 1) − 1
+¯Ni − 3 H( ¯µi ¯Ni + 1 − ¯µi
+¯Ni
+, ¯Ni + 1, ¯µj, ¯Nj)
++
+¯Ni − 2 − ¯µi( ¯Ni − 1)
+¯Ni − 3 H( ¯µi( ¯Ni − 1)
+¯Ni
+, ¯Ni + 1, ¯µj, ¯Nj) − H(¯µi, ¯Ni, ¯µj, ¯Nj)
+,
+(86)
+34
+with H(¯µMt, ¯NMt) = 1
+2 ln
+
+2π¯µMt(1−¯µMt)
+¯NMt
+
+.
+Algorithm 4:AIM Algorithm for K >2 Bernoulli arm
+Draw each arm once; observe reward Xt(t) and update statistics
+¯µt ← Xt(t)+1
+3 , ¯Nt ← 4 ∀t ∈ {1, ..K}
+for t = K + 1 to T do
+/* Arm selection */
+Mt ← argmaxk={1,..,K} ¯µk; Evaluate ∆Mt
+˜Smax following Equation (85) ;
+Evaluate m = argmax(∆i|˜Smax|, i̸= Mt) with ∆i|˜Smax| following Equation (81) ;
+if ∆Mt|˜Smax| > ∆m|˜Smax| then
+at ← Mt
+elseat ← m
+Pull at and observe Xt(at)
+/* Update statistics */
+¯µat ← ¯µat( ¯Nat−1)+Xt
+¯Nat
+, ¯Nat ← ¯Nat + 1
+Of note in the gradient evaluation of∆i following Equation (81), if ones finds a ˜µeq,i value undefined
+(because Nm > NMt or ˜µeq,i > 1 which is unusable for Bernoulli reward), then, ˜µeq,i is taken to be
+equal to 1 resulting in Smax = 1
+2 ln
+
+2π¯µMt(1−¯µMt)
+¯NMt
+
+. Finally, if Mt ← argmaxk={1,..,K} ¯µk has
+multiple solutions, we suggest choosing the one displaying the lowest number of draws.
+D.4 Overview of baseline bandit algorithms
+Here, we briefly review several baseline algorithms and their chosen parameters to provide a bench-
+mark of our information maximization method.
+D.4.1 UCB-Tuned
+This algorithm falls under the category of upper confidence bound (UCB) algorithms, which select
+the arm maximizing a proxy function typically defined as Fi = ˆµi + Bi. For UCB-tuned, Bi is given
+by:
+Ri = c(µ1, µ2)
+s
+ln(t)
+Ni(t)min
+1
+4, si(t)
+
+, si(t) = ˆσi
+2 +
+s
+2 ln(t)
+Ni(t) , (87)
+where ˆσi
+2 is the reward variance and c a hyperparameter. For Gaussian rewards, by testing various c
+values for uniform priors in Equation (87), we end up with c = 2.1 and ˆσi
+2 = σ2
+Ni(t) .
+D.4.2 KL-UCB
+This algorithm is another variant of the upper confidence bound (UCB) class specifically designed for
+bounded rewards. In particular, it is known to be optimal for Bernoulli distributed rewards [Garivier
+and Cappé, 2011, Cappé et al., 2013]. For KL-UCB, Fi is expressed as follows:
+Fi = max
+n
+θ ∈ Θ : Ni(t)KL
+ ri(t)
+Ni(t), θ
+
+≤ ln(t) + c(µ1, µ2) ln(ln(t))
+o
+, (88)
+where Θ denotes the definition interval of the posterior distribution. By testing various c values for
+uniform priors, we end up with c(µ1, µ2) = 0.00001 (c = 0 for the 50-armed Gaussian setting and
+c = 10−6 for the 2-armed Bernoulli setting). Of note, the maximum is found using a dichotomy
+method using a precision of 10−5 and a maximum number of iterations of 50.
+35
+For KL-UCB++ [Ménard and Garivier, 2017], the function Fi is expressed as follows
+Fi = max
+n
+θ ∈ Θ : Ni(t)KL
+ ri(t)
+Ni(t), θ
+
+≤ ln+
+ T
+KNi(t)(t) ln2
++
+ T
+KNi(t)(t)
+
++ 1
+o
+, (89)
+where ln+(x) = max(ln(x), 0), and T is the stopping time of the bandit game. Therefore, KLUCB++
+is not an anytime algorithm, but it still underperforms when compared to AIM and Thompson
+sampling.
+D.4.3 Thompson sampling
+At each step, Thompson sampling [Thompson, 1933, Kaufmann et al., 2012a,b] selects an arm at
+random, based on the posterior probability that is maximizes the expected reward. In practice, it
+draws K random values according to each arm’s mean posterior distribution and selects the arm with
+the highest sampled value as:
+at = argmax
+i=1..K
+
+Zi (ˆµi(t), Ni(t))
+
+, (90)
+where Zi(t) is drawn according to the posterior distribution of the ith arm’s mean. Here, we used
+a uniform prior on [0, 1] for Bernoulli rewards and a uniform prior on R for Gaussian rewards to
+provide a direct comparison with AIM.
+Finally, for Thompson sampling plus [Jin et al., 2022], denoted TS+, each sampled value for the
+comparison is drawn according to Zi (ˆµi(t), Ni(t)) with a probability 1/K or taken equal to ˆµi(t),
+otherwise.
+D.4.4 MED
+At each step, the minimal empirical divergence (MED) algorithm [Honda and Takemura, 2011],
+selects an arm at random, based on a tailored distribution building on the Kullback-Leibler distance
+to the better empirical arm. In practice, the arm at = i is be drawn with a probability:
+pi =
+exp
+h
+−Ni(t)KL
+
+ri(t)
+Ni(t) , ¯µMt
+i
+PK
+j=0 exp
+h
+−Nj(t)KL
+
+rj(t)
+Nj(t) , ¯µMt
+i. (91)
+D.5 Additional experiments
+D.5.1 Approximate information maximization for Gaussian rewards and close arms
+For completeness, we provide in Figure 4 below regret performances in which the arms’ mean values
+are close (∆µ = 0.01), and are thus difficult to distinguish, for Gaussian reward distributions. Here,
+AIM shows state-of-the-art performance comparable to Thompson sampling, even outperforming it
+at longer times.
+D.5.2 Approximate information maximization for Bernoulli rewards and close arms
+For completeness, we provide in Figure 5 below regret performances in which the arms mean value
+are close (∆µ = 0.01) for Bernoulli reward distributions. As for Gaussian rewards, AIM shows
+state-of-the-art performance comparable to Thompson sampling even when arms mean rewards are
+difficult to distinguish.
+D.5.3 Investigating approximate information maximization for large simulation volumes
+To refine the numerical investigation of AIM’s regret performance, we replicate the experiments of
+the main text using a larger volume of simulations (but on shorter timescales). For the 2-armed bandit
+with Gaussian and Bernoulli rewards, the regret performance under a uniform prior is averaged over
+more than 105 runs. Similarly, for the 50-armed bandit with Bernoulli rewards, the regret is averaged
+over 4 × 104. This leads to the results shown in Figures 6 to 8, confirming the results of Figures 2
+to 3.
+36
+101 102 103 104 105 106
+t
+0
+100
+200
+300
+400
+500
+600⟨R(t)⟩
+AIM
+Thompson
+Gaussian rewards, K = 2
+Figure 4: Temporal evolution of the regret for 2-armed bandit with Gaussian rewards (σ = 1) for
+close mean parameters. In blue AIM, in red Thompson sampling. Arm mean reward values are fixed
+with µ1 = 0.8 and µ2 = 0.79, the regret is obtained by averaging over 105 realizations.
+101 102 103 104 105 106
+t
+0
+20
+40
+60
+80
+100
+120
+140⟨R(t)⟩
+AIM
+Thompson
+Bernoulli rewards, K = 2
+Figure 5: Temporal evolution of the regret for 2-armed bandit with Bernoulli rewards for close
+mean parameters. In blue AIM, in red Thompson sampling. Arm mean reward values are fixed
+with µ1 = 0.8 and µ2 = 0.79, the regret is obtained by averaging over 105 realizations. Confidence
+intervals shows the standard deviation.
+101 102 103 104 105 106
+t
+0
+20
+40
+60
+80
+100
+120
+140⟨R(t)⟩
+AIM
+Thompson
+UCB-Tuned
+Gaussian rewards, K = 2
+Figure 6: Evolution of the Bayesian regret for 2-armed bandit with Gaussian rewards under a uniform
+mean prior. The regret is averaged over more than 105 runs. Confidence intervals shows the standard
+deviation. Confidence intervals show the standard deviation.
+37
+101 102 103 104 105 106
+t
+0
+5
+10
+15
+20
+25⟨R(t)⟩
+AIM
+Thompson
+KL-UCB
+Bernoulli rewards, K = 2
+Figure 7: Evolution of the Bayesian regret for 2-armed bandit with Bernoulli rewards under a uniform
+mean prior. The regret is averaged over more than 105 runs. Confidence intervals show the standard
+deviation.
+101 102 103 104
+t
+0
+20
+40
+60
+80
+100
+120
+140
+160⟨R(t)⟩
+AIM
+Thompson
+Bernoulli rewards, K = 50
+Figure 8: Evolution of the Bayesian regret for 50-armed bandit with Bernoulli rewards under a
+uniform mean prior. The regret is averaged over4 ×104 runs. Confidence intervals show the standard
+deviation.
+38

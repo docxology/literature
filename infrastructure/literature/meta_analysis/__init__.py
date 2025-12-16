@@ -83,7 +83,7 @@ from infrastructure.literature.meta_analysis.visualizations import (
     plot_cluster_size_distribution,
     plot_similarity_network,
 )
-from infrastructure.literature.meta_analysis.embeddings import (
+from infrastructure.literature.llm.embeddings import (
     EmbeddingData,
     SimilarityResults,
     generate_document_embeddings,

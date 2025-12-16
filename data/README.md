@@ -14,8 +14,8 @@ python3 -m infrastructure.literature.core.cli search "machine learning" --downlo
 ./run_literature.sh
 
 # Or directly via Python
-python3 scripts/07_literature_search.py --search     # Search for papers
-python3 scripts/07_literature_search.py --summarize  # Generate summaries
+python3 scripts/literature_search.py --search     # Search for papers
+python3 scripts/literature_search.py --summarize  # Generate summaries
 ```
 
 ### View Library
@@ -30,7 +30,7 @@ python3 -m infrastructure.literature.core.cli library list --limit 10
 
 ## Directory Contents
 
-- **`library.json`** - Complete paper metadata index (499 papers)
+- **`library.json`** - Paper metadata index (499 papers)
 - **`references.bib`** - BibTeX bibliography for citations
 - **`pdfs/`** - Downloaded full-text PDFs
 - **`summaries/`** - AI-generated paper summaries
@@ -65,5 +65,5 @@ Papers are automatically included in `99_references.md` during PDF compilation.
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
 - [`infrastructure/literature/README.md`](../infrastructure/literature/README.md) - CLI reference

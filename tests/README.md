@@ -1,6 +1,6 @@
 # Tests Module
 
-Comprehensive test suite for infrastructure modules.
+Test suite for infrastructure modules.
 
 ## Quick Start
 
@@ -44,5 +44,5 @@ The configuration is automatically loaded by test fixtures.
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
 

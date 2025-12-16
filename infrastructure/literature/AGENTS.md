@@ -12,24 +12,28 @@ All literature outputs are saved to the `data/` directory:
 data/
 ├── references.bib        # BibTeX entries for citations
 ├── library.json          # JSON index with full metadata
+├── summarization_progress.json # Summarization progress tracking (auto-generated)
 ├── failed_downloads.json # Failed downloads for retry (if any)
-├── paper_selection.yaml  # NEW: Paper selection configuration (default: literature/paper_selection.yaml, can be in data/ or any path)
+├── paper_selection.yaml  # Paper selection configuration (default: literature/paper_selection.yaml, can be in data/ or any path)
 ├── pdfs/                 # Downloaded PDFs (named by citation key)
 │   ├── smith2024machine.pdf
 │   └── jones2023deep.pdf
 ├── summaries/            # AI-generated paper summaries
 │   └── smith2024machine_summary.md
 ├── extracted_text/       # Extracted text from PDFs
-├── output/               # Meta-analysis outputs and visualizations
-│   ├── pca_2d.png
-│   ├── keyword_evolution.png
-│   └── meta_analysis_summary.json
-└── llm_outputs/          # NEW: Advanced LLM operation results
-    ├── literature_reviews/
-    ├── science_communication/
-    ├── comparative_analysis/
-    ├── research_gaps/
-    └── citation_networks/
+├── embeddings/           # Cached embedding files (JSON) for semantic analysis
+└── output/               # Meta-analysis outputs and visualizations
+    ├── pca_2d.png
+    ├── keyword_evolution.png
+    └── meta_analysis_summary.json
+
+literature/               # LLM operation outputs (created at repo root)
+└── llm_outputs/          # Advanced LLM operation results
+    ├── review_outputs/
+    ├── communication_outputs/
+    ├── compare_outputs/
+    ├── gaps_outputs/
+    └── network_outputs/
 ```
 
 ## Architecture
@@ -45,7 +49,7 @@ infrastructure/literature/
 ├── library/           # Library management and indexing
 ├── analysis/          # Paper analysis tools
 ├── workflow/          # Workflow orchestration
-├── meta_analysis/     # Meta-analysis and visualization (NEW)
+├── meta_analysis/     # Meta-analysis and visualization
 ├── llm/               # LLM operations
 ├── reporting/         # Reporting and export
 ├── sources/           # API adapters for external databases
@@ -61,7 +65,7 @@ infrastructure/literature/
 - **Library Management**: JSON-based tracking in `library/`.
 - **Configuration**: Centralized in `core/config.py` with environment variable support.
 - **CLI**: Command-line interface in `core/cli.py`.
-- **Meta-Analysis**: Temporal, keyword, metadata, and PCA analysis in `meta_analysis/` (NEW).
+- **Meta-Analysis**: Temporal, keyword, metadata, and PCA analysis in `meta_analysis/`.
 
 ### Class Structure
 
@@ -75,11 +79,11 @@ LiteratureSearch (core.py)
 ├── PDFHandler (pdf_handler.py)
 └── ReferenceManager (reference_manager.py)
 
-LiteratureWorkflow (workflow.py)     # NEW: Orchestrates multi-paper operations
-├── LiteratureLLMOperations (llm_operations.py)  # NEW: Advanced LLM synthesis
+LiteratureWorkflow (workflow.py)     # Orchestrates multi-paper operations
+├── LiteratureLLMOperations (llm_operations.py)  # Advanced LLM synthesis
 └── ProgressTracker (progress.py)
 
-PaperSelector (paper_selector.py)    # NEW: Configurable paper filtering
+PaperSelector (paper_selector.py)    # Configurable paper filtering
 └── PaperSelectionConfig
 
 LiteratureConfig (config.py)
@@ -103,7 +107,7 @@ SourceStatistics (core.py)
 LibraryEntry (library_index.py)
 └── Paper metadata dataclass
 
-LLMOperationResult (llm_operations.py)  # NEW: LLM operation results
+LLMOperationResult (llm_operations.py)  # LLM operation results
 └── Synthesis output with metadata
 ```
 
@@ -135,7 +139,7 @@ LLMOperationResult (llm_operations.py)  # NEW: LLM operation results
 | `workflow/workflow.py` | Multi-paper operations orchestration |
 | `workflow/orchestrator.py` | Search workflow orchestration |
 | `workflow/progress.py` | Progress tracking |
-| **meta_analysis/** | Meta-analysis and visualization (NEW) |
+| **meta_analysis/** | Meta-analysis and visualization |
 | `meta_analysis/aggregator.py` | Data aggregation for analysis |
 | `meta_analysis/temporal.py` | Publication year analysis |
 | `meta_analysis/keywords.py` | Keyword evolution analysis |
@@ -146,7 +150,7 @@ LLMOperationResult (llm_operations.py)  # NEW: LLM operation results
 | `llm/operations.py` | Advanced LLM operations for multi-paper synthesis |
 | `llm/selector.py` | Configurable paper selection and filtering |
 | **reporting/** | Reporting |
-| `reporting/reporter.py` | Comprehensive reporting with export |
+| `reporting/reporter.py` | Reporting with export |
 | **sources/** | API adapters |
 | `sources/base.py` | Base classes (`SearchResult`, `LiteratureSource`) |
 | `sources/arxiv.py` | arXiv API client |
@@ -158,7 +162,7 @@ LLMOperationResult (llm_operations.py)  # NEW: LLM operation results
 | **summarization/** | Summarization system |
 | `summarization/` | Modular summarization system (see below) |
 
-## Usage
+## Usage Examples
 
 ### Basic Search
 
@@ -238,12 +242,12 @@ python3 -m infrastructure.literature.core.cli library stats
 python3 -m infrastructure.literature.core.cli library export --output export.json
 
 # NEW: Clean up library (remove papers without PDFs)
-python3 scripts/07_literature_search.py --cleanup
+python3 scripts/literature_search.py --cleanup
 
-# NEW: Advanced LLM operations
-python3 scripts/07_literature_search.py --llm-operation review
-python3 scripts/07_literature_search.py --llm-operation communication --paper-config my_selection.yaml
-python3 scripts/07_literature_search.py --llm-operation compare
+# Advanced LLM operations
+python3 scripts/literature_search.py --llm-operation review
+python3 scripts/literature_search.py --llm-operation communication --paper-config my_selection.yaml
+python3 scripts/literature_search.py --llm-operation compare
 ```
 
 ## Configuration
@@ -293,6 +297,30 @@ Load configuration from environment with `LiteratureConfig.from_env()`:
 | `LITERATURE_DOWNLOAD_RETRY_ATTEMPTS` | Retry attempts for PDF downloads | 2 |
 | `LITERATURE_DOWNLOAD_RETRY_DELAY` | Base delay for download retry (seconds) | 2.0 |
 | `LITERATURE_USE_BROWSER_USER_AGENT` | Use browser User-Agent for downloads | true |
+| `LITERATURE_PDF_DOWNLOAD_TIMEOUT` | Timeout for PDF downloads (seconds) | 60.0 |
+| `LITERATURE_MAX_PARALLEL_DOWNLOADS` | Maximum parallel download workers | 4 |
+| `LITERATURE_MAX_URL_ATTEMPTS_PER_PDF` | Maximum total URL attempts per PDF | 8 |
+| `LITERATURE_MAX_FALLBACK_STRATEGIES` | Maximum fallback strategy attempts | 3 |
+| `LITERATURE_HTML_TEXT_MIN_LENGTH` | Minimum character length for extracted HTML text | 2000 |
+
+### Embedding Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LITERATURE_EMBEDDING_MODEL` | Embedding model name | embeddinggemma |
+| `LITERATURE_EMBEDDING_DIMENSION` | Embedding vector dimension | 768 |
+| `LITERATURE_EMBEDDING_CACHE_DIR` | Embedding cache directory | data/embeddings |
+| `LITERATURE_EMBEDDING_CHUNK_SIZE` | Text chunk size for embeddings | 2000 |
+| `LITERATURE_EMBEDDING_BATCH_SIZE` | Batch size for embedding generation | 10 |
+| `LITERATURE_EMBEDDING_TIMEOUT` | Embedding request timeout (seconds) | 120.0 |
+| `LITERATURE_EMBEDDING_RETRY_ATTEMPTS` | Retry attempts for embedding requests | 3 |
+| `LITERATURE_EMBEDDING_RETRY_DELAY` | Base delay for embedding retry (seconds) | 2.0 |
+| `LITERATURE_EMBEDDING_RESTART_OLLAMA_ON_TIMEOUT` | Restart Ollama on timeout (true/false) | true |
+| `LITERATURE_EMBEDDING_FORCE_RESTART_ON_TIMEOUT` | Force restart Ollama on timeout (true/false) | true |
+| `LITERATURE_EMBEDDING_TEST_ENDPOINT_ON_RESTART` | Test embedding endpoint after restart (true/false) | true |
+| `LITERATURE_EMBEDDING_MAX_TEXT_LENGTH` | Maximum text length for embeddings (chars) | 250000 |
+| `LITERATURE_EMBEDDING_TIMEOUT_MULTIPLIER_FOR_LONG_DOCS` | Timeout multiplier for long documents | 2.0 |
+| `LITERATURE_EMBEDDING_CHUNK_SIZE_REDUCTION_THRESHOLD` | Chunk size reduction threshold (chars) | 100000 |
 
 ## Sources
 
@@ -399,7 +427,7 @@ The PDF download system implements several optimizations to reduce log verbosity
 - **Total attempts**: Typically 10-20 URLs per paper vs. hundreds previously
 
 ### Download Summary Reporting
-After all downloads complete, a comprehensive summary is displayed:
+After all downloads complete, a summary is displayed:
 ```
 PDF DOWNLOAD SUMMARY
 =====================================================================
@@ -435,22 +463,22 @@ The repository includes an interactive script for managing academic literature w
 # Basic operations:
 ./run_literature.sh                # Interactive menu with all options
 # Or directly:
-python3 scripts/07_literature_search.py --search     # Search literature (add to bibliography)
-python3 scripts/07_literature_search.py --download-only  # Download PDFs (for bibliography entries)
-python3 scripts/07_literature_search.py --summarize   # Generate summaries (for papers with PDFs)
-python3 scripts/07_literature_search.py --cleanup     # Remove papers without PDFs from library
-python3 scripts/07_literature_search.py --llm-operation review    # Generate literature review synthesis
-python3 scripts/07_literature_search.py --llm-operation communication  # Create science communication narrative
-python3 scripts/07_literature_search.py --llm-operation compare   # Comparative analysis across papers
-python3 scripts/07_literature_search.py --llm-operation gaps      # Identify research gaps
-python3 scripts/07_literature_search.py --llm-operation network   # Analyze citation networks
+python3 scripts/literature_search.py --search     # Search literature (add to bibliography)
+python3 scripts/literature_search.py --download-only  # Download PDFs (for bibliography entries)
+python3 scripts/literature_search.py --summarize   # Generate summaries (for papers with PDFs)
+python3 scripts/literature_search.py --cleanup     # Remove papers without PDFs from library
+python3 scripts/literature_search.py --llm-operation review    # Generate literature review synthesis
+python3 scripts/literature_search.py --llm-operation communication  # Create science communication narrative
+python3 scripts/literature_search.py --llm-operation compare   # Comparative analysis across papers
+python3 scripts/literature_search.py --llm-operation gaps      # Identify research gaps
+python3 scripts/literature_search.py --llm-operation network   # Analyze citation networks
 
 # Or directly:
-python3 scripts/07_literature_search.py --search-only
-python3 scripts/07_literature_search.py --download-only
-python3 scripts/07_literature_search.py --summarize
-python3 scripts/07_literature_search.py --cleanup
-python3 scripts/07_literature_search.py --llm-operation review
+python3 scripts/literature_search.py --search-only
+python3 scripts/literature_search.py --download-only
+python3 scripts/literature_search.py --summarize
+python3 scripts/literature_search.py --cleanup
+python3 scripts/literature_search.py --llm-operation review
 ```
 
 **Operations:**
@@ -480,13 +508,14 @@ python3 scripts/07_literature_search.py --llm-operation review
    - Helps maintain a clean, usable library
 
 5. **LLM Operations (--llm-operation)**:
-   - **Literature Review**: Synthesizes themes across multiple papers
-   - **Science Communication**: Creates accessible narratives for general audiences
-   - **Comparative Analysis**: Compares methods, results, or approaches across papers
-   - **Research Gaps**: Identifies unanswered questions and future research directions
-   - **Citation Networks**: Analyzes relationships and connections between papers
+   - **Literature Review**: Synthesizes themes across multiple papers (300-500 words)
+   - **Science Communication**: Creates accessible narratives for general audiences (600-800 words)
+   - **Comparative Analysis**: Compares methods, results, or approaches across papers (500-700 words)
+   - **Research Gaps**: Identifies unanswered questions and future research directions (400-600 words)
+   - **Citation Network Analysis**: Analyzes intellectual connections between papers (500-700 words, text-based)
    - Uses paper selection config (`literature/paper_selection.yaml`) to filter papers
-   - Saves results to `literature/llm_outputs/`
+   - Saves results to `literature/llm_outputs/{operation}_outputs/`
+   - **Note**: Citation network analysis is text-based LLM analysis. Graph-based citation network visualization is a separate placeholder feature in meta-analysis module.
 
 **Skip Existing Summaries:**
 The summarize operation automatically detects and skips summary generation for papers that already have summary files. This check happens:
@@ -666,7 +695,7 @@ class LibraryEntry:
     metadata: Dict[str, Any]
 ```
 
-### PaperSelector **NEW**
+### PaperSelector
 
 ```python
 class PaperSelector:
@@ -681,7 +710,7 @@ class PaperSelector:
         """Filter papers based on configured criteria."""
 ```
 
-### LiteratureLLMOperations **NEW**
+### LiteratureLLMOperations
 
 ```python
 class LiteratureLLMOperations:
@@ -718,10 +747,14 @@ class LiteratureLLMOperations:
         self,
         papers: List[LibraryEntry]
     ) -> LLMOperationResult:
-        """Analyze citation relationships between papers."""
+        """Analyze intellectual connections between papers (text-based analysis, 500-700 words).
+        
+        Note: This generates text analysis of relationships, not graph visualizations.
+        For graph-based citation network visualization, see meta-analysis module (placeholder).
+        """
 ```
 
-### LLMOperationResult **NEW**
+### LLMOperationResult
 
 ```python
 @dataclass
@@ -827,7 +860,7 @@ class SummaryQualityValidator:
         citation_key: str,
         paper_title: Optional[str] = None
     ) -> Tuple[bool, float, List[str]]:
-        """Validate summary quality comprehensively.
+        """Validate summary quality.
         
         Performs multiple checks:
         - Title matching
@@ -1197,13 +1230,13 @@ The literature module uses a **modular, multi-stage summarization system** locat
 - **`PDFProcessor`** (`pdf_processor.py`) - Intelligent PDF text extraction with section prioritization
 - **`ContextExtractor`** (`context_extractor.py`) - Structured context extraction from PDFs
 - **`PromptBuilder`** (`prompt_builder.py`) - LLM prompt construction with examples and validation checklists
-- **`SummaryQualityValidator`** (`validator.py`) - Comprehensive quality validation and issue detection
+- **`SummaryQualityValidator`** (`validator.py`) - Quality validation and issue detection
 
 **Summarization Pipeline:**
 1. **PDF Text Extraction** - Prioritized extraction preserving title, abstract, introduction, conclusion
 2. **Context Extraction** - Structured context with key terms, equations, and section identification
 3. **Draft Generation** - Initial summary using domain-aware prompts
-4. **Quality Validation** - Comprehensive validation checking title match, topics, repetition, hallucination
+4. **Quality Validation** - Validation checking title match, topics, repetition, hallucination
 5. **Refinement** (if needed) - Automatic refinement addressing validation issues
 6. **Final Validation** - Acceptance check with quality scoring
 
@@ -1246,7 +1279,7 @@ pytest tests/infrastructure/literature/ --cov=infrastructure/literature
 | `test_config.py` | Configuration and environment loading |
 | `test_pure_logic.py` | Pure logic tests (no network) |
 | `test_api.py` | API client tests (mocked network) |
-| `test_pdf_handler_comprehensive.py` | PDF handling tests |
+| `test_pdf_handler.py` | PDF handling tests |
 | `test_html_parsing.py` | HTML parsing and PDF URL extraction |
 | `test_logging.py` | Logging functionality |
 | `test_library_index.py` | Library index functionality |
@@ -1256,7 +1289,7 @@ pytest tests/infrastructure/literature/ --cov=infrastructure/literature
 
 ## Meta-Analysis Module
 
-The `meta_analysis/` module provides comprehensive analysis and visualization tools for your literature library:
+The `meta_analysis/` module provides analysis and visualization tools for your literature library:
 
 ### Features
 

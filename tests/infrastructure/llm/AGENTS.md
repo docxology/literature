@@ -2,7 +2,7 @@
 
 ## Overview
 
-Comprehensive test suite for the LLM module with **88%+ coverage** following the **No Mocks Policy**. All tests use real data and real computations.
+Test suite for the LLM module with **88%+ coverage** following the **No Mocks Policy**. All tests use real data and real computations.
 
 ## Test Organization
 
@@ -18,7 +18,7 @@ tests/infrastructure/llm/
 ├── test_llm_core_full.py         # Complete feature tests (26 tests)
 ├── test_ollama_utils.py     # Model discovery tests (24 tests)
 ├── test_templates.py        # Template tests (4 tests)
-├── test_templates_comprehensive.py  # Comprehensive template module tests
+├── test_templates_comprehensive.py  # Template module tests
 ├── test_review_components.py # Review module component tests (generator, io, metrics)
 └── test_validation.py       # Validation tests (51 tests)
 ```
@@ -35,7 +35,7 @@ Tests that verify business logic without network access:
 | `test_context.py` | 4 | ConversationContext, token management, message handling |
 | `test_validation.py` | 51 | OutputValidator, JSON parsing, structure validation |
 | `test_templates.py` | 4 | Template rendering, variable substitution |
-| `test_templates_comprehensive.py` | Multiple | Comprehensive template module tests (base, helpers, manuscript, research) |
+| `test_templates_comprehensive.py` | Multiple | Template module tests (base, helpers, manuscript, research) |
 | `test_review_components.py` | Multiple | Review module components (generator, io, metrics) |
 | `test_llm_core_coverage.py` | 25 | LLMClient initialization, options, system prompts |
 | `test_llm_core_full.py` | 21 | Response modes, context management, edge cases |

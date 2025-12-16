@@ -14,7 +14,7 @@ Prompts designed for retry scenarios:
 - Quality improvement prompts
 - Retry-specific instructions
 
-## Usage
+## Usage Examples
 
 Compositions are loaded via `PromptFragmentLoader`:
 

@@ -18,7 +18,7 @@ Unified Python logging system with consistent formatting:
 
 ### Exceptions (`exceptions.py`)
 
-Comprehensive exception hierarchy:
+Exception hierarchy:
 - Base exception classes
 - Module-specific exceptions
 - Context preservation
@@ -173,6 +173,6 @@ setup_directories(["output", "output/figures"])
 
 ## See Also
 
-- **[Core Module Documentation](../infrastructure/core/AGENTS.md)** - Complete documentation
+- **[Core Module Documentation](../infrastructure/core/AGENTS.md)** - Documentation
 - **[API Reference](../reference/api-reference.md)** - API documentation
 

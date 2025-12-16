@@ -1,4 +1,4 @@
-# HTML Parsers Module - Complete Documentation
+# HTML Parsers Module - Documentation
 
 ## Purpose
 

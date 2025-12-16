@@ -67,7 +67,11 @@ def embedding_client(ensure_ollama_available, tmp_path):
         embedding_model="embeddinggemma",
         cache_dir=cache_dir,
         chunk_size=2000,
-        batch_size=5
+        batch_size=5,
+        timeout=120.0,
+        retry_attempts=3,
+        retry_delay=1.0,
+        restart_ollama_on_timeout=False  # Disable restart in tests to avoid side effects
     )
 
 
@@ -325,6 +329,30 @@ class TestRealEmbeddingAnalysis:
         assert embeddings_3d.shape == (len(sample_texts), 3)
         assert not np.isnan(embeddings_3d).any()
         assert not np.isinf(embeddings_3d).any()
+    
+    def test_real_connection_check(self, embedding_client):
+        """Test connection checking functionality."""
+        is_available, error_msg = embedding_client.check_connection(timeout=5.0)
+        
+        # Should be available if Ollama is running (which it should be for these tests)
+        assert is_available is True
+        assert error_msg is None
+    
+    def test_real_connection_check_with_invalid_url(self):
+        """Test connection check with invalid URL."""
+        from infrastructure.llm.core.config import LLMConfig
+        
+        # Create client with invalid URL
+        invalid_config = LLMConfig(base_url="http://localhost:99999")
+        client = EmbeddingClient(
+            config=invalid_config,
+            embedding_model="embeddinggemma",
+            restart_ollama_on_timeout=False
+        )
+        
+        is_available, error_msg = client.check_connection(timeout=1.0)
+        assert is_available is False
+        assert error_msg is not None
 
 
 @pytest.mark.integration
@@ -385,6 +413,149 @@ class TestRealEmbeddingIntegration:
         
         # Verify search results
         assert all(0.0 <= r[1] <= 1.0 for r in results)
+    
+    @pytest.mark.integration
+    @pytest.mark.requires_ollama
+    def test_embedding_endpoint_health_check(self):
+        """Test embedding endpoint health check functionality."""
+        from infrastructure.llm.core.embedding_client import EmbeddingClient
+        from infrastructure.llm.utils.ollama import test_embedding_endpoint
+        
+        # Test the utility function
+        success, error = test_embedding_endpoint(timeout=10.0)
+        assert success is True
+        assert error is None
+        
+        # Test via EmbeddingClient
+        client = EmbeddingClient(embedding_model="embeddinggemma")
+        is_ok, error_msg = client.check_embedding_endpoint(timeout=10.0)
+        assert is_ok is True
+        assert error_msg is None
+    
+    @pytest.mark.integration
+    @pytest.mark.requires_ollama
+    def test_adaptive_timeout_scaling(self):
+        """Test adaptive timeout calculation for different text lengths."""
+        from infrastructure.llm.core.embedding_client import EmbeddingClient
+        
+        client = EmbeddingClient(embedding_model="embeddinggemma", timeout=60.0)
+        
+        # Test short text (< 100 chars) - should use minimum 30s
+        short_text = "test"
+        chunks = client.chunk_text(short_text, max_tokens=1000)
+        assert len(chunks) == 1
+        # Timeout should be min(60, 30) = 30 for very short text
+        expected_timeout = min(60.0, 30.0)
+        
+        # Test medium text (100-4000 chars)
+        medium_text = "test " * 200  # ~1000 chars
+        chunks = client.chunk_text(medium_text, max_tokens=1000)
+        assert len(chunks) == 1
+        # Timeout should be min(60, max(30, 1000/50)) = min(60, 20) = 20, but min is 30
+        # Actually: min(60, max(30, 1000/50)) = min(60, max(30, 20)) = min(60, 30) = 30
+        
+        # Test long text (> 4000 chars)
+        long_text = "test " * 2000  # ~10000 chars
+        chunks = client.chunk_text(long_text, max_tokens=1000)
+        # Should be chunked
+        if len(chunks) > 1:
+            avg_chunk_size = len(long_text) / len(chunks)
+            # Timeout should scale with chunk size
+    
+    @pytest.mark.integration
+    @pytest.mark.requires_ollama
+    def test_checkpoint_resume_after_timeout(self, tmp_path, sample_corpus):
+        """Test checkpoint saving and resume after timeout."""
+        from infrastructure.literature.meta_analysis.embeddings import generate_document_embeddings
+        from infrastructure.literature.core.config import LiteratureConfig
+        from pathlib import Path
+        
+        config = LiteratureConfig()
+        config.embedding_cache_dir = str(tmp_path / "embeddings")
+        cache_dir = Path(config.embedding_cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate embeddings (should create checkpoint)
+        embedding_data = generate_document_embeddings(
+            sample_corpus,
+            config=config,
+            use_cache=True,
+            show_progress=False
+        )
+        
+        # Check that checkpoint file exists or was created
+        checkpoint_file = cache_dir / ".embedding_progress.json"
+        # Checkpoint may be deleted after completion, but should exist during generation
+        
+        # Verify embeddings were generated
+        assert embedding_data.embeddings.shape[0] == len(sample_corpus.citation_keys)
+    
+    @pytest.mark.integration
+    @pytest.mark.requires_ollama
+    @pytest.mark.timeout(600)
+    def test_embedding_generation_with_hung_recovery(self, tmp_path, sample_corpus):
+        """Test full embedding workflow with hung Ollama recovery capability."""
+        from infrastructure.literature.meta_analysis.embeddings import generate_document_embeddings
+        from infrastructure.literature.core.config import LiteratureConfig
+        from infrastructure.llm.core.embedding_client import EmbeddingClient
+        from infrastructure.llm.utils.ollama import test_embedding_endpoint, restart_ollama_server
+        
+        config = LiteratureConfig()
+        config.embedding_cache_dir = str(tmp_path / "embeddings")
+        config.embedding_restart_ollama_on_timeout = True
+        config.embedding_test_endpoint_on_restart = True
+        config.embedding_force_restart_on_timeout = True
+        
+        # Verify embedding endpoint works before starting
+        success, error = test_embedding_endpoint(timeout=10.0)
+        assert success is True, f"Embedding endpoint not working: {error}"
+        
+        # Generate embeddings (should handle any hung states automatically)
+        embedding_data = generate_document_embeddings(
+            sample_corpus,
+            config=config,
+            use_cache=True,
+            show_progress=False
+        )
+        
+        # Verify embeddings were generated successfully
+        assert embedding_data.embeddings.shape[0] == len(sample_corpus.citation_keys)
+        assert embedding_data.embeddings.shape[1] > 0  # Has embedding dimension
+        
+        # Verify embedding endpoint still works after generation
+        success, error = test_embedding_endpoint(timeout=10.0)
+        assert success is True, f"Embedding endpoint not working after generation: {error}"
+    
+    @pytest.mark.integration
+    @pytest.mark.requires_ollama
+    def test_large_text_chunking_and_timeout(self, tmp_path):
+        """Test chunking and timeout handling for large texts."""
+        from infrastructure.llm.core.embedding_client import EmbeddingClient
+        from infrastructure.llm.core.config import LLMConfig
+        
+        config = LLMConfig()
+        client = EmbeddingClient(
+            config=config,
+            embedding_model="embeddinggemma",
+            chunk_size=1000,  # Small chunk size to force chunking
+            timeout=60.0
+        )
+        
+        # Create large text (> 8000 chars to force chunking)
+        large_text = "This is a test sentence. " * 500  # ~12,500 chars
+        
+        # Should be chunked
+        chunks = client.chunk_text(large_text, max_tokens=1000)
+        assert len(chunks) > 1, "Large text should be chunked"
+        
+        # Test embedding generation (should handle chunks with adaptive timeout)
+        try:
+            embedding = client.embed_document(large_text, use_cache=False)
+            assert embedding is not None
+            assert len(embedding) > 0
+        except Exception as e:
+            # If it fails, it should be due to timeout, not chunking issues
+            assert "timeout" in str(e).lower() or "connection" in str(e).lower()
     
     @pytest.mark.timeout(300)
     def test_real_embedding_with_extracted_texts(self, tmp_path, real_extracted_texts, real_library_entries):

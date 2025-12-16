@@ -72,9 +72,19 @@ Principal component analysis of paper texts with logging and error handling.
 - Added validation to prevent "boolean index did not match indexed array" errors
 - Logging throughout feature extraction and PCA computation
 
-### Embedding Analysis (embeddings.py)
+### Embedding Analysis
 
 Semantic embedding-based analysis using Ollama's embeddinggemma model. Provides semantic understanding of paper content, complementing TF-IDF-based PCA analysis.
+
+**Location:** `infrastructure/literature/llm/embeddings/`
+
+**Modular Structure:**
+- `data.py` - Data structures (EmbeddingData, SimilarityResults)
+- `checkpoint.py` - Checkpoint management for resumable generation
+- `generation.py` - Core embedding generation with three-phase process
+- `computation.py` - Similarity, clustering, search, dimensionality reduction
+- `export.py` - Export functions for various formats
+- `shutdown.py` - Signal handling and graceful shutdown
 
 **Key Functions:**
 - `generate_document_embeddings()` - Generate embeddings for all documents in corpus
@@ -96,6 +106,58 @@ Semantic embedding-based analysis using Ollama's embeddinggemma model. Provides 
 - Embedding caching to avoid recomputation
 - Batch processing for efficient API usage
 - Progress tracking for large document sets
+- Checkpoint resume capability (saves progress, allows resuming after interruption)
+- Hung Ollama detection and automatic recovery
+- Adaptive timeout scaling based on text length
+
+**Embedding Workflow:**
+
+1. **Pre-flight Validation** (optional, skipped if resuming from checkpoint):
+   - Quick connection check (2s timeout)
+   - Verify embedding model is available
+   - Test embedding generation with small text (10s timeout)
+   - Non-blocking: warnings logged but process continues if validation fails
+
+2. **Cache Checking** (Phase 1/3):
+   - Check existing cached embeddings for all documents
+   - Progress bar for sets >50 documents
+   - Periodic logging every 50 items for smaller sets
+
+3. **Cache Loading** (Phase 2/3):
+   - Load cached embeddings from disk
+   - Progress bar for sets >10 items
+   - Track failed cache loads
+
+4. **Embedding Generation** (Phase 3/3):
+   - Generate embeddings for missing documents
+   - Automatic text chunking for large texts (>4000 chars)
+   - Adaptive timeout: `min(config_timeout, max(30s, text_length/50))`
+   - Checkpoint saved after each successful embedding
+   - Heartbeat logging every 30s for long operations
+   - On timeout: test embedding endpoint, force restart Ollama if hung, save checkpoint
+
+**Hung Ollama Detection and Recovery:**
+
+The system detects hung Ollama instances where the general API responds but the embedding endpoint is stuck:
+
+- **Detection**: Tests `/api/embed` endpoint with small text (10s timeout)
+- **Recovery**: Force kills hung process and restarts Ollama server
+- **Verification**: Tests embedding endpoint after restart to confirm recovery
+- **Checkpointing**: Progress saved even on failures, allowing resume
+
+**Timeout Handling:**
+
+- **Adaptive Timeouts**: Scale with text length (0.02s per char, minimum 30s)
+- **Short Text Detection**: Timeouts on very short texts (<100 chars) indicate hung state
+- **Force Restart**: Automatically restarts Ollama when embedding endpoint is hung
+- **Retry Logic**: Exponential backoff with configurable attempts
+
+**Checkpoint Resume:**
+
+- Checkpoint file: `.embedding_progress.json` in cache directory
+- Tracks: completed indices, citation keys, timestamp
+- Resume: Automatically loads checkpoint if citation keys match current corpus
+- Validation: Skips pre-flight validation when resuming (assumes Ollama is ready)
 
 **Requirements:**
 - Ollama server running with embeddinggemma model installed
@@ -169,7 +231,7 @@ Composite visualizations combining multiple plots.
 - `create_single_page_abstract()` - Single-page composite with 6 visualizations
 - `create_multi_page_abstract()` - Multi-page PDF with one visualization per page
 - `create_graphical_abstract()` - Graphical abstract (currently uses single-page)
-- `create_composite_panel()` - Auto-sized composite panel (NEW):
+- `create_composite_panel()` - Auto-sized composite panel:
   - Automatically determines optimal grid size (e.g., 5x4, 6x4)
   - Includes all available visualizations
   - Handles missing data gracefully
@@ -372,9 +434,9 @@ create_composite_panel(max_panels=20)
 - Similarity heatmaps
 - Automatic text chunking for large documents
 - Embedding caching for performance
-- **Comprehensive validation**: Quality checks, completeness validation, dimension validation, similarity matrix validation, outlier detection
+- **Validation**: Quality checks, completeness validation, dimension validation, similarity matrix validation, outlier detection
 - **Statistics computation**: Embedding statistics, similarity statistics, clustering quality metrics (silhouette score, Davies-Bouldin index, Calinski-Harabasz score), dimensionality analysis
-- **Enhanced visualizations**: Embedding quality plots, similarity distribution, cluster quality metrics, silhouette analysis, embedding coverage, outlier visualization, dimensionality analysis, cluster size distribution, similarity network graphs
+- **Visualizations**: Embedding quality plots, similarity distribution, cluster quality metrics, silhouette analysis, embedding coverage, outlier visualization, dimensionality analysis, cluster size distribution, similarity network graphs
 - **Export capabilities**: Statistics (JSON/CSV), validation reports (JSON), clustering metrics (JSON/CSV)
 - **Optional**: Controlled via `include_embeddings` parameter in `run_meta_analysis()`
 - **Menu option**: 6.2 (full meta-analysis with embeddings) vs 6.1 (standard, no embeddings)

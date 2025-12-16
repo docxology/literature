@@ -1,8 +1,8 @@
-# Summarization Module - Complete Documentation
+# Summarization Module - Documentation
 
 ## Purpose
 
-The Summarization module provides comprehensive paper summarization with multi-stage generation, quality validation, and context extraction. It uses intelligent PDF text processing with section prioritization, structured context extraction, and automatic refinement based on validation feedback.
+The Summarization module provides paper summarization with multi-stage generation, quality validation, and context extraction. It uses intelligent PDF text processing with section prioritization, structured context extraction, and automatic refinement based on validation feedback.
 
 ## Architecture
 
@@ -11,7 +11,7 @@ This module follows the **thin orchestrator pattern** with clear separation of c
 ### Core Components
 
 1. **SummarizationEngine** (`core.py`) - Main interface for paper summarization
-   - Orchestrates complete summarization workflow
+   - Orchestrates summarization workflow
    - PDF text extraction with prioritization
    - Context extraction and structuring
    - Multi-stage summary generation (draft + refine)
@@ -37,13 +37,13 @@ This module follows the **thin orchestrator pattern** with clear separation of c
    - Section detection and mapping
    - Character limit management
 
-5. **SummarizationPromptBuilder** (`prompt_builder.py`) - Enhanced prompt generation
+5. **SummarizationPromptBuilder** (`prompt_builder.py`) - Prompt generation
    - Draft generation prompts with examples
    - Refinement prompts with specific issue guidance
    - Context-aware prompt construction
    - Quality checklist integration
-   - Enhanced requirements: 10-15 quotes, 1000-1500 words
-   - Comprehensive coverage requirements (methodology, results, discussion)
+   - Requirements: 10-15 quotes, 1000-1500 words
+   - Coverage requirements (methodology, results, discussion)
 
 6. **Streaming Support** (`streaming.py`) - Real-time LLM generation with progress
    - Streaming wrapper with periodic progress updates
@@ -51,7 +51,7 @@ This module follows the **thin orchestrator pattern** with clear separation of c
    - Progress events every 5 seconds during generation
    - Real-time feedback on chars/words received
 
-7. **SummaryQualityValidator** (`validator.py`) - Comprehensive quality validation
+7. **SummaryQualityValidator** (`validator.py`) - Quality validation
    - Length validation
    - Title matching
    - Pattern-based hallucination detection (AI language, code snippets)
@@ -60,11 +60,28 @@ This module follows the **thin orchestrator pattern** with clear separation of c
    - Detailed error reporting
    - **Note**: Term-based validation removed to reduce false positives
 
-8. **Progress Tracking** - Real-time progress reporting
-   - Stage-level progress events
-   - Timing and metadata tracking
-   - Integration with ProgressTracker
-   - Real-time console output
+8. **PDFChunker** (`chunker.py`) - Intelligent PDF text chunking
+   - Preserves section boundaries when chunking
+   - Prioritizes key sections (title, abstract, intro, conclusion)
+   - Supports two-stage summarization for large documents
+   - Handles section detection and mapping
+
+9. **TextExtractor** (`extractor.py`) - Text extraction from PDFs
+   - Extracts text from PDF files
+   - Saves extracted text to `data/extracted_text/` directory
+   - Handles first stage of summarization pipeline (PDF → extracted text)
+   - Integrates with PDFProcessor for text extraction
+
+10. **Utility Functions** (`utils.py`) - Shared utilities
+    - `detect_model_size()` - Detects LLM model size from client or metadata
+    - Model size detection from multiple sources (client config, metadata, env vars)
+    - Returns model size in billions of parameters for model-aware configuration
+
+11. **Progress Tracking** - Real-time progress reporting
+    - Stage-level progress events
+    - Timing and metadata tracking
+    - Integration with ProgressTracker
+    - Real-time console output
 
 ### Architecture Diagram
 
@@ -107,8 +124,11 @@ Progress Events (models.py)
 | `metadata.py` | Summary metadata management |
 | `parser.py` | Summary parsing utilities |
 | `orchestrator.py` | Workflow orchestration function |
+| `chunker.py` | PDF text chunking for two-stage summarization |
+| `extractor.py` | Text extraction from PDFs for summarization pipeline |
+| `utils.py` | Utility functions for model detection and configuration |
 | `README.md` | Quick reference guide |
-| `AGENTS.md` | This comprehensive documentation |
+| `AGENTS.md` | Documentation |
 
 ## Multi-Stage Workflow
 
@@ -129,7 +149,7 @@ The summarization process follows a multi-stage approach:
 ### Stage 3: Draft Generation
 - Build optimized, model-size-aware prompt (~50% shorter for small models):
   - 8-12 direct quotes minimum
-  - 800-1200 words comprehensive coverage
+  - 800-1200 words coverage
   - Methodology, results, and discussion sections required
   - Explicit anti-repetition instructions
 - Generate initial draft summary using LLM with **streaming support** and **model-aware generation options**
@@ -138,7 +158,7 @@ The summarization process follows a multi-stage approach:
 - **Progress Event**: `draft_generation` (started/in_progress/completed)
 
 ### Stage 4: Quality Validation
-- Validate summary quality comprehensively
+- Validate summary quality
 - Check for errors, warnings, missing elements
 - Calculate quality score (0.0 to 1.0)
 - **Progress Event**: `validation` (started/completed)
@@ -263,7 +283,7 @@ During summarization, progress is displayed as:
 - Shows accumulated characters, words, and elapsed time
 - Provides feedback during long generation times (60-80+ seconds)
 
-## Usage
+## Usage Examples
 
 ### Basic Usage
 
@@ -541,7 +561,7 @@ class SummarizationProgressEvent:
 - Truncation with critical section preservation
 
 ### Quality Validation
-- Comprehensive quality checks
+- Quality checks
 - Hard failure detection (title mismatch, hallucination, severe repetition)
 - Quality scoring (0.0 to 1.0)
 - Detailed error and warning reporting
@@ -678,12 +698,12 @@ if not result.success:
   - Review logging configuration
   - Ensure ProgressTracker is properly initialized
 
-## Related Modules
+## See Also
 
-- **Literature Search** (`infrastructure/literature/`) - Paper discovery and download
-- **LLM Integration** (`infrastructure/llm/`) - LLM client for generation
-- **Progress Tracking** (`infrastructure/literature/progress.py`) - Progress persistence
-- **Workflow** (`infrastructure/literature/workflow.py`) - Multi-paper orchestration
+- [`README.md`](README.md) - Quick reference
+- [`../AGENTS.md`](../AGENTS.md) - Literature module overview
+- [`../../llm/AGENTS.md`](../../llm/AGENTS.md) - LLM integration documentation
+- [`../workflow/AGENTS.md`](../workflow/AGENTS.md) - Workflow orchestration
 
 ## Recent Improvements
 
@@ -763,8 +783,27 @@ if not result.success:
 ### SummaryQualityValidator
 
 **Main Methods:**
-- `validate_summary_detailed(summary, pdf_text, citation_key, paper_title, key_terms)` - Comprehensive validation
+- `validate_summary_detailed(summary, pdf_text, citation_key, paper_title, key_terms)` - Detailed validation
 - `validate_summary(summary, pdf_text, citation_key, paper_title=None)` - Basic validation
+
+### PDFChunker
+
+**Main Methods:**
+- `chunk_text(text, chunk_size, overlap)` - Chunk text preserving section boundaries
+- `chunk_with_section_awareness(text, sections, chunk_size, overlap)` - Chunk with section awareness
+
+### TextExtractor
+
+**Main Methods:**
+- `extract_and_save(pdf_path, citation_key)` - Extract text from PDF and save to extracted_text directory
+- `extract_text(pdf_path)` - Extract text from PDF file
+
+### Utility Functions
+
+**Functions:**
+- `detect_model_size(llm_client, metadata)` - Detect model size in billions of parameters
+  - Attempts detection from LLM client configuration, metadata, or environment variables
+  - Returns model size (e.g., 4.0 for gemma3:4b) or 7.0 as default
 
 ## Examples
 

@@ -1,4 +1,4 @@
-# Sources Module - Complete Documentation
+# Sources Module - Documentation
 
 ## Purpose
 
@@ -39,17 +39,17 @@ The sources module provides API adapters for multiple academic databases, normal
 ### CrossRefSource (crossref.py)
 - API: CrossRef Works API (https://api.crossref.org/works)
 - Rate limit: 1.0 seconds between requests (default)
-- Features: DOI resolution and metadata, comprehensive metadata (authors, venues, dates), open access information
+- Features: DOI resolution and metadata (authors, venues, dates), open access information
 
 ### OpenAlexSource (openalex.py)
 - API: OpenAlex API (https://api.openalex.org/works)
 - Rate limit: 0.5 seconds between requests (default)
-- Features: Comprehensive metadata, PDF links, citation counts, open access information (free API, no key required)
+- Features: Metadata, PDF links, citation counts, open access information (free API, no key required)
 
 ### DBLPSource (dblp.py)
 - API: DBLP API (https://dblp.org/search/publ/api)
 - Rate limit: 1.0 seconds between requests (default)
-- Features: Computer science bibliography, author and venue information, comprehensive metadata
+- Features: Computer science bibliography, author and venue information, metadata
 
 ## Base Classes
 

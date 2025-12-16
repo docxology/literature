@@ -1,8 +1,8 @@
-# PDF Module - Complete Documentation
+# PDF Module - Documentation
 
 ## Purpose
 
-The PDF module handles all aspects of PDF downloading, text extraction, and URL resolution with comprehensive fallback strategies.
+The PDF module handles all aspects of PDF downloading, text extraction, and URL resolution with fallback strategies.
 
 ## Components
 
@@ -55,7 +55,7 @@ Fallback strategies for PDF URL resolution.
 **OSF.io Support:**
 - Automatic detection of OSF.io DOIs (`10.31234/osf.io/...` or `10.31219/osf.io/...`)
 - Direct download URL transformation: `https://osf.io/{project_id}/download`
-- Enhanced MDPI URL patterns with case-insensitive DOI handling
+- MDPI URL patterns with case-insensitive DOI handling
 - IEEE Xplore and Preprints.org URL pattern improvements
 
 ### HTML Text Extractor (html_extractor.py)

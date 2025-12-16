@@ -54,7 +54,7 @@ Provides hints for output validation:
 - Common issues to check
 - Validation patterns
 
-## Usage
+## Usage Examples
 
 Fragments are loaded via `PromptFragmentLoader`:
 

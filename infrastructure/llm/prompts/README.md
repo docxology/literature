@@ -26,7 +26,7 @@ prompt = composer.compose_template(
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
 - [`../../llm/README.md`](../../llm/README.md) - LLM module overview
 
 

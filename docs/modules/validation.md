@@ -14,7 +14,7 @@ Extracts text content from PDF files with automatic fallback:
 - **Text extraction**: Extracts all text from PDF files
 - **Multi-library support**: Tries libraries in order: pdfplumber → pypdf → PyPDF2
 - **Warning suppression**: Suppresses harmless pypdf warnings
-- **Error handling**: Comprehensive error handling for PDF issues
+- **Error handling**: Error handling for PDF issues
 - **Fallback logic**: Automatically tries alternative libraries if one fails
 
 ## Usage Examples
@@ -74,6 +74,6 @@ The validation module is used by:
 
 ## See Also
 
-- **[Validation Module Documentation](../infrastructure/validation/AGENTS.md)** - Complete documentation
+- **[Validation Module Documentation](../infrastructure/validation/AGENTS.md)** - Documentation
 - **[API Reference](../reference/api-reference.md)** - API documentation
 

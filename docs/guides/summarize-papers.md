@@ -14,7 +14,7 @@ Complete guide to generating AI-powered summaries for academic papers.
 
 ```bash
 # Generate summaries for existing PDFs
-python3 scripts/07_literature_search.py --summarize
+python3 scripts/literature_search.py --summarize
 ```
 
 ### Python API

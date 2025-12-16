@@ -106,7 +106,7 @@ python3 -m infrastructure.llm.cli template TEMPLATE_NAME --input "text"
 ### Literature Search Script
 
 ```bash
-python3 scripts/07_literature_search.py [options]
+python3 scripts/literature_search.py [options]
 ```
 
 **Modes:**
@@ -127,6 +127,7 @@ python3 scripts/07_literature_search.py [options]
 - `--clear-summaries` - Clear all summaries before generation (default: False, incremental/additive)
 - `--clear-library` - Clear library index before operations (requires confirmation, default: False)
 - `--paper-config PATH` - Path to YAML config file for paper selection (default: data/paper_selection.yaml)
+- `--with-embeddings` - Enable embedding analysis for meta-analysis (requires Ollama and `--meta-analysis` flag)
 
 **Note:** Sources are configured via `LITERATURE_SOURCES` environment variable, not via CLI flag. See [Configuration Guide](../guides/configuration.md) for details.
 
@@ -145,13 +146,16 @@ This flag works with:
 **Examples:**
 ```bash
 # Search
-python3 scripts/07_literature_search.py --search --keywords "machine learning"
+python3 scripts/literature_search.py --search --keywords "machine learning"
 
 # Summarize
-python3 scripts/07_literature_search.py --summarize
+python3 scripts/literature_search.py --summarize
 
-# Meta-analysis
-python3 scripts/07_literature_search.py --meta-analysis --keywords "optimization"
+# Meta-analysis (standard, no embeddings)
+python3 scripts/literature_search.py --meta-analysis --keywords "optimization"
+
+# Meta-analysis with embeddings (requires Ollama)
+python3 scripts/literature_search.py --meta-analysis --with-embeddings --keywords "optimization"
 ```
 
 ## See Also

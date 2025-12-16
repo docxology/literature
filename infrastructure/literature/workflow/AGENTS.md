@@ -1,4 +1,4 @@
-# Workflow Module - Complete Documentation
+# Workflow Module - Documentation
 
 ## Purpose
 
@@ -126,6 +126,29 @@ Operation-specific modules split from orchestrator for better modularity and tes
 - `display_sources_with_status()` - Display sources with health status
 - `get_source_selection_input()` - Prompt user to select sources
 - `display_file_locations()` - Display file location summary
+
+## Configuration
+
+The workflow module uses configuration from `LiteratureConfig` and `LLMConfig`:
+
+### Environment Variables
+
+**Literature Settings:**
+- `LITERATURE_DEFAULT_LIMIT` - Results per source per search (default: 25)
+- `LITERATURE_SOURCES` - Comma-separated sources (default: arxiv,semanticscholar)
+- `LITERATURE_DOWNLOAD_DIR` - PDF download directory (default: data/pdfs)
+- `LITERATURE_USE_UNPAYWALL` - Enable Unpaywall fallback (default: true)
+- `UNPAYWALL_EMAIL` - Email for Unpaywall API (required if enabled)
+
+**LLM Settings (for summarization):**
+- `OLLAMA_HOST` - Ollama server URL (default: http://localhost:11434)
+- `OLLAMA_MODEL` - Model name (default: gemma3:4b)
+- `LLM_TEMPERATURE` - Generation temperature (default: 0.7)
+- `MAX_PARALLEL_SUMMARIES` - Maximum parallel summarization workers (default: 1)
+
+**Progress Tracking:**
+- Progress is automatically saved to `data/summarization_progress.json`
+- Failed downloads are tracked in `data/failed_downloads.json`
 
 ## Usage Examples
 

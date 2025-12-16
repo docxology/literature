@@ -1,4 +1,4 @@
-# Core Module - Complete Documentation
+# Core Module - Documentation
 
 ## Purpose
 
@@ -34,7 +34,58 @@ Configuration dataclass with environment variable support.
 - Source selection (sources list)
 
 **Environment Variables:**
-All configuration options can be overridden via environment variables (see config.py for complete list).
+
+All configuration options can be overridden via environment variables. Key variables:
+
+**Search Settings:**
+- `LITERATURE_DEFAULT_LIMIT` - Results per source per search (default: 25)
+- `LITERATURE_MAX_RESULTS` - Maximum total results (default: 100)
+- `LITERATURE_SOURCES` - Comma-separated sources (default: arxiv,semanticscholar)
+- `LITERATURE_ARXIV_DELAY` - Seconds between arXiv requests (default: 3.0)
+- `LITERATURE_SEMANTICSCHOLAR_DELAY` - Seconds between Semantic Scholar requests (default: 1.5)
+- `SEMANTICSCHOLAR_API_KEY` - Semantic Scholar API key (optional)
+
+**Request Settings:**
+- `LITERATURE_RETRY_ATTEMPTS` - Retry attempts for failed requests (default: 3)
+- `LITERATURE_RETRY_DELAY` - Base delay for exponential backoff (default: 5.0)
+- `LITERATURE_TIMEOUT` - Request timeout in seconds (default: 30.0)
+
+**File Paths:**
+- `LITERATURE_DOWNLOAD_DIR` - PDF download directory (default: data/pdfs)
+- `LITERATURE_BIBTEX_FILE` - BibTeX file path (default: data/references.bib)
+- `LITERATURE_LIBRARY_INDEX` - JSON index file path (default: data/library.json)
+
+**PDF Download Settings:**
+- `LITERATURE_PDF_DOWNLOAD_TIMEOUT` - PDF download timeout (default: 60.0)
+- `LITERATURE_DOWNLOAD_RETRY_ATTEMPTS` - Retry attempts for PDF downloads (default: 2)
+- `LITERATURE_DOWNLOAD_RETRY_DELAY` - Base delay for download retry (default: 2.0)
+- `LITERATURE_MAX_PARALLEL_DOWNLOADS` - Maximum parallel download workers (default: 4)
+- `LITERATURE_MAX_URL_ATTEMPTS_PER_PDF` - Maximum URL attempts per PDF (default: 8)
+- `LITERATURE_MAX_FALLBACK_STRATEGIES` - Maximum fallback strategy attempts (default: 3)
+- `LITERATURE_USE_BROWSER_USER_AGENT` - Use browser User-Agent for downloads (default: true)
+- `LITERATURE_HTML_TEXT_MIN_LENGTH` - Minimum HTML text length for extraction (default: 2000)
+
+**Unpaywall Settings:**
+- `LITERATURE_USE_UNPAYWALL` - Enable Unpaywall fallback (default: true)
+- `UNPAYWALL_EMAIL` - Email for Unpaywall API (required if enabled)
+
+**Embedding Settings:**
+- `LITERATURE_EMBEDDING_MODEL` - Embedding model name (default: embeddinggemma)
+- `LITERATURE_EMBEDDING_DIMENSION` - Embedding vector dimension (default: 768)
+- `LITERATURE_EMBEDDING_CACHE_DIR` - Embedding cache directory (default: data/embeddings)
+- `LITERATURE_EMBEDDING_CHUNK_SIZE` - Text chunk size for embeddings (default: 2000)
+- `LITERATURE_EMBEDDING_BATCH_SIZE` - Batch size for embedding generation (default: 10)
+- `LITERATURE_EMBEDDING_TIMEOUT` - Embedding request timeout (default: 120.0)
+- `LITERATURE_EMBEDDING_RETRY_ATTEMPTS` - Retry attempts for embedding requests (default: 3)
+- `LITERATURE_EMBEDDING_RETRY_DELAY` - Base delay for embedding retry (default: 2.0)
+- `LITERATURE_EMBEDDING_RESTART_OLLAMA_ON_TIMEOUT` - Restart Ollama on timeout (default: true)
+- `LITERATURE_EMBEDDING_FORCE_RESTART_ON_TIMEOUT` - Force restart Ollama on timeout (default: true)
+- `LITERATURE_EMBEDDING_TEST_ENDPOINT_ON_RESTART` - Test embedding endpoint after restart (default: true)
+- `LITERATURE_EMBEDDING_MAX_TEXT_LENGTH` - Maximum text length for embeddings (default: 250000)
+- `LITERATURE_EMBEDDING_TIMEOUT_MULTIPLIER_FOR_LONG_DOCS` - Timeout multiplier for long documents (default: 2.0)
+- `LITERATURE_EMBEDDING_CHUNK_SIZE_REDUCTION_THRESHOLD` - Chunk size reduction threshold (default: 100000)
+
+See `config.py` for complete list of all configuration options.
 
 ### CLI (cli.py)
 

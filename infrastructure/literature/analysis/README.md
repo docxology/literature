@@ -34,11 +34,11 @@ context = builder.build_context(entry, pdf_text)
 
 - Paper structure analysis
 - Domain detection (physics, CS, biology, etc.)
-- Rich context building for LLM operations
+- Context building for LLM operations
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
 - [`../AGENTS.md`](../AGENTS.md) - Literature module overview
 
 

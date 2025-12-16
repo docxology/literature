@@ -21,7 +21,7 @@
 
 ### Root Level
 - `run_literature.sh` - Main orchestrator with interactive menu
-- `scripts/` - Orchestrator scripts (e.g., `07_literature_search.py`, `bash_utils.sh`)
+- `scripts/` - Orchestrator scripts (e.g., `literature_search.py`, `bash_utils.sh`)
 - `infrastructure/` - Core modules (core, llm, literature)
 - `tests/` - Test suite mirroring infrastructure structure
 - `data/` - All data files (library.json, references.bib, pdfs/, summaries/, etc.)
@@ -42,10 +42,14 @@
 ### Data Directory Structure
 - `data/library.json` - Paper metadata index (JSON format)
 - `data/references.bib` - BibTeX bibliography (separate from manuscript systems)
+- `data/summarization_progress.json` - Summarization progress tracking (auto-generated)
+- `data/failed_downloads.json` - Failed download tracking (auto-generated)
 - `data/pdfs/` - Downloaded PDFs (named by citation key)
 - `data/summaries/` - AI-generated summaries
 - `data/extracted_text/` - Extracted PDF text
+- `data/embeddings/` - Cached embedding files (JSON) for semantic analysis
 - `data/output/` - Meta-analysis outputs and visualizations
+- `literature/llm_outputs/` - Advanced LLM operation results (created at repo root, not in data/)
 
 ## Bibliography Management
 

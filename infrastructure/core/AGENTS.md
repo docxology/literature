@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Core module provides fundamental foundation utilities used across the entire infrastructure layer. It includes configuration management, unified logging, and a comprehensive exception hierarchy with context preservation.
+The Core module provides fundamental foundation utilities used across the entire infrastructure layer. It includes configuration management, unified logging, and an exception hierarchy with context preservation.
 
 ## Architecture
 

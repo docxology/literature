@@ -19,7 +19,7 @@ This document summarizes the comprehensive review and fixes applied to all AGENT
 **Files Modified:**
 - `docs/reference/cli-reference.md` - Removed `library validate` and `library cleanup` sections
 
-**Note:** The `cleanup_library()` method exists in `LiteratureSearch` class but is not exposed via CLI. It's available through the orchestrator script (`scripts/07_literature_search.py --cleanup`).
+**Note:** The `cleanup_library()` method exists in `LiteratureSearch` class but is not exposed via CLI. It's available through the orchestrator script (`scripts/literature_search.py --cleanup`).
 
 ### 2. Missing Environment Variables ✅ FIXED
 
@@ -40,7 +40,7 @@ This document summarizes the comprehensive review and fixes applied to all AGENT
 
 ### 3. Missing Script Options ✅ FIXED
 
-**Issue:** Some command-line options from `scripts/07_literature_search.py` were not documented in the CLI reference.
+**Issue:** Some command-line options from `scripts/literature_search.py` were not documented in the CLI reference.
 
 **Missing Options (Now Added):**
 - `--retry-failed` - Retry previously failed downloads

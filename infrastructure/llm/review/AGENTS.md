@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The review module provides utilities for generating comprehensive manuscript reviews using LLM integration. It includes review generation, I/O operations, and metrics tracking.
+The review module provides utilities for generating manuscript reviews using LLM integration. It includes review generation, I/O operations, and metrics tracking.
 
 ## Components
 

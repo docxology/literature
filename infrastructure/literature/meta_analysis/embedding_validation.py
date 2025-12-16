@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
 from infrastructure.core.logging_utils import get_logger
-from infrastructure.literature.meta_analysis.embeddings import EmbeddingData
+from infrastructure.literature.llm.embeddings import EmbeddingData
 
 logger = get_logger(__name__)
 
@@ -21,6 +21,13 @@ def validate_embedding_quality(
 ) -> Dict[str, Any]:
     """Validate embedding quality by checking for common issues.
     
+    Note: Zero vectors are expected and valid. They represent:
+    - Documents that were skipped (exceeded embedding_max_text_length)
+    - Documents that failed embedding generation (using zero vectors as fallback)
+    
+    Zero vectors will have diagonal = 0 in similarity matrices (not 1.0), which is
+    mathematically correct since dot([0,0,0,...], [0,0,0,...]) = 0.
+    
     Args:
         embeddings: Embedding vectors, shape (n_documents, embedding_dim).
         citation_keys: Optional citation keys for reporting problematic embeddings.
@@ -28,7 +35,7 @@ def validate_embedding_quality(
         
     Returns:
         Dictionary with quality validation results:
-        - zero_vectors: Number of zero vectors found
+        - zero_vectors: Number of zero vectors found (expected for skipped/failed documents)
         - nan_values: Number of NaN values found
         - inf_values: Number of Inf values found
         - low_variance_dimensions: List of dimension indices with low variance
@@ -191,6 +198,7 @@ def validate_embedding_dimensions(
 def validate_similarity_matrix(
     similarity_matrix: np.ndarray,
     citation_keys: Optional[List[str]] = None,
+    embeddings: Optional[np.ndarray] = None,
     tolerance: float = 1e-6
 ) -> Dict[str, Any]:
     """Validate similarity matrix properties.
@@ -198,12 +206,14 @@ def validate_similarity_matrix(
     Args:
         similarity_matrix: Similarity matrix, shape (n_documents, n_documents).
         citation_keys: Optional citation keys for reporting.
+        embeddings: Optional embedding vectors to identify zero vectors (shape: n_documents, embedding_dim).
+                    If provided, zero vectors are expected to have diagonal = 0 (not 1.0).
         tolerance: Numerical tolerance for equality checks.
         
     Returns:
         Dictionary with similarity matrix validation results:
         - is_symmetric: Whether matrix is symmetric
-        - diagonal_all_one: Whether diagonal elements are all 1.0
+        - diagonal_all_one: Whether diagonal elements are all 1.0 (or 0.0 for zero vectors)
         - range_valid: Whether values are in expected range [-1, 1]
         - min_value: Minimum value in matrix
         - max_value: Maximum value in matrix
@@ -234,14 +244,45 @@ def validate_similarity_matrix(
         
         # Check diagonal
         diagonal = np.diag(similarity_matrix)
-        diagonal_ones = np.allclose(diagonal, 1.0, atol=tolerance)
-        results["diagonal_all_one"] = bool(diagonal_ones)
-        if not diagonal_ones:
+        
+        # If embeddings provided, identify zero vectors (they should have diagonal = 0)
+        zero_vector_indices = set()
+        if embeddings is not None and embeddings.shape[0] == n:
+            norms = np.linalg.norm(embeddings, axis=1)
+            zero_vector_indices = set(np.where(norms < 1e-10)[0])
+        
+        # Check diagonal: should be 1.0 for non-zero vectors, 0.0 for zero vectors
+        diagonal_valid = True
+        if zero_vector_indices:
+            # Check zero vectors have diagonal = 0
+            zero_diag = diagonal[list(zero_vector_indices)]
+            zero_valid = np.allclose(zero_diag, 0.0, atol=tolerance)
+            
+            # Check non-zero vectors have diagonal = 1.0
+            non_zero_indices = [i for i in range(n) if i not in zero_vector_indices]
+            if non_zero_indices:
+                non_zero_diag = diagonal[non_zero_indices]
+                non_zero_valid = np.allclose(non_zero_diag, 1.0, atol=tolerance)
+                diagonal_valid = zero_valid and non_zero_valid
+            else:
+                diagonal_valid = zero_valid
+        else:
+            # No zero vectors, all should be 1.0
+            diagonal_valid = np.allclose(diagonal, 1.0, atol=tolerance)
+        
+        results["diagonal_all_one"] = bool(diagonal_valid)
+        if not diagonal_valid:
             min_diag = float(np.min(diagonal))
             max_diag = float(np.max(diagonal))
-            results["warnings"].append(
-                f"Diagonal elements not all 1.0 (range: [{min_diag:.6f}, {max_diag:.6f}])"
-            )
+            if zero_vector_indices:
+                results["warnings"].append(
+                    f"Diagonal elements not all 1.0 or 0.0 (range: [{min_diag:.6f}, {max_diag:.6f}], "
+                    f"{len(zero_vector_indices)} zero vectors expected to have diagonal = 0)"
+                )
+            else:
+                results["warnings"].append(
+                    f"Diagonal elements not all 1.0 (range: [{min_diag:.6f}, {max_diag:.6f}])"
+                )
         
         # Check range
         min_val = results["min_value"]
@@ -410,7 +451,8 @@ def validate_all(
     if similarity_matrix is not None:
         results["similarity"] = validate_similarity_matrix(
             similarity_matrix,
-            citation_keys=embedding_data.citation_keys
+            citation_keys=embedding_data.citation_keys,
+            embeddings=embedding_data.embeddings
         )
     
     # Aggregate warnings and errors

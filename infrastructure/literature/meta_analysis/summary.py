@@ -58,7 +58,7 @@ def generate_summary_data(
     try:
         corpus = aggregator.prepare_text_corpus()
         if len(corpus.texts) > 0:
-            loadings_matrix, _, feature_names, pca_model = extract_pca_loadings(
+            loadings_matrix, _, feature_names, pca_model, _ = extract_pca_loadings(
                 corpus, n_components=n_pca_components
             )
             top_words = get_top_words_per_component(

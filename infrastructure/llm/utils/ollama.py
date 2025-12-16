@@ -193,17 +193,39 @@ def _kill_process_on_port(port: int = 11434) -> Tuple[bool, str]:
 def restart_ollama_server(
     base_url: str = "http://localhost:11434",
     kill_existing: bool = True,
-    wait_seconds: float = 5.0
+    wait_seconds: float = 5.0,
+    test_embedding: bool = False,
+    skip_pre_test: bool = False,
+    embedding_model: str = "embeddinggemma"
 ) -> Tuple[bool, str]:
-    """Restart Ollama server, handling port conflicts.
+    """Restart Ollama server, handling port conflicts and hung embedding endpoints.
     
     Checks if Ollama is responding. If not, attempts to kill any process
     using the port, then starts a fresh Ollama server.
+    
+    **Hung Embedding Detection:**
+    When test_embedding=True, tests the embedding endpoint to detect hung states
+    where the general API responds but embeddings are stuck. If embedding endpoint
+    is hung, force kills the process even if general API works.
+    
+    **Skip Pre-Test:**
+    When skip_pre_test=True, skips the pre-restart embedding endpoint test.
+    Use this when you already know the endpoint is hung (e.g., after a timeout).
+    The endpoint will still be tested after restart to verify recovery.
+    
+    **Use Cases:**
+    - Recover from hung Ollama instances
+    - Force restart when embedding endpoint is stuck
+    - Restart after timeout during embedding generation
     
     Args:
         base_url: Ollama server URL
         kill_existing: Whether to kill existing processes on the port
         wait_seconds: How long to wait for server to start after restart
+        test_embedding: Whether to test embedding endpoint (default: False)
+        skip_pre_test: Skip pre-restart embedding test when True (default: False).
+                      Use when you already know endpoint is hung to avoid hanging.
+        embedding_model: Embedding model name to test if test_embedding=True
         
     Returns:
         Tuple of (success: bool, status_message: str)
@@ -211,9 +233,28 @@ def restart_ollama_server(
         - status_message: Detailed status message
         
     Example:
+        >>> # Standard restart
         >>> success, status = restart_ollama_server()
         >>> if not success:
         ...     print(f"Restart failed: {status}")
+        
+        >>> # Force restart with embedding endpoint test (recommended for embedding issues)
+        >>> success, status = restart_ollama_server(
+        ...     test_embedding=True,
+        ...     kill_existing=True,
+        ...     wait_seconds=8.0
+        ... )
+        
+        >>> # Fast restart after timeout (skip pre-test since we know it's hung)
+        >>> success, status = restart_ollama_server(
+        ...     test_embedding=True,
+        ...     skip_pre_test=True,
+        ...     kill_existing=True
+        ... )
+        
+    Note:
+        When test_embedding=True, verifies embedding endpoint after restart.
+        If embedding endpoint test fails, still returns success=True but logs warning.
     """
     # Extract port from base_url
     try:
@@ -226,8 +267,35 @@ def restart_ollama_server(
         host = "localhost"
     
     # Check if Ollama is already responding
-    if is_ollama_running(base_url, timeout=2.0):
-        logger.info("Ollama is already running and responding")
+    general_api_ok = is_ollama_running(base_url, timeout=2.0)
+    
+    # If test_embedding is requested, test the embedding endpoint (unless skipping pre-test)
+    embedding_endpoint_ok = True
+    if test_embedding and not skip_pre_test:
+        logger.info("Testing embedding endpoint to detect hung state...")
+        embedding_endpoint_ok, embedding_error = test_embedding_endpoint(
+            base_url=base_url,
+            model=embedding_model,
+            timeout=10.0
+        )
+        
+        if not embedding_endpoint_ok:
+            logger.warning(
+                f"Embedding endpoint is hung (general API works but embeddings fail): {embedding_error}"
+            )
+            logger.info("Force restarting to recover from hung embedding endpoint...")
+            # Force kill even though general API works
+            general_api_ok = False  # Force restart path
+    elif test_embedding and skip_pre_test:
+        logger.info("Skipping pre-restart embedding test (already confirmed hung). Proceeding to restart...")
+        # If we're skipping pre-test, assume endpoint is hung and force restart
+        embedding_endpoint_ok = False
+        if general_api_ok:
+            # General API works but endpoint is hung - force restart
+            general_api_ok = False
+    
+    if general_api_ok and embedding_endpoint_ok:
+        logger.info("Ollama is already running and responding (general API and embedding endpoint OK)")
         models = get_model_names(base_url)
         if models:
             return (True, f"Ollama already running with {len(models)} model(s)")
@@ -275,9 +343,27 @@ def restart_ollama_server(
         if is_ollama_running(base_url, timeout=2.0):
             models = get_model_names(base_url)
             if models:
-                status_msg = f"Ollama restarted successfully with {len(models)} model(s): {', '.join(models[:3])}"
-                logger.info(status_msg)
-                return (True, status_msg)
+                # If test_embedding was requested, verify embedding endpoint works
+                if test_embedding:
+                    logger.info("Verifying embedding endpoint after restart...")
+                    embedding_ok, embedding_error = test_embedding_endpoint(
+                        base_url=base_url,
+                        model=embedding_model,
+                        timeout=5.0  # Reduced from 10.0s - server is fresh, should respond quickly
+                    )
+                    if embedding_ok:
+                        status_msg = f"Ollama restarted successfully with {len(models)} model(s): {', '.join(models[:3])} (embedding endpoint verified)"
+                        logger.info(status_msg)
+                        return (True, status_msg)
+                    else:
+                        status_msg = f"Ollama restarted but embedding endpoint still failing: {embedding_error}"
+                        logger.warning(status_msg)
+                        # Still return True - server is up, embedding may recover
+                        return (True, status_msg)
+                else:
+                    status_msg = f"Ollama restarted successfully with {len(models)} model(s): {', '.join(models[:3])}"
+                    logger.info(status_msg)
+                    return (True, status_msg)
             else:
                 status_msg = "Ollama restarted but no models available"
                 logger.warning(status_msg)
@@ -427,6 +513,84 @@ def select_small_fast_model(base_url: str = "http://localhost:11434") -> Optiona
         "mistral:latest",
     ]
     return select_best_model(fast_preferences, base_url)
+
+
+def test_embedding_endpoint(
+    base_url: str = "http://localhost:11434",
+    model: str = "embeddinggemma",
+    timeout: float = 10.0
+) -> Tuple[bool, Optional[str]]:
+    """Test that Ollama embedding endpoint actually works, not just responds to API.
+    
+    Performs a simple embedding test to verify the embedding endpoint is functional.
+    This is critical for detecting hung Ollama instances where the general API
+    responds but the embedding endpoint is stuck.
+    
+    **Use Cases:**
+    - Detect hung embedding endpoint when general API works
+    - Verify embedding endpoint after Ollama restart
+    - Health check before starting embedding generation
+    
+    Args:
+        base_url: Ollama server URL
+        model: Embedding model name to test (default: "embeddinggemma")
+        timeout: Request timeout in seconds (default: 10.0)
+        
+    Returns:
+        Tuple of (success: bool, error_message: str | None)
+        - success: True if embedding test passed
+        - error_message: Error description if failed, None if successful
+        
+    Example:
+        >>> success, error = test_embedding_endpoint()
+        >>> if not success:
+        ...     print(f"Embedding endpoint hung: {error}")
+        ...     # Force restart Ollama
+        ...     restart_ollama_server(test_embedding=True, kill_existing=True)
+        
+    Note:
+        Uses a small test text ("test") to minimize processing time.
+        Timeout of 10s is sufficient for detecting hung state.
+    """
+    try:
+        import requests
+        from requests.exceptions import Timeout as RequestsTimeout, ConnectionError as RequestsConnectionError
+        
+        url = f"{base_url}/api/embed"
+        payload = {
+            "model": model,
+            "input": "test"  # Small test text
+        }
+        
+        logger.debug(f"Testing embedding endpoint at {url} with model {model} (timeout: {timeout}s)")
+        response = requests.post(url, json=payload, timeout=timeout)
+        response.raise_for_status()
+        
+        result = response.json()
+        embeddings_list = result.get("embeddings", [])
+        if not embeddings_list:
+            embeddings_list = [result.get("embedding", [])]
+        
+        if embeddings_list and len(embeddings_list[0]) > 0:
+            logger.debug(f"Embedding endpoint test successful (dimension: {len(embeddings_list[0])})")
+            return (True, None)
+        else:
+            error_msg = "Empty embedding returned"
+            logger.warning(f"Embedding endpoint test failed: {error_msg}")
+            return (False, error_msg)
+            
+    except RequestsTimeout:
+        error_msg = f"Timeout after {timeout}s - embedding endpoint may be hung"
+        logger.warning(f"Embedding endpoint test failed: {error_msg}")
+        return (False, error_msg)
+    except RequestsConnectionError as e:
+        error_msg = f"Connection error: {e}"
+        logger.warning(f"Embedding endpoint test failed: {error_msg}")
+        return (False, error_msg)
+    except Exception as e:
+        error_msg = f"Request error: {e}"
+        logger.warning(f"Embedding endpoint test failed: {error_msg}")
+        return (False, error_msg)
 
 
 def test_ollama_functionality(

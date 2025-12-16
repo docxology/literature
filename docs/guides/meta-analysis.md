@@ -18,10 +18,10 @@ There are two modes available:
 
 ```bash
 # Run standard meta-analysis on existing library (no embeddings)
-python3 scripts/07_literature_search.py --meta-analysis
+python3 scripts/literature_search.py --meta-analysis
 
 # Run full meta-analysis with embeddings on existing library (requires Ollama)
-python3 scripts/07_literature_search.py --meta-analysis --with-embeddings
+python3 scripts/literature_search.py --meta-analysis --with-embeddings
 ```
 
 ### Interactive Menu
@@ -193,6 +193,15 @@ When using `--with-embeddings` (option 6.2), comprehensive semantic analysis is 
 - Ollama server running (`ollama serve`)
 - Embedding model installed (`ollama pull embeddinggemma`)
 - At least 2 papers with extracted text
+
+**Configuration:**
+Embedding generation includes automatic retry logic and Ollama health checks:
+- **Timeout**: Default 120 seconds (configurable via `LITERATURE_EMBEDDING_TIMEOUT`)
+- **Retries**: Default 3 attempts with exponential backoff (configurable via `LITERATURE_EMBEDDING_RETRY_ATTEMPTS`)
+- **Health checks**: Automatically checks Ollama connection and attempts restart on timeout (configurable via `LITERATURE_EMBEDDING_RESTART_OLLAMA_ON_TIMEOUT`)
+- **Caching**: Embeddings are cached to avoid regeneration (cache directory: `LITERATURE_EMBEDDING_CACHE_DIR`)
+
+If embedding generation fails for individual papers after all retries, zero vectors are used as fallback (with warnings logged). The system will continue processing remaining papers.
 
 **Output files (embedding analysis):**
 - `embeddings.json` - Document embeddings

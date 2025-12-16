@@ -1,4 +1,4 @@
-# Analysis Module - Complete Documentation
+# Analysis Module - Documentation
 
 ## Purpose
 
@@ -11,7 +11,7 @@ The analysis module provides tools for analyzing paper structure, detecting scie
 Analyzes paper structure and content characteristics.
 
 **Key Methods:**
-- `analyze_paper()` - Comprehensive paper analysis
+- `analyze_paper()` - Paper analysis
 - `analyze_structure()` - Analyze paper structure
 - `create_content_profile()` - Create content profile
 
@@ -41,10 +41,10 @@ Automatically detects scientific domain of papers.
 
 ### ContextBuilder (context_builder.py)
 
-Builds rich context for enhanced LLM prompts.
+Builds context for LLM prompts.
 
 **Key Methods:**
-- `build_context()` - Build comprehensive context
+- `build_context()` - Build context
 - `extract_key_information()` - Extract key information
 
 **Features:**

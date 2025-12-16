@@ -8,10 +8,10 @@ Guide to searching for academic papers using the Literature Search system.
 
 ```bash
 # Interactive search
-python3 scripts/07_literature_search.py --search
+python3 scripts/literature_search.py --search
 
 # Search with keywords
-python3 scripts/07_literature_search.py --search --keywords "machine learning,deep learning"
+python3 scripts/literature_search.py --search --keywords "machine learning,deep learning"
 ```
 
 ### Python API
@@ -184,10 +184,10 @@ To retry previously failed downloads, use the `--retry-failed` flag:
 
 ```bash
 # Retry failed downloads
-python3 scripts/07_literature_search.py --search --retry-failed --keywords "machine learning"
+python3 scripts/literature_search.py --search --retry-failed --keywords "machine learning"
 
 # Or for download-only operation
-python3 scripts/07_literature_search.py --download-only --retry-failed
+python3 scripts/literature_search.py --download-only --retry-failed
 ```
 
 **Best Practices:**

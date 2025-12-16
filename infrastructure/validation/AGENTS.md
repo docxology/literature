@@ -12,8 +12,33 @@ Extracts text content from PDF files with automatic fallback:
 - **Text extraction**: Extracts all text from PDF files
 - **Multi-library support**: Tries libraries in order: pdfplumber → pypdf → PyPDF2
 - **Warning suppression**: Suppresses harmless pypdf warnings
-- **Error handling**: Comprehensive error handling for PDF issues
+- **Error handling**: Error handling for PDF issues
 - **Fallback logic**: Automatically tries alternative libraries if one fails
+
+## Configuration
+
+The validation module uses environment variables for configuration:
+
+### PDF Library Selection
+
+The module automatically tries PDF parsing libraries in order:
+1. `pdfplumber` (recommended for best quality)
+2. `pypdf` (modern PyPDF2 replacement)
+3. `PyPDF2` (legacy library)
+
+At least one of these libraries must be installed. The module will automatically use the first available library.
+
+### Installation
+
+```bash
+# Recommended: install pdfplumber for best quality
+pip install pdfplumber
+
+# Or install via optional dependencies
+pip install -e ".[pdf]"
+
+# pypdf is included in project dependencies (installed automatically)
+```
 
 ## Usage Examples
 

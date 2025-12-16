@@ -1,0 +1,1506 @@
+Learning by Surprise: Surplexity for Mitigating Model
+Collapse in Generative AI
+DANIELE GAMBETTA, University of Pisa, Italy
+GIZEM GEZICI, Scuola Normale Superiore, Italy
+FOSCA GIANNOTTI, Scuola Normale Superiore, Italy
+DINO PEDRESCHI, University of Pisa, Italy
+ALISTAIR KNOTT, Victoria University, New Zealand
+LUCA PAPPALARDO,ISTI-CNR, Italy and Scuola Normale Superiore, Italy
+As synthetic content increasingly infiltrates the web, generative AI models may be retrained on their own
+outputs: a process termed "autophagy". This leads to model collapse: a progressive loss of performance and
+diversity across generations. Recent studies have examined the emergence of model collapse across various
+generative AI models and data types, and have proposed mitigation strategies that rely on incorporating
+human-authored content. However, current characterizations of model collapse remain limited, and existing
+mitigation methods assume reliable knowledge of whether training data is human-authored or AI-generated.
+In this paper, we address these gaps by introducing new measures that characterise collapse directly from a
+model’s next-token probability distributions, rather than from properties of AI-generated text. Using these
+measures, we show that the degree of collapse depends on the complexity of the initial training set, as well as
+on the extent of autophagy. Our experiments prompt a new suggestion: that model collapse occurs when a
+model trains on data that does not "surprise" it. We express this hypothesis in terms of the well-known Free
+Energy Principle in cognitive science. Building on this insight, we propose a practical mitigation strategy:
+filtering training items by high surplexity, maximising the surprise of the model. Unlike existing methods,
+this approach does not require distinguishing between human- and AI-generated data. Experiments across
+datasets and models demonstrate that our strategy is at least as effective as human-data baselines, and even
+more effective in reducing distributional skewedness. Our results provide a richer understanding of model
+collapse and point toward more resilient approaches for training generative AI systems in environments
+increasingly saturated with synthetic data.
+CCS Concepts: • Computing methodologies →Natural language processing ; Machine learning ap-
+proaches; Artificial intelligence; Machine learning algorithms .
+Additional Key Words and Phrases: Artificial Intelligence, Autophagy, Model Collapse, Human-AI Coevolution
+ACM Reference Format:
+Daniele Gambetta, Gizem Gezici, Fosca Giannotti, Dino Pedreschi, Alistair Knott, and Luca Pappalardo. 2018.
+Learning by Surprise: Surplexity for Mitigating Model Collapse in Generative AI. J. ACM 37, 4, Article 111
+(August 2018), 25 pages. https://doi.org/XXXXXXX.XXXXXXX
+Authors’ Contact Information: Daniele Gambetta, University of Pisa, Pisa, Italy, daniele.gambetta@phd.unipi.it; Gizem
+Gezici, Scuola Normale Superiore, Pisa, Italy, gizem.gezici@sns.it; Fosca Giannotti, Scuola Normale Superiore, Pisa, Italy,
+fosca.giannotti@sns.it; Dino Pedreschi, University of Pisa, Pisa, Italy, dino.pedreschi@unipi.it; Alistair Knott, Victoria
+University, Wellington, New Zealand, ali.knott@vuw.ac.nz; Luca Pappalardo, ISTI-CNR, Pisa, Italy and Scuola Normale
+Superiore, Pisa, Italy, luca.pappalardo@isti.cnr.it.
+Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee
+provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the
+full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored.
+Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires
+prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+© 2018 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+ACM 1557-735X/2018/8-ART111
+https://doi.org/XXXXXXX.XXXXXXX
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+arXiv:2410.12341v3  [cs.CL]  2 Sep 2025
+111:2 Gambetta et al.
+1 Introduction
+Generative AI has demonstrated remarkable advancements in recent years, particularly in conver-
+sational systems such as ChatGPT, Claude, Google Gemini, and Meta AI [44]. These applications
+have been widely adopted and now play a central role in content generation across many online
+platforms [19].
+Large Generative Models (LGMs) powering these applications are trained on vast amounts of
+human-authored content. For example, Large Language Models (LLMs) are typically trained on text
+corpora containing up to two trillion tokens [42]. In comparison, the global pool of high-quality
+human-authored text is estimated at just 17 trillion tokens, with a modest annual growth rate of
+4–5% [43]. A 2021 report predicts that by 2025, 90% of internet content will be AI-generated [13],
+heralding what has been described as the Age of Synthetic Realities [7]. As LGMs’ training relies
+on web-sourced content, there is a rising risk that their own outputs (the AI-generated content)
+will be used to train future models, creating a potentially self-consuming feedback loop [36].
+Recent research has highlighted the risks associated with this self-consuming feedback loop,
+often referred to as autophagy, i.e., a process where generative AI models are recursively fine-tuned
+on their own outputs [35, 36, 45]. The autophagy process leads to a phenomenon known as model
+collapse, characterized by a significant loss of diversity in AI-generated content. Several factors
+influence model collapse, including model size, fine-tuning parameters, and the composition of
+the training set (see, e.g., [1, 20, 39]). Our understanding of model collapse is a work in progress:
+Schaeffer et al. [37] note that there are many alternative definitions of model collapse as well as
+many open questions. In this paper, we address three key gaps in the current understanding and
+mitigation of model collapse.
+(1) Model collapse is standardly diagnosed through metrics computed on the AI-generated
+content. We lack a principled way to characterise model collapsein relation to the model itself
+(i.e., based on the probabilities it produces), independently of its outputs.
+(2) While fine-tuning on AI-generated content is known to induce collapse, we lack a principled
+account of which properties of training documents make them more likely to trigger it.
+(3) Existing strategies to mitigate model collapse assume that we can distinguish between human-
+authored and AI-generated content. This assumption is increasingly unrealistic, especially as
+AI-generated content proliferates online.
+Our paper, which focuses on LLMs, aims to connect these three open issues. In response to (1),
+we propose novel measures for characterising model collapse based on the model’s next-token
+probability distributions, rather than the properties of AI-generated text documents. We define a
+model as collapsed when its predicted distributions are skewed – that is, when the model assigns
+disproportionate probability mass to a small number of tokens. This skewedness is quantified with
+two complementary measures: the Gini coefficient of the next-token probability distribution, and
+an indicator of whether the top-token probability approaches the entire mass.
+Using these new measures, we address issue (2) by proposing a new definition of the types of
+documents that contribute to model collapse. We argue that the key factor is the model’s surprise:
+documents that fail to surprise the model are more likely to induce collapse. To formalise this, we
+introduce surplexity – a measure of how surprised a model is by a given document – as a core
+criterion for identifying collapse-inducing training data.
+We then use surplexity to address issue (3): we propose to mitigate model collapse by selecting
+training documents by the level of surprise they elicit . Our results show, for several datasets and
+LLMs, that the surplexity-based strategy is as effective in mitigating model collapse as approaches
+that rely on human-authored content – and even more effective at reducing distributional skew –
+while requiring no knowledge of whether training documents are human-authored or AI-generated.
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+Learning by Surprise: Surplexity for Mitigating Model Collapse in Generative AI 111:3
+Our study advances the understanding of model collapse and supports the development of more
+robust generative AI systems. The surplexity-based mitigation strategy aligns with theories of
+surprise-driven learning from cognitive science [16], offering a promising connection between the
+study of model collapse and research on human learning mechanisms.
+The structure of the paper is as follows. Section 2 reviews related work on autophagy and
+model collapse. Section 3 formalizes the model collapse problem and introduces the notation used
+throughout the paper. Section 4 presents our autophagy simulation framework and implementation
+details. Section 5 introduces our new proposed metrics for model collapse. Section 6 reports some
+initial experiments on model collapse using the new metrics, and a new observation: collapse,
+when measured by our new metric, happens at different rates for different training datasets. This
+observation prompts our new proposed mitigation strategy. We describe the new strategy in
+Section 7, and present some further experiments that show its effectiveness. Finally, Section 8
+concludes the paper, discussing limitations and outlining directions for future research.
+2 Related Work
+Research on autophagy and model collapse relies on simulations because large-scale, longitudinal
+empirical studies are hindered by the difficulty of tracking the many evolving versions of generative
+models deployed on platforms, especially as they are frequently fine-tuned and updated over
+time [35, 36]. These simulations show that model collapse occurs in both text and image domains,
+affecting various generative models including LGMs, Variational Autoencoders (VAEs) and Gaussian
+Mixture Models (GMMs) [1, 5, 6, 10, 11, 20, 22, 29, 30, 39].
+In Shumailov et al. [ 39], model collapse is defined as a degenerative process in which data
+generated by AI models contaminates the training sets of subsequent generations. The authors
+illustrate this phenomenon across multiple model classes, including LLMs, VAEs, and GMMs. Since
+Shumailov et al. ’s foundational work, several studies have explored variants of autophagous loops,
+examining how different mixtures of human-authored and AI-generated data affect model collapse.
+Alemohammad et al. [1] evaluate fully synthetic loops, synthetic augmentation, and fresh data
+loops, finding that human-authored data can delay collapse but not prevent it. Martínez et al. [29]
+train a generative model on a 50/50 mix of human-authored and AI-generated images. They observe
+that over time, the model’s outputs become more similar to human-authored images but lose
+diversity. Briesch et al. [6] compare different data cycles: a fully synthetic cycle (where training data
+is entirely replaced each generation), which rapidly leads to collapse; incremental and balanced
+cycles, which also reduce diversity to varying degrees; and an expanding cycle, which continuously
+adds new data and successfully maintains diversity for up to 50 generations. Other studies examine
+the inevitability of collapse when models are trained exclusively on AI-generated data and estimate
+the minimum proportion of human-authored data required to address it [4, 38].
+Guo et al. [20] introduce metrics to measure lexical, syntactic, and semantic diversity as autophagy
+progresses. Studying three use cases – news summarization, scientific abstract generation, and
+story generation – they find that the decline in linguistic diversity is more pronounced in tasks that
+demand greater creativity. The effect of simulation parameters on model collapse has also been
+investigated: Herel and Mikolov [23] show that increasing the learning rate accelerates the onset of
+collapse; Suresh et al. [41] find that the time it takes for a model to forget a word is linearly related
+to that word’s frequency in the original training corpus.
+Several studies have investigated model collapse in the text-to-image domain. Martínez et al. [30]
+use denoising diffusion implicit models and show that augmenting training data with AI-generated
+images leads to a progressive decline in image quality across generations. Hataya et al. [22] study
+synthetic data contamination in Stable Diffusion models and find that performance deteriorates as
+the proportion of AI-generated images increases. They also propose a self-supervised method using
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+111:4 Gambetta et al.
+a masked autoencoder to detect AI-generated images. Bohacek and Farid [5] retrain Stable Diffusion
+varying proportions of human-authored and AI-generated images, observing that collapse emerges
+but can be reversed by fine-tuning solely on human-authored images. Dohmatob et al. [ 10, 11]
+extend the analysis to text generation with Llama2, showing that while mixed training initially
+improves performance, it eventually leads to collapse.
+Another strand of research explores strategies to mitigate model collapse. Some works propose
+specific accumulation-based autophagous loops to slow collapse [6, 18]. Others focus on verifying
+AI-generated data before reusing it: Feng et al. [ 14] starts from the consideration that in some
+cases AI-generated data can be advantageous if used in the fine-tuning of a model. They use LLMs
+for specific tasks – eigenvalues prediction from a matrix and news summarization – using linear
+verifiers to measure the distance between AI-generated data and ground truth information, finding
+that such verification can indeed help prevent collapse. Fu et al. [ 17] study how the proportion
+of human-authored versus AI-generated data affects the stability of model collapse, while Zhu et
+al. [48] explore how to synthesize data in ways that avoid collapse, showing that simple token-level
+edits to human-authored text (creating semi-synthetic data) can be effective. Drayson et al. [12]
+propose incorporating AI-generated text detection mechanisms as a preventive strategy.
+Position of our work. Existing studies mitigate model collapse by incorporating human-authored
+content into the fine-tuning corpus, assuming they can be reliably distinguished from AI-generated
+content. Our approach takes a different direction, starting from a key question: given a set of
+text documents, what properties make them more likely to trigger collapse during fine-tuning?
+This question is motivated by the observation that even repeated fine-tuning on the same human-
+authored data can produce collapse-like effects, similar to those caused by AI-generated content.
+Our mitigation approach is grounded in a novel characterisation of model collapse based on the
+next-token probability distribution, which allows us to describe collapse in terms of the model’s
+surprise. From this perspective, low-surprise documents, whether human-authored or AI-generated,
+are the primary drivers of collapse. Building on this insight, we propose a mitigation strategy
+that filters for high-surprise documents during fine-tuning, offering a new lens through which to
+understand and mitigate model collapse.
+3 The Model Collapse problem
+Here, we formally introduce two fundamental concepts: the autophagy process and the model
+collapse problem. These definitions are necessary as current research offers varying, and sometimes
+conflicting, definitions of autophagy and model collapse [37].
+Autophagy process. Let 𝑀0 be a pre-trained foundation model andD0 a dataset of human-authored
+documents. The autophagy process is an iterative sequence of generation and fine-tuning steps. In
+a generation step 𝑗, the model 𝑀𝑗 −1 generates a set of documents D𝑗 . In the fine-tuning step, 𝑀𝑗 −1
+is fine-tuned on D𝑗 to produce the next model 𝑀𝑗 . An autophagy process of 𝑇 iterations consists
+of the sequence {𝑀𝑗 −1,D𝑗 }𝑇
+𝑗=1, where each model is trained on the documents it has generated.
+Model collapse. Given the sequence {𝑀𝑗 −1,D𝑗 }𝑇
+𝑗=1 produced by an autophagy process, let Preal
+denote the true data distribution, and let P𝑗 denote the distribution implicitly defined by model
+𝑀𝑗 through its generations. Let X= {𝑥1,...,𝑥 𝑚 }be a set of measurable quality dimensions (e.g.,
+linguistic entropy, semantic coherence), and letΔ𝑗 (𝑥)quantify the deviation of P𝑗 from Preal along
+aspect 𝑥 ∈X. We say that model collapse occurs along dimension 𝑥 ∈X when the deviation Δ𝑗 (𝑥)
+increases over multiple iterations of the autophagy process:
+Δ𝑗 (𝑥)> Δ𝑗 −1 (𝑥) for many 𝑗.
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+Learning by Surprise: Surplexity for Mitigating Model Collapse in Generative AI 111:5
+In the limit, collapse may be characterized by unbounded divergence:
+lim
+𝑗→∞
+Δ𝑗 (𝑥)= ∞ for some 𝑥 ∈X,
+indicating that the model is drifting irreversibly away from desirable behavior. The function Δ𝑗 (𝑥)
+may take different forms depending on the metric – for instance, drop in linguistic entropy or rise
+in repetition rate.
+For example, suppose that at step 𝑗 = 0, the model 𝑀0 generates diverse and semantically rich
+text. As the autophagy process progresses, 𝑀𝑗 is repeatedly fine-tuned on its own outputs, and
+over time, it begins to produce increasingly repetitive and formulaic sentences (e.g., frequently
+repeating phrases like "The system is designed to... " or "This method allows for... "). This decline
+in lexical diversity can be measured by a decrease in linguistic entropy 𝐻, leading to a growing
+Δ𝑗 (𝐻), a clear signal of collapse along the linguistic entropy dimension.
+In existing studies [35, 45], model collapse is typically diagnosed when the deviation increases
+monotonically or persistently across iterations, revealing the cumulative degradation of the model’s
+generative capacity.
+Table 1 summarizes the nomenclature used in this paper.
+Table 1. Summary of the notation used in this paper.
+Symbol Description
+𝑀0 Original pre-trained foundation model
+𝑀𝑗 Foundation model at simulation step 𝑗
+D0 = {𝑑(real)
+1 ,...,𝑑 (real)
+𝑛 } Initial dataset of 𝑛human-authored documents
+D𝑗 = {𝑑
+(gen)
+1 ,...,𝑑
+(gen)
+𝑛 } Dataset of AI-generated documents at step 𝑗
+T𝑗 Training set used to fine-tune 𝑀𝑗 −1 into 𝑀𝑗
+𝑃 = {𝑝1,...,𝑝 𝑛 } Fixed set of prompts obtained by truncating documents in D0
+𝑠(𝑗 )
+𝑖 Continuation generated by 𝑀𝑗 for prompt 𝑝𝑖
+Preal True data distribution (human-authored content)
+P𝑗 Distribution implicitly defined by model 𝑀𝑗 (AI-generated content)
+X Set of quality dimensions (e.g., entropy, semantic accuracy)
+Δ𝑗 (𝑥) Deviation of P𝑗 from Preal along dimension 𝑥 ∈X
+𝑑 A document, i.e., a sequence of tokens
+𝑤𝑖 The 𝑖-th token in a document
+𝑞𝑤 Model-assigned probability of token 𝑤
+𝑘 Number of tokens in each prompt (default 𝑘 = 64)
+𝐿 Maximum length (in tokens) of generated documents
+𝜌 Ranking function used to select documents for training
+𝐻(𝑑) Linguistic entropy of document 𝑑
+𝐺(𝑞) Gini coefficient of probability vector 𝑞
+𝐶(𝑞) Collapsed prediction indicator
+𝐴CI Commonsensical Inference Accuracy
+𝑆𝑀𝑗 (𝑑) Surprise of document 𝑑 given model 𝑀𝑗 (surplexity)
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+111:6 Gambetta et al.
+4 Autophagy Simulation Framework
+While the definitions of autophagy and model collapse apply to any foundational model, we focus on
+Large Language Models (LLMs), i.e., foundation models focused on understanding and generating
+human language [34].
+Our simulation framework, inspired by Shumailov et al. [39], begins with a pre-trained foundation
+model 𝑀0 and a datasetD0 = {𝑑(real)
+1 ,...,𝑑 (real)
+𝑛 }of 𝑛human-authored text documents. The framework
+(schematized in Algorithm 1) is an iterative process in which 𝑀0 generates continuations from
+fixed prompts and fine-tunes itself on some combination of human-authored and AI-generated
+documents. The generation and fine-tuning steps are repeated several times to mimic the autophagy
+process.
+During an initialization phase (lines 1-3 of Algorithm 1), we truncate each human-authored
+document 𝑑(real)
+𝑖 ∈D0 to 𝑘 tokens. This yields a set of 𝑛prompts 𝑃 = {𝑝1,...,𝑝 𝑛 }that remain fixed
+throughout the entire simulation. Fixing the prompt set across iterations allows us to analyse model
+collapse dynamics in a controlled setting.
+During the simulation phase (lines 4-9 of Algorithm 1), at each simulation step𝑗(for 𝑗 = 1,...,𝑇 ),
+we perform the following two operations in sequence:
+(1) Generation. For each prompt𝑝𝑖 ∈𝑃, we use the model𝑀𝑗 −1 to generate a continuation𝑠(𝑗 −1)
+𝑖
+such that the total length of the combined text does not exceed 𝐿= 128 tokens (i.e., |𝑝𝑖 |= 𝑘,
+and |𝑠(𝑗 −1)
+𝑖 |≤ 128 −𝑘). Here, 𝑠(𝑗 −1)
+𝑖 denotes the continuation of prompt 𝑝𝑖 generated by
+model 𝑀𝑗 −1. We then define the AI-generated document as the concatenation of the prompt
+and the generated continuation: 𝑑
+(gen)
+𝑖 = 𝑝𝑖 ||𝑠𝑗 −1
+𝑖 , where ||denotes sequence concatenation.
+The set of all such AI-generated documents forms a new dataset at simulation step𝑗, denoted
+as D𝑗 = {𝑑
+(gen)
+1 ,...,𝑑
+(gen)
+𝑛 }.
+(2) Fine-tuning. The model𝑀𝑗 −1 is fine-tuned to obtain the updated model𝑀𝑗 , using a datasetT𝑗
+selected for this purpose. In the most basic setup T𝑗 = D𝑗 , i.e., only the documents generated
+by 𝑀𝑗 −1 are used for fine-tuning. However, our framework is flexible and general: T𝑗 may
+include any combination of human-authored and AI-generated documents selected according
+to a ranking function 𝜌 : D→ R, where Ddenotes the set of documents (human-authored
+or AI-generated) available at simulation step 𝑗. The ranking function 𝜌 may reflect various
+desirable properties, such as linguistic diversity or alignment with a target distribution. The
+top-𝑧 ranked documents according to 𝜌 are then selected to form T𝑗 . This flexible design
+allows for experimentation with different document selection strategies and their impact on
+model collapse across simulation steps.
+By running the simulation for 𝑇 steps – alternating between generating documents, fine-tuning
+the model, and repeating the generation – we obtain a sequence of increasingly specialised models
+𝑀1,𝑀2,...,𝑀 𝑇 and a correspondingly corpus of AI-generated datasets D1,D2,..., D𝑇 .
+It is worth noting that our simulation framework, as well as those introduced by other studies
+on model collapse [20, 35, 39, 45], may introduce some biases. By always conditioning on real data
+(prompts), the model may over-rely on the human-authored context (the first 𝑘 tokens), potentially
+masking issues that would arise in a fully synthetic generation loop. Furthermore, this setup may
+underestimate exposure bias and model collapse effects that can occur when both inputs and
+outputs are AI-generated.
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+Learning by Surprise: Surplexity for Mitigating Model Collapse in Generative AI 111:7
+Algorithm 1: Autophagy Simulation Framework
+Input : Model 𝑀0; initial dataset D0 = {𝑑(real)
+1 ,...,𝑑 (real)
+𝑛 }; prompt length 𝑘; number of
+iterations 𝑇
+Output: Sequence of models 𝑀1,...,𝑀 𝑇 and datasets D1,..., D𝑇
+/* Initialization phase */
+1 foreach 𝑑(real)
+𝑖 ∈D0 do
+2 𝑝𝑖 ←truncate(𝑑(real)
+𝑖 ,𝑘)
+3 𝑃 ←{𝑝1,...,𝑝 𝑛 }; // Fixed set of prompts
+/* Simulation phase */
+4 for 𝑗 ←1 to 𝑇 do
+5 foreach 𝑝𝑖 ∈𝑃 do
+6 𝑠(𝑗 −1)
+𝑖 ←generate_continuation(𝑀𝑗 −1,𝑝𝑖,𝐿 −𝑘);
+7 𝑑
+(gen)
+𝑖 ←𝑝𝑖 ∥𝑠(𝑗 −1)
+𝑖 ; // Concatenate prompt and continuation
+8 D𝑗 ←{𝑑
+(gen)
+1 ,...,𝑑
+(gen)
+𝑛 }
+9 𝑀𝑗 ←fine_tune(𝑀𝑗 −1,D𝑗 ); // Fine-tuning
+5 Measuring model collapse: a standard measure, and two new ones
+A key challenge in studying model collapse is how to measure it as autophagy progresses. In
+this paper, we extend the set of measures used in prior work [35] by introducing new measures
+that capture previously overlooked aspects of collapse. Specifically, we evaluate model collapse
+using an existing measure (linguistic entropy), a new measure capturing the model’s commonsense
+reasoning—commonsense inference accuracy, and two new metrics based on next-token probability
+distribution: the Gini coefficient and the collapsed prediction indicator.
+Linguistic entropy. We adopt linguistic entropy as our primary metric to quantify model
+collapse because it offers a simple yet informative measure of the diversity in the model’s output
+distribution. A decline in linguistic entropy over simulation steps indicates that the model is
+producing increasingly repetitive or predictable text, which is an essential symptom of model
+collapse. While other metrics such as self-BLEU [2], distinct-n [27], or perplexity [46] could also
+be used, entropy captures the underlying theoretical measure of information content, making it
+a suitable and parsimonious choice for our analysis. Formally, given a text document𝑑, let 𝑊(𝑑)
+denote the set of unique tokens in 𝑑. We define the normalised linguistic entropy of𝑑 as:
+𝐻(𝑑)= −
+Í
+𝑤∈𝑊 (𝑑)𝑞𝑤 log(𝑞𝑤)
+log |𝑊(𝑑)| (1)
+where 𝑞𝑤 is the empirical probability of token 𝑤 in 𝑑, computed as the frequency of 𝑤 divided by
+the total number of terms in 𝑑. The normalisation factor log |𝑊(𝑑)|ensures that entropy values
+are comparable across documents with different vocabulary sizes.
+For each model 𝑀𝑗 , and for each prompt, we measure linguistic entropy and then report the
+mean value across prompts.
+Next-token probability. To gain further insight into the lack of diversity, we analyse the
+model’s next-token probability distribution, which reflects the model’s confidence when predicting
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+111:8 Gambetta et al.
+the next token in a sequence. High concentration of probability mass on a few tokens indicates
+lower diversity and potential model collapse.
+Given a model 𝑀𝑗 , we randomly sample 1,000 human-authored documents for each dataset from
+those never used during fine-tuning. Each document is truncated to its first 32 tokens to create
+a prompt. We then query 𝑀𝑗 to predict the next token given each prompt and extract the full
+probability distribution over the top 100 most likely tokens, obtaining one distribution for each
+prompt. From these distributions, we compute two complementary metrics:
+(1) Gini coefficient. This measures the inequality of the next-token probability distribution. A
+high Gini coefficient indicates that the model assigns most of the probability mass to a small
+number of tokens, suggesting reduced diversity. Given a probability vector𝑞= (𝑞1,𝑞2,...,𝑞 𝑛),
+the Gini coefficient is defined as:
+𝐺(𝑞)=
+Í𝑛
+𝑖=1
+Í𝑛
+𝑗=1 |𝑞𝑖 −𝑞𝑗 |
+2𝑛Í𝑛
+𝑖=1 𝑞𝑖
+,
+where 𝑛 is the number of candidate tokens (here, 𝑛 = 100). The Gini coefficient ranges
+between 0 and 1, where 0 indicates perfect equality (all tokens are equally probable), while
+higher values indicate increasing concentration of probabilities on fewer tokens.
+(2) Collapsed predictions. This measure captures extreme overconfidence and deterministic
+behaviour in next-token prediction. Given a probability vector 𝑞 = (𝑞1,...,𝑞 𝑛), we say a
+prediction is collapsed if there is probability that exceeds the threshold 𝜏 = 0.99. Thus, we
+define the collapse indicator 𝐶(𝑞)as 1 if the prediction is collapsed:
+𝐶(𝑞)=
+(
+1 if ∃𝑘 : 𝑞𝑘 > 𝜏,
+0 otherwise.
+For each model 𝑀𝑗 , and for each prompt, we compute the Gini coefficient and the collapsed-
+prediction indicator. We then report the mean Gini across prompts and the percentage of prompts
+flagged as collapsed (i.e., the average of the indicator times 100). These two measures together
+offer a fine-grained view of how unequal the next-token probability distribution becomes over
+simulation steps or, put differently, how predictable the AI-generated text is.
+Commonsensical Inference Accuracy. A crucial question is whether collapse also compro-
+mises the model’s ability to generate meaningful sentences. To explore this, we use the commonsense
+natural language inference task, which tests whether a model can plausibly complete a given sen-
+tence. We adopt the HellaSwag dataset [47], which contains 70,000 sentence prompts, each paired
+with four candidate endings (¯𝑎,𝑎1,𝑎2,𝑎3). Of these, only one is a coherent and commonsensical
+continuation ¯𝑎; the other three are intentionally implausible.
+We compute the conditional probability of each candidate continuation given a prompt. The
+model selects the option with the highest probability as its predicted continuation. For each
+prompt 𝑝 ∈{𝑝1,...,𝑝 𝑁 }, let ˆ𝑎denote the model’s selected answer and ¯𝑎the ground-truth (correct)
+continuation. We define a binary scoring function 𝐼(𝑝)as follows:
+𝐼(𝑝)=
+(
+1 if ˆ𝑎= ¯𝑎
+0 otherwise.
+The overall accuracy, which we call Commonsense Inference Accuracy (𝐴CI), is then computed
+as the proportion of prompts for which the model selects the correct continuation:
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+Learning by Surprise: Surplexity for Mitigating Model Collapse in Generative AI 111:9
+𝐴CI = 1
+𝑁
+𝑁∑︁
+𝑖=1
+𝐼(𝑝),
+This measure provides a high-level view of the model’s capacity to make plausible and contextually
+appropriate decisions, beyond mere stylistic diversity.
+6 Initial experiments with model collapse – and a new observation
+We first provide settings for our experiments in Section 6.1. In Section 6.2, we replicate existing
+collapse findings, with the traditional measure of linguistic entropy. In Section 6.3, we present some
+results using our new measures, which lead to a new observation.
+6.1 Experimental settings
+The experimental settings used in our study are summarized in Table 2. Unless otherwise specified,
+we set the prompt length to 𝑘 = 64 tokens and ask the model to generate an additional 64 tokens,
+resulting in documents of length 𝐿 = 128, with an even 50% split between human-authored and
+AI-generated tokens. To ensure statistical robustness, each configuration is run three times, and
+we report the average and standard error of each metric across these runs. In Appendix A.1, we
+compare varying the proportion of synthetic content by changing 𝑘 to 32 or 96 while keeping
+𝐿= 128 fixed, then using truncated documents 64 tokens for next token probability and in the end
+comparing mitigation results for different models.
+Foundation Models. We conduct our experiments using three open-weight foundation models:
+Llama2-7B (referred to as Llama2), Llama3-8B (Llama3), and Mistral-7B (Mistral). We select Llama2
+for its public availability, strong performance on a wide range of NLP tasks, and favorable trade-off
+between model quality and computational efficiency. Its moderate size (seven billion parameters)
+allows for fast fine-tuning while maintaining robust language generation capabilities. To validate
+the robustness of our findings, we replicate our experiments with the more recent Llama3 model as
+well as the competitive Mistral. All models are fine-tuned using the Unsloth library with default
+hyperparameters.1 Experiments are run on an NVIDIA Quadro RTX 6000 GPU.
+Datasets. We adopt the text datasets used in the seminal study by Guo et al. [ 20], ensuring
+consistency with prior work. These datasets span different domains and linguistic styles, offering a
+robust testbed for evaluating model collapse:
+•Wikitext (wiki) is a large-scale corpus comprising over 100 million tokens extracted from
+verified English Wikipedia articles [ 32]. Following Guo et al. [ 20], we use the main body
+text of each article, as provided by the dataset on HuggingFace.2 This dataset is particularly
+suited for studying long-form factual and encyclopedic language.
+•XL-Sum (xls) contains 1.35 million annotated news articles from the BBC in multiple
+languages [21]. Each entry includes the title, article body, summary, and article URL. We
+focus on the English-language subset and use the article’s body text.
+•SciAbs (sci) is derived from a BiBTeX bibliography database of papers published in com-
+putational linguistics and NLP venues since 1965 [20]. The dataset comprises over 40,000
+papers, utilizing the text from their associated abstracts.
+1https://github.com/unslothai/unsloth
+2https://huggingface.co/datasets/Salesforce/wikitext
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+111:10 Gambetta et al.
+Fine-tuning scenarios. We consider three main scenarios for fine-tuning the model 𝑀𝑗 −1,
+based on the composition of the training set T𝑗 :
+•AI: T𝑗 = D𝑗 , i.e., it contains only AI-generated documents produced by 𝑀𝑗 −1;
+•human: T𝑗 contains only human-authored documents;
+•mixed: T𝑗 contains a mixture of human-authored and AI-generated documents.
+For all models, datasets, and fine-tuning scenarios, we simulate the autophagy process over
+𝑇 = 10 steps, following standard practice in the literature [39].
+Table 2. Experimental settings of our study
+Component Setting
+Foundation models Llama2 — version Llama2-7B
+Llama3 — version Llama3-8B
+Mistral — version Mistral-7B
+Datasets wiki — Wikipedia article bodies (Wikitext)
+xls — English news article bodies (XL-Sum)
+sci — Abstracts from NLP/CL papers (SciAbs)
+combined - Three previous datasets together
+Fine-tuning scenarios AI – Only AI-generated documents
+human – Only human-authored documents
+mixed –Mixture of AI-generated and human-authored documents
+Prompt length 𝑘 = 64 (default); also tested for 𝑘 = 32 and 𝑘 = 96
+Fine-tuning library Unsloth (default hyperparameters)
+Hardware NVIDIA Quadro RTX 6000 GPU
+6.2 Model collapse results using linguistic entropy
+Our simulations with Llama2 under the AI fine-tuning scenario confirm the findings of prior
+work [20, 35, 39]: the average linguistic entropy consistently declines across simulation steps,
+signaling progressive model collapse. This decline is evident both when the model is fine-tuned
+on the combined dataset – wiki, xls, and sci – with a relative decrease of approximately 7.5%
+at simulation step 10 compared to step 0, and when fine-tuned on individual datasets, where the
+relative decrease ranges from 4.7% on sci to 8.7% on wiki (see Figure 1). The collapse in linguistic
+diversity clearly results from fine-tuning on the AI-generated documents, as no such decline is
+observed when the model is fine-tuned on human-authored documents (see empty green dots in
+Figure 1). We find similar results for Llama3 and Mistral (see Figure 12 in Appendix A.4).
+6.3 Collapse results using our new measures
+Model collapse is also evident when analyzing the evolution of next-token probability distributions.
+Figure 2a-c illustrates an example with the top-five predicted tokens and their associated probabili-
+ties at simulation steps 0, 5, and 10, using Llama2. The example refers to text generated in response
+to the following prompt extracted from the sci dataset:
+The obstetric Electronic Medical Record (EMR) contains a large amount of medical
+data and health information. It plays a vital role in improving the quality of the
+diagnosis assistant service. In this...
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+Learning by Surprise: Surplexity for Mitigating Model Collapse in Generative AI 111:11
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.92
+0.94
+0.96
+0.98
+1.00
+1.02Avg. Norm. Linguistic Entropy H(d)
+human
+AI: combined
+AI: wiki
+AI: xls
+AI: sci
+Fig. 1. Effect of the autophagy process on linguistic entropy. Normalized linguistic entropy 𝐻(𝑑)of
+documents generated by Llama2 (𝑘 = 64) over 10 simulation steps. Each curve represents a different fine-
+tuning scenario: on human-authored documents (human, green open circles), on AI-generated documents from
+individual datasets – AI: wiki (squares), AI: xls (diamons), and AI: sci (triangles) – and on a combination
+of all three (AI: combined, red filled circles). The results confirm prior findings: linguistic entropy steadily
+declines as the autophagy process progresses.
+In Figure 2a-c, we observe that the distribution becomes increasingly skewed in simulation steps
+5 and 10. In step 0, the token “paper” has the highest probability, but is still closely followed by other
+plausible completions. By step 10, “paper” overwhelmingly dominates the distribution, highlighting
+a marked loss in linguistic entropy and growing overconfidence in a single prediction.
+To move beyond a single example, we extend this analysis to a broader set of 1,000 prompts
+sampled from each dataset. Figure 2d–f illustrates how Llama2 assigns probabilities to the highest-
+probability token for 1,000 prompts drawn from dataset sci. As simulation progresses, we observe
+a clear shift toward higher probability values, reflecting increased next-token predictability and
+a corresponding decline in linguistic diversity. Figure 10 in Appendix A.2 shows that the same
+pattern also applies to datasets wiki and xls.
+This trend is further supported by the evolution of the average Gini coefficient of the next-token
+probability distributions, 𝐺(𝑞), and the percentage of collapse predictions, 𝐶(𝑞), over simulation
+steps. As Figure 3a shows for Llama2, as the simulation goes by,𝐺(𝑞)increases. This indicates a
+growing imbalance in the distribution of next-token probabilities, i.e., an increasing concentration
+of the probability mass on a small subset of tokens. A similar pattern is observed for 𝐶(𝑞)(see
+Figure 3b): as the simulation progresses, the percentage of collapsed predictions increases in all
+fine-tuning scenarios analyzed. Figure 12 in Appendix A.4 shows that similar results hold for
+Llama3 and Mistral.
+Model collapse also degrades the model’s capacity to generate meaningful sentences. We find
+that the Llama2’s commonsensical inference accuracy, 𝐴CI, deteriorates over simulation steps: its
+ability to generate commonsensical answers declines consistently (see Figure 4). This degradation
+is evident especially when the model is trained on the combined dataset – with a relative decrease
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+111:12 Gambetta et al.
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+1
+2
+3
+4
+5 Rank
+paper
+study
+work
+research
+article
+(a) Step 0
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+1
+2
+3
+4
+5
+paper
+study
+work
+th
+research (b) Step 5
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+1
+2
+3
+4
+5
+paper
+study
+work
+th
+project (c) Step 10
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+0
+100
+200
+300
+400
+500
+600
+(d) Step 0
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+0
+100
+200
+300
+400
+500
+600 (e) Step 5
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+0
+100
+200
+300
+400
+500
+600 (f) Step 10
+Fig. 2. Next-token probabilities as autophagy progresses. (a–c) Next-token probability distributions
+(x-axis) for the top-5 predicted tokens (y-axis) produced by Llama2 at simulation steps 0, 5, and 10. The
+example is based on a prompt from the sci dataset: “The obstetric Electronic Medical Record (EMR) contains
+a large amount of medical data and health information. It plays a vital role in improving the quality of the
+diagnosis assistant service. In this... ” As the simulation progresses, the distribution becomes increasingly
+skewed, with a single token (“paper”) dominating by step 10. (d–f) Distributions of the highest-ranked token
+probabilities across 1,000 prompts from the sci dataset, evaluated at steps 0, 5, and 10. A clear shift toward
+higher probability values is observed as the autophagy process unfolds.
+of approximately 23% – but also when trained on each dataset individually, with decreases ranging
+from 1.7% on sci to 16.3% on xls (see Figure 4). In other words, as the autophagy process unfolds,
+the model’s predictions increasingly diverge from common sense. This unprecedented finding
+shows that autophagy not only diminishes linguistic entropy, but also degrades commonsensical
+inference capabilities. The observed collapse can be attributed to the use of AI-generated documents
+for fine-tuning, as the decline is markedly less pronounced when the model is trained on human-
+authored documents (see Figure 4). Figure 12 in Appendix A.4 shows that similar results hold for
+Llama3 and Mistral.
+Table 3 illustrates an example of how the model’s outputs evolve across iterations of the autophagy
+process. At simulation step 0, the generated continuations are fluent and meaningful, closely aligned
+with the prompt. By step 5, signs of collapse appear, with increasing redundancy, loss of specificity,
+and mild incoherence, especially in the xls and sci datasets. By step 10, collapse becomes evident:
+the model tends to repeat phrases and produce templated or meaningless sequences.
+The results reported so far correspond to the case𝑘 = 64, where each prompt contains 64 human-
+authored tokens and the model generates up to 64 additional tokens to complete the document.
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+Learning by Surprise: Surplexity for Mitigating Model Collapse in Generative AI 111:13
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.86
+0.88
+0.90
+0.92
+0.94
+0.96Avg. Gini Coefficient G(q)
+human
+AI: combined
+AI: wiki
+AI: xls
+AI: sci
+(a) Gini coefficient
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0
+5
+10
+15
+20
+25% Collapsed Predictions C(q)
+human
+AI: combined
+AI: wiki
+AI: xls
+AI: sci (b) Collapsed predictions
+Fig. 3. Effect of the autophagy process on the Gini coefficient and the percentage of collapsed
+predictions. (a) Gini coefficient, 𝐺(𝑞), of next-token probability distribution for Llama2 ( 𝑘 = 64) across
+10 simulation steps. (b) Percentage of collapsed predictions, 𝐶(𝑞), across 10 simulation steps. Each curve
+represents a different fine-tuning scenario: on human-authored documents (human, green open circles), on
+AI-generated documents from individual datasets – AI: wiki (squares), AI: xls (diamons), and AI: sci
+(triangles) – and on a combination of all three (AI: combined, red filled circles). Both 𝐺(𝑞)and 𝐶(𝑞)increase
+as autophagy progresses, indicating an increasing concentration of the probability mass on a small subest of
+tokens.
+We now vary 𝑘 = 32,64,96, which correspond to 75%, 50% and 25% of the AI-generated tokens
+out of a total of 128, using Llama2 and the combined dataset to generate prompts. Figure 9 in
+Appendix A.1 shows the average linguistic entropy, commonsensical inference accuracy, the average
+Gini coefficient and the percentage of collapsed predictions changing along simulation steps for
+different percentages of AI-generated tokens in generated documents. We find that as 𝑘 decreases,
+model collapse becomes more pronounced across all the measures. In other words, increasing the
+fraction of AI-generated tokens accelerates model collapse, intensifying the loss of diversity and
+the overestimation of high-probable tokens.
+7 Learning by surprise: a new method for mitigating model collapse
+An open question is how to mitigate model collapse during the autophagy process [45]. A common
+strategy is to incorporate human-authored documents into fine-tuning, rather than relying solely
+on AI-generated documents – an approach shown to reduce the severity of model collapse [45].
+However, the literature does not provide specific criteria for selecting which documents are most
+suitable, treating all human-authored texts as equally effective.
+Based on the findings of Section 6.3, here we propose a strategy for selecting the most effective
+documents (whether human-authored or AI-generated) to mitigate model collapse. Our approach
+is motivated by the observation that model collapse is marked by an increasing inequality in
+next-token probabilities (as shown in Section 6.3), where the model becomes increasingly confident
+in a small set of high-probability tokens. This growing imbalance can be interpreted as a loss of
+surprise: the model increasingly generates texts that align too closely with its own expectations,
+producing predictable sequences with little novelty. This phenomenon echoes Friston’s free energy
+principle [16], which posits that human agents minimise surprise to maintain internal coherence. In
+autophagy, however, excessive surprise minimisation becomes maladaptive: the model reinforces its
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+111:14 Gambetta et al.
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.46
+0.48
+0.50
+0.52
+0.54
+0.56
+0.58Commonsense Inference Acc. ACI
+human
+AI: combined
+AI: wiki
+AI: xls
+AI: sci
+Fig. 4. Effects of the autophagy process on commonsensical inference accuracy. Commonsensical
+inference accuracy, 𝐴CI, of Llama2 across 10 simulations steps. Each curve represents a different fine-tuning
+scenario: on human-authored documents ( human, green open circles), on AI-generated documents from
+individual datasets – AI: wiki (squares), AI: xls (diamons), and AI: sci (triangles) – and on a combination
+of all three (AI: combined, red filled circles). As the autophagy process unfolds, the model’s predictions
+increasingly diverse from common sense.
+priors and loses expressive capacity. We argue, therefore, that model collapse can be counteracted
+by intentionally reintroducing surprise into the learning process.
+To this end, we introduce thesurplexity measure, which quantifies a model’s surprise in response
+to a given document. Intuitively, surplexity is defined as the perplexity of the model when processing
+the document: higher values indicate that the content is less expected by the model, and therefore
+more surprising [33]. Mathematically, given a model 𝑀𝑗 and a document 𝑑 = (𝑤1,𝑤2,...,𝑤 𝑚)of 𝑚
+tokens, we define surplexity of𝑑given 𝑀𝑗 as the exponential of the average negative log-likelihood
+of each token given its context:
+𝑆𝑀𝑗 (𝑑)= exp
+ 
+−1
+𝑚
+𝑚∑︁
+𝑖=0
+log𝑞𝑖
+!
+= exp(E[−log𝑞𝑖 ])=
+𝑚Ö
+𝑖=0
+𝑞−1/𝑚
+𝑖
+where 𝑞𝑖 = 𝑃(𝑤𝑖 |𝑤0,...,𝑤 𝑖−1). It is important to distinguish between surplexity and linguistic
+entropy: while both capture aspects of diversity, linguistic entropy is a property of the document
+alone, whereas surplexity depends on both the document and the model, reflecting how surprising
+the document is from the model’s perspective.
+To clarify the concept of surplexity, let us consider the two example documents from thewiki
+and sci datasets in Figure 5. Each token is shown as a box, with its background color representing
+the probability assigned by the original pre-trained Llama2. We observe that the wiki document
+(on the left) contains consistently higher-probability tokens than the sci document (on the right),
+reflecting a closer alignment with the model’s expectations. Accordingly, the surplexity score of
+the wiki document given Llama2 is much lower (𝑆Llama2 (𝑑)= 1.6) than the surplexity score of the
+sci document (𝑆Llama2 (𝑑)= 44.5).
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+Learning by Surprise: Surplexity for Mitigating Model Collapse in Generative AI 111:15
+wiki xls sci
+Prompt
+The Church of St George is a me-
+dieval Eastern Orthodox church in
+the city of Kyustendil, which lies
+in southwestern Bulgaria and is
+the administrative capital of Kyus-
+tendil Province. The church is lo-
+cated in the Kolusha neighbour-
+hood, which was historically sepa-
+rate from the city. The . . .
+At about 19:30 on Friday the fire
+alarm went off. I went out of the
+room and saw other guests milling
+about, and no one seemed to be
+really concerned. So I went back to
+my room to get ready to leave for
+the airport. I went downstairs to
+settle the bill around 20:30 and it
+was like a scene out of a movie.
+The reliance of deep learning al-
+gorithms on large scale datasets
+represents a significant challenge
+when learning from low resource
+sign language datasets. This chal-
+lenge is compounded when we con-
+sider that, for a model to be effec-
+tive in the real world, it must not
+only learn the variations of a given
+sign, but also learn to be invariant
+to the person signing. In this paper,
+Step 0
+church is situated on the eastern side
+of the city , at the foot of the Balkan
+Mountains . sierp 2011 the church
+was declared a cultural mon- ument
+of national importance . The church
+is a single-nave structure with a
+semi-circular apse , with a bell tower
+above the
+I was in the lobby with the reception-
+ist, and the firemen were running
+down the stairs with their masks on
+and their hoses. They were shouting,
+’Get out, get out!’ I didn’t know what
+was going on. I thought maybe they
+were shooting a movie.
+we present a new approach to ad-
+dressing these challenges, by intro-
+ducing a novel loss function, which
+we call the “Mixed Pairwise Loss”,
+that can be applied to both the train-
+ing and testing of deep learning
+models. We present a number of ex-
+periments that demonstrate the ef-
+fectiveness of the proposed method.
+Step 5
+The church is a The church is a
+The church is a The church is a
+The church is a The church is a The
+church is a The church is a</s>
+The place was filled with smoke and
+the fire was really big. I was the only
+guest in the hotel and I was the only
+one who was able to get out. I was
+the only one who was able to get out.
+I was the only one who was able to
+get out.</s>
+we propose a novel methodology for
+learning sign language from a low
+resource dataset. We propose a novel
+methodology for learning sign lan-
+guage from a low resource dataset.
+We propose a novel methodology for
+learning sign language from a low
+The reliance of deep learning algo-
+rithms on large scale</s>
+Step 10
+sierp 2020. The church is a The
+church is a The church is a The
+church is a The church is a The
+church is a The church is a The
+church is a The church is a The
+church is a</s>
+The place was like a war zone. The
+place was like a war zone. The place
+was like a war zone. The place was
+like a war zone. The place was like a
+war zone. The place was like a war
+zone. The place was like a war</s>
+we propose a novel methodology for
+learning sign language from a low
+resource dataset. We propose a novel
+methodology for learning sign lan-
+guage from a low resource dataset.
+We propose a novel methodology for
+learning sign language from a low
+resource dataset. We propose a novel
+methodology for learning</s>
+Table 3. Examples of AI-generated text as the autophagy process progresses. Prompts of 64 tokens
+from the three datasets are at the top of each column. AI-generated continuations by Llama2 at simulation
+steps 0, 5, and 10 are highlighted in italic. Step 10 is also highlighted in yellow. The progression illustrates
+how generated text degenerates across simulation steps.
+Beyond this specific example, tokens in wiki documents are generally much less surprising to
+Llama2 than those in sci documents. Figure 6 shows the distribution of surplexity scores for all
+documents in the wiki, xls, and sci datasets, computed with respect to Llama2. For comparison,
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+111:16 Gambetta et al.
+Wikitext document
+The First Amendment ( I ) to the United
+States Constitution prohib its making
+of any law respect ing an establishment
+religion , imp eding free exercise ab
+rid ging freedom speech in fr on press
+inter fer with right peace ably assemble
+or iting pet ition for a government al
+red ress gr iev ances . It was adopted
+December 1579 as one ten amments that
+const itute Bill Rights originally proposed
+measure
+0 1
+qw
+Surplexity = 1.6
+Sciabs document
+H ydra is a Word net management system
+where the Syn sets from different languages
+live in common rel ational structure
+( Krip ke frame ) with user - fr endly GUI
+for searching , editing and alignment
+of objects . The data retrieved by means
+modal logic query language Despite
+its many mer its stores only current
+state word development opens questions
+consist ency over time new Time Flow
+uses Dynamic model discrete embeded
+all states
+Surplexity = 44.5
+Fig. 5. Examples of documents with different surplexity. The left document is from the wiki dataset,
+and the right from sci. Each token is displayed in a box, with background color indicating the probability
+assigned by the original Llama2 model. The wiki document contains consistently higher-probability tokens
+than the sci document, reflecting a lower level of model surprise (i.e., lower surplexity).
+the figure also includes the surplexity distribution of AI-generated documents, which typically
+consists of high-probability tokens and thus lower surplexity.
+We observe that the wiki documents have the lowest average surplexity, closely aligning with
+the surplexity scores of the AI-generated documents. In contrast, the xls and sci documents
+exhibit significantly higher average surplexity values. This suggests that documents in wiki are
+inherently less surprising to the model, i.e., they more closely reflect LLama2’s internal expectations,
+compared to those in xls and sci, which contain content that is more novel or unexpected from
+the model’s perspective. The wiki dataset’s low surplexity correlates with more severe collapse: as
+the simulation progresses, models fine-tuned on wiki consistently degrade more than the other
+datasets (see Figures 1 and 3).
+We hypothesize that model collapse is driven by fine-tuning on documents that fail to surprise
+the model, i.e., those with low surplexity relative to its expectations. To address this, we propose
+a surplexity-based mitigation strategy : at each simulation step 𝑗, we select the 1,000 documents
+– regardless of whether they are human-authored or AI-generated – with the highest surplexity
+given model 𝑀𝑗 . This ensures that fine-tuning targets the most surprising content, independent of
+document origin. This represents a clear advantage over existing approaches, as our method does
+not rely on verifying whether a document is human-authored – a task that becomes increasingly
+challenging as generative AI content proliferates online.
+We compare our surplexity-based strategy against three baselines: (i) fine-tuning on a random
+sample of 1,000 human-authored documents,(ii) a random sample of 1,000 AI-generated documents,
+and (iii) the 1,000 documents with the highest linguistic entropy, whether human-authored or
+AI-generated. The latter strategy is motivated by prior work, where a decline in linguistic entropy
+is commonly used to characterise model collapse [39].
+As Figure 7 shows, our mitigation strategy effectively prevents model collapse, achieving an
+average linguistic entropy comparable to the approach that randomly samples human-authored
+documents. As expected, the entropy-based strategy reaches the highest levels of linguistic entropy,
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+Learning by Surprise: Surplexity for Mitigating Model Collapse in Generative AI 111:17
+wiki xls sci
+0
+10
+20
+30
+40
+50Surplexity
+Fig. 6. Distribution of surplexity across datasets. Surplexity distributions (computed with respect to
+Llama2) for documents in three datasets – wiki (blue), sci (green), and xls (red) – compared with the
+surplexity of documents generated by Llama2 itself (light grey).
+since it is explicitly optimized for that metric. A similar trend holds for commonsensical inference
+accuracy: over simulation steps, the surplexity-based strategy achieves the highest accuracy, slightly
+outperforming the human-text baseline.
+However, the most striking benefits of the surplexity-based strategy emerge in terms of the
+average Gini coefficient and the percentage of collapsed predictions. On both metrics, it consistently
+yields the lowest values, indicating a more balanced next-token probability distribution and less
+overconfident, repetitive generation. Similar results hold for Llama3 and Mistral (see Figure 12 in
+the Appendix).
+To understand which documents are selected by the surplexity-based strategy, we analyze the
+top 1,000 documents chosen for fine-tuning at each simulation step 𝑗. These documents can be
+either human-authored or AI-generated and are ranked by their surplexity given model𝑀𝑗 . Figure 8
+shows the proportion of selected documents by source. Although nearly all selected documents are
+human-authored, the share of AI-generated documents increases slightly toward later simulation
+steps, suggesting that some may reach higher surplexity if the process continues. Among human-
+authored sources, wiki contributes the fewest documents (fewer than 100 per step) because its
+content is consistently less surprising to the model (as shown in Figure 6). While sci documents
+are generally preferred, the number of selected documents from sci and xls alternates across
+simulation steps in a complementary, oscillating pattern. When model 𝑀𝑗 is fine-tuned primarily
+on xls, its surplexity on that dataset decreases in the next step, making xls documents less likely
+to be selected again. This highlights that the property of causing model collapse is not an intrinsic
+characteristic of a document, but rather depends on the relationship between the document and
+the specific model.
+8 Discussion and Future Works
+In this paper, we addressed three key gaps in the understanding of model collapse: how to charac-
+terize a collapsed model directly from its probability distributions; which properties of training
+documents contribute to collapse; and how to mitigate collapse without relying on knowing whether
+data is human-authored or AI-generated. Our contributions are built around the concept of surplex-
+ity, a measure of model surprise, which we use both to detect collapse and to filter training data. We
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+111:18 Gambetta et al.
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.92
+0.94
+0.96
+0.98
+1.00
+1.02
+1.04
+1.06Avg. Norm. Linguistic Entropy H(d)
+human
+AI
+entropy
+surplexity
+(a)
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.46
+0.48
+0.50
+0.52
+0.54
+0.56
+0.58
+0.60Commonsense Inference Acc. ACI
+human
+AI
+entropy
+surplexity (b)
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.86
+0.88
+0.90
+0.92
+0.94
+0.96Avg. Gini Coefficient G(q)
+human
+AI
+entropy
+surplexity
+(c)
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0
+5
+10
+15
+20
+25% Collapsed Predictions C(q)
+human
+AI
+entropy
+surplexity (d)
+Fig. 7. Effects of mitigation strategies on model collapse. Metrics of model collapse over 10 simulation
+steps for different mitigation strategies using Llama2 with 𝑘 = 64. (a) Average linguistic entropy, (b) common-
+sense inference accuracy, (c) average Gini coefficient, and (d) percentage of collapsed predictions. Each curve
+corresponds to a different mitigation scenario: a random sample of 1,000 human-authored documents (human,
+green dots); a random sample of 1,000 AI-generated documents (AI, squares); the 1,000 documents with the
+highest linguistic entropy, whether human- or AI-generated (triangles); and the surplexity-based strategy,
+selecting the 1,000 documents with the highest surplexity (black crosses), regardless of origin.
+show that this strategy is effective across models and datasets, offering a principled, model-centric
+approach to understanding and mitigating collapse. A key advantage of this approach is that it
+does not require verifying whether a document is human-authored.
+Research on cognitive science shows that surprise drives learning: infants look longer at physi-
+cally impossible or counterintuitive events, and those events subsequently enhance exploration and
+learning [3, 28]. Infants also allocate attention by preferring stimuli that are neither too predictable
+nor too random [25]. In humans more broadly, Bayesian surprise robustly attracts attention, offering
+a formal link between surprise and belief updates [24], and Friston’s free-energy principle frames
+perception and learning as minimizing expected surprise over time [16]. Our surprise-based metric
+for LLMs – surplexity – is an engineering analogue of these findings: by prioritizing high-surprise
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+Learning by Surprise: Surplexity for Mitigating Model Collapse in Generative AI 111:19
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0
+200
+400
+600
+800
+1000Freq. in top 1000 surplexity docs
+wiki xls sci AI
+Fig. 8. Proportion of documents from each dataset selected by the surplexity-based mitigation
+strategy. At each simulation step, bars indicate the proportion of selected documents originating from each
+dataset. Although nearly all selected documents are human-authored, the share of AI-generated content
+increases slightly in later simulation steps. The wiki dataset contributes the fewest documents overall, while
+sci and xls alternate in a complementary, oscillating pattern across steps.
+documents, training targets inputs most likely to update the model’s beliefs, rather than reinforcing
+already-expected outputs, echoing how infants learn most from the unexpected [40].
+Our study has some limitations. To ensure computational efficiency and reduce confounding
+factors, we fixed key fine-tuning parameters such as the number of training documents and the
+learning rate. These choices are motivated by prior work that has already examined their impact
+on model collapse [23, 41]. Our analysis is also limited to LLMs and does not extend to generative
+models for images, audio, video, or multimodal content. While we believe the effectiveness of the
+surplexity-based mitigation strategy may extend to these domains, further validation is needed.
+Additionally, our simulation setup may introduce biases. Since we condition generation on prompts
+extracted from human-authored text (following the approach of Shumailov et al. [39]), the model
+may over-rely on this context, potentially masking effects that would arise in fully synthetic
+generation loops. This could lead us to underestimate exposure bias and collapse in scenarios where
+both inputs and outputs are AI-generated. Finally, as in the broader literature on AI autophagy
+and model collapse [ 35, 36], our findings are based on simulations. Real-world systems are far
+more complex, with many interacting factors influencing autophagy dynamics. As such, our results
+should be seen as hypotheses to be tested through carefully controlled experiments on actual
+generative AI platforms.
+Our study opens several directions for future research. We conducted our experiments on
+three textual domains: general articles (wiki), scientific abstracts (sci), and news articles (xls).
+While these datasets are quite diverse, they are still about human language. It would be valuable to
+investigate how model collapse unfolds in other contexts such as programming code or mathematical
+writing, which present unique characteristics. Programming code, for example, has a smaller
+vocabulary and follows standardized structures and conventions, which may naturally reduce
+linguistic variety. A similar observation applies to mathematical language, where notation is often
+fixed and formalization follows well-established norms. In such settings, autophagy might progress
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+111:20 Gambetta et al.
+even faster, as the baseline content is already low in surprise. This is consistent with our findings: in
+our experiments, the dataset with the lowest surplexity (wiki) also exhibited faster model collapse.
+However, low linguistic diversity in domains like programming or mathematics may not be harmful;
+in fact, it could be beneficial, promoting more consistent formatting and structure. Exploring these
+domain-specific dynamics could provide deeper insights into when collapse is detrimental versus
+when it may help reinforce useful conventions. We believe this is a promising direction for future
+work.
+From a broader perspective, the concept of surplexity opens up intriguing questions about the
+level of surprise in human-authored content. As our experiments show, different datasets elicit
+different levels of surprise in LLMs, suggesting that some types of content are inherently more
+predictable than others. This raises the possibility of characterizing entire content domains –
+literary genres, musical lyrics, or scientific texts – based on how surprising they are to a model. In
+other words, how surprising is a corpus of documents from the perspective of an LLM? This line
+of inquiry could extend beyond text to other human-created media, such as visual art or music,
+offering a model-based lens through which to explore and compare creative domains.
+Our work offers an innovative contribution to the ongoing debate on autophagy and model
+collapse, and more broadly to the study of human-AI coevolution [ 36]. Human-AI coevolution
+focuses on understanding and modeling feedback loops between humans and AI systems, of which
+AI autophagy is a prime example. Similar feedback dynamics have been observed in various human-
+AI ecosystems, such as online retail and urban mapping, where recommender systems can lead to
+a long-term loss of behavioral diversity among users [8, 9, 15, 26, 31, 35]. It would be valuable to
+explore whether this loss of diversity, like model collapse in LGMs, can be formalised as a reduction
+in surprise and whether the surplexity measure could be adapted to diagnose and mitigate such
+effects in broader human-AI ecosystems.
+Reproducibility and Code
+All data and models from this study are publicly available through the Hugging Face repository:
+https://huggingface.co/dgambettaphd. The simulation framework and analysis presented in this
+paper are fully reproducible, with code available at https://github.com/dgambit/LLM_surplexity.
+Authors’ contributions.
+DG and GG implemented the code for simulations. DG implemented the code for the data analysis.
+All authors conceptualised the work. DG and LP designed the figures. DG made the plots. DG,
+LP, GG, and AK wrote the paper. LP and AK directed and supervised the research. All authors
+contributed to the scientific discussion, read and approved the paper.
+Acknowledgments
+Luca Pappalardo has been supported by PNRR (Piano Nazionale di Ripresa e Resilienza) in the
+context of the research program 20224CZ5X4 PE6 PRIN 2022 “URBAI – Urban Artificial Intelligence”
+(CUP B53D23012770006), funded by European Union – Next Generation EU.
+This work has been supported by the European Union under ERC-2018-ADGGA 834756 (XAI),
+the Partnership Extended PE00000013 - “FAIR - Future Artificial Intelligence Research” - Spoke 1
+“Human-centered AI”.
+We thank Giuliano Cornacchia, Giovanni Mauro, Gabriele Barlacchi, and Margherita Lalli for
+the useful discussions.
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+Learning by Surprise: Surplexity for Mitigating Model Collapse in Generative AI 111:21
+References
+[1] Sina Alemohammad, Josue Casco-Rodriguez, Lorenzo Luzi, Ahmed Imtiaz Humayun, Hossein Babaei, Daniel LeJeune,
+Ali Siahkoohi, and Richard G. Baraniuk. 2023. Self-Consuming Generative Models Go MAD. arXiv:2307.01850 [cs.LG]
+[2] Danial Alihosseini, Ehsan Montahaei, and Mahdieh Soleymani Baghshah. 2019. Jointly Measuring Diversity and
+Quality in Text Generation Models. In Proceedings of the Workshop on Methods for Optimizing and Evaluating Neural
+Language Generation , Antoine Bosselut, Asli Celikyilmaz, Marjan Ghazvininejad, Srinivasan Iyer, Urvashi Khandelwal,
+Hannah Rashkin, and Thomas Wolf (Eds.). Association for Computational Linguistics, Minneapolis, Minnesota, 90–98.
+doi:10.18653/v1/W19-2311
+[3] Renée Baillargeon and Julie DeVos. 1991. Object permanence in young infants: Further evidence. Child development
+62, 6 (1991), 1227–1246.
+[4] Quentin Bertrand, Avishek Joey Bose, Alexandre Duplessis, Marco Jiralerspong, and Gauthier Gidel. 2024. On the
+Stability of Iterative Retraining of Generative Models on their own Data. arXiv:2310.00429 [cs.LG]
+[5] Matyas Bohacek and Hany Farid. 2023. Nepotistically Trained Generative-AI Models Collapse. arXiv preprint
+arXiv:2311.12202 (2023).
+[6] Martin Briesch, Dominik Sobania, and Franz Rothlauf. 2023. Large language models suffer from their own output: An
+analysis of the self-consuming training loop. arXiv preprint arXiv:2311.16822 (2023).
+[7] João Phillipe Cardenuto, Jing Yang, Rafael Padilha, Renjie Wan, Daniel Moreira, Haoliang Li, Shiqi Wang, Fernanda
+Andaló, Sébastien Marcel, and Anderson Rocha. 2023. The Age of Synthetic Realities: Challenges and Opportunities.
+arXiv:2306.11503 [cs.CY] https://arxiv.org/abs/2306.11503
+[8] Giuliano Cornacchia, Matteo Böhm, Giovanni Mauro, Mirco Nanni, Dino Pedreschi, and Luca Pappalardo. 2022. How
+routing strategies impact urban emissions. In Proceedings of the 30th international conference on advances in geographic
+information systems . 1–4.
+[9] Giuliano Cornacchia, Mirco Nanni, Dino Pedreschi, and Luca Pappalardo. 2024. Navigation services and urban
+sustainability. Fluctuation and Noise Letters 23, 03 (2024), 2450016.
+[10] Elvis Dohmatob, Yunzhen Feng, and Julia Kempe. 2024. Model Collapse Demystified: The Case of Regression. arXiv
+preprint arXiv:2402.07712 (2024).
+[11] Elvis Dohmatob, Yunzhen Feng, Pu Yang, Francois Charton, and Julia Kempe. 2024. A Tale of Tails: Model Collapse as
+a Change of Scaling Laws. arXiv preprint arXiv:2402.07043 (2024).
+[12] George Drayson, Emine Yilmaz, and Vasileios Lampos. 2025. Machine-generated text detection prevents language
+model collapse. arXiv:2502.15654 [cs.CL] https://arxiv.org/abs/2502.15654
+[13] Europol Innovation Lab. 2021. Facing Reality: Law Enforcement and the Challenge of Deepfakes. Available
+at: https://www.europol.europa.eu/cms/sites/default/files/documents/Europol_Innovation_Lab_Facing_Reality_Law_
+Enforcement_And_The_Challenge_Of_Deepf.
+[14] Yunzhen Feng, Elvis Dohmatob, Pu Yang, Francois Charton, and Julia Kempe. 2024. Beyond Model Collapse: Scaling
+Up with Synthesized Data Requires Verification. arXiv:2406.07515 [cs.LG] https://arxiv.org/abs/2406.07515
+[15] Daniel Fleder and Kartik Hosanagar. 2009. Blockbuster culture’s next rise or fall: The impact of recommender systems
+on sales diversity. Management science 55, 5 (2009), 697–712.
+[16] Karl Friston. 2010. The free-energy principle: a unified brain theory? Nature Reviews Neuroscience 11, 2 (2010), 127–138.
+doi:10.1038/nrn2787
+[17] Shi Fu, Yingjie Wang, Yuzhu Chen, Xinmei Tian, and Dacheng Tao. 2025. A Theoretical Perspective: How to Prevent
+Model Collapse in Self-consuming Training Loops. arXiv:2502.18865 [cs.LG] https://arxiv.org/abs/2502.18865
+[18] Matthias Gerstgrasser, Rylan Schaeffer, Apratim Dey, Rafael Rafailov, Henry Sleight, John Hughes, Tomasz Korbak,
+Rajashree Agrawal, Dhruv Pai, Andrey Gromov, Daniel A. Roberts, Diyi Yang, David L. Donoho, and Sanmi Koyejo.
+2024. Is Model Collapse Inevitable? Breaking the Curse of Recursion by Accumulating Real and Synthetic Data.
+arXiv:2404.01413 [cs.LG]
+[19] Marzyeh Ghassemi, Abeba Birhane, Mushtaq Bilal, Siddharth Kankaria, Claire Malone, Ethan Mollick, and Francisco
+Tustumi. 2023. ChatGPT one year on: who is using it, how and why? Nature 624, 7990 (2023), 39–41.
+[20] Yanzhu Guo, Guokan Shang, Michalis Vazirgiannis, and Chloé Clavel. 2023. The Curious Decline of Linguistic Diversity:
+Training Language Models on Synthetic Text. arXiv:2311.09807 [cs.CL]
+[21] Tahmid Hasan, Abhik Bhattacharjee, Md. Saiful Islam, Kazi Mubasshir, Yuan-Fang Li, Yong-Bin Kang, M. Sohel Rahman,
+and Rifat Shahriyar. 2021. XL-Sum: Large-Scale Multilingual Abstractive Summarization for 44 Languages. In Findings
+of the Association for Computational Linguistics: ACL-IJCNLP 2021 , Chengqing Zong, Fei Xia, Wenjie Li, and Roberto
+Navigli (Eds.). Association for Computational Linguistics, Online, 4693–4703. doi:10.18653/v1/2021.findings-acl.413
+[22] Ryuichiro Hataya, Han Bao, and Hiromi Arai. 2023. Will Large-scale Generative Models Corrupt Future Datasets?. In
+Proceedings of the IEEE/CVF International Conference on Computer Vision . 20555–20565.
+[23] David Herel and Tomas Mikolov. 2024. Collapse of Self-trained Language Models. arXiv:2404.02305 [cs.CL]
+[24] Laurent Itti and Pierre Baldi. 2009. Bayesian surprise attracts human attention.Vision research 49, 10 (2009), 1295–1306.
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+111:22 Gambetta et al.
+[25] Celeste Kidd, Steven T Piantadosi, and Richard N Aslin. 2012. The Goldilocks effect: Human infants allocate attention
+to visual sequences that are neither too simple nor too complex. PloS one 7, 5 (2012), e36399.
+[26] Dokyun Lee and Kartik Hosanagar. 2019. How do recommender systems affect sales diversity? A cross-category
+investigation via randomized field experiment. Information Systems Research 30, 1 (2019), 239–259.
+[27] Siyang Liu, Sahand Sabour, Yinhe Zheng, Pei Ke, Xiaoyan Zhu, and Minlie Huang. 2022. Rethinking and Refining the
+Distinct Metric. arXiv:2202.13587 [cs.CL] https://arxiv.org/abs/2202.13587
+[28] Francesco Margoni, Luca Surian, and Renée Baillargeon. 2024. The violation-of-expectation paradigm: A conceptual
+overview. Psychological Review 131, 3 (2024), 716.
+[29] Gonzalo Martínez, Lauren Watson, Pedro Reviriego, José Alberto Hernández, Marc Juarez, and Rik Sarkar. 2023. Towards
+understanding the interplay of generative artificial intelligence and the internet.arXiv preprint arXiv:2306.06130 (2023).
+[30] Gonzalo Martínez, Lauren Watson, Pedro Reviriego, José Alberto Hernández, Marc Juarez, and Rik Sarkar. 2023.
+Combining Generative Artificial Intelligence (AI) and the Internet: Heading towards Evolution or Degradation?
+arXiv:2303.01255 [cs.CV]
+[31] Giovanni Mauro, Marco Minici, and Luca Pappalardo. 2025. The Urban Impact of AI: Modeling Feedback Loops in
+Next-Venue Recommendation. arXiv:2504.07911 [cs.AI] https://arxiv.org/abs/2504.07911
+[32] Stephen Merity, Caiming Xiong, James Bradbury, and Richard Socher. 2016. Pointer Sentinel Mixture Models.
+arXiv:1609.07843 [cs.CL] https://arxiv.org/abs/1609.07843
+[33] Alessio Miaschi, Dominique Brunato, Felice Dell’Orletta, and Giulia Venturi. 2021. What Makes My Model Perplexed?
+A Linguistic Investigation on Neural Language Models Perplexity. In Proceedings of Deep Learning Inside Out (DeeLIO):
+The 2nd Workshop on Knowledge Extraction and Integration for Deep Learning Architectures , Eneko Agirre, Marianna
+Apidianaki, and Ivan Vulić (Eds.). Association for Computational Linguistics, Online, 40–47. doi:10.18653/v1/2021.deelio-
+1.5
+[34] Gerhard Paaß and Sven Giesselbach. 2023. Foundation models for natural language processing: Pre-trained language
+models integrating media . Springer Nature.
+[35] Luca Pappalardo, Emanuele Ferragina, Salvatore Citraro, Giuliano Cornacchia, Mirco Nanni, Giulio Rossetti, Gizem
+Gezici, Fosca Giannotti, Margherita Lalli, Daniele Gambetta, et al . 2024. A survey on the impact of AI-based rec-
+ommenders on human behaviours: methodologies, outcomes and future directions. arXiv preprint arXiv:2407.01630
+(2024).
+[36] Dino Pedreschi, Luca Pappalardo, Emanuele Ferragina, Ricardo Baeza-Yates, Albert-László Barabási, Frank Dignum,
+Virginia Dignum, Tina Eliassi-Rad, Fosca Giannotti, János Kertész, Alistair Knott, Yannis Ioannidis, Paul Lukowicz,
+Andrea Passarella, Alex Sandy Pentland, John Shawe-Taylor, and Alessandro Vespignani. 2025. Human-AI coevolution.
+Artificial Intelligence 339 (2025), 104244. doi:10.1016/j.artint.2024.104244
+[37] Rylan Schaeffer, Joshua Kazdan, Alvan Caleb Arulandu, and Sanmi Koyejo. 2025. Position: Model Collapse Does Not
+Mean What You Think. arXiv:2503.03150 [cs.LG] https://arxiv.org/abs/2503.03150
+[38] Mohamed El Amine Seddik, Suei-Wen Chen, Soufiane Hayou, Pierre Youssef, and Merouane Debbah. 2024. How Bad is
+Training on Synthetic Data? A Statistical Analysis of Language Model Collapse. arXiv:2404.05090 [cs.LG]
+[39] Ilia Shumailov, Zakhar Shumaylov, Yiren Zhao, Nicolas Papernot, Ross Anderson, and Yarin Gal. 2024. AI models
+collapse when trained on recursively generated data. Nature 631, 8022 (2024), 755–759.
+[40] Aimee E Stahl and Lisa Feigenson. 2015. Observing the unexpected enhances infants’ learning and exploration. Science
+348, 6230 (2015), 91–94.
+[41] Ananda Theertha Suresh, Andrew Thangaraj, and Aditya Nanda Kishore Khandavally. 2024. Rate of Model Collapse in
+Recursive Training. arXiv:2412.17646 [cs.LG] https://arxiv.org/abs/2412.17646
+[42] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya
+Batra, Prajjwal Bhargava, Shruti Bhosale, et al. 2023. Llama 2: Open foundation and fine-tuned chat models. arXiv
+preprint arXiv:2307.09288 (2023).
+[43] Pablo Villalobos, Jaime Sevilla, Lennart Heim, Tamay Besiroglu, Marius Hobbhahn, and Anson Ho. 2022. Will we run
+out of data? an analysis of the limits of scaling datasets in machine learning. arXiv preprint arXiv:2211.04325 (2022).
+[44] Junchao Wu, Shu Yang, Runzhe Zhan, Yulin Yuan, Derek F Wong, and Lidia S Chao. 2023. A survey on llm-gernerated
+text detection: Necessity, methods, and future directions. arXiv preprint arXiv:2310.14724 (2023).
+[45] Xiaodan Xing, Fadong Shi, Jiahao Huang, Yinzhe Wu, Yang Nan, Sheng Zhang, Yingying Fang, Michael Roberts,
+Carola-Bibiane Schönlieb, Javier Del Ser, et al. 2025. On the caveats of AI autophagy. Nature Machine Intelligence
+(2025), 1–9.
+[46] Jinwei Xu, He Zhang, Yanjing Yang, Lanxin Yang, Zeru Cheng, Jun Lyu, Bohan Liu, Xin Zhou, Alberto Bacchelli, Yin Kia
+Chiam, and Thiam Kian Chiew. 2025. One Size Does Not Fit All: Investigating Efficacy of Perplexity in Detecting
+LLM-Generated Code. ACM Transactions on Software Engineering and Methodology (July 2025). doi:10.1145/3748506
+[47] Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. 2019. HellaSwag: Can a Machine Really
+Finish Your Sentence? arXiv:1905.07830 [cs.CL] https://arxiv.org/abs/1905.07830
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+Learning by Surprise: Surplexity for Mitigating Model Collapse in Generative AI 111:23
+[48] Xuekai Zhu, Daixuan Cheng, Hengli Li, Kaiyan Zhang, Ermo Hua, Xingtai Lv, Ning Ding, Zhouhan Lin, Zilong
+Zheng, and Bowen Zhou. 2024. How to Synthesize Text Data without Model Collapse? arXiv:2412.14689 [cs.CL]
+https://arxiv.org/abs/2412.14689
+A Appendix
+A.1 Different percentage of synthetic tokens
+In this section, we examine how model collapse varies with the share of AI-generated tokens. We fix
+the total document length at 𝐿= 128 and vary the prompt length 𝑘 ∈{32,96}; these correspond to
+25% and 75% prompt tokens (and thus 75% and 25% of AI-generated tokens), respectively. Figure 9
+reports 𝐻(𝑑), 𝐴CI, 𝐺(𝑞), 𝐶(𝑞)across simulation steps for each 𝑘. Across all measures, collapse
+becomes more pronounced as 𝑘 decreases, indicating consistent trends among the four measures.
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.88
+0.90
+0.92
+0.94
+0.96
+0.98
+1.00Avg. Norm. Linguistic Entropy H(d)
+k
+96
+64
+32
+(a) Linguistic entropy
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.46
+0.48
+0.50
+0.52
+0.54
+0.56
+0.58Commonsense Inference Acc. ACI
+k
+96
+64
+32 (b) Semantic resolution accuracy
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.86
+0.88
+0.90
+0.92
+0.94
+0.96
+0.98Avg. Gini Coefficient G(q)
+k
+96
+64
+32
+(c) Gini coefficient
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0
+10
+20
+30
+40
+50
+60% Collapsed Predictions C(q)
+k
+96
+64
+32 (d) Collapsed predictions
+Fig. 9. Effects of the autophagy process varying the percentage of synthetic tokens in generated
+documents. (a) Normalized linguistic entropy of documents generated by llama2 (𝑘 = 32,46,96) across 10
+simulation steps. (b) Semantic resolution accuracy of llama2 over the same steps. (c) Gini coefficient. (d)
+Percentage of collapsed predictions.
+A.2 Top-ranked next-token probabilities for all datasets
+In the main manuscript, Figure 2 (d–f) reports the distribution of top-ranked next-token probabilities
+using sci prompts; here we extend the analysis to other datasets. As shown in Figure 10, all datasets
+exhibit a systematic shift toward higher top-token probabilities over simulation steps. Collapse is
+strongest for wiki: by step 5, more than half of the top tokens exceed 0.9. By contrast, sci shows
+the weakest collapse, with fewer than half surpassing 0.9 even at step 10.
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+111:24 Gambetta et al.
+wiki
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+0
+100
+200
+300
+400
+500
+600
+(a)
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+0
+100
+200
+300
+400
+500
+600 (b)
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+0
+100
+200
+300
+400
+500
+600 (c)
+xls
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+0
+100
+200
+300
+400
+500
+600
+(d)
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+0
+100
+200
+300
+400
+500
+600 (e)
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+0
+100
+200
+300
+400
+500
+600 (f)
+sci
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+0
+100
+200
+300
+400
+500
+600
+(g)
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+0
+100
+200
+300
+400
+500
+600 (h)
+0.0 0.2 0.4 0.6 0.8 1.0
+Probability qw
+0
+100
+200
+300
+400
+500
+600 (i)
+Fig. 10. Distributions of the highest-ranked token probabilities across 1,000 prompts from the wiki (a-c), xls
+(d-f) and sci (g-i) dataset, evaluated at steps 0, 5, and 10. A clear shift toward higher probability values is
+observed as the autophagy process unfolds, with an higher collapse in the case of wiki.
+A.3 Evaluation of Gini coefficient and collapsed predictions with prompts of 64 tokens
+In Figure 7 of Section 6, we evaluated fine-tuning scenarios using next-token–based metrics with
+prompts of 32 tokens. Here, we replicate the analysis with prompts of 64 tokens. The surplexity
+scenario again shows the lowest degree of collapse across all metrics, thereby reinforcing its
+effectiveness.
+A.4 Mitigation of model collapse using different models
+In the main section, all results are reported for Llama2. Here we extend the analysis to Llama3 and
+Mistral, evaluating the same fine-tuning scenarios with our model-collapse metrics. The patterns
+observed for Llama2 generalize: both additional models exhibit the same trends, confirming the
+robustness of our findings.
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
+Learning by Surprise: Surplexity for Mitigating Model Collapse in Generative AI 111:25
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.86
+0.88
+0.90
+0.92
+0.94
+0.96
+0.98Avg. Gini Coefficient G(q)
+human
+AI
+entropy
+surplexity
+(a)
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0
+10
+20
+30
+40
+50% Collapsed Predictions C(q)
+human
+AI
+entropy
+surplexity (b)
+Fig. 11. Effects of mitigation strategies on model collapse evaluated with prompts of 64 tokens in next token
+prediction.
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.92
+0.94
+0.96
+0.98
+1.00
+1.02
+1.04
+1.06Avg. Norm. Linguistic Entropy H(d)
+Llama-2-7b
+human
+AI
+entropy
+surplexity
+(a)
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.99
+1.00
+1.01
+1.02
+1.03
+1.04
+1.05Avg. Norm. Linguistic Entropy H(d)
+Llama-3-8b (b)
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.99
+1.00
+1.01
+1.02
+1.03
+1.04
+1.05
+1.06Avg. Norm. Linguistic Entropy H(d)
+Mistral-7b (c)
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.46
+0.48
+0.50
+0.52
+0.54
+0.56
+0.58
+0.60Commonsense Inference Acc. ACI
+Llama-2-7b
+(d)
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.500
+0.525
+0.550
+0.575
+0.600
+0.625
+0.650Commonsense Inference Acc. ACI
+Llama-3-8b (e)
+0 1 2 3 4 5 6 7 8 9 10
+Simulation Steps
+0.45
+0.50
+0.55
+0.60Commonsense Inference Acc. ACI
+Mistral-7b (f)
+Fig. 12. Linguistic entropy and Commonsense Inference Accuracy for all fine-tuning scenarios and different
+models (Llama-2-7b, Llama-3-8b and Mistral-7b). For every model the mitigation strategy based on surplexity
+shows good results in both metrics.
+Received 20 February 2007; revised 12 March 2009; accepted 5 June 2009
+J. ACM, Vol. 37, No. 4, Article 111. Publication date: August 2018.
