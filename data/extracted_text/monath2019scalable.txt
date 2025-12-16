@@ -1,0 +1,931 @@
+Scalable Hierarchical Clustering with Tree Grafting
+Nicholas Monath∗1, Ari Kobren∗1, Akshay Krishnamurthy2,
+Michael Glass3, Andrew McCallum1
+{nmonath,akobren,akshay,mccallum}@cs.umass.edu, mrglass@us.ibm.com
+College of Information and Computer Sciences
+University of Massachusetts Amherst1
+Microsoft Research, New York City2
+IBM, New York City3
+January 3, 2020
+Abstract
+We introduceGrinch, a new algorithm for large-scale, non-greedy hierarchical clustering
+with general linkage functions that compute arbitrary similarity between two point sets. The
+key components ofGrinch are itsrotate and graft subroutines that eﬃciently reconﬁgure
+the hierarchy as new points arrive, supporting discovery of clusters with complex structure.
+Grinch is motivated by a new notion of separability for clustering with linkage functions: we
+prove that when the model is consistent with a ground-truth clustering,Grinch is guaranteed
+to produce a cluster tree containing the ground-truth, independent of data arrival order. Our
+empirical results on benchmark and author coreference datasets (with standard and learned
+linkage functions) show thatGrinch is more accurate than other scalable methods, and orders
+of magnitude faster than hierarchical agglomerative clustering.
+1 Introduction
+Best-ﬁrst, bottom-up, hierarchical agglomerative clustering (HAC) is one of the most widely-used
+clustering algorithms, proving eﬀective for a wide variety of applications such as analyzing gene
+expression data [10], community detection in social networks [4], and scientiﬁc author disambigua-
+tion [8]. One capability that contributes signiﬁcantly toHAC’s prevalence is that it can be used
+to construct a clustering according to any cluster-level scoring function, also known as alinkage
+function [22, 24]. This is crucial for applications such as entity resolution, in which the quality of a
+cluster is typically a learned function of a group of data points [8, 28, 31].
+While eﬀective,HAC requires O(n2 log n) computation for general linkage functions, making it
+infeasible to run on datasets of even moderate size. One option for circumventing this computational
+∗The ﬁrst two authors contributed equally.
+1
+arXiv:2001.00076v1  [cs.LG]  31 Dec 2019
+problem is to use an online or mini-batch variant of the algorithm. However, bothHAC variants make
+irrecoverable, greedy merges and are thus sensitive to data arrival order. Non-greedy,incremental
+algorithms provide a more robust alternative to their online counterparts [21, 34]. Like online
+approaches, incremental methods consume data points, one at a time, but when new data arrives,
+incremental algorithms can also revisit previous clustering decisions. However, current incremental
+algorithms fail in two ways: they are only capable of reconsidering clustering decisions at alocal
+level and they do not support arbitrary linkage functions [21, 34].
+In this paper we introduceGrinch, a hierarchical, incremental (non-greedy) clustering algorithm
+that can cluster with any linkage function.Grinch builds a cluster tree over the incoming data
+points, one at a time, attempting to keep similar data points near one another in the tree. Robustness
+to suboptimal data arrival order is achieved by employing both localand globaltree rearrangements.
+Local rearrangements are performed using arotate subroutine, which recursively swaps a child
+with its aunt. Global rearrangements are performed via agraft subroutine, in whichGrinch may
+steal a subtree from one part of the hierarchy and merge it with another similar, but distant, subtree.
+Grafting is a key for both our theoretical and empirical results, and supports the discovery of clusters
+that exhibit (single or sparse) linked structures—an important feature of clustering algorithms used
+in practice [11].
+Theoretically, we deﬁne a notion ofmodel-based separationthat characterizes the relationship
+between a linkage function and a dataset. For generality, we adopt a graph-theoretic formalism,
+where data points correspond to vertices of an unknown graph whose connected components form a
+ground truth clustering. Model-based separation suggests that the linkage function value is high for
+two item sets if the induced subgraph is connected (see Subsection 2.1). We prove that under this
+condition, the ground-truth clusters are a tree-consistent partition of the hierarchy built byGrinch.
+In experiments, we show thatGrinch is eﬃcient and builds trees with higher dendrogram
+purity than other clustering algorithms on large scale datasets. The experiments are performed
+with a common and important linkage function—average linkage—as well as a linkage function
+that measures the cosine similarity between two cluster centroid representations. We also perform
+experiments on two author coreference datasets using learned linkage functions, and demonstrate
+that Grinch is more eﬃcient and accurate than the baselines. Our experiments reveal thatGrinch
+dominates competitors that only make local tree rearrangements, highlighting the power of the
+graft subroutine and the robustness ofGrinch.
+2 Linkage Functions for Clustering
+Clustering is the problem of constructing a partitionC= {C1,··· ,Ck}of a datasetX= {xi}N
+i=1,
+such that⋃
+C∈CC = Xand ∀C,C′∈C,C ∩C′= ∅. The partition is known as aclustering of X.
+Most algorithms construct clusterings using pairwise similarities among data points. But, pairwise
+similarities cannot capture many complex relationships, e.g., data pointsx1 and x2 are similar when
+clustered with data pointx3, but are otherwise dissimilar. A natural generalization that can capture
+these types of relationships are similarities deﬁned over sets of data points, which we refer to as
+linkage functions. Formally, a linkage function is a functionf : 2X×2X →R.
+Clustering with linkage functions is ubiquitous, especially inHAC (from which the name linkage
+function is derived). InHAC, many popular linkage functions like single-, complete- and average-
+linkage are computed from pairwise distance functions. More complex, set-wise linkage functions are
+used in applications such as image segmentation, within document coreference and entity resolution;
+in the latter two domains, these functions are often learned [6, 22, 14, 32, 33]. A unique capability
+2
+of HAC is that it can easily support an arbitrary linkage function. This ﬂexibility is essential to
+combat the ill-posed nature of clustering.
+2.1 Model-based Separation
+Our goal is to design an algorithm that, likeHAC, can support arbitrary linkage functions, but
+is dramatically faster. In developing clustering algorithms, it is often useful to consider various
+assumptions about theseparability of the underlying data. For example, in the pairwise setting one
+of the strongest data assumptions is known asstrict separation[2]. This assumption holds that
+any data point in ground-truth clusterCi is more similar to every other data point inCi than any
+data point from a diﬀerent ground-truth cluster,Cj. It is easy to see that popular instantiations of
+HAC (e.g., single-, average- and complete-linkage) provably succeed under strict separation, which
+provides some theoretical motivation for these algorithms.
+We introduce a notion ofmodel-based separationfor clustering with a linkage function. Since
+linkage functions may operate on data of any type, we formalize the deﬁnition in terms of a graph,
+where the data points correspond to vertices.
+Deﬁnition 1(Model-based Separation). Let G= (X,E) be a graph. Letf : 2X×2X →R be a
+linkage function that computes the similarity of two groups of vertices and letφ: 2X×2X →{0,1}
+be a function that returns 1 if the union of its arguments is a connected subgraph ofG. Then f
+separates G if
+∀s0,s1,s2 ⊆X, φ (s0,s1) >φ(s0,s2) ⇒f(s0,s1) >f (s0,s2)
+In words, for a linkage functionf to separate a graphG, take any two sets of vertices,s0 and s1,
+such thats0 ∪s1 is connected inG, i.e.,φ(s0,s1) = 1. Then, for any sets2 such φ(s0,s2) = 0, the
+score off on input(s0,s1) must be greater than on input(s0,s2).
+Model-based separation oﬀers a non-standard view of clustering. Speciﬁcally, the data points of
+a dataset are treated as vertices in a graph with latent edges. The ground-truth clusters are the
+connected components of the graph and the goal of clustering is to discover these components using
+a linkage function.
+We provide the following two examples to help build intuition about model-based separation.
+The examples are used throughout the remainder of our discussion.
+Example 1(Clique). Consider a graphG= (X,E) in which each connected component is a clique.
+Then if f separates G, every vertex in a connected component,Ci, is more similar to all other
+vertices inCi than any vertex in connected componentCj, where similarity is deﬁned byf.
+Thus, clique-structured connected components exactly capture strict separation.
+Example 2(Chain). Consider a graphG= (X,E) in which each connected component is chain-
+structured. According to Deﬁnition 1, two vertices that are part of the same chain but do not share
+an edge may be dissimilar underf even iff separates G. However, any two segments of the chain
+connected by an edge are similar underf.
+A visual illustration of both clique and chain style clusters is depicted in Figure 1. As we will
+see, chain structured connected components pose a challenge to existing incremental algorithms,
+something we resolve withGrinch (Section 3).
+3
+C i
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+C j
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+s 0
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+s 1
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+s 2
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+(a) Clique-shaped clusters.
+C i
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+C j
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+s 1
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+s 2
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+s 0
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+s 3
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit> (b) Chain-shaped clusters.
+Figure 1: Model-based separation. Figure 1a shows two clique-shaped clusters with data points as
+vertices in a graph. Iff separates the graph thenf(s0,s1) > max[f(s0,s2),f(s1,s2)] because s0
+and s1 form a connected subgraph. In Figure 1b, even iff separates the graph, it is possible for
+f(s0,s1) <f (s1,s2). However,f(s1,s2) <f (s2,s3).
+2.2 Cluster Trees
+In most clustering problems, the appropriate number of clusters is unknown a priori.HAC addresses
+this uncertainty by building acluster treeover data points.
+Deﬁnition 2(Cluster tree [23]). A binarycluster treeT on a datasetX= {xi}N
+i=1 is a collection
+of subsets such that C0 = {xi}N
+i=1 ∈T and for each Ci,Cj ∈T either Ci ⊂Cj, Cj ⊂Ci or
+Ci ∩Cj = ∅. For any C ∈T , if ∃C′ ∈T with C′ ⊂C, then there exists twoCL,CR ∈T that
+partition C.
+Given a cluster tree,T, any set of disjoint subtrees whose leaves coverXrepresents a valid clustering
+and is referred to as atree consistent partition[17]. Thus, cluster trees compactly encode multiple
+alternative clusterings, allowing for a clustering to be selected as a post-processing step. Another
+advantage of using cluster trees is that they often facilitate eﬃcient search and naturally group
+similar data points near one another in the hierarchy
+We relate model-based separation, cluster trees andHAC in the following fact:
+Fact 1.Let f be a linkage function that separatesG. Then runningHAC under f returns a cluster
+tree,T, such that the connected components ofG are a tree-consistent partition ofT.
+To see why, notice that in each iteration of HAC, the highest scoring pair of remaining subtrees
+is merged. Sincef separates G, a merger resulting in a subtree that corresponds to a connected
+subgraph ofG has higher score than any merger resulting in a disconnected subgraph ofG. Even
+though HAC can construct a cluster tree that contains the ground-truth clustering as a tree-consistent
+partition, the algorithm costsO(n2 log n) for general linkage functions and does not scale to large
+datasets. We will verify this claim empirically in our experiments (Section 4).
+3 Rotations, Grafting and Grinch
+In this section we derive an eﬃcient, incremental algorithm calledGrinch that can be used to
+construct clusterings under any linkage function. LikeHAC, the backbone ofGrinch is a cluster
+4
+v
+x l
+v’
+(a) x added to cluster tree.
+v
+x l
+v’ (b) v ﬁnds nearest nodev′.
+s
+v’ v
+x l (c) v is grafted tov′.
+Figure 2: Thegraft subroutine. Dotted lines denote new nodes and mergers. Beforex is added to
+tree, l and v′reside in disjoint subtrees even though they belong to the same ground-truth cluster.
+The addition ofx creates the subtree with rootv and initiates thegraft subroutine.
+tree. We begin the discussion by analyzing a greedy, incremental variant ofHAC and when it fails.
+Then, we introduce two subroutines,rotate and graft, that can be used to enhance robustness.
+Finally, we present our algorithm,Grinch.
+3.1 Online HAC and Rotations
+An eﬃcient alternative toHAC is its online variant that merges each incoming data point with
+its nearest neighbor seen so far (Online). For now, let us consider the setting in which a nearest
+neighbor is found using a linkage function,f. Letf separate a graphGand let ground-truth clusters
+be cliques inG(i.e., the data is strictly separated). Even in this simple case,Online may construct
+a cluster tree in which the ground-truth clustering is not a tree consistent partition. To see why,
+consider a stream in which the ﬁrst two data points,x1 and x2, are of the same ground-truth cluster
+and the third data point,x3 is of a diﬀerent cluster. Assume, without loss of generality, thatOnline
+adds x3 as a sibling ofx1. Then the ground-truth clustering is not a tree consistent partition of the
+resulting tree (and all subsequent trees).
+To recover from such mistakes, local tree rearrangements may be applied. Previous work uses
+rotations, which swap a child and its aunt in the tree, to correct local errors induced by unfavorable
+arrival order [21]. While originally designed to be used with pairwise distances, the condition under
+which rotations should be applied can be extended to linkage functions:
+f(v,s(v)) <f (v,aunt(v)) (1)
+where the functionss(·) and aunt(·) return the sibling and aunt of their input, respectively. In
+words, if a nodev ∈T achieves a higher score underf with its aunt than with its sibling, then
+the aunt and sibling should be swapped. Now, let us revisit the example above. Sincex1 and x2
+are both vertices in the same clique inG, they are connected by an edge. Then, by model-based
+separation, f(x1,x2) >f (x1,x3), so a rotation will be applied, producing a tree that contains the
+ground-truth clustering.
+Unfortunately, theOnline algorithm, augmented with the ability to performs rotations (Rotate),
+cannot always recover the connected components of a graph that is separated byf. In particular,
+Rotatecannot reliably recover chains (Example 2). By virtue of being a local operation, rotations
+can only be used to provably recover connected components that are clique-structure.
+5
+v
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+v.l
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+x 1
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+x 2
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+x 3
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+x 4
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+x 1
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+x 2
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+x 3
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+x 4
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+C i
+<latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit><latexit sha1_base64="(null)">(null)</latexit>
+Figure 3: Poorly structured tree. Even thoughv’s leaves form a connected subgraph of the graph
+on the left of the Figure (i.e., they all belong to clusterCi), v.l’s descendent leaves,x1 and x2, are
+disconnected. An attempt tograft either x1 or x2 from a node whose descendants are not members
+of Ci may succeed.
+3.2 Subtree Grafting
+We introduce a non-local tree rearrangment called agraft, which facilitates the discovery of chain-
+structured connected components. At a high level, thegraft procedure with respect to a node
+v ∈T searches T for a nodev′ that is both similar tov and dissimilar from its current sibling,
+s(v′). If such a subtree is found,v′is disconnected from its parent and made a sibling ofv. A visual
+illustration of a successfulgraft is depicted in Figure 2.
+In detail, agraft searches the leaves ofT for the nearest neighbor leaf ofv called l. Then it
+checks whether the following holds:
+f(v,l) >max[f(v,s(v)),f(l,s(l))] (2)
+i.e., v and l prefer each other to their current siblings according tof. If the condition succeeds,
+merge v and l. If the condition fails becausel prefers its sibling tov, retest the condition atv and
+l’s parent,par(l); if the condition fails becausev prefers its sibling tol, then retest the condition at
+par(v) and l. Continue to check recursively until the condition succeeds or until the ﬁrst time two
+nodes, v1 and v2, are reached such that one is the ancestor of the other. Pseudocode for thegraft
+subroutine can be found in Algorithm 1. In the algorithm,par returns the parent of a node in the
+tree, lca returns the lowest common ancestors of its arguments andmakeSib merges its arguments
+and returns their new parent.NN performs a nearest neighbor search andconstrNN performs a
+nearest neighbor search that excludes its second argument from the result.
+3.3 Tree Restructuring
+While the graft subroutine facilitates discovery of chain-structured clusters, poorly structured
+trees are susceptible to having thegraft subroutine disconnect previously discovered ground-truth
+clusters. As an example, consider Figure 3, in whichlvs(v) form the connected subgraphCi (i.e.,
+they all belong to the same ground-truth cluster). Considerv’s left child,v.l, and its descendants,
+which form adisconnectedsubgraph. An attempt tograft either descendent,x1 or x2, may succeed,
+even when initiated from a node (not depicted) whose descendants are not connected toCi. After
+such agraft, T cannot contain a tree-consistent partition that matches the ground-truth clustering.
+Notice that a subtree can defend against spuriousgrafts by ensuring that each of its descendant
+subtrees is connected. For example, in Figure 3, ifx2 and x3 were swapped, then each descendant
+6
+Algorithm 1graft (v,T,f)
+l= constrNN(v,lvs(v),f, T)
+v′= lca(v,l); st = v
+while v̸= v′∧l̸= v′∧s(v) ̸= l do
+if f(v,l) >max[f(v,s(v),f(l,s(l))] then
+z= s(v); v = merge(v,l)
+restruct(z,lca(z,v),f)
+break
+if f(v,l) < f(l,s(l)) then
+l = par(l)
+if f(v,l) < f(v,s(v)) then
+v = par(v)
+if v== st then
+Output: v′
+else
+Output: v
+subtree ofvwould be connected. Moreover, after such a swap,grafts from nodes whose descendants
+were not part ofCi would necessarily fail (assuming thatf separates the graph).
+During tree construction, the only step that can result in a connected subtree with disconnected
+descendants is thegraft subroutine (a rigorous proof is included in the supplement). We introduce
+the restruct (restructure) subroutine, which is performed after a successfulgraft, and reorganizes
+a subtree with the intent of making each of its descendants connected. Letv′be a node that was
+just grafted, v be the previous sibling ofv′ (i.e., before the graft) and letr = lca(v,v′) be the
+current least common ancestor ofv and v′. restruct is initiated fromv. First, the siblings of the
+ancestors ofv (until r) are collected. Then, we ﬁnd the node in the collection most similar tov. If
+that node is more similar tov than v’s current sibling (according tof), the two are swapped. The
+intuition here is that if agraft left v and its new sibling disconnected, then the swap serves as a
+mechanism to restore the connectedness ofv’s parent. Such swaps are attempted from the ancestors
+of v until r. Pseudocode appears in Algorithm 2.
+3.4 Grinch
+Using therotate, graft and restruct tree rearrangement routines discussed in Section 3, we derive
+a new algorithm calledGrinch, which stands for:Grafting and Rotation-based INCremental
+Hiearchical clustering. The steps of the algorithm are as follows: when a new record,xi, arrives,
+ﬁnd xi’s nearest neighbor,l, among the leaves ofT. Add xi to T as a sibling ofl. Then, apply
+the rotate subroutine while Equation 1 is true. Finally, attempt tograft recursively from each
+ancestor ofxi. Each time agraft is successful, restructure the tree to group similar items together.
+Pseudocode forGrinch can be found in Algorithm 3.
+Theorem 1. Let X= {xi}N
+i=1 be a dataset with ground-truth clusteringC⋆ = {C1,··· ,Ck}. Let f
+separate a graphG on verticesX and let each clusterC ∈C⋆ be a connected component inG. Then
+Grinch recovers a cluster tree such thatC⋆ is a tree consistent partition ofT regardless of the input
+order.
+7
+Algorithm 2restruct(z,r,f )
+while z! =r do
+as= {s(a) for a∈ancs(z)\ancs(r)}
+m= argmaxa∈as f(z,a)
+if f(z,s(z)) < f(z,m) then
+swap(s(z),m)
+z= par(z)
+Algorithm 3Insert(xi,T,f)
+l= NN(xi,f, T); t= makeSib(xi,l)
+while f(xi,s(xi)) <f (aunt(xi),s(xi)) do
+rotate (xi,aunt(xi))
+p= par(xi)
+while p̸= null do
+curr = graft(p,T,f)
+The proof of Theorem 1 can be found in the appendix.
+4 Experiments
+We experiment withGrinch to assess its scalability and accuracy. We begin by demonstrating that
+Grinch outperforms other incremental clustering algorithms on a synthetic dataset. Observing that
+some of the steps ofGrinch are underutilized, we present 4 approximations ofGrinch’s algorithmic
+components. We apply each approximation in turn and show that together they dramatically improve
+Grinch’s scalability without compromising its clustering quality. Then, we compare the approximate
+variant ofGrinch to state-of-the-art large scale hierarchical clustering methods. To showcase the
+ﬂexibility ofGrinch, we also provide experimental results in entity resolution, where the linkage
+function is learned. Finally, we provide analysis of thegraft subroutine–Grinch’s distinguishing
+feature–and perform experiments to demonstrate the algorithm’s robustness.
+Dendrogram Purity Before beginning, we brieﬂy reviewdendrogram purity, a preferred method
+of holistically evaluating hierarchical clusterings [5, 17, 21]. Dendrogram purity is computed as
+follows: Let C⋆ = {C1,··· ,Ck}be the ground-truth clustering of a datasetX, and let P⋆ =
+{(x,x′)|x,x′ ∈X , C⋆(x) = C⋆(x′)}be the set of all data point pairs that belong to the same
+ground-truth clusters. Then the dendrogram purity (DP) of a cluster tree,T is:
+DP(T) = 1
+|P⋆|
+∑
+(x,x′)∈P⋆
+pur(lvs(lca(x,x′)),C⋆(x))
+8
+where lca(x,x′) returns the least common ancestor ofx and x′in T, lvs(·) returns the descendant
+leaves of its argument, andpur(·,C⋆(x)) takes a collection of leaves and computes the fraction that
+belong to ground-truth clusterC⋆(x).
+4.1 Synthetic Data Experiment
+In our ﬁrst experiment, we compareGrinch to other incremental hierarchical clustering algorithms
+on a synthetic dataset in order to begin to understandGrinch’s empirical performance characteristics
+in a controlled manner. The data is generated so that it satisﬁes model-based separation with respect
+to cosine similarity. In particular, the dataset contains 2500 10000-dimensional binary vectors that
+belong to 100 clusters, with 25 points per cluster. Points in clusterk have bits100k to 100(k−1)
+set randomly to 1 with probability0.1. All other bits are set to 0. This way, across cluster points
+have cosine similarity 0 and within cluster points can have either 0 or non-zero cosine similarity. In
+other words, two points,x1 and x2, in the same cluster can appear to be dissimilar and end up in
+distant regions of the tree. The representation of each internal node in theGrinch tree is the sum
+of the vectors of its descendent leaves. Thus, compute the cosine similarity between two nodesv
+and v′as the cosine similarity between their aggregated vectors ( we refer to this ascosine linkage
+in the following sections ). We compareGrinch, Rotateand Online.
+The experimental results reveal thatGrinch achieves perfect dendrogram purity (1.0), which is
+expected givenGrinch’s correctness guarantee.Rotateachieves a dendrogram purity of 0.872
+while Online achieves 0.854.Rotateand Online do not construct trees of perfect purity because
+of their inability to globally rearrange a cluster hierarchy.
+4.2 Approximations
+Some of the algorithmic steps ofGrinch, which are required to prove its correctness, are seldom
+invoked in practice. For example, and perhaps expectedly, agraft is unlikely to succeed between
+two nodes close to the root of the tree. Therefore, we introduce handful of approximations designed
+to have little eﬀect on the quality of the clusterings constructed byGrinch, but also designed to
+make the algorithm signiﬁcantly faster in practice.
+1. Capping. Recursive subroutines likegraft and rotate improve performance, but they are also
+computationally expensive to check, and often fail. Moreover, we notice that tree rearrangements
+that occur close to the root do not have a signiﬁcant, instantaneous eﬀect on dendrogram purity.
+Therefore, we introducerotation, graft and restructure caps, which prohibit rotations, grafts and
+restructures from occurring above a height,h.
+2. Single Elimination Mode. The graft subroutine generally improvesGrinch’s clustering
+performance, and is essential in attaining perfect purity on the synthetic dataset, but we ﬁnd
+that graft attempts are rejected many more times than they are accepted. However, at times,
+we observe that a sequence of recursivegrafts are accepted when initiated close to the leaves.
+Therefore, to limit the number of attemptedgrafts while retaining thesegraft sequences, we
+introduce single elimination mode. In this mode, the recursive grafting procedure terminates
+after agraft between v and v′fails because both prefer their current siblings to a merge.
+3. Single Nearest Neighbor Searching.Grinch makes heavy use of nearest neighbor search
+under the linkage functionf. Rather than perform nearest neighbor search anew for eachgraft,
+when a data point arrives, we perform a singlek-NN search (k∈[25,50]) and only consider these
+nodes during subsequentgrafts (until the next data point arrives).
+9
+ALOI
+Approx. DP Time (s) # Rotate # Graft # Restr.
+Grinch (No Approx). 0.533 85.371 7107 2435 1088
+w/ Cap (100) 0.533 48.452 6495 2157 686
+w/ Single Elimn 0.534 39.019 6574 1586 533
+w/ Single NN 0.540 22.226 6441 1516 570
+w/ no Restruct 0.538 14.292 6477 1634 0
+w/ no Graft 0.506 12.748 6747 0 0
+w/ no Rotate 0.442 14.793 0 0 0
+Synthetic
+Approx. DP Time (s) # Rotate # Graft # Restr.
+Grinch (No Approx). 1.0 160.307 2558 578 203
+w/ Cap (100) 0.993 164.328 2558 578 194
+w/ Single Elimn 0.997 157.622 2523 526 184
+w/ Single NN 0.993 83.014 2517 415 148
+w/ no Restruct 0.993 82.262 2476 426 0
+w/ no Graft 0.872 82.055 2259 0 0
+w/ no Rotate 0.854 80.526 0 0 0
+Table 1:Ablation. Each row in the table representsGrinch with the corresponding approximation
+applied in addition to all approximations contained in previous rows. The ﬁrst 4 approximations
+signiﬁcantly decreases the computational cost ofGrinch, but do not compromise DP. The ablation
+is performed for the ﬁrst 5000 points of ALOI and the Synthetic datasets.
+4. Navigable Small World Graphs. Instead of performing nearest neighbor computations
+exactly, we can perform them approximately. To this end, we employ anavigable small world
+nearest neighbor graph (NSW)–a data structure inspired by decentralized search in small world
+networks [30, 19, 20]. To ﬁnd the nearest neighbor of a data point,xi, in an NSW, begin at a
+random node,v. If the similarity betweenxi and vis maximal among all neighbors ofv, terminate;
+otherwise, move to the neighbor ofv most similar toxi. To insert a new data point,xj, ﬁnd its
+k nearest neighbors and add edges between those neighbors and a new data point [26]. Thus,
+NSWs are constructed online. In practice, we simultaneous construct a hierarchical clustering
+and an NSW over the data points stored in the tree’s leaves.
+To measure the eﬀects of our approximations on the speed and quality of the resulting algorithm,
+we conduct the following ablation. We runGrinch on our synthetically generated dataset as well
+as a random 5k subset of theALOI [12] dataset and measure dendrogram purity, time, and the
+number of calls made torotate, graft and restruct. We repeat the procedure multiple times,
+each time adding one of the following approximations, in order: capping, single elimination, single
+nearest neighbor search and approximate nearest neighbor search. Capping and is performed at
+height 100. We also experiment with removal of thegraft and rotate subroutines.
+The result of the ablation is contained in Table 1. We observe that, for both datasets, each
+of the approximations reduces the computational cost of algorithm without eﬀecting the resulting
+DP. However, oncegrafts are removed, the DP drops by 3% on ALOI and 12% on the synthetic
+datasets. When rotate is also removed, DP drops by an additional 6% and 2%, respectively.
+10
+Alg. (link.) CovType ILSVRC12 (50k) ALOI Speaker ImgNet (100k)
+Grinch (Avg) 0.43 ±0.00 0.557 ±0.003 0.504 ±0.002 0.480 ±0.003 0.065 ±0.00
+Grinch (CS) 0.43 ±0.00 0.544 ±0.005 0.499 ±0.003 0.478 ±0.003 0.062 ±0.00
+Rotate(Avg) 0.43 ±0.01 0.545 ±0.004 0.476 ±0.004 0.407 ±0.003 0.063 ±0.00
+Rotate(CS) 0.44 ±0.01 0.513 ±0.007 0.472 ±0.003 0.406 ±0.003 0.062 ±0.00
+Online 0.44 ±0.01 0.527 ±0.00 0.435 ±0.004 0.317 ±0.002 0.0589
+Perch [21] 0.45 ±0.00 0.53 ±0.003 0.44 ±0.004 0.37 ±0.002 0.065±0.00
+Perch-BC [21] 0.45 ±0.00 0.36 ±0.005 0.37 ±0.008 0.09 ±0.001 0.03 ±0.00
+MB-HAC (Best) [21] 0.44 ±0.01 0.43 ±0.005 0.30 ±0.002 0.01 ±0.002 —
+HAC (Avg) [21] – 0.54 – 0.55 –
+Table 2: Dendrogram Purity results forGrinch and baseline methods. We compare two linkage
+functions: approximate average linkage (Avg) and cosine similarity linkage (CS).
+Having veriﬁed that on a subset of ALOI our approximations improve scalability at little expense
+in terms of dendrogram purity, in the following experiments we report results forGrinch in single
+elimination mode and with the rotation cap set toh= 100.
+4.3 Large Scale Clustering
+We compareGrinch with the following 4 algorithms:Online - an online hierarchical clustering
+algorithm that consumes one data point at a time and places it as a sibling of its nearest neighbor;
+Rotate- an incremental algorithm that places a data point next to its nearest neighbor and then
+performs rotations until Equation 1 holds;MB-HAC - the mini-batch version ofHAC, which
+keeps a buﬀer of sizeb, runs a single step ofHAC using the data points in the buﬀer and then adds
+the next record to the buﬀer;HAC - best-ﬁrst, bottom-up hierarchical agglomerative clustering
+and Perch - a state-of-the-art large scale hierarchical clustering method.
+We run each algorithm on 5 large scale clustering datasets: CovType, a datset of forest covertype,
+ALOI [12], a 50K subset of the Imagenet ILSVRC12 dataset [27] and the Speaker dataset [13], and
+a 100K subset of ImageNet containing all 17K classes not just the subset in ILSVRC12. Datasets
+have 500K, 50K, 100K, 36K, and 100K instances, respectively. We run eachHAC variant under two
+diﬀerent linkage functions: average linkage and cosine linkage. To compute the cosine similarity
+between two nodes,v and v′, ﬁrst, for each node, compute the sum of the vectors contained at their
+descendant leaves. Then, compute the cosine similarity between the aggregated vectors.
+Results are displayed in Table 2, where we record the dendrogram purity averaged over 5
+replicates of each algorithm, where for each replicate we randomize the arrival order of the data. The
+table reveals thatGrinch–under both linkage functions–outperforms the corresponding versions
+of Rotateand Online on all datasets except for on the CovType dataset where the methods all
+seem to perform equally well. This underscores the power of thegraft subroutine. Grinch with
+approximate nearest neighbor search even outperformsPerch, which uses exact nearest neighbor
+search, on ALOI. Recall that, unlike theHAC variants, Perch employs a speciﬁc linkage function.
+Seeing as theHAC variants outperformPerch on Speaker suggests that the ability to equip various
+linkage functions can be advantageous.HAC is best on Speaker, but cannot scale to ALOI.
+4.4 Author Coreference
+Bibliographic databases, like PubMed, DBLP, and Google Scholar, contain citation records that
+must be attributed to the corresponding authors. For some records, the attribution process is easy,
+but for many others, the identities of a publication’s authors are ambiguous. For example, DBLP
+11
+Rexa DBLP
+Algorithm Pre Rec F Pre Rec F
+Grinch 0.808 0.883 0.844 ±0.004 0.809 0.620 0.701 ±0.013
+Rotate 0.864 0.641 0.734 ±0.057 0.876 0.554 0.678 ±0.019
+Online 0.850 0.209 0.331 ±0.094 0.827 0.151 0.255 ±0.027
+MB-HAC-Med. 0.807 0.881 0.843 ±0.0009 0.375 0.631 0.461 ±0.072
+MB-HAC-Sm. 0.922 0.333 0.483 ±0.061 0.697 0.151 0.247 ±0.004
+HAC 0.805 0.887 0.844 0.741 0.600 0.664
+Table 3: Precision, recall and F-Score of various methods on the Rexa and DBLP datasets.
+contains hundreds of citations written by diﬀerent authors named “Wei Wang” that currently cannot
+be disambiguated [1]. Intuitively, author coreference datasets often exhibit chain like structures
+because a single citation written by a proliﬁc author (perhaps in a short-lived collaboration) may
+only be similar to a small number of that author’s other citations and dissimilar from the rest.
+Following previous work, we train a linkage function to predict the likelihood that a group of
+citation records were all written by the same author [8, 28, 31]. We train our model by running
+HAC and, at each step, use the model to predict the precision of merging two groups of records. (A
+similar training technique was previously proposed for entity and event coreference [24].) Our model
+has access to features like: coauthor names and publication title, venue, year, etc.
+We compare the 5HAC variants in author coreference on two datasets with labeled author
+identities: Rexa [8] andPSU-DBLP [15]. As is standard in author coreference we evaluate the
+methods using the pairwise F1-score of a predicted ﬂat clustering against the ground-truth clustering,
+which is the harmonic mean of precision and recall. To compute pairwise F1-score, each pair of
+citations that appear in both the same ground-truth and predicted clusters is considered a true
+positive; each pair of citations that belong to diﬀerent ground-truth clusters but the same predicted
+cluster is considered a false positive. None of the authors represented in the test set, have any
+publications in the training set.
+Figure 3 shows the precision, recall, and pairwise F1-score achieved by each method. The results
+show thatGrinch outperforms the other scalable methods on both datasets and even outperforms
+HAC on DBLP. This behavior may stem from overﬁtting of the learned linkage function, which
+is exploited byHAC; sinceGrinch only approximatesHAC, it can be thought of as a form of
+regularization. Again, we observe thatGrinch outperforms Online and Rotateon both datasets
+underscoring the importance of therotate and graft procedures.
+4.5 Signiﬁcance of Grafting
+Theresultsaboveindicatethat Grinch–evenwhenemployinganumberofapproximations–constructs
+trees with higher dendrogram purity than other scalable methods in a comparable amount of time.
+Interestingly,Grinch only diﬀers fromrotate in its use of thegraft (and subsequentrestruct)
+subroutine. To better understand the signiﬁcance ofgrafting, we compareGrinch and rotate on
+the ﬁrst 5000 points of ALOI.
+Figure 4a shows that dendrogram purity as a function of the number of data points inserted for
+both Grinch and rotate and the ﬁrst 5000 points of ALOI. Echoing the results above, by 1000
+points, Grinch dominates rotate.
+12
+0 1000 2000 3000 4000 5000
+Num Points Added
+0.50
+0.55
+0.60
+0.65
+0.70
+0.75
+0.80Dendrogram Purity
+Grinch
+Rotate
+(a) Dendrogram purity per point.
+0 1000 2000 3000 4000 5000
+Num Points Added
+−0.001
+0.000
+0.001
+0.002
+0.003
+0.004
+0.005
+Dendrogram Purity
+Instantaneous Change
+Cumulative Change (b) Instant./cumulative change in DP due tografts.
+Figure 4: Figure 4a shows the dendrogram purity of two trees, one built byGrinch and the other
+built byrotate, on the ﬁrst 5000 points of ALOI. The dendrogram purity of the tree builtGrinch
+is greater than that of the tree built byrotate. Figure 4b plots the instantaneous and cumulative
+change in dendrogram purity due tografts. While Grinch achieves 3% larger dendrogram purity
+than rotate
+Figure 4b shows the instantaneous and cumulative change in dendrogram purity due tografts
+made byGrinch. That is, for theith data point,xi, we record the dendrogram purity afterxi is
+inserted and rotations are performed (i.e., what would be executed byrotate). Then, we perform
+grafting (if appropriate) and record the dendrogram purityafter all recursivegrafts have been
+completed. The diﬀerence between the dendrogram purity aftergrafting and beforegrafting
+(but after rotations) is the instantaneous change in dendrogram purity due tografts; the sum of
+instantaneous changes is the cumulative change.
+Note they-axis of Figure 4b, which reveals that even the most instantaneously signiﬁcantgrafts
+only lead to minute changes in dendrogram purity (of about 0.001). Moreover, after 5000 points,
+the cumulative change in dendrogram purity due tografts is less than 0.005–hardly accounting for
+the diﬀerence in dendrogram purity between the tree built byGrinch and the tree built byrotate
+(of 0.03). We conclude from these measurements that the increase in performance due to thegraft
+subroutine is related to the rearrangement of small numbers of points. These rearrangements do not
+immediately have signiﬁcant impact on dendrogram purity, but they do have signiﬁcant long-term
+aﬀects. To make this hypothesis more concrete, consider the case in which two dissimilar data points
+from the same cluster are split between two distant regions of the tree early on in clustering. The
+points are never merged (via agraft) and so each point draws a signiﬁcant portion of the cluster’s
+other data points to its location in the tree. This has dire consequences with respect to dendrogram
+purity. If agraft is performed early on to correct the split, an adverse scenario like this can be
+averted.
+13
+Method Round. Sort.
+Grinch 0.503 0.457
+Perch 0.446 0.351
+MB-HAC (5K) 0.299 0.464
+MB-HAC (2K) 0.171 0.451
+Table 4: DP for adversarial arrival orders (ALOI).
+4.6 Robustness
+For completeness, we perform an experiment used in previous work to test an incremental clustering
+algorithm’s robustness to data point arrival order [21]. In the experiment, a dataset is ordered in
+two speciﬁc ways:
+Round-Robin Randomly determine an ordering of ground-truth clusters. Then, construct a data
+point arrival order such that theith data point is a member of clusteri mod K, whereK is
+the number of clusters andmod returns the remainder when its ﬁrst argument is divided by its
+second.
+Sorted Randomly determine an ordering of ground-truth clusters. All points of clusterCi arrive
+before any point of clusterCi+1 arrives.
+As in previous work, we perform a robustness experiments with the ALOI dataset. Table 4 shows that
+Grinch achieves higher dendrogram purity than bothPerch and mini-batch HAC (with 2 diﬀerent
+batch sizes) on data ordered using the Round Robin ordering scheme. Under this arrival order,
+MB-HAC performs poorly showing its lack of robustness. When the data is in Sorted order–which
+makes for easier clustering for MB-HAC–Grinch outperforms Perch and is competitive with
+MB-HAC.
+5 Related Work
+The family of online and incremental clustering methods is diverse, however all algorithms in this
+family optimize for speciﬁc linkage functions.Perch, from which therotate procedure is inspired,
+performs rearrangments to satisfy a condition similar to complete-linkage [21]. BIRCH is another
+top-down hierarchical clustering algorithm that attempts to minimize ak-center style cost at each
+node in the tree [34]. BIRCH also includes a non-greedy reassignment step but has been shown to
+produce low quality trees in practice. Liberty et al propose a ﬂat clustering algorithm that optimizes
+k-means cost. Since their algorithm runs in the online setting, after a data point arrives and is
+assigned to a cluster, it may never be reassigned [25]. While not incremental, some work focuses on
+designing highly scalable algorithms for speciﬁc linkage functions. Particular attention is paid to
+single-linkage because of its connection to the minimum spanning tree problem. For example, recent
+work develops massively parallel algorithms for single-linkage [3].
+When clustering with linkage functions, probabilistic approaches can provide an alternative to
+HAC. For example, split-merge Markov Chain Monte Carlo (MCMC) methods perform clustering
+by randomly splitting and merging clusters according to a proposal function [18]. An algorithm
+similar to split-merge MCMC has even been used for author coreference [31]. This algorithm
+employs a custom linkage function on structured records and works by maintaining a forest–each
+14
+tree corresponding to a cluster–and randomly proposing mergers and splits of various branches.
+Unlike Grinch, this algorithm relies on sampling to escape local minima. As the number of items
+grows, the likelihood of sampling a merge or split that will be accepted decreases rapidly.
+Our work is partially inspired by complex linkage functions that are used for clustering. One
+example is Bayesian hierarchical clustering (BHC)–a recursive, probabilistic, hierarchical model for
+data [17]. Fitting BHC models is performed by runningHAC with BHC as the linkage function.
+Because HAC is ineﬃcient, randomized approaches for ﬁtting BHC have also been proposed, but
+each of these methods still runsHAC as a subroutine on small, randomly selected subsets of
+data [16]. HAC-style algorithms are also used to do probabilistic, hierarchical community detection
+and alongside learned models for entity resolution [4, 24].
+Model-based separation is related to recently proposed deﬁnitions ofperfect hierarchical clustering
+structure [7, 29], in which pairwise similarities between data points lead to a tree that can be
+discovered byHAC that has minimal cost. The costs used in these works are variants of Dasgupta’s
+cost [9]. Perfect hierarchical clustering structures are a special case of model-based separation, in
+which single-, average-, or complete-linkage is used. Model-based separation is strictly more general,
+allowing for linkage functions that compute the similarity of two point sets arbitrarily, rather than
+as a function of pairwise data point similarities.
+6 Conclusion
+This paper introduces Grinch, an incremental algorithm for hierarchical clustering under any
+linkage function. The algorithm relies on two subroutines,rotate and graft, that help it to discover
+complex cluster structure regardless of data arrival order. We introduce model-based separation
+for clustering with linkage functions and prove thatGrinch always returns a tree with perfect
+dendrogram purity when running in the separated setting. We describe an eﬃcient implementation
+of Grinch and present an empirical evaluation demonstrating thatGrinch is more accurate than
+other baseline approaches and more scalable thanHAC. We believe thatGrinch is an asset for
+large clustering problems in which the data points engage in complicated relationships and clusters
+are best modeled by learned linkage function.
+Source code forGrinch is available at:https://github.com/iesl/grinch.
+15
+References
+[1] [n. d.]. DBLP Disambiguation Page for: Wei Wang.https://dblp.uni-trier.de/pers/hd/
+w/Wang:Wei. Accessed: 2018-05-17.
+[2] M.-F. Balcan, A. Blum, and S. Vempala. 2008. A discriminative framework for clustering via
+similarity functions. InSymposium on Theory of computing.
+[3] M. Bateni, S. Behnezhad, M. Derakhshan, M. Hajiaghayi, R. Kiveris, S. Lattanzi, and V.
+Mirrokni. 2017. Aﬃnity Clustering: Hierarchical Clustering at Scale. InAdvances in Neural
+Information Processing Systems.
+[4] C. Blundell and Y. W. Teh. 2013. Bayesian hierarchical community discovery. InAdvances in
+Neural Information Processing Systems.
+[5] C. Blundell, Y. W. Teh, and K. A. Heller. 2011. Discovering non-binary hierarchical structures
+with Bayesian rose trees.Mixture Estimation and Applications. John Wiley & Sons(2011).
+[6] K. Clark and C. D. Manning. 2016. Improving Coreference Resolution by Learning Entity-Level
+Distributed Representations. InAssociation for Computational Linguistics.
+[7] Vincent Cohen-Addad, Varun Kanade, Frederik Mallmann-Trenn, and Claire Mathieu. 2018.
+Hierarchical clustering: Objective functions and algorithms. InSymposium on Discrete Algo-
+rithms.
+[8] A. Culotta, P. Kanani, R. Hall, M. Wick, and A. McCallum. 2007. Author disambiguation
+using error-driven machine learning with a ranking loss function. InWorkshop on Information
+Integration on the Web.
+[9] S. Dasgupta. 2015. A cost function for similarity-based hierarchical clustering.arXiv:1510.05043
+(2015).
+[10] M. B. Eisen, P. T. Spellman, P. O. Brown, and D. Botstein. 1998. Cluster analysis and display
+of genome-wide expression patterns.Proceedings of the National Academy of Sciences(1998).
+[11] M. Ester, H. Kriegel, J. Sander, X. Xu, et al. 1996. A density-based algorithm for discovering
+clusters in large spatial databases with noise.. InKDD.
+[12] J. Geusebroek, G. J. Burghouts, and A. W.M. Smeulders. 2005. The Amsterdam library of
+object images. International Journal of Computer Vision(2005).
+[13] C. S. Greenberg, D. Bansé, G. R. Doddington, D. Garcia-Romero, J. J. Godfrey, T. Kin-
+nunen, A. F. Martin, A. McCree, M. Przybocki, and D. A. Reynolds. 2014. The NIST 2014
+speaker recognition i-vector machine learning challenge. InOdyssey: The Speaker and Language
+Recognition Workshop.
+[14] A. Haghighi and D. Klein. 2010. Coreference resolution in a modular, entity-centered model. In
+Human Language Technologies: Association for Computational Linguistics.
+[15] H. Han, H. Zha, and C. L. Giles. 2005. Name disambiguation in author citations using a k-way
+spectral clustering method. InJoint Conference on Digital Libraries.
+16
+[16] K. Heller and Z. Ghahramani. 2005. Randomized algorithms for fast Bayesian hierarchical
+clustering. (2005).
+[17] K. A. Heller and Z. Ghahramani. 2005. Bayesian hierarchical clustering. InInternational
+conference on Machine Learning.
+[18] S. Jain and R. M. Neal. 2004. A split-merge Markov chain Monte Carlo procedure for the
+Dirichlet process mixture model.Journal of computational and Graphical Statistics(2004).
+[19] J. Kleinberg. 2000. The small-world phenomenon: An algorithmic perspective. InSymposium
+on Theory of computing.
+[20] J. Kleinberg. 2006. Complex networks and decentralized search algorithms. InInternational
+Congress of Mathematicians (ICM).
+[21] A. Kobren, N. Monath, A. Krishnamurthy, and A. McCallum. 2017. A Hierarchical Algorithm
+for Extreme Clustering.KDD (2017).
+[22] Pushmeet Kohli, Philip HS Torr, et al. 2009. Robust higher order potentials for enforcing label
+consistency. International Journal of Computer Vision(2009).
+[23] A. Krishnamurthy, S. Balakrishnan, M. Xu, and A. Singh. 2012. Eﬃcient active algorithms for
+hierarchical clustering.International Conference on Machine Learning(2012).
+[24] H. Lee, M. Recasens, A. Chang, M. Surdeanu, and D. Jurafsky. 2012. Joint entity and event
+coreference resolution across documents. InJoint Conference on Empirical Methods in Natural
+Language Processing and Computational Natural Language Learning.
+[25] E. Liberty, R. Sriharsha, and M. Sviridenko. 2016. An algorithm for online k-means clustering.
+In Workshop on Algorithm Engineering and Experiments.
+[26] Y. Malkov, A. Ponomarenko, A. Logvinov, and V. Krylov. 2014. Approximate nearest neighbor
+algorithm based on navigable small world graphs.Information Systems (2014).
+[27] O. Russakovsky, J. Deng, H. Su, J. Krause, S. Satheesh, S. Ma, Z. Huang, A. Karpathy, A.
+Khosla, M. Bernstein, et al.2015. Imagenet large scale visual recognition challenge.International
+Journal of Computer Vision(2015).
+[28] S. Singh, A. Subramanya, F. Pereira, and A. McCallum. 2011. Large-scale cross-document
+coreference using distributed inference and hierarchical models. InAssociation for Computational
+Linguistics: Human Language Technologies.
+[29] Dingkang Wang and Yusu Wang. 2018. An Improved Cost Function for Hierarchical Cluster
+Trees. CoRR (2018).
+[30] D. J. Watts and S. H. Strogatz. 1998. Collective dynamics of ‘small-world’networks.Nature
+(1998).
+[31] M. Wick, S. Singh, and A. McCallum. 2012. A discriminative hierarchical model for fast
+coreference at large scale. InAssociation for Computational Linguistics.
+17
+[32] S. Wiseman, A. M. Rush, and S. M Shieber. 2016. Learning global features for coreference
+resolution. NAACL-HLT (2016).
+[33] L. Zhang, M. Song, Z. Liu, X. Liu, J. Bu, and C. Chen. 2013. Probabilistic graphlet cut:
+Exploiting spatial structure cue for weakly supervised image segmentation. InComputer Vision
+and Pattern Recognition. IEEE.
+[34] T. Zhang, R. Ramakrishnan, and M. Livny. 1996. BIRCH: an eﬃcient data clustering method
+for very large databases. InACM Sigmod Record.
+18
+A Proof of Theorem 1
+Deﬁne the following properties:
+Deﬁnition 3(Strong Connectivity). Let G= (X,E) be a graph and letT[v] be a tree rooted at
+a nodev with leaves,lvs(v) =X′⊆X. v is connected if X′ is a connected subgraph ofG. v is
+strongly connectedif every descendant ofv is connected.v is amaximal strongly connected node
+if v is strongly connected andpar(v) is not strongly connected. Finally, the treeT satisﬁes strong
+connectivity if all connected nodes inT are strongly connected.
+Deﬁnition 4(Completeness). Let G= (X,E) be a graph and letT[v] be a tree rooted at a node
+v with leaves,lvs(v) =X′⊆X. Then v is complete if X′ is a connected component inG. The
+tree T satisﬁes completeness if the set of connected components ofG are (the leaves of) a tree
+consistent partition ofT.
+According to Theorem 1,Grinch always constructs a tree that satisﬁes completeness. To prove
+the theorem, we will show that after the addition of each new data point, the resulting tree satisﬁes
+strong connectivity and completeness. We analyze various subroutines ofGrinch and demonstrate
+how they preserve strong connectivity, completeness or both. In the proceeding lemmas and proofs,
+let G= (X,E) be a graph and letf be a model that separatesG.
+Lemma 1(Rotation Lemma). Let T be a tree withlvs(T) =X, and letx be a new data point
+to be added toT. Then all nodes that were strongly connected before the addition ofx are strongly
+connected after the addition ofx, i.e., rotations preserve strong connectivity.
+Note: while rotations preserve strong connectivity, they do not guarantee completeness. Therefore
+rotations are insuﬃcient for proving Theorem 1.
+Proof. Let v be a maximal strongly connected node inT and assume thatx is added as a leaf ofv
+(rotations have not yet been applied). Consider two cases: (1) there exists an edge betweenx and
+some leaf inlvs(v), and (2) there does not exist an edge betweenx and any leaf inlvs(v).
+Case 1: Let L⊆lvs(v) be the set ofv’s descendant leaves to whichx is connected. Thenx is
+initially added as a sibling of its nearest neighbor leaf,x′, andx′∈Lbecause f separates G. par(x)
+is strongly connected because there exists an edge betweenx and x′.
+The addition ofx does not disconnectv or any strongly connected descendant ofv. To see
+why, consider the siblings of the ancestors ofx′ before the addition ofx. Any such sibling that
+was connected tox′, is, after the addition ofx, also connected topar(x) and thus remains strongly
+connected. Nodes that are not ancestors ofx cannot be disconnected and thus, before rotations,
+strong connectivity is preserved.
+Now consider subsequent rotations. By the logic above, x and its sibling, x′ = s(x), are
+connected. If a rotation succeeds thenx and aunt(x) are swapped. So long asaunt(x) and s(x)
+form a connected subgraph inG, i.e.,φ(s(x),aunt(x)) =φ(x,s(x)) = 1, then the rotation preserves
+strong connectivity.
+The only way for a rotation to disrupt strong connectivity is ifx and aunt(x) are swapped, and
+s(x) and aunt(x) do not form a connected subgraph inG, i.e.,φ(x,s(x)) >φ(s(x),aunt(x)). But,
+because f separates G, φ(x,s(x)) >φ(s(x),aunt(x)) =⇒f(x,s(x)) >f (s(x),aunt(x)) and so, in
+this case, a rotation will not be performed and the procedure terminates.
+19
+x1 x2 x5 x7
+x4x3 x6 x8
+(a) A graphG = (X, E).
+c1
+v1 v2
+x1 x3 x2 x4
+v3
+c2 c3
+x5 x6 x7 x8
+(b) Strongly connected & complete.
+c1
+x1 x2 x3 x4
+v3
+c2 c3
+x5 x6 x7 x8
+v1’ v2’ (c) Complete only.
+Figure 5: A graph G with 3 connected components (Figure 5a). In Figure 5b and Figure 5c,
+black-ﬁlled nodes are maximal, gray-ﬁlled nodes are strongly connected, nodes with no ﬁll and solid
+borders are connected (but not strongly), and nodes with dashed borders are disconnected. The tree
+in Figure 5b satisﬁes strong connectivity and completeness. The tree in Figure 5c does not satisfy
+strong connectivity becausev1 is disconnected.
+Case 2: If there does not exist an edge betweenx and any leaf inlvs(v), then afterx is made a
+sibling of some leafx′′∈lvs(v), v is no longer strongly connected and so strong connectivity has
+not been preserved. Sincev was strongly connected before the addition ofx, there exists an edge
+between lvs(s(x)) and lvs(aunt(x)). Since f separates G, f(x,s(x)) < f(s(x),aunt(x)), which
+triggers therotate subroutine. Rotations proceed with respect tox at least untilx is no longer a
+descendant ofv, and thus,v remains strongly connected. Strongly connected nodes that are not
+descendants ofv are unaﬀected by the rotations and so strong connectivity is preserved.
+Lemma 2(Grafting Lemma 1). Let T satisfy strong connectivity and completeness. Letv be a
+node inT such thatv is either a maximal strongly connected node or not strongly connected. Then
+a graft operation initiated fromv preserves strong connectivity and completeness.
+Proof. Let T be strongly connected and complete. Since lvs(v) is not a strict subset of any
+connected component inG, there does not exist a non-empty subsets in lvs(T)\lvs(v) such that
+s∪lvs(v) is a connected subgraph inG. For any nodev′that is strongly connected but not maximal,
+there must be an edge connectinglvs(v′) and lvs(s(v′)) and s(v′) must be strongly connected, so
+f(v′,s(v′)) >f (v,v′). Therefore, an attempt to make any suchv′the sibling ofv fails.
+If v′′is a maximal strongly connected node, an attempt to makev′′the sibling ofv may succeed
+but this does not disconnect any strongly connected subtrees inT. The same is true ifv′′is not
+20
+v1 v2
+x1 x3 x2 x4
+v c3
+x5 x6 x7 x8
+v’’
+(a) Grafting Lemma 1 Visual Aid.
+v1 c2
+x1 x3 x5 x6
+c3 v2
+x7 x8 x2 x4
+v , x 3
+<latexit sha1_base64="AUNkCP7n/vsycFLAL8BM4ZHs7i0=">AAADFnicdVLLjtMwFHXDayivDizZWFRIbKgSBgmWoxkWLIs0nRmpiSrHuWmssZ1g35RWVv6DBVv4DHaILVt+gm/AbSOYZjRXsnx0zrF8fH3TSgqLYfi7F9y4eev2nb27/Xv3Hzx8NNh/fGrL2nCY8FKW5jxlFqTQMEGBEs4rA0ylEs7Si+O1frYAY0WpT3BVQaLYXItccIaemg0GCxqjEUzPJXyky9nBbDAMR+Gm6FUQtWBI2hrP9nt/4qzktQKNXDJrp1FYYeKYQcElNP24tlAxfsHmMPVQMwU2cZvoDX3umYzmpfFLI92wl084pqxdqdQ7FcPCdrU1eZ2GhWroDrm0Hu1GcnPDqkLwZSco5m8TJ3RVI2i+zZnXkmJJ122kmTDAUa48YNwI/1TKC2YYR9/sfowFlAZ8hJUEl0EutFj329+h4VMrXubdu2s87d64kxZsVF4qxXTm4lQ00yhxMcLSf/52T3M3jJqm42Ry3mx1y90YDC+a+F87OsaUd6wvj47/u/2ERN15uApOX42icBR9eD08PGpnZY88Jc/ICxKRN+SQvCdjMiGcLMgX8pV8Cz4H34Mfwc+tNei1Z56QnQp+/QXJgAZ5</latexit><latexit sha1_base64="AUNkCP7n/vsycFLAL8BM4ZHs7i0=">AAADFnicdVLLjtMwFHXDayivDizZWFRIbKgSBgmWoxkWLIs0nRmpiSrHuWmssZ1g35RWVv6DBVv4DHaILVt+gm/AbSOYZjRXsnx0zrF8fH3TSgqLYfi7F9y4eev2nb27/Xv3Hzx8NNh/fGrL2nCY8FKW5jxlFqTQMEGBEs4rA0ylEs7Si+O1frYAY0WpT3BVQaLYXItccIaemg0GCxqjEUzPJXyky9nBbDAMR+Gm6FUQtWBI2hrP9nt/4qzktQKNXDJrp1FYYeKYQcElNP24tlAxfsHmMPVQMwU2cZvoDX3umYzmpfFLI92wl084pqxdqdQ7FcPCdrU1eZ2GhWroDrm0Hu1GcnPDqkLwZSco5m8TJ3RVI2i+zZnXkmJJ122kmTDAUa48YNwI/1TKC2YYR9/sfowFlAZ8hJUEl0EutFj329+h4VMrXubdu2s87d64kxZsVF4qxXTm4lQ00yhxMcLSf/52T3M3jJqm42Ry3mx1y90YDC+a+F87OsaUd6wvj47/u/2ERN15uApOX42icBR9eD08PGpnZY88Jc/ICxKRN+SQvCdjMiGcLMgX8pV8Cz4H34Mfwc+tNei1Z56QnQp+/QXJgAZ5</latexit><latexit sha1_base64="AUNkCP7n/vsycFLAL8BM4ZHs7i0=">AAADFnicdVLLjtMwFHXDayivDizZWFRIbKgSBgmWoxkWLIs0nRmpiSrHuWmssZ1g35RWVv6DBVv4DHaILVt+gm/AbSOYZjRXsnx0zrF8fH3TSgqLYfi7F9y4eev2nb27/Xv3Hzx8NNh/fGrL2nCY8FKW5jxlFqTQMEGBEs4rA0ylEs7Si+O1frYAY0WpT3BVQaLYXItccIaemg0GCxqjEUzPJXyky9nBbDAMR+Gm6FUQtWBI2hrP9nt/4qzktQKNXDJrp1FYYeKYQcElNP24tlAxfsHmMPVQMwU2cZvoDX3umYzmpfFLI92wl084pqxdqdQ7FcPCdrU1eZ2GhWroDrm0Hu1GcnPDqkLwZSco5m8TJ3RVI2i+zZnXkmJJ122kmTDAUa48YNwI/1TKC2YYR9/sfowFlAZ8hJUEl0EutFj329+h4VMrXubdu2s87d64kxZsVF4qxXTm4lQ00yhxMcLSf/52T3M3jJqm42Ry3mx1y90YDC+a+F87OsaUd6wvj47/u/2ERN15uApOX42icBR9eD08PGpnZY88Jc/ICxKRN+SQvCdjMiGcLMgX8pV8Cz4H34Mfwc+tNei1Z56QnQp+/QXJgAZ5</latexit><latexit sha1_base64="AUNkCP7n/vsycFLAL8BM4ZHs7i0=">AAADFnicdVLLjtMwFHXDayivDizZWFRIbKgSBgmWoxkWLIs0nRmpiSrHuWmssZ1g35RWVv6DBVv4DHaILVt+gm/AbSOYZjRXsnx0zrF8fH3TSgqLYfi7F9y4eev2nb27/Xv3Hzx8NNh/fGrL2nCY8FKW5jxlFqTQMEGBEs4rA0ylEs7Si+O1frYAY0WpT3BVQaLYXItccIaemg0GCxqjEUzPJXyky9nBbDAMR+Gm6FUQtWBI2hrP9nt/4qzktQKNXDJrp1FYYeKYQcElNP24tlAxfsHmMPVQMwU2cZvoDX3umYzmpfFLI92wl084pqxdqdQ7FcPCdrU1eZ2GhWroDrm0Hu1GcnPDqkLwZSco5m8TJ3RVI2i+zZnXkmJJ122kmTDAUa48YNwI/1TKC2YYR9/sfowFlAZ8hJUEl0EutFj329+h4VMrXubdu2s87d64kxZsVF4qxXTm4lQ00yhxMcLSf/52T3M3jJqm42Ry3mx1y90YDC+a+F87OsaUd6wvj47/u/2ERN15uApOX42icBR9eD08PGpnZY88Jc/ICxKRN+SQvCdjMiGcLMgX8pV8Cz4H34Mfwc+tNei1Z56QnQp+/QXJgAZ5</latexit>
+` , x 4
+<latexit sha1_base64="gjdUDsKpW3cNE0SmgiWA3LaA2pY=">AAADGXicdVLLbtQwFPWER8vwmtIlG4sREhtGCaoEy6plwXKQOm2lSTRynJvEqh+p7dCJrHwJC7bwGewQW1b8BN+AZyaCTqpeyfLROcfy8fVNK86MDcPfg+DO3Xv3d3YfDB8+evzk6Wjv2alRtaYwo4orfZ4SA5xJmFlmOZxXGohIOZylF8cr/ewTaMOUPLFNBYkghWQ5o8R6ajHaj4FzHFvNiCw4XOLl4mAxGoeTcF34Jog6MEZdTRd7gz9xpmgtQFrKiTHzKKxs4oi2jHJoh3FtoCL0ghQw91ASASZx6/QtfumZDOdK+yUtXrPXTzgijGlE6p2C2NL0tRV5m2ZL0eItcmk82o7kCk2qktFlL6jN3yWOyaq2IOkmZ15zbBVedRJnTAO1vPGAUM38UzEtiSbU+n4PY1uC0uAjNBxcBjmTbNVyf4eEq068zrv3t3i6vXUnHVirVAlBZObilLXzKHGxhaX//82e5m4ctW3PSXjRbnRD3RQ0Ldv4Xzt6xpT2rK+Pjv+7/YRE/Xm4CU7fTKJwEn08GB8edbOyi56jF+gVitBbdIg+oCmaIYoa9AV9Rd+Cz8H34Efwc2MNBt2ZfbRVwa+/T3cHuw==</latexit><latexit sha1_base64="gjdUDsKpW3cNE0SmgiWA3LaA2pY=">AAADGXicdVLLbtQwFPWER8vwmtIlG4sREhtGCaoEy6plwXKQOm2lSTRynJvEqh+p7dCJrHwJC7bwGewQW1b8BN+AZyaCTqpeyfLROcfy8fVNK86MDcPfg+DO3Xv3d3YfDB8+evzk6Wjv2alRtaYwo4orfZ4SA5xJmFlmOZxXGohIOZylF8cr/ewTaMOUPLFNBYkghWQ5o8R6ajHaj4FzHFvNiCw4XOLl4mAxGoeTcF34Jog6MEZdTRd7gz9xpmgtQFrKiTHzKKxs4oi2jHJoh3FtoCL0ghQw91ASASZx6/QtfumZDOdK+yUtXrPXTzgijGlE6p2C2NL0tRV5m2ZL0eItcmk82o7kCk2qktFlL6jN3yWOyaq2IOkmZ15zbBVedRJnTAO1vPGAUM38UzEtiSbU+n4PY1uC0uAjNBxcBjmTbNVyf4eEq068zrv3t3i6vXUnHVirVAlBZObilLXzKHGxhaX//82e5m4ctW3PSXjRbnRD3RQ0Ldv4Xzt6xpT2rK+Pjv+7/YRE/Xm4CU7fTKJwEn08GB8edbOyi56jF+gVitBbdIg+oCmaIYoa9AV9Rd+Cz8H34Efwc2MNBt2ZfbRVwa+/T3cHuw==</latexit><latexit sha1_base64="gjdUDsKpW3cNE0SmgiWA3LaA2pY=">AAADGXicdVLLbtQwFPWER8vwmtIlG4sREhtGCaoEy6plwXKQOm2lSTRynJvEqh+p7dCJrHwJC7bwGewQW1b8BN+AZyaCTqpeyfLROcfy8fVNK86MDcPfg+DO3Xv3d3YfDB8+evzk6Wjv2alRtaYwo4orfZ4SA5xJmFlmOZxXGohIOZylF8cr/ewTaMOUPLFNBYkghWQ5o8R6ajHaj4FzHFvNiCw4XOLl4mAxGoeTcF34Jog6MEZdTRd7gz9xpmgtQFrKiTHzKKxs4oi2jHJoh3FtoCL0ghQw91ASASZx6/QtfumZDOdK+yUtXrPXTzgijGlE6p2C2NL0tRV5m2ZL0eItcmk82o7kCk2qktFlL6jN3yWOyaq2IOkmZ15zbBVedRJnTAO1vPGAUM38UzEtiSbU+n4PY1uC0uAjNBxcBjmTbNVyf4eEq068zrv3t3i6vXUnHVirVAlBZObilLXzKHGxhaX//82e5m4ctW3PSXjRbnRD3RQ0Ldv4Xzt6xpT2rK+Pjv+7/YRE/Xm4CU7fTKJwEn08GB8edbOyi56jF+gVitBbdIg+oCmaIYoa9AV9Rd+Cz8H34Efwc2MNBt2ZfbRVwa+/T3cHuw==</latexit><latexit sha1_base64="gjdUDsKpW3cNE0SmgiWA3LaA2pY=">AAADGXicdVLLbtQwFPWER8vwmtIlG4sREhtGCaoEy6plwXKQOm2lSTRynJvEqh+p7dCJrHwJC7bwGewQW1b8BN+AZyaCTqpeyfLROcfy8fVNK86MDcPfg+DO3Xv3d3YfDB8+evzk6Wjv2alRtaYwo4orfZ4SA5xJmFlmOZxXGohIOZylF8cr/ewTaMOUPLFNBYkghWQ5o8R6ajHaj4FzHFvNiCw4XOLl4mAxGoeTcF34Jog6MEZdTRd7gz9xpmgtQFrKiTHzKKxs4oi2jHJoh3FtoCL0ghQw91ASASZx6/QtfumZDOdK+yUtXrPXTzgijGlE6p2C2NL0tRV5m2ZL0eItcmk82o7kCk2qktFlL6jN3yWOyaq2IOkmZ15zbBVedRJnTAO1vPGAUM38UzEtiSbU+n4PY1uC0uAjNBxcBjmTbNVyf4eEq068zrv3t3i6vXUnHVirVAlBZObilLXzKHGxhaX//82e5m4ctW3PSXjRbnRD3RQ0Ldv4Xzt6xpT2rK+Pjv+7/YRE/Xm4CU7fTKJwEn08GB8edbOyi56jF+gVitBbdIg+oCmaIYoa9AV9Rd+Cz8H34Efwc2MNBt2ZfbRVwa+/T3cHuw==</latexit> (b) Grafting Lemma 2 Visual Aid.
+Figure 6: We reuse the graph in Figure 5a. The tree in Figure 6a is strongly connected and complete.
+Consider the nodev. A graft initiated fromv may makev′′a sibling ofv because lvs(v) is not a
+(strict) subset of a connected component andv′′is maximal. After such a graft, notice that the tree
+would still satisfy strong connectivity and completeness. The tree in Figure 6b is strongly connected
+but not complete. Considerx3 which plays the role ofv in the proof of Grafting Lemma 2. When a
+constrained nearest neighbor search is executed from its parent,v1, the leafx4–which plays the role
+of ℓ–is returned. Ifv1 and v2 are made siblings, their parent is strongly connected.
+strongly connected.
+Lemma 3(Grafting Lemma 2). Let T be a tree such thatlvs(T) =X and letT satisfy strong
+connectivity. Letv be strongly connected and letlvs(v) be a strict subset of the vertices in some
+connected component,C, inG. Then, agraft initiated fromv returns a nodev′ such thatv′ is
+strongly connected andlvs(v) ⊂lvs(v′).
+Proof. Since lvs(v) are a strict subset of the vertices in the connected component,C, there exists
+a non-empty subsets in lvs(T)\lvs(v) such thats∪lvs(v) constitute the vertices inC. Let ℓ
+maximize f(v,ℓ) over alllvs(T) \lvs(v). By the fact thatlvs(v) is a strict subset of a connected
+component, there must exist an edge betweenlvs(v) and ℓ. Note thatℓ is the leaf found when the
+constrained nearest neighbor search fromv is initiated in the ﬁrst line ofgraft (Algorithm 1).
+If f(v,ℓ) < f(ℓ,s(ℓ)), then there must exist an edge betweenℓ and a node inlvs(s(ℓ)) and
+so par(ℓ) is strongly connected. Iff(v,ℓ) < f(v,s(v)), then there must exist an edge between a
+node inlvs(v) and a node inlvs(s(v)) and sopar(v) is strongly connected. In both of these cases,
+we do not mergev with ℓ, but instead attempt another merge between two strongly connected
+nodes, either: par(v) with ℓ, v with par(ℓ), orpar(v) with par(ℓ). As before, the two nodes we are
+attempting to merge also have an edge between them.
+Let v1 and v2 be two nodes involved in a merge and letv1 ∈ancs(v) and v2 ∈ancs(ℓ). If at
+some point
+f(v1,v2) >max[f(v1,s(v1)),f(v2,s(v2))]
+then v2 is made a sibling ofv1 and the new parent ofv1 is returned. Sincev1 and v2 are strongly
+connected and there exists an edge betweenlvs(v1) and lvs(v2), par(v1), which is created by the
+merge, is strongly connected, and the lemma holds.
+21
+If a merge is never performed, the recursion stops whenv1 = v2 = lca(v,ℓ). In this case, the
+lca, which we return, is already strongly connected and, by deﬁnition, its leaves are a superset of
+lvs(v).
+Lemma 4(Restructuring Lemma). Let v∈T be strongly connected. Leta∈ancs(v) be the deepest
+connected ancestor ofv such that: a is not strongly connected, and all siblings of the nodes on the
+path fromv to a are strongly connected. Thenrestruct on inputsv and a restructuresT[a] so that
+a satisﬁes strong connectivity.
+x1
+x2
+x3
+x4
+x5
+x6
+x7 x8
+(a) A graphG = (X, E).
+a’
+x1 x2 x3 x4
+z’
+x5 x6 x7 x8
+a
+z , v , x 5
+<latexit sha1_base64="g9So4Bf1pWHSPlMjVjOv9h4nFfE=">AAADI3icdVLLjtMwFHXDY4by6sASIVlUSGyoEgRilqMZFiyLNJ0ZqYkqx7lJrPEj2M7QYmXFt7BgC5/BDrFhwS/wDbhtBG1GcyXLx+ecK997ddOKM2PD8FcvuHb9xs2d3Vv923fu3rs/2HtwYlStKUyo4kqfpcQAZxImllkOZ5UGIlIOp+n50VI/vQBtmJLHdlFBIkghWc4osZ6aDR5/xLHVjMiCw3t8sfmYz17NBsNwFK4CXwZRC4aojfFsr/cnzhStBUhLOTFmGoWVTRzRllEOTT+uDVSEnpMCph5KIsAkbtVHg596JsO50v5Ii1fsZoYjwpiFSL1TEFuarrYkr9JsKRq8Rc6NR9sluUKTqmR03inU5vuJY7KqLUi6rjOvObYKL2eKM6aBWr7wgFDNfKuYlkQTav3k+7EtQWnwJSw4uAxyJtly+P4PCR9acZN3b67wtHfjjluwUqkSgsjMxSlrplHiYgtzvwnrO83dMGqajpPwolnrhroxaFo28b9xdIwp7VifHx79d/sNibr7cBmcvBhF4Sh693J4cNjuyi56hJ6gZyhCr9EBeovGaIIo+oS+oK/oW/A5+B78CH6urUGvzXmItiL4/Rf17Ava</latexit><latexit sha1_base64="g9So4Bf1pWHSPlMjVjOv9h4nFfE=">AAADI3icdVLLjtMwFHXDY4by6sASIVlUSGyoEgRilqMZFiyLNJ0ZqYkqx7lJrPEj2M7QYmXFt7BgC5/BDrFhwS/wDbhtBG1GcyXLx+ecK997ddOKM2PD8FcvuHb9xs2d3Vv923fu3rs/2HtwYlStKUyo4kqfpcQAZxImllkOZ5UGIlIOp+n50VI/vQBtmJLHdlFBIkghWc4osZ6aDR5/xLHVjMiCw3t8sfmYz17NBsNwFK4CXwZRC4aojfFsr/cnzhStBUhLOTFmGoWVTRzRllEOTT+uDVSEnpMCph5KIsAkbtVHg596JsO50v5Ii1fsZoYjwpiFSL1TEFuarrYkr9JsKRq8Rc6NR9sluUKTqmR03inU5vuJY7KqLUi6rjOvObYKL2eKM6aBWr7wgFDNfKuYlkQTav3k+7EtQWnwJSw4uAxyJtly+P4PCR9acZN3b67wtHfjjluwUqkSgsjMxSlrplHiYgtzvwnrO83dMGqajpPwolnrhroxaFo28b9xdIwp7VifHx79d/sNibr7cBmcvBhF4Sh693J4cNjuyi56hJ6gZyhCr9EBeovGaIIo+oS+oK/oW/A5+B78CH6urUGvzXmItiL4/Rf17Ava</latexit><latexit sha1_base64="g9So4Bf1pWHSPlMjVjOv9h4nFfE=">AAADI3icdVLLjtMwFHXDY4by6sASIVlUSGyoEgRilqMZFiyLNJ0ZqYkqx7lJrPEj2M7QYmXFt7BgC5/BDrFhwS/wDbhtBG1GcyXLx+ecK997ddOKM2PD8FcvuHb9xs2d3Vv923fu3rs/2HtwYlStKUyo4kqfpcQAZxImllkOZ5UGIlIOp+n50VI/vQBtmJLHdlFBIkghWc4osZ6aDR5/xLHVjMiCw3t8sfmYz17NBsNwFK4CXwZRC4aojfFsr/cnzhStBUhLOTFmGoWVTRzRllEOTT+uDVSEnpMCph5KIsAkbtVHg596JsO50v5Ii1fsZoYjwpiFSL1TEFuarrYkr9JsKRq8Rc6NR9sluUKTqmR03inU5vuJY7KqLUi6rjOvObYKL2eKM6aBWr7wgFDNfKuYlkQTav3k+7EtQWnwJSw4uAxyJtly+P4PCR9acZN3b67wtHfjjluwUqkSgsjMxSlrplHiYgtzvwnrO83dMGqajpPwolnrhroxaFo28b9xdIwp7VifHx79d/sNibr7cBmcvBhF4Sh693J4cNjuyi56hJ6gZyhCr9EBeovGaIIo+oS+oK/oW/A5+B78CH6urUGvzXmItiL4/Rf17Ava</latexit><latexit sha1_base64="g9So4Bf1pWHSPlMjVjOv9h4nFfE=">AAADI3icdVLLjtMwFHXDY4by6sASIVlUSGyoEgRilqMZFiyLNJ0ZqYkqx7lJrPEj2M7QYmXFt7BgC5/BDrFhwS/wDbhtBG1GcyXLx+ecK997ddOKM2PD8FcvuHb9xs2d3Vv923fu3rs/2HtwYlStKUyo4kqfpcQAZxImllkOZ5UGIlIOp+n50VI/vQBtmJLHdlFBIkghWc4osZ6aDR5/xLHVjMiCw3t8sfmYz17NBsNwFK4CXwZRC4aojfFsr/cnzhStBUhLOTFmGoWVTRzRllEOTT+uDVSEnpMCph5KIsAkbtVHg596JsO50v5Ii1fsZoYjwpiFSL1TEFuarrYkr9JsKRq8Rc6NR9sluUKTqmR03inU5vuJY7KqLUi6rjOvObYKL2eKM6aBWr7wgFDNfKuYlkQTav3k+7EtQWnwJSw4uAxyJtly+P4PCR9acZN3b67wtHfjjluwUqkSgsjMxSlrplHiYgtzvwnrO83dMGqajpPwolnrhroxaFo28b9xdIwp7VifHx79d/sNibr7cBmcvBhF4Sh693J4cNjuyi56hJ6gZyhCr9EBeovGaIIo+oS+oK/oW/A5+B78CH6urUGvzXmItiL4/Rf17Ava</latexit> (b) a is connected, but not strongly.
+x7 x8
+z’
+x1 x2 x3 x4
+z
+x5
+x6
+a
+(c) 1 swap applied.
+x6
+a
+x4x1 x2 x3x7 x8
+x5 (d) a is strongly connected.
+Figure 7: Therestruct method. As before, black-ﬁlled nodes are maximal, gray-ﬁlled nodes are
+strongly connected, nodes with no ﬁll and solid borders are connected (but not strongly) and nodes
+with dashed borders are disconnected. Also, note that the labelsz,z′,ℓ and a′ do not apply to
+the same nodes throughout all ﬁgures so to match their usage in proof. In Figure 7b,z≜ v≜ x5.
+s(z) and z′are swapped to produce the tree in Figure 7c. Finally,s(z) and z′from Figure 7c are
+swapped to produce the tree in Figure 7d, which is strongly connected.
+Proof. Let z be the deepest ancestor ofv that is strongly connected with parentpar(z) that is
+disconnected. Since par(z) is disconnected (but by assumption bothz and s(z) are connected),
+there are no edges betweenlvs(z) and lvs(s(z)).
+Let a′ be a child ofa and without loss of generality,a′ ̸∈ancs(z). Since a is the deepest
+connected ancestor ofz, there must exist an edge betweenlvs(z) and lvs(a′).
+When computing the argmax off(z,·) in therestruct method, a node,z′, that is connected
+to z will be returned and then swapped withs(z). The new parent ofz is strongly connected
+22
+because z and z′are both strongly connected and there exists an edge betweenlvs(z) and lvs(z′).
+Any subsequent swap attempted from a disconnected node with a connected ancestor succeeds and
+produces a new parent that is strongly connected.
+Since a is connected and a swap among the descendants ofa do not changelvs(a), swapping
+preserves the connectedness ofa. Therefore, swaps proceed until the nodea is reached at which
+point a must be strongly connected.
+Note that a swap attempt between a strongly connected node and a node to which it is not
+connected fails, becausef separates G. A swap attempt between a connected node and a node to
+which it is connected succeeds and produces a new parent that is strongly connected.
+We now prove Theorem 1.
+Proof. We show by induction that ifGrinch is used to build a tree,T, over vertices,X, then the
+connected components ofG are a tree consistent partition inT. Furthermore,T satisﬁes strong
+connectivity.
+Clearly, the theorem holds for the base case: a tree with a single node.
+Let X= lvs(T). Assume the inductive hypothesis: thatT satisﬁes completeness and strong
+connectivity. Now vertexx arrives.
+If there does not exist an edge betweenx and any other vertex inX, then after rotations,
+T′ satisﬁes completeness. Since ∀a ∈ancs(x), lvs(a) is a not a strict subset of any connected
+component inG, by Grafting Lemma 1, subsequentgraft attempts from the ancestors ofxpreserve
+strong connectivity and completeness and so the theorem holds.
+Assume thatxis connected to some set of leavess⊆lvs(T). SinceT satisﬁes strong connectivity,
+by the Rotation Lemma, afterx is added and rotations terminate,T′satisﬁes strong connectivity.
+Note thatT′may not satisfy completeness if, before the arrival ofx, the leaves ins formed at least
+2 distinct connected subgraphs inG.
+After rotations, a series ofgraft attempts are performed. Consider the ﬁrstgraft initiated at
+par(x). By Grafting Lemma 2, the attempt returns a strongly connected ancestor ofx whose leaves
+are a strict superset oflvs(x). If amerge is performed that moves a nodev and makes it a sibling
+of v′, then strong connectivity may be violated. However, notice that the only nodes that can be
+disconnected by such a merge are the node that, prior to the merge, were ancestors ofv and also
+descendants ofa= lca(v,v′).
+After the merge,a is restructured, and by the Restructuring Lemma, the resulting tree satisﬁes
+strong connectivity. Subsequent calls tograft proceed froma. Notice that each invocation ofgraft
+returns a new strongly connected node with a strictly larger number of descendant leaves, until
+the resulting tree satisﬁes completeness. Therefore, successive grafting followed by restructuring
+eventually returns a node whose leaves are a connected component ofG. Ultimately, after rotations
+and grafting,T′must satisfy completeness and strong connectivity.
+23

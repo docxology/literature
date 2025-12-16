@@ -6,187 +6,187 @@ loadings, showing which words contribute most to each principal component.
 ## Overview
 
 - **Total Components Analyzed**: 5
-- **Total Variance Explained**: 7.96%
+- **Total Variance Explained**: 16.09%
 
 ## Component Analysis
 
 ### Principal Component 1 (PC1)
 
-- **Variance Explained**: 2.43%
+- **Variance Explained**: 6.42%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | energy | 0.3029 |
-| 2 | free energy | 0.2982 |
-| 3 | free | 0.2898 |
-| 4 | fep | 0.2630 |
-| 5 | principle | 0.2591 |
-| 6 | energy principle | 0.2490 |
-| 7 | active | -0.2095 |
-| 8 | active inference | -0.2055 |
-| 9 | inference | -0.1797 |
-| 10 | systems | 0.1126 |
-| 11 | mechanics | 0.1044 |
-| 12 | agent | -0.1021 |
-| 13 | agents | -0.0918 |
-| 14 | learning | -0.0897 |
-| 15 | bayesian | 0.0872 |
-| 16 | quantum | 0.0868 |
-| 17 | planning | -0.0849 |
-| 18 | bayesian mechanics | 0.0800 |
-| 19 | brain | 0.0775 |
-| 20 | physics | 0.0768 |
+| 1 | grafting | 0.8592 |
+| 2 | bone | 0.2029 |
+| 3 | bone grafting | 0.1839 |
+| 4 | trees | -0.1560 |
+| 5 | rootstocks | -0.1210 |
+| 6 | grafted | -0.1040 |
+| 7 | impaction | 0.0947 |
+| 8 | trees grafted | -0.0895 |
+| 9 | rootstock | -0.0877 |
+| 10 | growth | -0.0729 |
+| 11 | citrus | -0.0689 |
+| 12 | fruit | -0.0673 |
+| 13 | apple | -0.0610 |
+| 14 | orange | -0.0554 |
+| 15 | impaction bone | 0.0549 |
+| 16 | dwarfing | -0.0413 |
+| 17 | apple trees | -0.0406 |
+| 18 | yield | -0.0401 |
+| 19 | quality | -0.0399 |
+| 20 | grafting grafting | 0.0396 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): energy, free energy, free, fep, principle
-**Negative contributors** (low loading): active, active inference, inference, agent, agents
+**Positive contributors** (high loading): grafting, bone, bone grafting, impaction, impaction bone
+**Negative contributors** (low loading): trees, rootstocks, grafted, trees grafted, rootstock
 
 ---
 
 ### Principal Component 2 (PC2)
 
-- **Variance Explained**: 1.76%
+- **Variance Explained**: 4.00%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | active inference | 0.2877 |
-| 2 | active | 0.2680 |
-| 3 | inference | 0.2673 |
-| 4 | free | 0.2195 |
-| 5 | energy | 0.2168 |
-| 6 | free energy | 0.2155 |
-| 7 | expected | 0.1614 |
-| 8 | data | -0.1530 |
-| 9 | agents | 0.1522 |
-| 10 | activity | -0.1509 |
-| 11 | expected free | 0.1348 |
-| 12 | agent | 0.1347 |
-| 13 | human | -0.1305 |
-| 14 | efe | 0.1187 |
-| 15 | rl | 0.1107 |
-| 16 | variational | 0.1062 |
-| 17 | control | 0.1040 |
-| 18 | deep | 0.1000 |
-| 19 | planning | 0.0979 |
-| 20 | cognitive | -0.0974 |
+| 1 | bone | 0.6329 |
+| 2 | bone grafting | 0.5702 |
+| 3 | grafting | -0.3198 |
+| 4 | impaction | 0.2883 |
+| 5 | impaction bone | 0.2134 |
+| 6 | tree | -0.1127 |
+| 7 | mechanical | 0.0526 |
+| 8 | tree grafting | -0.0510 |
+| 9 | total | 0.0441 |
+| 10 | artery | -0.0437 |
+| 11 | artery grafting | -0.0364 |
+| 12 | techniques | -0.0355 |
+| 13 | grafting techniques | -0.0345 |
+| 14 | grafting grafting | -0.0323 |
+| 15 | vegetable | -0.0299 |
+| 16 | method | -0.0294 |
+| 17 | skin | -0.0288 |
+| 18 | skin grafting | -0.0281 |
+| 19 | trees | -0.0243 |
+| 20 | methods | -0.0228 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): active inference, active, inference, free, energy
-**Negative contributors** (low loading): data, activity, human, cognitive
+**Positive contributors** (high loading): bone, bone grafting, impaction, impaction bone, mechanical
+**Negative contributors** (low loading): grafting, tree, tree grafting, artery, artery grafting
 
 ---
 
 ### Principal Component 3 (PC3)
 
-- **Variance Explained**: 1.30%
+- **Variance Explained**: 2.12%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | control | 0.2811 |
-| 2 | navigation | -0.1878 |
-| 3 | agents | -0.1786 |
-| 4 | exploration | -0.1741 |
-| 5 | perception | 0.1675 |
-| 6 | inference | 0.1596 |
-| 7 | deep | 0.1580 |
-| 8 | agent | -0.1535 |
-| 9 | brain | 0.1526 |
-| 10 | aif | -0.1482 |
-| 11 | active inference | 0.1423 |
-| 12 | active | 0.1390 |
-| 13 | environments | -0.1357 |
-| 14 | action | 0.1104 |
-| 15 | estimation | 0.1100 |
-| 16 | multi | -0.1086 |
-| 17 | curiosity | -0.1083 |
-| 18 | decision | -0.1040 |
-| 19 | neural | 0.0978 |
-| 20 | predictive | 0.0959 |
+| 1 | artery | 0.5407 |
+| 2 | artery grafting | 0.4071 |
+| 3 | trees | -0.2556 |
+| 4 | grafting | -0.2461 |
+| 5 | coronary | 0.2004 |
+| 6 | internal | 0.1903 |
+| 7 | coronary artery | 0.1806 |
+| 8 | bypass | 0.1629 |
+| 9 | artery bypass | 0.1527 |
+| 10 | bypass grafting | 0.1453 |
+| 11 | grafted | -0.1419 |
+| 12 | rootstocks | -0.1413 |
+| 13 | techniques | 0.1284 |
+| 14 | trees grafted | -0.1251 |
+| 15 | rootstock | -0.0956 |
+| 16 | growth | -0.0824 |
+| 17 | fruit | -0.0813 |
+| 18 | grafting techniques | 0.0801 |
+| 19 | tree | 0.0776 |
+| 20 | citrus | -0.0749 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): control, perception, inference, deep, brain
-**Negative contributors** (low loading): navigation, agents, exploration, agent, aif
+**Positive contributors** (high loading): artery, artery grafting, coronary, internal, coronary artery
+**Negative contributors** (low loading): trees, grafting, grafted, rootstocks, trees grafted
 
 ---
 
 ### Principal Component 4 (PC4)
 
-- **Variance Explained**: 1.27%
+- **Variance Explained**: 2.03%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | model | 0.1834 |
-| 2 | learning | 0.1725 |
-| 3 | fep | 0.1632 |
-| 4 | navigation | 0.1623 |
-| 5 | cognitive | 0.1484 |
-| 6 | bayesian | -0.1463 |
-| 7 | predictive | 0.1318 |
-| 8 | motor | 0.1312 |
-| 9 | human | 0.1290 |
-| 10 | brain | 0.1289 |
-| 11 | self | 0.1275 |
-| 12 | activity | -0.1202 |
-| 13 | data | -0.1168 |
-| 14 | robot | 0.1097 |
-| 15 | world | 0.1077 |
-| 16 | environment | 0.1070 |
-| 17 | perception | 0.1053 |
-| 18 | predictive coding | 0.0999 |
-| 19 | coding | 0.0995 |
-| 20 | markov | -0.0986 |
+| 1 | tree | 0.6481 |
+| 2 | tree grafting | 0.3028 |
+| 3 | artery | -0.2753 |
+| 4 | artery grafting | -0.2160 |
+| 5 | trees | -0.2036 |
+| 6 | grafting | -0.1716 |
+| 7 | rootstocks | -0.1361 |
+| 8 | trees grafted | -0.1192 |
+| 9 | grafted | -0.1171 |
+| 10 | method | 0.0995 |
+| 11 | decision | 0.0981 |
+| 12 | internal | -0.0973 |
+| 13 | grafting method | 0.0938 |
+| 14 | decision tree | 0.0908 |
+| 15 | coronary | -0.0908 |
+| 16 | citrus | -0.0866 |
+| 17 | coronary artery | -0.0836 |
+| 18 | algorithm | 0.0779 |
+| 19 | bypass | -0.0732 |
+| 20 | life | 0.0721 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): model, learning, fep, navigation, cognitive
-**Negative contributors** (low loading): bayesian, activity, data, markov
+**Positive contributors** (high loading): tree, tree grafting, method, decision, grafting method
+**Negative contributors** (low loading): artery, artery grafting, trees, grafting, rootstocks
 
 ---
 
 ### Principal Component 5 (PC5)
 
-- **Variance Explained**: 1.21%
+- **Variance Explained**: 1.54%
 
 #### Top Contributing Words
 
 | Rank | Word | Loading |
 |------|------|---------|
-| 1 | ai | 0.3845 |
-| 2 | systems | 0.1961 |
-| 3 | intelligence | 0.1835 |
-| 4 | active inference | 0.1578 |
-| 5 | agents | 0.1513 |
-| 6 | cognitive | 0.1456 |
-| 7 | deep | -0.1418 |
-| 8 | inference | 0.1401 |
-| 9 | data | -0.1400 |
-| 10 | active | 0.1367 |
-| 11 | artificial | 0.1273 |
-| 12 | cognition | 0.1174 |
-| 13 | object | -0.1156 |
-| 14 | consciousness | 0.1085 |
-| 15 | learning | -0.1084 |
-| 16 | artificial intelligence | 0.1075 |
-| 17 | human | 0.1054 |
-| 18 | activity | -0.1039 |
-| 19 | model | -0.1019 |
-| 20 | embodied | 0.1002 |
+| 1 | grafting techniques | 0.6057 |
+| 2 | techniques | 0.5192 |
+| 3 | tree | -0.2179 |
+| 4 | skin | 0.2059 |
+| 5 | artery | -0.1969 |
+| 6 | skin grafting | 0.1937 |
+| 7 | trees | -0.1684 |
+| 8 | artery grafting | -0.1253 |
+| 9 | tree grafting | -0.1217 |
+| 10 | grafting | -0.0984 |
+| 11 | coronary | -0.0973 |
+| 12 | coronary artery | -0.0874 |
+| 13 | grafted | -0.0847 |
+| 14 | bypass | -0.0806 |
+| 15 | vegetable | 0.0766 |
+| 16 | trees grafted | -0.0766 |
+| 17 | artery bypass | -0.0755 |
+| 18 | bypass grafting | -0.0712 |
+| 19 | rootstocks | -0.0590 |
+| 20 | internal | -0.0589 |
 
 #### Interpretation
 
-**Positive contributors** (high loading): ai, systems, intelligence, active inference, agents
-**Negative contributors** (low loading): deep, data, object, learning, activity
+**Positive contributors** (high loading): grafting techniques, techniques, skin, skin grafting, vegetable
+**Negative contributors** (low loading): tree, artery, trees, artery grafting, tree grafting
 
 ---
 
