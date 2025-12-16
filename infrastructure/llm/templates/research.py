@@ -289,9 +289,9 @@ Begin your summary now. Remember: NO repeated sections, NO repeated paragraphs, 
 
 
 class LiteratureReviewSynthesis(ResearchTemplate):
-    """Template for synthesizing multiple paper summaries into a cohesive literature review.
+    """Template for synthesizing multiple paper summaries into a literature review.
 
-    Generates a structured literature review that identifies themes, compares approaches,
+    Generates a literature review that identifies themes, compares approaches,
     and highlights key findings across multiple papers.
     """
     template_str = """=== PAPER SUMMARIES ===
@@ -300,7 +300,7 @@ ${summaries}
 
 === END PAPER SUMMARIES ===
 
-TASK: Write a cohesive literature review paragraph that synthesizes these ${num_papers} papers.
+TASK: Write a literature review paragraph that synthesizes these ${num_papers} papers.
 
 REQUIREMENTS:
 1. Focus on the ${focus} aspects of these papers
@@ -316,9 +316,9 @@ Begin your literature review synthesis:"""
 
 
 class ScienceCommunicationNarrative(ResearchTemplate):
-    """Template for creating accessible science communication narratives from research papers.
+    """Template for creating science communication narratives from research papers.
 
-    Transforms technical research findings into engaging, understandable narratives
+    Transforms technical research findings into understandable narratives
     for different audiences (general public, students, etc.).
     """
     template_str = """=== RESEARCH PAPERS ===
@@ -333,7 +333,7 @@ AUDIENCE: ${audience}
 STYLE: ${narrative_style}
 
 REQUIREMENTS:
-1. Explain the scientific concepts in accessible language
+1. Explain the scientific concepts clearly
 2. Connect the research to real-world implications
 3. Use storytelling techniques appropriate to the chosen style
 4. Maintain scientific accuracy while being engaging
@@ -346,9 +346,9 @@ Begin your science communication narrative:"""
 
 
 class ComparativeAnalysis(ResearchTemplate):
-    """Template for comparative analysis across multiple research papers.
+    """Template for comparison across multiple research papers.
 
-    Provides structured comparison of methods, results, datasets, or other aspects
+    Provides comparison of methods, results, datasets, or other aspects
     across multiple papers in the same research area.
     """
     template_str = """=== PAPERS FOR COMPARISON ===
@@ -479,6 +479,12 @@ REQUIREMENTS:
      * Vary attribution phrases to avoid repetition
      * Include section context when available: "In the Introduction, the authors state: \"quote text\""
      * Ensure proper spacing around quotes and punctuation
+   - QUOTE FORMATTING ERRORS TO AVOID:
+     * Do NOT put attribution inside quote marks:
+       BAD: "According to the paper: 'actual quote'"
+       GOOD: According to the paper: "actual quote"
+     * Always include quote text (never just context)
+     * Remove duplicate quotes before submitting
 
 3. STRUCTURE YOUR OUTPUT AS:
    ## Key Claims and Hypotheses
@@ -575,6 +581,22 @@ PROFESSIONAL TONE REQUIREMENTS:
 - Example GOOD: "## Algorithms and Methodologies\n\n*   Free Energy Principle (exact quote from paper) – \"quote text\""
 
 TASK: Analyze and extract detailed information about the methods, algorithms, frameworks, datasets, evaluation metrics, and software tools used in this research paper.
+
+CRITICAL ANTI-BLOAT INSTRUCTIONS (ENFORCED):
+- If a section has NO items found after searching the paper, write EXACTLY ONE LINE: "Not specified in paper"
+- NEVER list individual placeholder items with "Not specified in paper" - this creates bloat
+- MAXIMUM 3 sections total can be "Not specified in paper" across the entire output
+- If you find yourself writing "Not specified" more than 3 times, STOP and revise your search
+- Keep total output UNDER 200 lines and UNDER 1500 words - be concise
+- Do NOT repeat the same information in multiple sections
+
+VERIFICATION CHECKLIST (Execute before responding):
+1. Search the FULL paper text for each tool/framework name you want to list
+2. Only include if EXACT NAME appears in the paper text
+3. Count "Not specified" instances (must be ≤3 total)
+4. Count total output lines (must be ≤200)
+5. Count total words (must be ≤1500)
+6. Remove any duplicate items across sections
 
 REQUIREMENTS:
 

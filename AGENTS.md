@@ -100,7 +100,7 @@ JSON-based library index tracking all papers:
 {
   "version": "1.0",
   "updated": "2025-12-02T04:42:16.615302",
-  "count": 499,
+  "count": 456,
   "entries": {
     "smith2024machine": {
       "citation_key": "smith2024machine",

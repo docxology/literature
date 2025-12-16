@@ -126,7 +126,7 @@ python3 scripts/literature_search.py [options]
 - `--clear-pdfs` - Clear all PDFs before download (default: False, incremental/additive)
 - `--clear-summaries` - Clear all summaries before generation (default: False, incremental/additive)
 - `--clear-library` - Clear library index before operations (requires confirmation, default: False)
-- `--paper-config PATH` - Path to YAML config file for paper selection (default: data/paper_selection.yaml)
+- `--paper-config PATH` - Path to YAML config file for paper selection (default: literature/paper_selection.yaml)
 - `--with-embeddings` - Enable embedding analysis for meta-analysis (requires Ollama and `--meta-analysis` flag)
 
 **Note:** Sources are configured via `LITERATURE_SOURCES` environment variable, not via CLI flag. See [Configuration Guide](../guides/configuration.md) for details.

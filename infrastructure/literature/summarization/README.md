@@ -308,8 +308,8 @@ summarizer = MultiStageSummarizer(
 - **Post-processing deduplication** (aggressive deduplication before validation)
 - **Comprehensive quality validation** (pattern-based hallucination detection, repetition analysis)
 - **Structured context extraction** (abstract, intro, conclusion, key terms)
-- **Real-time progress reporting** (streaming updates every 5 seconds)
-- **Intelligent PDF processing** (section prioritization, two-stage mode for large texts)
+- **Progress reporting** (streaming updates every 5 seconds)
+- **PDF processing** (section prioritization, two-stage mode for large texts)
 - **Automatic quality scoring** (0.0 to 1.0 with detailed error reporting)
 
 ## API Reference

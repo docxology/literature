@@ -11,7 +11,7 @@ The documentation follows a hierarchical structure designed for different user n
 ```
 docs/
 ├── README.md              # Documentation index and navigation
-├── getting-started.md     # Quick start guide for new users
+├── getting-started.md     # Quick start guide
 ├── architecture.md        # System architecture and design
 ├── guides/                # How-to guides for common tasks
 │   ├── search-papers.md
@@ -37,7 +37,7 @@ docs/
 ### Documentation Organization Principles
 
 1. **User-Centric Organization**: Documentation is organized by user needs, not implementation structure
-   - Getting started for new users
+   - Getting started guides
    - Guides for common tasks
    - Reference for detailed API/CLI usage
    - Architecture for understanding system design
@@ -58,7 +58,7 @@ docs/
 
 All documentation follows these principles:
 
-- **"Show Not Tell"**: Include concrete examples, not just descriptions
+- **Show Not Tell**: Include concrete examples, not just descriptions
 - **Understated and Factual**: Avoid marketing language, focus on accuracy
 - **Clear and Interpretable**: Use clear language accessible to all skill levels
 - **Accurate and Complete**: Match actual implementation exactly
@@ -142,7 +142,7 @@ See [Root AGENTS.md](../../AGENTS.md) for system overview.
 - [ ] Terminology is consistent across all docs
 - [ ] Information matches actual implementation
 - [ ] Navigation is clear and logical
-- [ ] Code examples follow current best practices
+- [ ] Code examples follow current practices
 - [ ] Configuration options are accurate
 - [ ] Troubleshooting covers common issues
 
@@ -186,7 +186,7 @@ When adding new documentation:
 ## See Also
 
 - [Documentation README](README.md) - Documentation index and navigation
-- [Getting Started Guide](getting-started.md) - Quick start for new users
+- [Getting Started Guide](getting-started.md) - Quick start guide
 - [Architecture Overview](architecture.md) - System architecture and design
 - [Root AGENTS.md](../AGENTS.md) - System documentation
 - [Module Documentation](../infrastructure/) - Detailed module documentation

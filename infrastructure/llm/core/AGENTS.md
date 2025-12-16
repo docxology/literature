@@ -14,7 +14,7 @@ Main interface for querying LLMs with multiple response modes:
 - **Long responses**: Detailed answers (> 500 tokens)
 - **Structured responses**: JSON-formatted with schema validation
 - **Raw queries**: Direct prompts without modification
-- **Streaming**: Real-time response generation
+- **Streaming**: Response generation
 
 ### LLMConfig (`config.py`)
 

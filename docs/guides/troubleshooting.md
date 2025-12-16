@@ -181,7 +181,7 @@ else:
 # Retry failed downloads when downloading
 python3 scripts/literature_search.py --download-only --retry-failed
 
-# Retry failed downloads in full search workflow
+# Retry failed downloads in search workflow
 python3 scripts/literature_search.py --search --retry-failed --keywords "machine learning"
 ```
 
@@ -710,7 +710,7 @@ from infrastructure.llm.utils.ollama import test_embedding_endpoint, diagnose_ol
 success, error = test_embedding_endpoint(timeout=10.0)
 print(f"Embedding endpoint: {'OK' if success else f'FAILED: {error}'}")
 
-# Full diagnostics
+# Diagnostics
 diagnostics = diagnose_ollama_issues()
 print(diagnostics)
 ```

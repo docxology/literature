@@ -15,7 +15,7 @@ Standalone repository for academic literature search, PDF management, reference 
 - **Use the API/CLI** → [API Reference](docs/reference/api-reference.md) | [CLI Reference](docs/reference/cli-reference.md)
 
 **For different users:**
-- **New users** → Start with [Getting Started](docs/getting-started.md) and [Quick Start](#quick-start)
+- **Users** → Start with [Getting Started](docs/getting-started.md) and [Quick Start](#quick-start)
 - **Developers** → See [System Overview](#system-overview), [Module Reference](#module-reference), and [API Reference](docs/reference/api-reference.md)
 - **Researchers** → See [Core Workflows](#core-workflows), [Meta-Analysis Guide](docs/guides/meta-analysis.md), and [LLM Operations](docs/guides/llm-operations.md)
 
@@ -100,7 +100,7 @@ flowchart TB
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone <your-repository-url>
 cd literature
 
 # Install dependencies
@@ -276,7 +276,6 @@ flowchart LR
 
 ### Additional Resources
 - **[Documentation Index](docs/README.md)** - Documentation index
-- **[Review Reports](docs/review/)** - Documentation review reports
 
 ## Module Reference
 

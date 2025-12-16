@@ -158,6 +158,9 @@ class SummarizationEngine:
         citation_key = pdf_path.stem
         start_time = time.time()
         
+        # Initialize variables used in error paths
+        classification = None
+        
         # CRITICAL: Clear context before processing each paper to prevent cross-paper contamination
         logger.info(
             f"[{citation_key}] Clearing LLM context before summarization",
@@ -606,8 +609,27 @@ class SummarizationEngine:
             logger.warning(
                 f"[{citation_key}] Summary rejected due to hard failure: {validation_result.errors[:3]}"
             )
-            # Always include summary_text even when validation fails (for saving)
-            return SummarizationResult(
+            # Record quality metrics
+        from infrastructure.literature.summarization.quality_tracker import QualityTracker, QualityMetrics
+        tracker = QualityTracker()
+        metrics = QualityMetrics(
+            citation_key=citation_key,
+            timestamp=time.time(),
+            success=False,
+            quality_score=validation_result.score,
+            validation_errors=validation_result.errors,
+            validation_warnings=validation_result.warnings,
+            input_chars=input_chars,
+            input_words=input_words,
+            output_words=output_words,
+            generation_time=generation_time,
+            attempts=total_attempts,
+            paper_classification=getattr(classification, 'category', None) if classification else None
+        )
+        tracker.record_operation(metrics)
+
+        # Always include summary_text even when validation fails (for saving)
+        return SummarizationResult(
                 citation_key=citation_key,
                 success=False,
                 summary_text=summary,  # Always include summary for saving
@@ -623,7 +645,26 @@ class SummarizationEngine:
         
         # Accept if validation passed or score is acceptable
         success = validation_result.is_valid or validation_result.score >= 0.5
-        
+
+        # Record quality metrics
+        from infrastructure.literature.summarization.quality_tracker import QualityTracker, QualityMetrics
+        tracker = QualityTracker()
+        metrics = QualityMetrics(
+            citation_key=citation_key,
+            timestamp=time.time(),
+            success=success,
+            quality_score=validation_result.score,
+            validation_errors=validation_result.errors,
+            validation_warnings=validation_result.warnings,
+            input_chars=input_chars,
+            input_words=input_words,
+            output_words=output_words,
+            generation_time=generation_time,
+            attempts=total_attempts,
+            paper_classification=getattr(classification, 'category', None) if classification else None
+        )
+        tracker.record_operation(metrics)
+
         if success:
             logger.info(
                 f"[{citation_key}] Summary accepted: {output_words} words, "
@@ -1315,7 +1356,10 @@ class SummarizationEngine:
         lines = claims_quotes_text.split('\n')
         validated_lines = []
         removed_count = 0
-        
+
+        # Track quotes to detect duplicates across the document
+        seen_quotes = set()
+
         for line in lines:
             is_quote_line = False
             quote_found = False
@@ -1326,13 +1370,47 @@ class SummarizationEngine:
                 for match in matches:
                     is_quote_line = True
                     quote_text = match.group(1)
-                    
+
                     # Skip artifacts like "dynamicssimulationsand" → "dynamics simulations and"
                     if '→' in quote_text or '->' in quote_text:
                         removed_count += 1
                         logger.debug(f"[{citation_key}] Removed quote artifact: {quote_text[:50]}...")
                         quote_found = False
                         break
+
+                    # Check for missing quote text (format validation)
+                    if not quote_text.strip():
+                        removed_count += 1
+                        logger.debug(f"[{citation_key}] Removed quote with missing text: {line[:80]}...")
+                        quote_found = False
+                        break
+
+                    # Check for meta-commentary embedded in quotes
+                    meta_patterns = [
+                        r'^according to the paper:',
+                        r'^the authors? (state|note|argue|demonstrate):',
+                        r'^they (state|note|argue|demonstrate):',
+                        r'^the paper (argues|states|demonstrates):',
+                        r'^in the [^:]*:\s*',
+                    ]
+                    for pattern in meta_patterns:
+                        if re.search(pattern, quote_text.lower().strip()):
+                            removed_count += 1
+                            logger.debug(f"[{citation_key}] Removed quote with embedded meta-commentary: {quote_text[:50]}...")
+                            quote_found = False
+                            break
+                    if not quote_found:
+                        break
+
+                    # Check for duplicate quotes across document
+                    quote_key = quote_text.lower().strip()
+                    if quote_key in seen_quotes:
+                        removed_count += 1
+                        logger.debug(f"[{citation_key}] Removed duplicate quote: {quote_text[:50]}...")
+                        quote_found = False
+                        break
+                    else:
+                        seen_quotes.add(quote_key)
                     
                     # Normalize quote for comparison (remove spaces, lowercase)
                     quote_normalized = re.sub(r'\s+', '', quote_text.lower())
@@ -1660,19 +1738,42 @@ class SummarizationEngine:
                 return "## Algorithms and Methodologies\n\nNo methods extracted.\n\n## Software Frameworks and Libraries\n\nNo frameworks extracted.\n\n## Datasets\n\nNo datasets extracted.\n\n## Evaluation Metrics\n\nNo metrics extracted.\n\n## Software Tools and Platforms\n\nNo tools extracted."
             
             words = len(methods_tools.split())
+
+            # Validate and clean the output
+            from infrastructure.literature.summarization.methods_tools_validator import MethodsToolsValidator
+            validator = MethodsToolsValidator()
+            validated_methods_tools, validation_warnings = validator.validate_output(
+                methods_tools, pdf_text, citation_key
+            )
+
+            # Log validation results
+            if validation_warnings:
+                logger.warning(
+                    f"[{citation_key}] Methods/tools validation warnings: "
+                    f"{len(validation_warnings)} issues found"
+                )
+                for warning in validation_warnings[:3]:  # Log first 3 warnings
+                    logger.warning(f"[{citation_key}] {warning}")
+
+            final_words = len(validated_methods_tools.split())
             logger.info(
                 f"[{citation_key}] Methods/tools analysis completed: "
-                f"{words} words in {analysis_time:.2f}s"
+                f"{words} → {final_words} words in {analysis_time:.2f}s "
+                f"(validation: {len(validation_warnings)} warnings)"
             )
-            
+
             emit_progress(
                 "methods_analysis",
                 "completed",
-                f"Analyzed methods and tools: {words} words",
-                {"words": words, "time": analysis_time}
+                f"Analyzed and validated methods and tools: {final_words} words",
+                {
+                    "words": final_words,
+                    "validation_warnings": len(validation_warnings),
+                    "time": analysis_time
+                }
             )
-            
-            return methods_tools
+
+            return validated_methods_tools
             
         except Exception as e:
             analysis_time = time.time() - analysis_start if 'analysis_start' in locals() else 0.0
@@ -1836,21 +1937,43 @@ class SummarizationEngine:
             result_parts.append("")  # Empty line between sections
         
         final_result = '\n'.join(result_parts).strip()
-        
-        words = len(final_result.split())
+
+        # Validate and clean the combined result
+        from infrastructure.literature.summarization.methods_tools_validator import MethodsToolsValidator
+        validator = MethodsToolsValidator()
+        validated_result, validation_warnings = validator.validate_output(
+            final_result, pdf_text, citation_key
+        )
+
+        # Log validation results
+        if validation_warnings:
+            logger.warning(
+                f"[{citation_key}] Methods/tools validation warnings (chunked): "
+                f"{len(validation_warnings)} issues found"
+            )
+            for warning in validation_warnings[:3]:  # Log first 3 warnings
+                logger.warning(f"[{citation_key}] {warning}")
+
+        final_words = len(validated_result.split())
         logger.info(
             f"[{citation_key}] Methods/tools analysis completed (chunked mode): "
-            f"{words} words from {successful_chunks} chunks"
+            f"{words} → {final_words} words from {successful_chunks} chunks "
+            f"(validation: {len(validation_warnings)} warnings)"
         )
-        
+
         emit_progress(
             "methods_analysis",
             "completed",
-            f"Analyzed methods and tools: {words} words from {successful_chunks} chunks",
-            {"words": words, "chunks_processed": successful_chunks, "total_chunks": chunking_result.total_chunks}
+            f"Analyzed and validated methods and tools: {final_words} words from {successful_chunks} chunks",
+            {
+                "words": final_words,
+                "chunks_processed": successful_chunks,
+                "total_chunks": chunking_result.total_chunks,
+                "validation_warnings": len(validation_warnings)
+            }
         )
-        
-        return final_result
+
+        return validated_result
     
     def _classify_paper(
         self,

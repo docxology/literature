@@ -12,7 +12,7 @@ JSON-based index of all papers in the library.
 {
   "version": "1.0",
   "updated": "2025-12-02T04:42:16.615302",
-  "count": 499,
+  "count": 456,
   "entries": {
     "citation_key": {
       "citation_key": "smith2024machine",
@@ -119,7 +119,7 @@ Progress tracking for summarization operations.
 
 ```json
 {
-  "total_papers": 499,
+  "total_papers": 456,
   "year_range": {"min": 2010, "max": 2024},
   "sources": {"arxiv": 185, "semanticscholar": 142},
   "keywords": {"machine learning": 45, "deep learning": 32}

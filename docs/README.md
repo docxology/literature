@@ -5,7 +5,7 @@ Welcome to the documentation for the Literature Search and Management System. Th
 ## Documentation Structure
 
 ### Getting Started
-- **[Getting Started Guide](getting-started.md)** - Quick start guide for new users
+- **[Getting Started Guide](getting-started.md)** - Quick start guide
 - **[Architecture Overview](architecture.md)** - System architecture and design
 
 ### Module Documentation
@@ -29,7 +29,6 @@ Welcome to the documentation for the Literature Search and Management System. Th
 - **[Data Formats](reference/data-formats.md)** - Data structure documentation
 
 ### Additional Resources
-- **[Review Reports](review/)** - Documentation review reports
 - **[Module Documentation](../infrastructure/)** - Detailed module documentation
 
 ## Quick Navigation

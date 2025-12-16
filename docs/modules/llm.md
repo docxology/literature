@@ -48,7 +48,7 @@ Composable prompt fragment system:
 - Template compositions
 - System prompt management
 
-### Review System (`review/`)
+### Review System (`infrastructure/llm/review/`)
 
 Manuscript review generation:
 - Executive summary generation

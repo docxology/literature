@@ -6,15 +6,15 @@
 - Full Text Words: 400 words
 
 ## Extracted Sections
-- Abstract: 8 chars
-- Introduction: 12 chars
-- Conclusion: 10 chars
+- Abstract: 0 chars
+- Introduction: 0 chars
+- Conclusion: 0 chars
 - Methods: 0 chars
 - Results: 0 chars
 - Discussion: 0 chars
 
 ## Key Terms
-test
+full, test, text, here
 
 ## Equations Found
 0 equations extracted

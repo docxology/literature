@@ -69,7 +69,7 @@ class LiteratureLLMOperations:
         focus: str = "general",
         max_papers: int = 10
     ) -> LLMOperationResult:
-        """Generate a literature review synthesizing multiple papers.
+        """Generate a literature review from multiple papers.
 
         Args:
             papers: List of papers to include in the review.
@@ -83,11 +83,15 @@ class LiteratureLLMOperations:
         selected_papers = papers[:max_papers]  # Limit number of papers
         citation_keys = [p.citation_key for p in selected_papers]
 
+        if len(papers) > max_papers:
+            logger.info(f"Limited to {max_papers} papers ({max_papers}/{len(papers)} selected)")
+        
         logger.info(f"Generating literature review for {len(selected_papers)} papers (focus: {focus})")
 
         # Collect summaries or abstracts for each paper
         paper_summaries = []
-        for paper in selected_papers:
+        for idx, paper in enumerate(selected_papers, 1):
+            logger.debug(f"Processing paper {idx}/{len(selected_papers)}: {paper.citation_key}")
             # Try to load summary first
             summary_path = Path("data/summaries") / f"{paper.citation_key}_summary.md"
             if summary_path.exists():
@@ -144,7 +148,7 @@ class LiteratureLLMOperations:
         audience: str = "general_public",
         narrative_style: str = "storytelling"
     ) -> LLMOperationResult:
-        """Generate a science communication narrative from multiple papers.
+        """Generate science communication narrative from multiple papers.
 
         Args:
             papers: List of papers to include.
@@ -161,7 +165,8 @@ class LiteratureLLMOperations:
 
         # Collect key information from papers
         paper_info = []
-        for paper in papers:
+        for idx, paper in enumerate(papers, 1):
+            logger.debug(f"Processing paper {idx}/{len(papers)}: {paper.citation_key}")
             summary_path = Path("data/summaries") / f"{paper.citation_key}_summary.md"
             if summary_path.exists():
                 try:
@@ -219,7 +224,7 @@ class LiteratureLLMOperations:
         papers: List[LibraryEntry],
         aspect: str = "methods"
     ) -> LLMOperationResult:
-        """Generate comparative analysis across multiple papers.
+        """Generate comparison across multiple papers.
 
         Args:
             papers: List of papers to compare.
@@ -231,11 +236,12 @@ class LiteratureLLMOperations:
         start_time = time.time()
         citation_keys = [p.citation_key for p in papers]
 
-        logger.info(f"Generating comparative analysis for {len(papers)} papers (aspect: {aspect})")
+        logger.info(f"Generating comparison for {len(papers)} papers (aspect: {aspect})")
 
         # Collect relevant information for comparison
         paper_comparisons = []
-        for paper in papers:
+        for idx, paper in enumerate(papers, 1):
+            logger.debug(f"Processing paper {idx}/{len(papers)}: {paper.citation_key}")
             summary_path = Path("data/summaries") / f"{paper.citation_key}_summary.md"
             if summary_path.exists():
                 try:
@@ -273,12 +279,12 @@ class LiteratureLLMOperations:
             metadata={"aspect": aspect}
         )
 
-    def identify_research_gaps(
+    def generate_research_gaps(
         self,
         papers: List[LibraryEntry],
         domain: str = "general"
     ) -> LLMOperationResult:
-        """Identify research gaps from literature analysis.
+        """Generate research gap identification from literature analysis.
 
         Args:
             papers: List of papers to analyze for gaps.
@@ -290,11 +296,12 @@ class LiteratureLLMOperations:
         start_time = time.time()
         citation_keys = [p.citation_key for p in papers]
 
-        logger.info(f"Identifying research gaps in {len(papers)} papers (domain: {domain})")
+        logger.info(f"Generating research gap identification for {len(papers)} papers (domain: {domain})")
 
         # Collect paper summaries and methodologies
         paper_gaps = []
-        for paper in papers:
+        for idx, paper in enumerate(papers, 1):
+            logger.debug(f"Processing paper {idx}/{len(papers)}: {paper.citation_key}")
             summary_path = Path("data/summaries") / f"{paper.citation_key}_summary.md"
             if summary_path.exists():
                 try:
@@ -350,7 +357,8 @@ class LiteratureLLMOperations:
         # In a real implementation, this would analyze citation relationships
 
         paper_networks = []
-        for paper in papers:
+        for idx, paper in enumerate(papers, 1):
+            logger.debug(f"Processing paper {idx}/{len(papers)}: {paper.citation_key}")
             summary_path = Path("data/summaries") / f"{paper.citation_key}_summary.md"
             if summary_path.exists():
                 try:

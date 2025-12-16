@@ -1,6 +1,6 @@
 # Meta-Analysis Summary Report
 
-**Generated**: 2025-12-15T17:29:01.163893
+**Generated**: 2025-12-16T07:53:41.949447
 
 ---
 
@@ -131,9 +131,9 @@
 - **Variance Explained**: 1.76%
 
 **Top Contributing Words**:
-- active inference (loading: 0.2876)
-- active (loading: 0.2679)
-- inference (loading: 0.2672)
+- active inference (loading: 0.2877)
+- active (loading: 0.2680)
+- inference (loading: 0.2673)
 - free (loading: 0.2196)
 - energy (loading: 0.2168)
 
@@ -142,33 +142,33 @@
 - **Variance Explained**: 1.30%
 
 **Top Contributing Words**:
-- control (loading: 0.2852)
-- navigation (loading: -0.1880)
-- agents (loading: -0.1802)
-- exploration (loading: -0.1725)
-- perception (loading: 0.1657)
+- control (loading: 0.2812)
+- navigation (loading: -0.1863)
+- agents (loading: -0.1760)
+- exploration (loading: -0.1724)
+- perception (loading: 0.1703)
 
 #### PC4
 
 - **Variance Explained**: 1.27%
 
 **Top Contributing Words**:
-- model (loading: 0.1771)
-- learning (loading: 0.1701)
-- fep (loading: 0.1603)
-- navigation (loading: 0.1598)
-- cognitive (loading: 0.1492)
+- model (loading: 0.1791)
+- learning (loading: 0.1690)
+- navigation (loading: 0.1638)
+- fep (loading: 0.1507)
+- cognitive (loading: 0.1451)
 
 #### PC5
 
 - **Variance Explained**: 1.21%
 
 **Top Contributing Words**:
-- ai (loading: 0.3787)
-- systems (loading: 0.1951)
-- intelligence (loading: 0.1794)
-- active inference (loading: 0.1573)
-- agents (loading: 0.1533)
+- ai (loading: 0.3886)
+- systems (loading: 0.2021)
+- intelligence (loading: 0.1830)
+- active inference (loading: 0.1567)
+- agents (loading: 0.1538)
 
 ---
 

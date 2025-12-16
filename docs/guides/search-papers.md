@@ -127,7 +127,7 @@ for paper in papers:
 The system automatically deduplicates results:
 - Exact DOI matching (highest priority)
 - Fuzzy title similarity matching
-- Relevance ranking to keep best results
+- Relevance ranking to prioritize results
 
 ## Health Checking
 

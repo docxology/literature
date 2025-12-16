@@ -88,7 +88,7 @@ engine = SummarizationEngine(
 
 ## Progress Tracking
 
-### Real-time Progress
+### Progress
 
 ```python
 def progress_callback(event):

@@ -10,7 +10,7 @@ All LLM operations use local Ollama models to generate text-based analyses. Thes
 
 ### 1. Summarize Papers
 
-**Purpose:** Generate comprehensive summaries for individual papers with PDFs.
+**Purpose:** Generate summaries for individual papers with PDFs.
 
 **Input Requirements:**
 - Papers must have PDFs downloaded
@@ -37,7 +37,7 @@ python3 scripts/literature_search.py --summarize
 
 ### 2. Literature Review Synthesis
 
-**Purpose:** Synthesize multiple papers into a cohesive literature review paragraph.
+**Purpose:** Synthesize multiple papers into a literature review paragraph.
 
 **Input Requirements:**
 - Multiple papers (default: up to 10)
@@ -68,7 +68,7 @@ python3 scripts/literature_search.py --llm-operation review
 
 ### 3. Science Communication Narrative
 
-**Purpose:** Create accessible science communication narratives for general audiences.
+**Purpose:** Create science communication narratives for general audiences.
 
 **Input Requirements:**
 - Multiple papers
@@ -79,7 +79,7 @@ python3 scripts/literature_search.py --llm-operation review
 - **Format:** Markdown file
 - **Location:** `literature/llm_outputs/communication_outputs/science_communication_{timestamp}.md`
 - **Length:** 600-800 words
-- **Content:** Engaging narrative explaining scientific concepts in accessible language, connecting research to real-world implications
+- **Content:** Narrative explaining scientific concepts, connecting research to real-world implications
 
 **Use Cases:**
 - Write blog posts or articles about research
@@ -104,20 +104,20 @@ python3 scripts/literature_search.py --llm-operation communication
 
 **Input Requirements:**
 - Multiple papers (typically 3-10 for meaningful comparison)
-- Prefers full summaries, falls back to abstracts
+- Prefers summaries, falls back to abstracts
 - Configurable aspect to compare
 
 **Output:**
 - **Format:** Markdown file
 - **Location:** `literature/llm_outputs/compare_outputs/comparative_analysis_{timestamp}.md`
 - **Length:** 500-700 words
-- **Content:** Structured analysis with sections for Introduction, Comparison, Analysis, and Conclusions, identifying similarities, differences, strengths, and weaknesses
+- **Content:** Analysis with sections for Introduction, Comparison, Analysis, and Conclusions, identifying similarities, differences, strengths, and weaknesses
 
 **Use Cases:**
 - Compare different methodological approaches
 - Evaluate performance across papers
 - Understand trade-offs between different methods
-- Identify best practices in a research area
+- Identify practices in a research area
 
 **Example:**
 ```bash
@@ -135,14 +135,14 @@ python3 scripts/literature_search.py --llm-operation compare
 
 **Input Requirements:**
 - Multiple papers (typically 5-20 for gap analysis)
-- Prefers full summaries, falls back to abstracts
+- Prefers summaries, falls back to abstracts
 - Domain context for focused analysis
 
 **Output:**
 - **Format:** Markdown file
 - **Location:** `literature/llm_outputs/gaps_outputs/research_gaps_{timestamp}.md`
 - **Length:** 400-600 words
-- **Content:** Structured analysis with sections for Current State, Identified Gaps, and Recommendations, prioritizing important and feasible research directions
+- **Content:** Analysis with sections for Current State, Identified Gaps, and Recommendations, prioritizing important and feasible research directions
 
 **Use Cases:**
 - Identify research opportunities for new projects
@@ -155,6 +155,8 @@ python3 scripts/literature_search.py --llm-operation compare
 python3 scripts/literature_search.py --llm-operation gaps
 ```
 
+**Method:** `generate_research_gaps()`
+
 **Configuration:**
 - Domain: "general" (default) or specific domain name for context
 
@@ -166,7 +168,7 @@ python3 scripts/literature_search.py --llm-operation gaps
 
 **Input Requirements:**
 - Multiple papers
-- Prefers full summaries, falls back to abstracts
+- Prefers summaries, falls back to abstracts
 
 **Output:**
 - **Format:** Markdown file
@@ -231,7 +233,7 @@ Outputs are saved as markdown files with:
 - If summaries unavailable, operations use abstracts
 - If abstracts unavailable, operations use titles only (limited quality)
 
-**Recommendation:** Generate summaries first (Operation 1) before running multi-paper operations for best results.
+**Recommendation:** Generate summaries first (Operation 1) before running multi-paper operations.
 
 ---
 
@@ -264,7 +266,7 @@ Outputs are saved as markdown files with:
    - Location: `infrastructure/literature/meta_analysis/additional_visualizations.py`
    - Future feature for graph-based visualization
 
-The LLM operation (6) is a real, functional text analysis tool. The visualization feature is separate and not yet implemented.
+The LLM operation (6) is a functional text analysis tool. The visualization feature is separate and not yet implemented.
 
 ---
 

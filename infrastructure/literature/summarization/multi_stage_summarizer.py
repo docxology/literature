@@ -699,7 +699,9 @@ class MultiStageSummarizer:
         progress_callback: Optional[Callable[[SummarizationProgressEvent], None]] = None,
         attempt_number: int = 1,
         max_attempts: int = 2,
-        use_simple_prompt: bool = False
+        use_simple_prompt: bool = False,
+        temperature: Optional[float] = None,
+        refinement_guidance: Optional[str] = None
     ) -> str:
         """Refine summary based on validation issues.
         
@@ -737,7 +739,7 @@ class MultiStageSummarizer:
         if use_simple_prompt:
             prompt = self.prompt_builder.build_simple_refinement_prompt(draft, issues, context)
         else:
-            metadata = {'citation_key': citation_key}
+            metadata = {'citation_key': citation_key, 'refinement_guidance': refinement_guidance}
             prompt = self.prompt_builder.build_refinement_prompt(draft, issues, context, metadata)
         prompt_size = len(prompt)
         logger.info(f"[{citation_key}] Refinement prompt built: {prompt_size:,} chars (full_text={len(context.full_text):,} chars)")
@@ -773,9 +775,14 @@ class MultiStageSummarizer:
         gen_options = get_model_aware_generation_options(
             self.llm_client, refine_metadata, stage="refinement", has_repetition_issue=has_repetition_issue
         )
-        
-        if has_repetition_issue:
-            logger.debug(f"[{citation_key}] Using reduced temperature {gen_options.temperature:.2f} for repetition issues")
+
+        # Override temperature if specified
+        if temperature is not None:
+            gen_options.temperature = temperature
+            logger.debug(f"[{citation_key}] Using specified temperature {temperature:.2f}")
+
+        if has_repetition_issue or temperature is not None:
+            logger.debug(f"[{citation_key}] Using temperature {gen_options.temperature:.2f}")
         
         # Generate refined summary using streaming with progress updates
         try:
@@ -1053,102 +1060,40 @@ class MultiStageSummarizer:
         current_summary = draft
         refinement_attempts = 0
         
-        # Check if we have severe repetition - if so, skip refinement and try regeneration
-        has_severe_repetition = any(
-            "severe repetition" in error.lower() 
-            for error in validation_result.errors
-        )
-        
-        if has_severe_repetition:
-            logger.warning(
-                f"[{citation_key}] Severe repetition detected in draft. "
-                f"Attempting regeneration with lower temperature instead of refinement."
+        # Progressive fallback strategies based on validation failures
+        fallback_strategy = self._determine_fallback_strategy(validation_result, attempt_number)
+
+        if fallback_strategy:
+            logger.info(
+                f"[{citation_key}] Applying fallback strategy: {fallback_strategy['name']} "
+                f"(attempt {attempt_number + 1}/{max_attempts})"
             )
-            # Apply more aggressive deduplication first
-            from infrastructure.llm.validation.repetition import deduplicate_sections
-            current_summary = deduplicate_sections(
+
+            current_summary = self._apply_fallback_strategy(
+                fallback_strategy,
                 current_summary,
-                max_repetitions=1,
-                mode="aggressive",
-                similarity_threshold=0.75,  # More aggressive threshold
-                min_content_preservation=0.5  # Allow more content removal to eliminate repetition
+                context,
+                pdf_text,
+                paper_title,
+                citation_key,
+                progress_callback,
+                validation_result
             )
-            current_summary = self._fix_markdown_formatting(current_summary)
-            
-            # Re-validate after deduplication
+
+            # Re-validate after fallback
             should_accept, validation_result = self.validate_and_accept(
-                current_summary, context, pdf_text, paper_title, citation_key, 
+                current_summary, context, pdf_text, paper_title, citation_key,
                 progress_callback=progress_callback
             )
-            
+
             if should_accept:
                 overall_time = time.time() - overall_start_time
                 logger.info(
                     f"[{citation_key}] Summarization completed in {overall_time:.2f}s "
-                    f"(draft accepted after aggressive deduplication, {total_attempts} attempt(s))"
+                    f"(accepted after {fallback_strategy['name']}, {total_attempts} attempt(s))"
                 )
                 return current_summary, validation_result, total_attempts
-            
-            # If deduplication didn't work, try regeneration with lower temperature
-            logger.info(
-                f"[{citation_key}] Aggressive deduplication did not resolve issues. "
-                f"Attempting regeneration with lower temperature (0.1-0.2)..."
-            )
-            try:
-                # Regenerate draft with lower temperature for repetition issues
-                regenerated = self._generate_draft_single_stage(
-                    context, 
-                    metadata, 
-                    progress_callback=progress_callback,
-                    has_repetition_issue=True
-                )
-                total_attempts += 1
-                
-                # Apply deduplication to regenerated draft
-                regenerated = deduplicate_sections(
-                    regenerated,
-                    max_repetitions=1,
-                    mode="aggressive",
-                    similarity_threshold=0.75,
-                    min_content_preservation=0.5
-                )
-                regenerated = self._fix_markdown_formatting(regenerated)
-                
-                # Validate regenerated summary
-                should_accept, validation_result = self.validate_and_accept(
-                    regenerated, context, pdf_text, paper_title, citation_key,
-                    progress_callback=progress_callback
-                )
-                
-                if should_accept:
-                    overall_time = time.time() - overall_start_time
-                    logger.info(
-                        f"[{citation_key}] Summarization completed in {overall_time:.2f}s "
-                        f"(accepted after regeneration with lower temperature, {total_attempts} attempt(s))"
-                    )
-                    return regenerated, validation_result, total_attempts
-                
-                # If regeneration also failed, use regenerated version for refinement
-                current_summary = regenerated
-                logger.info(
-                    f"[{citation_key}] Regeneration improved but still has issues. "
-                    f"Proceeding with refinement (will use repetition-specific prompts)..."
-                )
-            except Exception as regen_error:
-                error_type = type(regen_error).__name__
-                if isinstance(regen_error, TimeoutError):
-                    logger.error(
-                        f"[{citation_key}] Regeneration timed out: {regen_error}. "
-                        f"Cannot proceed with refinement without valid draft."
-                    )
-                    raise  # Don't proceed with refinement
-                else:
-                    logger.warning(
-                        f"[{citation_key}] Regeneration failed: {regen_error}. "
-                        f"Proceeding with refinement..."
-                    )
-                    # Continue only for non-timeout errors
-        
+
         logger.info(
             f"[{citation_key}] Draft not accepted (score: {validation_result.score:.2f}), "
             f"starting refinement (max {self.max_refinement_attempts} attempts)..."
@@ -1265,3 +1210,198 @@ class MultiStageSummarizer:
             f"(not fully validated after {total_attempts} attempts, score: {validation_result.score:.2f})"
         )
         return current_summary, validation_result, total_attempts
+
+    def _determine_fallback_strategy(
+        self,
+        validation_result: "ValidationResult",
+        attempt_number: int
+    ) -> Optional[Dict[str, Any]]:
+        """Determine appropriate fallback strategy based on validation failures.
+
+        Returns a strategy dictionary with 'name', 'type', and parameters,
+        or None if no suitable strategy available.
+        """
+        errors = " ".join(validation_result.errors).lower()
+        warnings = " ".join(validation_result.warnings).lower()
+
+        # Strategy 1: Severe repetition (highest priority)
+        if any("severe repetition" in error for error in validation_result.errors):
+            return {
+                "name": "severe_repetition_regeneration",
+                "type": "regeneration",
+                "temperature": 0.1,
+                "max_tokens": 3000,
+                "aggressive_deduplication": True,
+                "description": "Regenerate with very low temperature and aggressive deduplication"
+            }
+
+        # Strategy 2: Standard repetition
+        if any("repetition" in error.lower() for error in validation_result.errors):
+            if attempt_number == 1:
+                return {
+                    "name": "repetition_refinement",
+                    "type": "refinement",
+                    "temperature": 0.2,
+                    "simplified_prompt": True,
+                    "description": "Refine with lower temperature and simplified prompt"
+                }
+            else:
+                return {
+                    "name": "repetition_regeneration",
+                    "type": "regeneration",
+                    "temperature": 0.15,
+                    "max_tokens": 2500,
+                    "description": "Regenerate with low temperature for repetition"
+                }
+
+        # Strategy 3: Low information density
+        if any("low information density" in error.lower() for error in validation_result.errors):
+            return {
+                "name": "information_density_enhancement",
+                "type": "refinement",
+                "temperature": 0.3,
+                "enhanced_specificity_prompt": True,
+                "description": "Refine with enhanced specificity requirements"
+            }
+
+        # Strategy 4: Hallucination issues
+        if any("hallucination" in error.lower() for error in validation_result.errors):
+            return {
+                "name": "hallucination_correction",
+                "type": "refinement",
+                "temperature": 0.25,
+                "strict_evidence_prompt": True,
+                "description": "Refine with strict evidence requirements"
+            }
+
+        # Strategy 5: Length issues
+        if any("word count" in error.lower() or "length" in error.lower() for error in validation_result.errors):
+            if validation_result.score < 0.3:  # Very low score
+                return {
+                    "name": "length_regeneration",
+                    "type": "regeneration",
+                    "temperature": 0.4,
+                    "max_tokens": 4000,  # Allow more tokens
+                    "description": "Regenerate with higher token limit"
+                }
+
+        # Strategy 6: Generic quality issues (catch-all)
+        if validation_result.score < 0.5 and attempt_number < 3:
+            return {
+                "name": "quality_improvement",
+                "type": "refinement",
+                "temperature": 0.35,
+                "comprehensive_prompt": True,
+                "description": "Refine with comprehensive quality instructions"
+            }
+
+        return None
+
+    def _apply_fallback_strategy(
+        self,
+        strategy: Dict[str, Any],
+        current_summary: str,
+        context: "SummarizationContext",
+        pdf_text: str,
+        paper_title: str,
+        citation_key: str,
+        progress_callback: Optional[Callable[["SummarizationProgressEvent"], None]],
+        validation_result: Optional["ValidationResult"] = None
+    ) -> str:
+        """Apply the specified fallback strategy to improve the summary."""
+        strategy_type = strategy["type"]
+
+        if strategy_type == "regeneration":
+            # Generate new summary with different parameters
+            logger.info(f"[{citation_key}] Regenerating summary with {strategy['name']}")
+
+            # Apply aggressive deduplication if requested
+            if strategy.get("aggressive_deduplication", False):
+                from infrastructure.llm.validation.repetition import deduplicate_sections
+                current_summary = deduplicate_sections(
+                    current_summary,
+                    max_repetitions=1,
+                    mode="aggressive",
+                    similarity_threshold=0.75,
+                    min_content_preservation=0.5
+                )
+
+            # Generate new draft with strategy parameters
+            metadata = {
+                "citation_key": citation_key,
+                "title": paper_title,
+                "temperature": strategy.get("temperature", 0.4),
+                "max_tokens": strategy.get("max_tokens", 3000)
+            }
+
+            new_summary = self._generate_draft_single_stage(
+                context,
+                metadata,
+                progress_callback=progress_callback,
+                temperature=strategy.get("temperature", 0.4),
+                max_tokens=strategy.get("max_tokens", 3000)
+            )
+
+            return new_summary
+
+        elif strategy_type == "refinement":
+            # Refine existing summary with specific guidance
+            logger.info(f"[{citation_key}] Refining summary with {strategy['name']}")
+
+            # Build refinement prompt with strategy-specific guidance
+            refinement_guidance = self._build_strategy_guidance(strategy)
+            issues = validation_result.errors + validation_result.warnings
+
+            # Create issues list from validation result
+            issues = validation_result.errors + validation_result.warnings
+
+            refined = self.refine_summary(
+                current_summary,
+                issues,
+                context,
+                citation_key,
+                progress_callback=progress_callback,
+                attempt_number=1,
+                max_attempts=1,
+                temperature=strategy.get("temperature", 0.3),
+                refinement_guidance=refinement_guidance
+            )
+
+            return refined
+
+        else:
+            logger.warning(f"[{citation_key}] Unknown strategy type: {strategy_type}")
+            return current_summary
+
+    def _build_strategy_guidance(self, strategy: Dict[str, Any]) -> str:
+        """Build specific guidance text for refinement based on strategy."""
+        guidance_parts = []
+
+        if strategy.get("simplified_prompt"):
+            guidance_parts.append(
+                "Simplify the summary structure. Focus on the 3-5 most important points. "
+                "Remove redundant explanations and examples."
+            )
+
+        if strategy.get("enhanced_specificity_prompt"):
+            guidance_parts.append(
+                "Add more specific details and numerical values. Replace vague terms like "
+                "'high performance' with concrete metrics like '94.2% accuracy'. Include "
+                "exact numbers, percentages, and quantitative results from the paper."
+            )
+
+        if strategy.get("strict_evidence_prompt"):
+            guidance_parts.append(
+                "Ensure every claim is supported by direct evidence from the paper. "
+                "Add quotes or specific references for all key findings. Remove any "
+                "inferences or assumptions not explicitly stated."
+            )
+
+        if strategy.get("comprehensive_prompt"):
+            guidance_parts.append(
+                "Provide a more comprehensive analysis covering methodology, results, "
+                "and implications. Ensure balanced coverage of all major sections. "
+                "Add specific technical details and concrete examples."
+            )
+
+        return " ".join(guidance_parts) if guidance_parts else "Improve overall quality and accuracy."

@@ -145,7 +145,7 @@ The system follows a modular architecture with clear module boundaries:
   - `summarization/` - AI-powered paper summarization
   - `meta_analysis/` - Bibliographic and statistical analysis tools
   - `analysis/` - Paper analysis, domain detection, context building
-  - `html_parsers/` - Publisher-specific PDF URL extraction (Elsevier, Springer, IEEE, ACM, Wiley, generic)
+  - `html_parsers/` - Publisher-specific PDF URL extraction (OSF.io, Elsevier, Springer, IEEE, ACM, Wiley, generic)
   - `reporting/` - Multi-format export (JSON, CSV, HTML)
   - `llm/` - Advanced LLM operations (literature review, science communication, comparative analysis, research gaps, citation network analysis)
 - Depends on: `infrastructure/core/`, `infrastructure/llm/` (for summarization and LLM operations), `infrastructure/validation/` (for PDF text extraction)

@@ -163,7 +163,7 @@ class TestLLMOperations:
     @pytest.mark.timeout(120)
     def test_research_gaps(self, llm_operations, sample_papers):
         """Test research gap identification."""
-        result = llm_operations.identify_research_gaps(
+        result = llm_operations.generate_research_gaps(
             papers=sample_papers,
             domain="machine learning"
         )

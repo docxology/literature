@@ -46,12 +46,12 @@ Advanced LLM operations for synthesizing information across multiple papers.
 
 **Key Methods:**
 - `generate_literature_review()` - Generate literature review synthesis (300-500 words, multi-paper)
-- `generate_science_communication()` - Create accessible narratives (600-800 words, general audience)
+- `generate_science_communication()` - Create science communication narratives (600-800 words, general audience)
 - `generate_comparative_analysis()` - Compare methods/findings across papers (500-700 words)
-- `identify_research_gaps()` - Identify research gaps and future directions (400-600 words)
+- `generate_research_gaps()` - Identify research gaps and future directions (400-600 words)
 - `analyze_citation_network()` - Analyze intellectual connections between papers (500-700 words, text-based)
 
-**Note:** All operations generate text-based analyses. The citation network analysis is text-based (not graph visualization). For graph-based citation network visualization, see the meta-analysis module (placeholder feature).
+**Note:** All operations generate text-based analyses. The citation network analysis is text-based (not graph visualization).
 
 ### PaperSelector (selector.py)
 

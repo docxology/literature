@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Literature Search module provides a unified interface for discovering scientific papers, managing references, and downloading full-text PDFs. It abstracts away the complexity of interacting with multiple academic databases (arXiv, Semantic Scholar, Unpaywall) and handling different response formats.
+The Literature Search module provides a unified interface for discovering scientific papers, managing references, and downloading PDFs. It abstracts away the complexity of interacting with multiple academic databases (arXiv, Semantic Scholar, Unpaywall) and handling different response formats.
 
 ## Output Files
 
@@ -11,7 +11,7 @@ All literature outputs are saved to the `data/` directory:
 ```
 data/
 ├── references.bib        # BibTeX entries for citations
-├── library.json          # JSON index with full metadata
+├── library.json          # JSON index with metadata
 ├── summarization_progress.json # Summarization progress tracking (auto-generated)
 ├── failed_downloads.json # Failed downloads for retry (if any)
 ├── paper_selection.yaml  # Paper selection configuration (default: literature/paper_selection.yaml, can be in data/ or any path)
@@ -99,7 +99,7 @@ DownloadResult (core.py)
 └── Success/failure with reason
 
 SearchStatistics (core.py)
-└── Complete search operation statistics with per-source metrics
+└── Search operation statistics with per-source metrics
 
 SourceStatistics (core.py)
 └── Per-source search statistics (results, citations, PDFs, timing)
@@ -327,7 +327,7 @@ Load configuration from environment with `LiteratureConfig.from_env()`:
 ### arXiv
 - **API**: Public API (http://export.arxiv.org/api/query)
 - **Rate Limit**: 3 seconds between requests (handled automatically)
-- **Features**: Full text links, primary categories, DOI extraction
+- **Features**: Text links, primary categories, DOI extraction
 
 ### Semantic Scholar
 - **API**: Graph API (https://api.semanticscholar.org/graph/v1)
@@ -411,7 +411,7 @@ The PDF download system implements several optimizations to reduce log verbosity
 - **Prevents**: Infinite loops when HTML pages link to other HTML pages
 - **Behavior**: Stops parsing HTML for PDF URLs after 2 levels of redirection
 
-### Intelligent Logging
+### Logging
 - **Debug-level warnings**: Intermediate retry failures logged at DEBUG level
 - **Summary-only approach**: Only final failures logged at WARNING/ERROR level
 - **Prevents flooding**: Hundreds of redundant warnings suppressed
@@ -955,7 +955,7 @@ class MultiStageSummarizer:
         
         Args:
             context: Structured context from paper.
-            pdf_text: Full PDF text for validation.
+            pdf_text: PDF text for validation.
             metadata: Paper metadata.
             citation_key: Citation key for logging.
         
@@ -977,7 +977,7 @@ class ContextExtractor:
         """Create structured context object for summarization.
         
         Args:
-            pdf_text: Full PDF text.
+            pdf_text: PDF text.
             title: Paper title.
             max_chars: Optional maximum characters for context.
         
@@ -1227,7 +1227,7 @@ The literature module uses a **modular, multi-stage summarization system** locat
 **Core Components:**
 - **`SummarizationEngine`** (`core.py`) - Main orchestrator coordinating all stages
 - **`MultiStageSummarizer`** (`multi_stage_summarizer.py`) - Draft generation and refinement workflow
-- **`PDFProcessor`** (`pdf_processor.py`) - Intelligent PDF text extraction with section prioritization
+- **`PDFProcessor`** (`pdf_processor.py`) - PDF text extraction with section prioritization
 - **`ContextExtractor`** (`context_extractor.py`) - Structured context extraction from PDFs
 - **`PromptBuilder`** (`prompt_builder.py`) - LLM prompt construction with examples and validation checklists
 - **`SummaryQualityValidator`** (`validator.py`) - Quality validation and issue detection

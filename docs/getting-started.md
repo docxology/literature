@@ -14,7 +14,7 @@ Quick start guide for the Literature Search and Management System.
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone <your-repository-url>
 cd literature
 
 # Install dependencies
@@ -164,7 +164,7 @@ To retry previously failed downloads, use the `--retry-failed` flag:
 # Retry failed downloads when downloading
 python3 scripts/literature_search.py --download-only --retry-failed
 
-# Retry failed downloads in full search workflow
+# Retry failed downloads in search workflow
 python3 scripts/literature_search.py --search --retry-failed --keywords "machine learning"
 ```
 

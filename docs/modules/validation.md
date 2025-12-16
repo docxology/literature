@@ -54,7 +54,7 @@ At least one of these libraries must be installed. The module will automatically
 
 **Installation examples:**
 ```bash
-# Recommended: install pdfplumber for best quality (optional dependency)
+# Recommended: install pdfplumber (optional dependency)
 uv pip install pdfplumber
 # Or: pip install pdfplumber
 

@@ -16,7 +16,7 @@ text = extract_text_from_pdf(Path("paper.pdf"))
 
 ## Dependencies
 
-- **pdfplumber** (optional, recommended): Best quality extraction
+- **pdfplumber** (optional, recommended): Higher quality extraction
 - **pypdf** (required): Included in project dependencies
 - **PyPDF2** (optional, legacy): Fallback option
 

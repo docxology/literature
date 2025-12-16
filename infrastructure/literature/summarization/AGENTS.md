@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Summarization module provides paper summarization with multi-stage generation, quality validation, and context extraction. It uses intelligent PDF text processing with section prioritization, structured context extraction, and automatic refinement based on validation feedback.
+The Summarization module provides paper summarization with multi-stage generation, quality validation, and context extraction. It uses PDF text processing with section prioritization, structured context extraction, and automatic refinement based on validation feedback.
 
 ## Architecture
 
@@ -17,13 +17,13 @@ This module follows the **thin orchestrator pattern** with clear separation of c
    - Multi-stage summary generation (draft + refine)
    - Quality validation
    - Result management
-   - Real-time progress reporting
+   - Progress reporting
 
 2. **MultiStageSummarizer** (`multi_stage_summarizer.py`) - Two-stage summarization process
    - Draft generation using structured context
    - Quality validation with detailed feedback
    - Automatic refinement addressing validation issues
-   - Progress event emission for real-time updates
+   - Progress event emission
 
 3. **ContextExtractor** (`context_extractor.py`) - Structured context extraction
    - Identifies key sections (abstract, intro, conclusion)
@@ -31,7 +31,7 @@ This module follows the **thin orchestrator pattern** with clear separation of c
    - Creates structured context objects
    - Section detection and parsing
 
-4. **PDFProcessor** (`pdf_processor.py`) - Intelligent PDF text processing
+4. **PDFProcessor** (`pdf_processor.py`) - PDF text processing
    - Section prioritization (title, abstract, intro, conclusion)
    - Truncation with critical section preservation
    - Section detection and mapping
@@ -45,11 +45,11 @@ This module follows the **thin orchestrator pattern** with clear separation of c
    - Requirements: 10-15 quotes, 1000-1500 words
    - Coverage requirements (methodology, results, discussion)
 
-6. **Streaming Support** (`streaming.py`) - Real-time LLM generation with progress
+6. **Streaming Support** (`streaming.py`) - LLM generation with progress
    - Streaming wrapper with periodic progress updates
    - Chunk accumulation and word counting
    - Progress events every 5 seconds during generation
-   - Real-time feedback on chars/words received
+   - Feedback on chars/words received
 
 7. **SummaryQualityValidator** (`validator.py`) - Quality validation
    - Length validation
@@ -60,7 +60,7 @@ This module follows the **thin orchestrator pattern** with clear separation of c
    - Detailed error reporting
    - **Note**: Term-based validation removed to reduce false positives
 
-8. **PDFChunker** (`chunker.py`) - Intelligent PDF text chunking
+8. **PDFChunker** (`chunker.py`) - PDF text chunking
    - Preserves section boundaries when chunking
    - Prioritizes key sections (title, abstract, intro, conclusion)
    - Supports two-stage summarization for large documents
@@ -77,11 +77,11 @@ This module follows the **thin orchestrator pattern** with clear separation of c
     - Model size detection from multiple sources (client config, metadata, env vars)
     - Returns model size in billions of parameters for model-aware configuration
 
-11. **Progress Tracking** - Real-time progress reporting
+11. **Progress Tracking** - Progress reporting
     - Stage-level progress events
     - Timing and metadata tracking
     - Integration with ProgressTracker
-    - Real-time console output
+    - Console output
 
 ### Architecture Diagram
 
@@ -154,7 +154,7 @@ The summarization process follows a multi-stage approach:
   - Explicit anti-repetition instructions
 - Generate initial draft summary using LLM with **streaming support** and **model-aware generation options**
 - Apply **post-processing deduplication** before validation
-- Real-time progress updates every 5 seconds showing chars/words received
+- Progress updates every 5 seconds showing chars/words received
 - **Progress Event**: `draft_generation` (started/in_progress/completed)
 
 ### Stage 4: Quality Validation
@@ -184,6 +184,9 @@ The summarization process follows a multi-stage approach:
 - Extract software frameworks and libraries
 - Identify datasets and evaluation metrics
 - Document software tools and platforms
+- **Validate output quality**: Detect bloat, hallucinations, and formatting issues
+- **Apply post-processing**: Remove "Not specified in paper" repetition, validate against source PDF
+- **Quality checks**: Output size limits, hallucinated tools detection, formatting fixes
 - Generate markdown-formatted methods and tools document
 - **Progress Event**: `methods_analysis` (started/completed)
 
@@ -205,9 +208,9 @@ The summarization process follows a multi-stage approach:
 
 ## Progress Tracking
 
-### Real-time Progress Events
+### Progress Events
 
-The module emits progress events at each stage for real-time updates:
+The module emits progress events at each stage:
 
 ```python
 @dataclass
@@ -253,7 +256,7 @@ The workflow integrates progress events with `ProgressTracker`:
 
 - Paper-level status updates (pending → processing → summarized/failed)
 - Stage-level progress logging
-- Real-time console output with formatted progress
+- Console output with formatted progress
 - Progress bar updates
 
 ### Progress Display Format
@@ -279,7 +282,7 @@ During summarization, progress is displayed as:
 ```
 
 **Streaming Progress Updates:**
-- Real-time updates every 5 seconds during LLM generation
+- Updates every 5 seconds during LLM generation
 - Shows accumulated characters, words, and elapsed time
 - Provides feedback during long generation times (60-80+ seconds)
 
@@ -554,7 +557,7 @@ class SummarizationProgressEvent:
 - Automatic refinement addressing specific issues
 - Up to 2 refinement attempts (configurable)
 
-### Intelligent PDF Processing
+### PDF Processing
 - Section prioritization (title, abstract, intro, conclusion preserved)
 - Character limit management with structure preservation
 - Section detection and mapping
@@ -567,9 +570,9 @@ class SummarizationProgressEvent:
 - Detailed error and warning reporting
 - Refinement guidance generation
 
-### Real-time Progress
+### Progress
 - Stage-level progress events
-- Real-time console output
+- Console output
 - Progress bar integration
 - Timing and metadata tracking
 
@@ -582,7 +585,7 @@ class SummarizationProgressEvent:
 ## Best Practices
 
 ### 1. Use Progress Callbacks
-Always provide progress callbacks for long-running operations to give users real-time feedback:
+Always provide progress callbacks for long-running operations:
 
 ```python
 def progress_callback(event: SummarizationProgressEvent):
@@ -697,6 +700,86 @@ if not result.success:
   - Check that callback is being called
   - Review logging configuration
   - Ensure ProgressTracker is properly initialized
+
+## Quality Standards and Output Validation
+
+### Pass 3 Validation (Methods/Tools Analysis)
+
+The system now includes comprehensive validation for methods/tools extraction:
+
+**Validation Checks:**
+- **Bloat Detection**: Identifies excessive "Not specified in paper" repetition (>3 instances)
+- **Hallucination Detection**: Validates extracted tools exist in source PDF text
+- **Size Limits**: Enforces maximum 200 lines and 1500 words per output
+- **Formatting**: Fixes spacing and punctuation issues
+- **Source Validation**: Only allows explicitly mentioned tools/frameworks
+
+**Validation Process:**
+1. **Pre-validation**: Check for bloat patterns before source validation
+2. **Source verification**: Fuzzy matching against PDF text with fallback strategies
+3. **Post-processing**: Consolidate empty sections, remove artifacts
+4. **Quality reporting**: Log validation warnings and corrections applied
+
+**Common Issues Detected:**
+- **Bloat**: 932+ repetitions of "Not specified in paper" (lapkovskis2025benchmarking regression)
+- **Hallucinations**: Tools like ImageNet, CIFAR-10, Google Colab, AWS not in paper text
+- **Size anomalies**: Files exceeding 990 lines due to repetition
+
+### Summary Quality Standards
+
+**Accepted Quality Criteria:**
+- **Information Density**: ≥0.3 specific indicators per 50 words (numbers, metrics, methods)
+- **Repetition Control**: No phrase repeated >3 times, no severe sentence-level repetition
+- **Evidence Support**: Direct quotes or specific references for key claims
+- **Length Appropriateness**: 600-1000 words for comprehensive coverage
+- **Title Accuracy**: Summary title matches paper title exactly
+
+**Quality Metrics Tracked:**
+- **Success Rate**: Percentage of operations meeting quality threshold (≥0.5 score)
+- **Hard Failure Rate**: Operations with critical issues (title mismatch, severe repetition)
+- **Retry Rate**: Average number of refinement attempts needed
+- **Information Density**: Ratio of specific details to total content
+- **Validation Patterns**: Most common errors and warnings across operations
+
+### Common Failure Modes
+
+**Methods/Tools Bloat:**
+- **Symptoms**: Output files >500 lines with repetitive "Not specified in paper"
+- **Root Cause**: LLM instructed to list items even when not found
+- **Prevention**: Template anti-bloat instructions, post-validation consolidation
+
+**Hallucinated Tools:**
+- **Symptoms**: Tools/frameworks listed that don't appear in paper text
+- **Root Cause**: Speculative tool inference based on methodology
+- **Prevention**: Strict source validation, explicit mention requirements
+
+**Quote Quality Issues:**
+- **Symptoms**: Missing quote text, meta-commentary in quotes, duplicate quotes
+- **Root Cause**: Poor extraction formatting, inadequate deduplication
+- **Prevention**: Enhanced quote validation, formatting checks, duplicate detection
+
+**Low Information Density:**
+- **Symptoms**: Generic phrases ("high performance", "effective") repeated excessively
+- **Root Cause**: LLM generating vague content without specific details
+- **Prevention**: Information density validation, specificity requirements
+
+**Severe Repetition:**
+- **Symptoms**: Same sentences/paragraphs repeated multiple times
+- **Root Cause**: LLM getting stuck in repetitive patterns
+- **Prevention**: Aggressive deduplication, temperature adjustments, refinement strategies
+
+### Quality Monitoring
+
+**Real-time Metrics:**
+- **Quality Tracker**: Aggregates metrics across all summarization operations
+- **Health Status**: System health assessment (excellent/good/fair/poor)
+- **Trend Analysis**: Quality score trends over time (last 100 operations)
+- **Failure Analysis**: Most common validation errors and warnings
+
+**Automated Quality Gates:**
+- **Pre-save validation**: All outputs validated before file creation
+- **Anomaly detection**: Size and quality thresholds prevent problematic outputs
+- **Regression prevention**: Known failure patterns automatically detected and corrected
 
 ## See Also
 

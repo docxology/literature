@@ -94,7 +94,7 @@ Literature search and management:
 - **Meta-Analysis**: Analysis tools and visualizations
 - **Workflow**: Workflow orchestration with progress tracking
 - **Analysis**: Paper analysis and domain detection
-- **HTML Parsers**: Publisher-specific PDF URL extraction
+- **HTML Parsers**: Publisher-specific PDF URL extraction (OSF.io, Elsevier, Springer, IEEE, ACM, Wiley, generic)
 - **Reporting**: Reporting with multi-format export
 - **LLM Operations**: Multi-paper LLM operations for synthesis
 

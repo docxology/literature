@@ -37,7 +37,7 @@ JSON database containing metadata for all indexed papers:
 {
   "version": "1.0",
   "updated": "2025-12-02T04:42:16.615302",
-  "count": 499,
+  "count": 456,
   "entries": {
     "smith2024machine": {
       "citation_key": "smith2024machine",
@@ -86,7 +86,7 @@ Standard BibTeX format bibliography automatically generated from the library:
 
 ### PDF Storage (`pdfs/`)
 
-Downloaded full-text PDFs organized by citation key:
+Downloaded PDFs organized by citation key:
 
 **Naming Convention:**
 - `citation_key.pdf` (matches library.json keys)
@@ -245,7 +245,7 @@ python3 -m infrastructure.literature.core.cli library export --output my_library
 
 ### Library Statistics
 
-Current library contains **499 papers** across multiple domains:
+Current library contains **hundreds of papers** across multiple domains:
 
 | Domain | Count | Sources |
 |--------|-------|---------|
@@ -374,7 +374,7 @@ tar -xzf literature_backup_20251202.tar.gz
 ### Storage Requirements
 
 - **Average PDF size**: 2.3 MB
-- **Total storage**: ~1.1 GB for 499 PDFs
+- **Total storage**: ~1.1 GB for hundreds of PDFs
 - **Metadata overhead**: ~15 MB for JSON/BibTeX
 - **Growth rate**: ~50-100 papers/month
 

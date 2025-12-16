@@ -22,7 +22,7 @@ The validation module uses environment variables for configuration:
 ### PDF Library Selection
 
 The module automatically tries PDF parsing libraries in order:
-1. `pdfplumber` (recommended for best quality)
+1. `pdfplumber` (recommended for higher quality)
 2. `pypdf` (modern PyPDF2 replacement)
 3. `PyPDF2` (legacy library)
 
@@ -69,7 +69,7 @@ except PDFValidationError as e:
 ## Dependencies
 
 The module supports multiple PDF parsing libraries with automatic fallback:
-- **pdfplumber** (recommended): Best quality extraction, tries first
+- **pdfplumber** (recommended): Higher quality extraction, tries first
 - **pypdf**: Modern PyPDF2 replacement, tries second
 - **PyPDF2**: Legacy library, tries third
 
@@ -77,7 +77,7 @@ At least one of these libraries must be installed. The module will automatically
 
 **Installation examples:**
 ```bash
-# Recommended: install pdfplumber for best quality (optional dependency)
+# Recommended: install pdfplumber (optional dependency)
 uv pip install pdfplumber
 # Or: pip install pdfplumber
 

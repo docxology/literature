@@ -79,7 +79,7 @@ Paper analysis tools:
 ### HTML Parsers (`html_parsers/`)
 
 Publisher-specific PDF URL extraction:
-- Elsevier, Springer, IEEE, ACM, Wiley parsers
+- OSF.io, Elsevier, Springer, IEEE, ACM, Wiley parsers
 - Generic parser fallback
 - Modular parser system
 

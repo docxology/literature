@@ -846,8 +846,8 @@ PYTHON_EOF
 # Example:
 #   run_literature_llm_operations
 run_literature_llm_operations() {
-    log_header_to_file "ADVANCED LLM OPERATIONS (LITERATURE REVIEW, ETC.)"
-    log_header "ADVANCED LLM OPERATIONS (LITERATURE REVIEW, ETC.)"
+    log_header_to_file "LLM OPERATIONS (LITERATURE REVIEW, ETC.)"
+    log_header "LLM OPERATIONS (LITERATURE REVIEW, ETC.)"
 
     if ! cd "$REPO_ROOT" 2>/dev/null; then
         log_error "Cannot change to repository root: $REPO_ROOT"
@@ -1177,29 +1177,28 @@ PYTHON_EOF
     echo
     log_info "Available LLM operations:"
     log_info "  1. Summarize papers"
-    log_info "     → Generate individual summaries for papers with PDFs (600-1000 words each)"
-    log_info "     → Output: Markdown files in data/summaries/"
+    log_info "     → Individual paper summaries (600-1000 words)"
+    log_info "     → Output: data/summaries/*.md"
     log_info ""
     log_info "  2. Literature review synthesis"
-    log_info "     → Synthesize multiple papers into cohesive review (300-500 words)"
-    log_info "     → Output: Markdown file in literature/llm_outputs/review_outputs/"
+    log_info "     → Synthesize multiple papers (300-500 words)"
+    log_info "     → Output: literature/llm_outputs/review_outputs/*.md"
     log_info ""
     log_info "  3. Science communication narrative"
-    log_info "     → Create accessible narratives for general audiences (600-800 words)"
-    log_info "     → Output: Markdown file in literature/llm_outputs/communication_outputs/"
+    log_info "     → Narratives for general audiences (600-800 words)"
+    log_info "     → Output: literature/llm_outputs/communication_outputs/*.md"
     log_info ""
     log_info "  4. Comparative analysis"
-    log_info "     → Compare methods/findings across papers (500-700 words)"
-    log_info "     → Output: Markdown file in literature/llm_outputs/compare_outputs/"
+    log_info "     → Compare methods/findings (500-700 words)"
+    log_info "     → Output: literature/llm_outputs/compare_outputs/*.md"
     log_info ""
     log_info "  5. Research gap identification"
-    log_info "     → Identify gaps and future research directions (400-600 words)"
-    log_info "     → Output: Markdown file in literature/llm_outputs/gaps_outputs/"
+    log_info "     → Identify gaps and future directions (400-600 words)"
+    log_info "     → Output: literature/llm_outputs/gaps_outputs/*.md"
     log_info ""
     log_info "  6. Citation network analysis"
-    log_info "     → Analyze intellectual connections between papers (500-700 words, text-based)"
-    log_info "     → Output: Markdown file in literature/llm_outputs/network_outputs/"
-    log_info "     → Note: This is text analysis, not graph visualization"
+    log_info "     → Analyze intellectual connections (500-700 words, text-based)"
+    log_info "     → Output: literature/llm_outputs/network_outputs/*.md"
     echo
     log_info "Configure which operations to run (default: all):"
     echo

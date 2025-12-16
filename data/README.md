@@ -30,7 +30,7 @@ python3 -m infrastructure.literature.core.cli library list --limit 10
 
 ## Directory Contents
 
-- **`library.json`** - Paper metadata index (499 papers)
+- **`library.json`** - Paper metadata index (hundreds of papers)
 - **`references.bib`** - BibTeX bibliography for citations
 - **`pdfs/`** - Downloaded PDFs
 - **`summaries/`** - AI-generated paper summaries
@@ -58,7 +58,7 @@ Papers are automatically included in `99_references.md` during PDF compilation.
 
 ## Statistics
 
-- **Total Papers**: 499
+- **Total Papers**: Hundreds
 - **PDF Downloads**: 91% success rate
 - **DOI Coverage**: 87%
 - **Sources**: arXiv, Semantic Scholar, CrossRef, PubMed

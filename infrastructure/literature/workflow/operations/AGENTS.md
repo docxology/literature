@@ -13,6 +13,7 @@ operations/
 ├── cleanup.py         # Library cleanup operations
 ├── meta_analysis.py   # Meta-analysis pipeline
 ├── llm_operations.py  # Advanced LLM operations
+├── enrichment.py      # DOI enrichment operations
 └── utils.py           # Common utilities
 ```
 
@@ -133,6 +134,27 @@ from infrastructure.literature.workflow.operations import run_llm_operation
 run_llm_operation(operation_type="review", paper_config_path="paper_selection.yaml")
 ```
 
+### Enrichment Operations (`enrichment.py`)
+
+DOI enrichment operations for library entries.
+
+**Functions:**
+- `run_enrich_dois()` - Enrich library entries with DOIs from multiple sources
+
+**Usage:**
+```python
+from infrastructure.literature.workflow.operations import run_enrich_dois
+from infrastructure.literature.workflow import LiteratureWorkflow
+
+workflow = LiteratureWorkflow()
+run_enrich_dois(workflow)
+```
+
+**Features:**
+- Searches CrossRef, Semantic Scholar, and OpenAlex for published versions
+- Focuses on papers missing DOIs (especially arXiv preprints)
+- Updates library entries with found DOIs
+
 ### Utilities (`utils.py`)
 
 Common utilities for workflow operations.
@@ -164,6 +186,7 @@ from infrastructure.literature.workflow.operations import (
     run_cleanup,
     run_meta_analysis,
     run_llm_operation,
+    run_enrich_dois,
 )
 ```
 

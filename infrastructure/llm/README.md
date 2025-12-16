@@ -9,7 +9,7 @@ Local LLM integration for research assistance with flexible response modes and c
 - **Per-Query Configuration**: Temperature, seed, stop sequences, max_tokens per query
 - **Context Management**: Multi-turn conversations with automatic system prompt injection
 - **Research Templates**: Pre-built prompts for common research tasks
-- **Streaming Responses**: Real-time response generation
+- **Streaming Responses**: Response generation
 - **Environment Configuration**: Configuration via OLLAMA_* and LLM_* env vars
 - **Validation**: Output quality and format checking
 - **Command-Line Interface**: Interactive queries from terminal
@@ -169,10 +169,10 @@ response2 = client.query("Can you elaborate?")  # Context maintained
 client.reset()  # Clears and re-injects system prompt
 
 # Query with context reset
-response = client.query("New topic", reset_context=True)
+response = client.query("Topic", reset_context=True)
 
 # Change system prompt
-client.set_system_prompt("New persona...")
+client.set_system_prompt("Persona...")
 ```
 
 ## Utilities

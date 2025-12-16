@@ -12,7 +12,7 @@ The infrastructure layer is organized into three main modules:
 
 Foundation utilities used across all infrastructure modules:
 - **Logging**: Unified Python logging with consistent formatting
-- **Exceptions**: Comprehensive exception hierarchy with context preservation
+- **Exceptions**: Exception hierarchy with context preservation
 - **Configuration**: YAML and environment variable configuration management
 - **Progress**: Progress tracking and visual indicators
 - **Checkpoint**: Pipeline checkpoint management
@@ -45,9 +45,9 @@ Literature search and management:
 - **Meta-Analysis**: Analysis tools and visualizations
 - **Workflow**: Workflow orchestration and progress tracking
 - **Analysis**: Paper analysis, domain detection, context building
-- **HTML Parsers**: Publisher-specific PDF URL extraction
-- **Reporting**: Comprehensive reporting with multiple export formats
-- **LLM Operations**: Advanced LLM operations for multi-paper synthesis
+- **HTML Parsers**: Publisher-specific PDF URL extraction (OSF.io, Elsevier, Springer, IEEE, ACM, Wiley, generic)
+- **Reporting**: Reporting with multiple export formats
+- **LLM Operations**: LLM operations for multi-paper synthesis
 
 ## Module Organization
 
@@ -65,14 +65,14 @@ infrastructure/
 
 - **No external dependencies** on template or manuscript systems
 - **Duplicated shared infrastructure** for independence
-- **Complete test suite** for all functionality
+- **Test suite** for all functionality
 - **Self-contained** - can be used independently
 
 ### Modular Architecture
 
 - **Thin orchestrator pattern** - business logic in modules, orchestration in scripts
 - **Clear separation of concerns** - each module has a specific purpose
-- **Comprehensive APIs** - well-documented public interfaces
+- **APIs** - documented public interfaces
 - **Extensible** - easy to add new sources, analyzers, etc.
 
 ## Configuration
@@ -102,7 +102,7 @@ All infrastructure modules support environment variable configuration. Key envir
 - `LITERATURE_USE_UNPAYWALL` - Enable Unpaywall fallback (default: true)
 - `UNPAYWALL_EMAIL` - Email for Unpaywall API (required if enabled)
 
-See module-specific AGENTS.md files for complete configuration documentation.
+See module-specific AGENTS.md files for configuration documentation.
 
 ## Usage Examples
 
@@ -143,7 +143,7 @@ export LITERATURE_SOURCES=arxiv,semanticscholar
 
 ## Testing
 
-Comprehensive test suite located in `tests/infrastructure/`:
+Test suite located in `tests/infrastructure/`:
 
 ```bash
 # Run all infrastructure tests

@@ -6,6 +6,7 @@ detecting issues like hallucination, repetition, and topic mismatches.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import List, Optional, Tuple
 
 from infrastructure.core.logging_utils import get_logger
@@ -153,6 +154,16 @@ class SummaryQualityValidator:
             logger.warning(f"[{citation_key}] Hallucination detected: {hallucination_reason}")
         else:
             logger.debug(f"[{citation_key}] No hallucination detected ✓")
+
+        # Information density check
+        logger.debug(f"[{citation_key}] Checking information density...")
+        is_low_density, density_issues = self._check_information_density(summary)
+        if is_low_density:
+            errors.append(f"Low information density: {density_issues}")
+            score -= 0.3
+            logger.warning(f"[{citation_key}] Low information density detected: {density_issues}")
+        else:
+            logger.debug(f"[{citation_key}] Information density acceptable ✓")
 
         # Off-topic content check
         off_topic_errors = self._detect_off_topic_content(summary)
@@ -548,6 +559,102 @@ class SummaryQualityValidator:
                 return True, ""
         
         return False, f"Summary title '{summary_title}' does not match paper title '{paper_title}'"
+
+    def _check_information_density(self, summary: str) -> Tuple[bool, str]:
+        """Check for vague/repetitive content with low information density.
+
+        Detects:
+        - Generic phrases repeated (>3 times)
+        - Vague quantifiers without numbers ("high performance", "effective")
+        - Ratio of specific details (numbers, methods, results) to total words
+
+        Returns:
+            Tuple of (is_low_density, issues_description)
+        """
+        issues = []
+        words = summary.split()
+        total_words = len(words)
+
+        if total_words < 50:
+            return False, ""  # Too short to analyze
+
+        # Check for repeated generic phrases
+        generic_phrases = [
+            "high performance", "effective", "significant", "important",
+            "novel approach", "proposed method", "experimental results",
+            "state of the art", "machine learning", "deep learning",
+            "neural network", "artificial intelligence", "the authors",
+            "the paper", "this work", "our approach"
+        ]
+
+        repeated_generics = []
+        for phrase in generic_phrases:
+            count = summary.lower().count(phrase.lower())
+            if count > 3:
+                repeated_generics.append(f"'{phrase}' ({count} times)")
+
+        if repeated_generics:
+            issues.append(f"Generic phrases repeated excessively: {', '.join(repeated_generics[:3])}")
+
+        # Check for vague quantifiers without numbers
+        vague_quantifiers = [
+            "high", "low", "significant", "substantial", "considerable",
+            "effective", "efficient", "improved", "better", "worse",
+            "faster", "slower", "larger", "smaller", "more", "less"
+        ]
+
+        vague_count = 0
+        for quantifier in vague_quantifiers:
+            # Count standalone vague words (not part of compound terms)
+            pattern = r'\b' + re.escape(quantifier) + r'\b'
+            matches = re.findall(pattern, summary.lower())
+            vague_count += len(matches)
+
+        # Check for specific numerical/scientific content
+        specific_indicators = [
+            r'\d+\.?\d*%',  # percentages
+            r'\d+\.?\d*\s*[×x]\s*\d+',  # multiplication (e.g., "2x faster")
+            r'\b\d+\.?\d*\s*(accuracy|f1|precision|recall)\b',  # metrics with numbers
+            r'\b(p\s*[<>=]\s*0?\.\d+|t\s*=\s*\d+\.?\d*)\b',  # p-values, t-statistics
+            r'\b\d+\s*(epochs|layers|parameters)\b',  # ML specifics
+            r'\b\d+\.?\d*\s*(seconds|minutes|hours|ms|μs)\b',  # time measurements
+            r'\b\d+\.?\d*\s*(mb|gb|tb|kb)\b',  # memory/storage
+            r'\b\d+\s*(participants|subjects|samples)\b',  # sample sizes
+            r'\b\d+\.?\d*\s*±\s*\d+\.?\d*\b'  # standard deviations
+        ]
+
+        specific_count = 0
+        for pattern in specific_indicators:
+            matches = re.findall(pattern, summary, re.IGNORECASE)
+            specific_count += len(matches)
+
+        # Calculate information density ratio
+        density_ratio = specific_count / max(1, total_words / 50)  # Normalize to words per 50
+
+        if density_ratio < 0.3:  # Less than 0.3 specific indicators per 50 words
+            issues.append(".2f")
+
+        # Check for repetitive sentence structures
+        sentences = re.split(r'[.!?]+', summary)
+        sentence_starts = []
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if len(sentence.split()) > 3:
+                first_words = ' '.join(sentence.split()[:3]).lower()
+                sentence_starts.append(first_words)
+
+        # Find repeated sentence starts
+        start_counts = Counter(sentence_starts)
+        repeated_starts = [start for start, count in start_counts.items() if count > 2]
+
+        if repeated_starts:
+            issues.append(f"Repetitive sentence structures: {', '.join(repeated_starts[:2])}")
+
+        # Overall assessment
+        if issues:
+            return True, "; ".join(issues)
+
+        return False, ""
 
     def _validate_quotes_present(self, summary: str) -> Tuple[bool, int]:
         """Validate that summary includes quoted evidence from the paper."""
