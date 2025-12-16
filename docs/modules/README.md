@@ -14,7 +14,7 @@ Documentation for all system modules.
 
 - [Getting Started](../getting-started.md) - Quick start guide
 - [Architecture Overview](../architecture.md) - System architecture
-- [API Reference](../reference/api-reference.md) - Complete API documentation
+- [API Reference](../reference/api-reference.md) - API documentation
 
 ## Module Documentation Standards
 

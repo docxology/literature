@@ -1,6 +1,6 @@
 # Meta-Analysis Summary Report
 
-**Generated**: 2025-12-15T17:20:24.621042
+**Generated**: 2025-12-15T17:29:01.163893
 
 ---
 
@@ -123,7 +123,7 @@
 - energy (loading: 0.3029)
 - free energy (loading: 0.2982)
 - free (loading: 0.2898)
-- fep (loading: 0.2630)
+- fep (loading: 0.2631)
 - principle (loading: 0.2591)
 
 #### PC2
@@ -131,44 +131,44 @@
 - **Variance Explained**: 1.76%
 
 **Top Contributing Words**:
-- active inference (loading: 0.2879)
-- active (loading: 0.2683)
-- inference (loading: 0.2676)
-- free (loading: 0.2195)
-- energy (loading: 0.2167)
+- active inference (loading: 0.2876)
+- active (loading: 0.2679)
+- inference (loading: 0.2672)
+- free (loading: 0.2196)
+- energy (loading: 0.2168)
 
 #### PC3
 
 - **Variance Explained**: 1.30%
 
 **Top Contributing Words**:
-- control (loading: 0.2842)
-- navigation (loading: -0.1873)
-- agents (loading: -0.1782)
-- exploration (loading: -0.1716)
-- perception (loading: 0.1694)
+- control (loading: 0.2852)
+- navigation (loading: -0.1880)
+- agents (loading: -0.1802)
+- exploration (loading: -0.1725)
+- perception (loading: 0.1657)
 
 #### PC4
 
 - **Variance Explained**: 1.27%
 
 **Top Contributing Words**:
-- model (loading: 0.1784)
-- learning (loading: 0.1722)
-- fep (loading: 0.1711)
-- navigation (loading: 0.1605)
-- cognitive (loading: 0.1525)
+- model (loading: 0.1771)
+- learning (loading: 0.1701)
+- fep (loading: 0.1603)
+- navigation (loading: 0.1598)
+- cognitive (loading: 0.1492)
 
 #### PC5
 
 - **Variance Explained**: 1.21%
 
 **Top Contributing Words**:
-- ai (loading: 0.3774)
-- systems (loading: 0.1962)
-- intelligence (loading: 0.1829)
-- active inference (loading: 0.1639)
-- agents (loading: 0.1488)
+- ai (loading: 0.3787)
+- systems (loading: 0.1951)
+- intelligence (loading: 0.1794)
+- active inference (loading: 0.1573)
+- agents (loading: 0.1533)
 
 ---
 

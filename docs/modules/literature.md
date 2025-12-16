@@ -4,7 +4,7 @@ Literature search and management functionality.
 
 ## Overview
 
-The literature module provides tools for searching scientific papers, downloading PDFs, managing references, and generating AI-powered summaries.
+The literature module provides tools for searching scientific papers, downloading PDFs, managing references, and generating LLM-powered summaries.
 
 ## Key Components
 
@@ -46,7 +46,7 @@ Library management:
 
 ### Summarization (`summarization/`)
 
-AI-powered summarization:
+LLM-powered summarization:
 - Multi-stage generation
 - Quality validation
 - Context extraction
@@ -92,7 +92,7 @@ Reporting:
 
 ### LLM Operations (`llm/`)
 
-Advanced LLM operations:
+Multi-paper LLM operations:
 - LiteratureLLMOperations for multi-paper synthesis
 - PaperSelector for configurable filtering
 - Literature review generation
@@ -201,10 +201,10 @@ reporter.export_library_report(
 
 ## See Also
 
-- **[Literature Module Documentation](../../infrastructure/literature/AGENTS.md)** - Complete technical documentation
+- **[Literature Module Documentation](../../infrastructure/literature/AGENTS.md)** - Technical documentation
 - **[Searching Papers Guide](../guides/search-papers.md)** - Search guide
 - **[Summarizing Papers Guide](../guides/summarize-papers.md)** - Summarization guide
-- **[LLM Operations Guide](../guides/llm-operations.md)** - Advanced LLM operations
+- **[LLM Operations Guide](../guides/llm-operations.md)** - Multi-paper LLM operations
 - **[Meta-Analysis Guide](../guides/meta-analysis.md)** - Meta-analysis guide
 - **[Modules AGENTS.md](AGENTS.md)** - Module documentation standards
 

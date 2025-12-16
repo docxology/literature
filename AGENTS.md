@@ -336,8 +336,8 @@ cp data/library.json data/references.bib backup/
 # Remove papers without PDFs
 python3 scripts/literature_search.py --cleanup
 
-# Validate library
-python3 -m infrastructure.literature.core.cli library validate
+# Check library statistics
+python3 -m infrastructure.literature.core.cli library stats
 ```
 
 ## Integration Notes
@@ -389,8 +389,8 @@ ollama pull gemma3:4b
 # Backup
 cp data/library.json data/library.json.backup
 
-# Validate
-python3 -m infrastructure.literature.core.cli library validate
+# Check library statistics
+python3 -m infrastructure.literature.core.cli library stats
 ```
 
 ## See Also

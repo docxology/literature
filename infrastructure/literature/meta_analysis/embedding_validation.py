@@ -17,7 +17,8 @@ logger = get_logger(__name__)
 def validate_embedding_quality(
     embeddings: np.ndarray,
     citation_keys: Optional[List[str]] = None,
-    variance_threshold: float = 1e-6
+    variance_threshold: float = 1e-6,
+    skipped_citation_keys: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """Validate embedding quality by checking for common issues.
     
@@ -32,18 +33,23 @@ def validate_embedding_quality(
         embeddings: Embedding vectors, shape (n_documents, embedding_dim).
         citation_keys: Optional citation keys for reporting problematic embeddings.
         variance_threshold: Minimum variance threshold for low-variance detection.
+        skipped_citation_keys: Optional list of citation keys that were intentionally skipped.
         
     Returns:
         Dictionary with quality validation results:
         - zero_vectors: Number of zero vectors found (expected for skipped/failed documents)
+        - zero_vectors_skipped: Number of zero vectors from intentionally skipped documents
+        - zero_vectors_failed: Number of zero vectors from failed embeddings
         - nan_values: Number of NaN values found
         - inf_values: Number of Inf values found
         - low_variance_dimensions: List of dimension indices with low variance
-        - problematic_embeddings: List of citation keys with issues (if provided)
+        - problematic_embeddings: List of citation keys with issues (if provided, excludes skipped)
         - warnings: List of warning messages
     """
     results = {
         "zero_vectors": 0,
+        "zero_vectors_skipped": 0,
+        "zero_vectors_failed": 0,
         "nan_values": 0,
         "inf_values": 0,
         "low_variance_dimensions": [],
@@ -52,6 +58,7 @@ def validate_embedding_quality(
     }
     
     n_docs, n_dims = embeddings.shape
+    skipped_set = set(skipped_citation_keys) if skipped_citation_keys else set()
     
     # Check for zero vectors
     norms = np.linalg.norm(embeddings, axis=1)
@@ -60,10 +67,40 @@ def validate_embedding_quality(
     results["zero_vectors"] = int(zero_count)
     
     if zero_count > 0:
-        results["warnings"].append(f"Found {zero_count} zero vectors (embeddings with near-zero norm)")
+        # Separate skipped from failed zero vectors
+        zero_indices = np.where(zero_mask)[0]
+        skipped_zero_count = 0
+        failed_zero_count = 0
+        problematic = []
+        
         if citation_keys:
-            problematic = [citation_keys[i] for i in np.where(zero_mask)[0]]
+            for idx in zero_indices:
+                citation_key = citation_keys[idx]
+                if citation_key in skipped_set:
+                    skipped_zero_count += 1
+                else:
+                    failed_zero_count += 1
+                    problematic.append(citation_key)
+        else:
+            # If no citation keys, assume all are failed (conservative)
+            failed_zero_count = zero_count
+        
+        results["zero_vectors_skipped"] = skipped_zero_count
+        results["zero_vectors_failed"] = failed_zero_count
+        
+        # Only warn about failed zero vectors, not skipped ones
+        if failed_zero_count > 0:
+            results["warnings"].append(
+                f"Found {failed_zero_count} zero vectors from failed embeddings "
+                f"(skipped documents: {skipped_zero_count})"
+            )
             results["problematic_embeddings"].extend(problematic)
+        elif skipped_zero_count > 0:
+            # Info message for skipped documents (not a warning)
+            results["warnings"].append(
+                f"Found {skipped_zero_count} zero vectors from intentionally skipped documents "
+                f"(exceeded character limit)"
+            )
     
     # Check for NaN values
     nan_mask = np.isnan(embeddings)
@@ -432,7 +469,8 @@ def validate_all(
     results = {
         "quality": validate_embedding_quality(
             embedding_data.embeddings,
-            citation_keys=embedding_data.citation_keys
+            citation_keys=embedding_data.citation_keys,
+            skipped_citation_keys=embedding_data.skipped_citation_keys
         ),
         "completeness": validate_embedding_completeness(
             embedding_data,
@@ -467,8 +505,10 @@ def validate_all(
     results["all_warnings"] = all_warnings
     
     # Check for critical errors
+    # Only count failed zero vectors as errors, not skipped ones
+    failed_zero_vectors = results["quality"].get("zero_vectors_failed", 0)
     has_errors = (
-        results["quality"]["zero_vectors"] > 0 or
+        failed_zero_vectors > 0 or
         results["quality"]["nan_values"] > 0 or
         results["quality"]["inf_values"] > 0 or
         not results["dimensions"]["is_consistent"]

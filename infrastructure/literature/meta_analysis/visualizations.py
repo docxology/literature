@@ -1755,6 +1755,7 @@ def plot_embedding_similarity_heatmap(
         linkage_matrix = hierarchy.linkage(condensed_distances, method='average')
         
         # Create clustermap with dendrograms
+        # Note: square=True is not supported when using custom linkage matrices
         g = sns.clustermap(
             similarity_matrix,
             row_linkage=linkage_matrix,
@@ -1765,7 +1766,6 @@ def plot_embedding_similarity_heatmap(
             center=0,
             vmin=-1,
             vmax=1,
-            square=True,
             linewidths=0.5,
             cbar_kws={"label": "Cosine Similarity"},
             figsize=figsize,

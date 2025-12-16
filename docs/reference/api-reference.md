@@ -1,6 +1,6 @@
 # API Reference
 
-Complete API documentation for the Literature Search and Management System.
+API documentation for the Literature Search and Management System.
 
 ## LiteratureSearch
 
@@ -147,7 +147,7 @@ Brief response (< 150 tokens).
 
 #### `query_long(prompt, options=None)`
 
-Comprehensive response (> 500 tokens).
+Detailed response (> 500 tokens).
 
 **Parameters:**
 - `prompt` (str): Query prompt

@@ -1,16 +1,16 @@
 # Meta-Analysis Guide
 
-Complete guide to running meta-analysis on your literature library.
+Guide to running meta-analysis on your literature library.
 
 ## Overview
 
-Meta-analysis tools provide comprehensive analysis of your **existing** literature library, including temporal trends, keyword evolution, metadata visualization, and PCA analysis.
+Meta-analysis tools provide analysis of your **existing** literature library, including temporal trends, keyword evolution, metadata visualization, and PCA analysis.
 
 **Important**: Meta-analysis works only with existing library data (citations, PDFs, extracted text). It does not search, download, or extract. Use options 3.1 and 4.1-4.3 for those operations.
 
 There are two modes available:
-- **Standard meta-analysis** (option 6.1): Bibliographic analysis, citations, PCA, word use, source clarity, full text availability. No LLM/Ollama required.
-- **Full meta-analysis with embeddings** (option 6.2): Includes all standard analysis plus Ollama-based semantic embedding analysis (similarity, clustering, semantic search). Requires Ollama server running.
+- **Standard meta-analysis** (option 6.1): Bibliographic analysis, citations, PCA, word use, source clarity, text availability. No LLM/Ollama required.
+- **Meta-analysis with embeddings** (option 6.2): Includes all standard analysis plus Ollama-based semantic embedding analysis (similarity, clustering, semantic search). Requires Ollama server running.
 
 ## Quick Start
 
@@ -20,7 +20,7 @@ There are two modes available:
 # Run standard meta-analysis on existing library (no embeddings)
 python3 scripts/literature_search.py --meta-analysis
 
-# Run full meta-analysis with embeddings on existing library (requires Ollama)
+# Run meta-analysis with embeddings on existing library (requires Ollama)
 python3 scripts/literature_search.py --meta-analysis --with-embeddings
 ```
 
@@ -31,7 +31,7 @@ python3 scripts/literature_search.py --meta-analysis --with-embeddings
 ./run_literature.sh
 
 # Select option 6.1 for standard meta-analysis
-# Select option 6.2 for full meta-analysis with embeddings
+# Select option 6.2 for meta-analysis with embeddings
 ```
 
 ### Python API
@@ -151,7 +151,7 @@ create_pca_3d_plot(pca_result, clusters)
 
 ## Embedding Analysis
 
-When using `--with-embeddings` (option 6.2), comprehensive semantic analysis is performed:
+When using `--with-embeddings` (option 6.2), semantic analysis is performed:
 
 ### Core Features
 - **Document embeddings**: Generate semantic embeddings using Ollama embeddinggemma model
@@ -173,7 +173,7 @@ When using `--with-embeddings` (option 6.2), comprehensive semantic analysis is 
 - **Dimensionality analysis**: Effective dimensions, explained variance, PCA on embeddings
 - **Outlier statistics**: Outlier detection and analysis
 
-### Enhanced Visualizations
+### Visualizations
 - **Quality plots**: Variance per dimension, norm distributions, mean/std per dimension
 - **Similarity distribution**: Histogram of similarity values
 - **Cluster quality metrics**: Bar chart of clustering quality scores
@@ -186,7 +186,7 @@ When using `--with-embeddings` (option 6.2), comprehensive semantic analysis is 
 
 ### Export Capabilities
 - **Statistics export**: JSON and CSV formats
-- **Validation reports**: Comprehensive validation results in JSON
+- **Validation reports**: Validation results in JSON
 - **Clustering metrics**: Quality metrics in JSON and CSV formats
 
 **Requirements:**
@@ -208,8 +208,8 @@ If embedding generation fails for individual papers after all retries, zero vect
 - `embedding_similarity_matrix.csv` - Similarity matrix
 - `embedding_clusters.json` - Cluster assignments
 - `embedding_validation_report.json` - Validation results
-- `embedding_statistics.json` - Comprehensive statistics (JSON)
-- `embedding_statistics.csv` - Comprehensive statistics (CSV)
+- `embedding_statistics.json` - Statistics (JSON)
+- `embedding_statistics.csv` - Statistics (CSV)
 - `clustering_metrics.json` - Clustering quality metrics (JSON)
 - `clustering_metrics.csv` - Clustering quality metrics (CSV)
 - `embedding_quality.png` - Quality metrics visualization
@@ -247,7 +247,7 @@ Meta-analysis outputs are saved to `data/output/`:
 - `embedding_similarity_matrix.csv` - Similarity matrix
 - `embedding_clusters.json` - Cluster assignments
 - `embedding_validation_report.json` - Validation results
-- `embedding_statistics.json` / `.csv` - Comprehensive statistics
+- `embedding_statistics.json` / `.csv` - Statistics
 - `clustering_metrics.json` / `.csv` - Clustering quality metrics
 - `embedding_quality.png` - Quality metrics visualization
 - `similarity_distribution.png` - Similarity histogram

@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 
 from infrastructure.core.logging_utils import get_logger
-from infrastructure.literature.meta_analysis.embeddings import (
+from infrastructure.literature.meta_analysis import (
     EmbeddingData,
     SimilarityResults,
     compute_similarity_matrix,
@@ -514,6 +514,66 @@ class TestEmbeddingValidation:
         assert "has_warnings" in results
         assert "has_errors" in results
         logger.info("Comprehensive validation test passed")
+    
+    def test_validate_embedding_quality_with_skipped_documents(self):
+        """Test validation with intentionally skipped documents (zero vectors)."""
+        logger.info("Testing validation with skipped documents")
+        
+        embeddings = np.random.randn(5, 768)
+        # Add zero vectors for skipped documents
+        embeddings[0] = 0.0
+        embeddings[1] = 0.0
+        
+        citation_keys = [f"paper{i}" for i in range(5)]
+        skipped_keys = ["paper0", "paper1"]  # These were intentionally skipped
+        
+        results = validate_embedding_quality(
+            embeddings, 
+            citation_keys=citation_keys,
+            skipped_citation_keys=skipped_keys
+        )
+        
+        assert results["zero_vectors"] == 2
+        assert results["zero_vectors_skipped"] == 2
+        assert results["zero_vectors_failed"] == 0
+        # Should not have errors for skipped documents
+        assert "paper0" not in results["problematic_embeddings"]
+        assert "paper1" not in results["problematic_embeddings"]
+        logger.info("Skipped documents validation test passed")
+    
+    def test_validate_all_with_skipped_documents(self):
+        """Test comprehensive validation with skipped documents."""
+        logger.info("Testing comprehensive validation with skipped documents")
+        
+        embeddings = np.random.randn(3, 768)
+        # Add zero vector for skipped document
+        embeddings[0] = 0.0
+        
+        embedding_data = EmbeddingData(
+            citation_keys=["paper0", "paper1", "paper2"],
+            embeddings=embeddings,
+            titles=["Title 0", "Title 1", "Title 2"],
+            years=[2024, 2023, 2022],
+            embedding_dimension=768,
+            skipped_citation_keys=["paper0"]  # paper0 was intentionally skipped
+        )
+        
+        # Create similarity matrix
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        # Avoid division by zero for zero vectors
+        norms[norms < 1e-10] = 1.0
+        normalized = embeddings / norms
+        similarity_matrix = np.dot(normalized, normalized.T)
+        
+        results = validate_all(embedding_data, similarity_matrix=similarity_matrix)
+        
+        assert "quality" in results
+        assert results["quality"]["zero_vectors"] == 1
+        assert results["quality"]["zero_vectors_skipped"] == 1
+        assert results["quality"]["zero_vectors_failed"] == 0
+        # Should not have errors for skipped documents
+        assert not results["has_errors"], "Skipped documents should not cause validation errors"
+        logger.info("Comprehensive validation with skipped documents test passed")
 
 
 class TestEmbeddingStatistics:

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from infrastructure.llm.core.embedding_client import EmbeddingClient
 from infrastructure.llm.core.config import LLMConfig
-from infrastructure.literature.meta_analysis.embeddings import (
+from infrastructure.literature.meta_analysis import (
     generate_document_embeddings,
     compute_similarity_matrix,
     cluster_embeddings,
@@ -466,7 +466,7 @@ class TestRealEmbeddingIntegration:
     @pytest.mark.requires_ollama
     def test_checkpoint_resume_after_timeout(self, tmp_path, sample_corpus):
         """Test checkpoint saving and resume after timeout."""
-        from infrastructure.literature.meta_analysis.embeddings import generate_document_embeddings
+        from infrastructure.literature.meta_analysis import generate_document_embeddings
         from infrastructure.literature.core.config import LiteratureConfig
         from pathlib import Path
         
@@ -495,7 +495,7 @@ class TestRealEmbeddingIntegration:
     @pytest.mark.timeout(600)
     def test_embedding_generation_with_hung_recovery(self, tmp_path, sample_corpus):
         """Test full embedding workflow with hung Ollama recovery capability."""
-        from infrastructure.literature.meta_analysis.embeddings import generate_document_embeddings
+        from infrastructure.literature.meta_analysis import generate_document_embeddings
         from infrastructure.literature.core.config import LiteratureConfig
         from infrastructure.llm.core.embedding_client import EmbeddingClient
         from infrastructure.llm.utils.ollama import test_embedding_endpoint, restart_ollama_server

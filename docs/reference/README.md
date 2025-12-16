@@ -1,10 +1,10 @@
 # Reference Documentation
 
-Complete reference documentation for APIs, CLI, and data formats.
+Reference documentation for APIs, CLI, and data formats.
 
 ## Reference Documents
 
-- **[API Reference](api-reference.md)** - Complete Python API documentation
+- **[API Reference](api-reference.md)** - Python API documentation
 - **[CLI Reference](cli-reference.md)** - Command-line interface reference
 - **[Data Formats](data-formats.md)** - Data structure and file format documentation
 

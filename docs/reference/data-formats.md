@@ -1,6 +1,6 @@
 # Data Formats Reference
 
-Complete documentation of data structures and file formats.
+Documentation of data structures and file formats.
 
 ## Library Index (`library.json`)
 
@@ -141,7 +141,7 @@ Progress tracking for summarization operations.
 
 ## See Also
 
-- **[Data Directory Documentation](../../data/AGENTS.md)** - Complete data documentation
+- **[Data Directory Documentation](../../data/AGENTS.md)** - Data documentation
 - **[API Reference](api-reference.md)** - API documentation
 - **[Reference AGENTS.md](AGENTS.md)** - Reference documentation standards
 

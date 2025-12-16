@@ -28,7 +28,7 @@ data/
     └── meta_analysis_summary.json
 
 literature/               # LLM operation outputs (created at repo root)
-└── llm_outputs/          # Advanced LLM operation results
+└── llm_outputs/          # LLM operation results
     ├── review_outputs/
     ├── communication_outputs/
     ├── compare_outputs/
@@ -80,7 +80,7 @@ LiteratureSearch (core.py)
 └── ReferenceManager (reference_manager.py)
 
 LiteratureWorkflow (workflow.py)     # Orchestrates multi-paper operations
-├── LiteratureLLMOperations (llm_operations.py)  # Advanced LLM synthesis
+├── LiteratureLLMOperations (llm_operations.py)  # Multi-paper LLM synthesis
 └── ProgressTracker (progress.py)
 
 PaperSelector (paper_selector.py)    # Configurable paper filtering
@@ -147,7 +147,7 @@ LLMOperationResult (llm_operations.py)  # LLM operation results
 | `meta_analysis/pca.py` | PCA analysis of texts |
 | `meta_analysis/visualizations.py` | Plotting utilities |
 | **llm/** | LLM operations |
-| `llm/operations.py` | Advanced LLM operations for multi-paper synthesis |
+| `llm/operations.py` | Multi-paper LLM operations for synthesis |
 | `llm/selector.py` | Configurable paper selection and filtering |
 | **reporting/** | Reporting |
 | `reporting/reporter.py` | Reporting with export |
@@ -244,7 +244,7 @@ python3 -m infrastructure.literature.core.cli library export --output export.jso
 # NEW: Clean up library (remove papers without PDFs)
 python3 scripts/literature_search.py --cleanup
 
-# Advanced LLM operations
+# Multi-paper LLM operations
 python3 scripts/literature_search.py --llm-operation review
 python3 scripts/literature_search.py --llm-operation communication --paper-config my_selection.yaml
 python3 scripts/literature_search.py --llm-operation compare
@@ -1150,7 +1150,7 @@ Failures are saved to `data/failed_downloads.json`:
 - All download operations use `workflow.failed_tracker.save_failed()` to track failures
 - Operations check `workflow.failed_tracker.is_failed()` to skip previously failed downloads
 
-## Advanced Features
+## Features
 
 ### HTML-to-PDF URL Extraction
 

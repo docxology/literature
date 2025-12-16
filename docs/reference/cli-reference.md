@@ -117,7 +117,7 @@ python3 scripts/literature_search.py [options]
 - `--summarize` - Generate summaries
 - `--meta-analysis` - Run meta-analysis
 - `--cleanup` - Clean up library
-- `--llm-operation OPERATION` - Advanced LLM operations
+- `--llm-operation OPERATION` - Multi-paper LLM operations
 
 **Options:**
 - `--keywords KEYWORDS` - Comma-separated keywords for search (prompts if not provided)
@@ -139,7 +139,7 @@ By default, papers with previously failed downloads are **automatically skipped*
 - **With `--retry-failed`**: Previously failed downloads are retried, useful for network errors or temporary issues
 
 This flag works with:
-- `--search` - Full search and download workflow
+- `--search` - Search and download workflow
 - `--download-only` - Download existing bibliography entries
 - `--meta-analysis` - Meta-analysis workflow
 

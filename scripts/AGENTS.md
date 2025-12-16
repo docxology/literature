@@ -17,7 +17,7 @@ Main orchestrator for literature search and summarization operations:
 - **Extract text mode**: Extract text from PDFs
 - **Meta-analysis mode**: Run meta-analysis on library
 - **Cleanup mode**: Clean up library entries
-- **LLM operations mode**: Advanced LLM operations (reviews, comparisons, etc.)
+- **LLM operations mode**: Multi-paper LLM operations (reviews, comparisons, etc.)
 
 **Features:**
 - Interactive keyword input
@@ -72,14 +72,14 @@ python3 scripts/literature_search.py --download-only
 # Run standard meta-analysis on existing library (no embeddings, no Ollama required)
 python3 scripts/literature_search.py --meta-analysis
 
-# Run full meta-analysis with embeddings on existing library (requires Ollama)
+# Run meta-analysis with embeddings on existing library (requires Ollama)
 python3 scripts/literature_search.py --meta-analysis --with-embeddings
 ```
 
 **Note**: Meta-analysis works only with existing library data. It does not search, download, or extract.
 Use `--search-only`, `--download-only`, or `--extract-text` for those operations.
 
-### Advanced LLM Operations
+### Multi-paper LLM Operations
 
 ```bash
 # Generate literature review

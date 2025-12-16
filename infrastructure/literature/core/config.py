@@ -200,7 +200,7 @@ class LiteratureConfig:
     embedding_restart_ollama_on_timeout: bool = True  # Whether to attempt Ollama restart on timeout
     embedding_force_restart_on_timeout: bool = True  # Whether to force kill hung Ollama processes on timeout
     embedding_test_endpoint_on_restart: bool = True  # Whether to test embedding endpoint when restarting
-    embedding_max_text_length: int = 250000  # Maximum character length for documents to embed (documents exceeding this are skipped) (detects hung state)
+    embedding_max_text_length: int = 1000000  # Maximum character length for documents to embed (documents exceeding this are skipped) (detects hung state). EmbeddingClient handles chunking automatically.
     embedding_timeout_multiplier_for_long_docs: float = 2.0  # Timeout multiplier for documents >100K chars (default: 2.0)
     embedding_chunk_size_reduction_threshold: int = 100000  # Document length threshold (chars) to reduce chunk size by half (default: 100000)
 
@@ -276,7 +276,7 @@ class LiteratureConfig:
             embedding_restart_ollama_on_timeout=os.environ.get("LITERATURE_EMBEDDING_RESTART_OLLAMA_ON_TIMEOUT", "true").lower() in ("true", "1", "yes"),
             embedding_force_restart_on_timeout=os.environ.get("LITERATURE_EMBEDDING_FORCE_RESTART_ON_TIMEOUT", "true").lower() in ("true", "1", "yes"),
             embedding_test_endpoint_on_restart=os.environ.get("LITERATURE_EMBEDDING_TEST_ENDPOINT_ON_RESTART", "true").lower() in ("true", "1", "yes"),
-            embedding_max_text_length=int(os.environ.get("LITERATURE_EMBEDDING_MAX_TEXT_LENGTH", "250000")),
+            embedding_max_text_length=int(os.environ.get("LITERATURE_EMBEDDING_MAX_TEXT_LENGTH", "1000000")),
             embedding_timeout_multiplier_for_long_docs=float(os.environ.get("LITERATURE_EMBEDDING_TIMEOUT_MULTIPLIER_FOR_LONG_DOCS", "2.0")),
             embedding_chunk_size_reduction_threshold=int(os.environ.get("LITERATURE_EMBEDDING_CHUNK_SIZE_REDUCTION_THRESHOLD", "100000")),
         )

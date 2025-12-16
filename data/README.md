@@ -32,7 +32,7 @@ python3 -m infrastructure.literature.core.cli library list --limit 10
 
 - **`library.json`** - Paper metadata index (499 papers)
 - **`references.bib`** - BibTeX bibliography for citations
-- **`pdfs/`** - Downloaded full-text PDFs
+- **`pdfs/`** - Downloaded PDFs
 - **`summaries/`** - AI-generated paper summaries
 - **`failed_downloads.json`** - Retry queue for failed downloads
 
@@ -53,7 +53,7 @@ Papers are automatically included in `99_references.md` during PDF compilation.
 
 - **PDFs**: Named by citation key (e.g., `smith2024ml.pdf`)
 - **Summaries**: Markdown format with key findings and methodology
-- **Library**: JSON with complete metadata and download status
+- **Library**: JSON with metadata and download status
 - **Bibliography**: Standard BibTeX format
 
 ## Statistics

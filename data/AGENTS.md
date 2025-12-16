@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The `data/` directory serves as the central repository for academic literature search, PDF storage, reference management, and research paper organization. It integrates with the `infrastructure/literature/` module to provide a complete literature management workflow.
+The `data/` directory serves as the central repository for academic literature search, PDF storage, reference management, and research paper organization. It integrates with the `infrastructure/literature/` module to provide a literature management workflow.
 
 ## Directory Structure
 
@@ -31,7 +31,7 @@ data/
 
 ### Library Index (`library.json`)
 
-JSON database containing complete metadata for all indexed papers:
+JSON database containing metadata for all indexed papers:
 
 ```json
 {
@@ -61,7 +61,7 @@ JSON database containing complete metadata for all indexed papers:
 - **Unique citation keys** as primary identifiers
 - **Source tracking** (arxiv, semanticscholar, crossref, pubmed)
 - **Download status** via `pdf_path` field
-- **Complete metadata** preservation
+- **Metadata** preservation
 - **Timestamp tracking** for addition dates
 
 ### Bibliography (`references.bib`)
@@ -256,7 +256,7 @@ Current library contains **499 papers** across multiple domains:
 
 ### Quality Metrics
 
-- **Complete metadata**: 100% of entries have title, authors, year
+- **Metadata**: 100% of entries have title, authors, year
 - **DOI coverage**: 87% of papers have Digital Object Identifiers
 - **PDF availability**: 91% of papers have downloaded PDFs
 - **Citation keys**: All unique and BibTeX-compatible
@@ -269,8 +269,8 @@ Current library contains **499 papers** across multiple domains:
 # Remove papers without PDFs (space management)
 python3 -m infrastructure.literature.core.cli library cleanup --no-pdf
 
-# Validate all citations still resolve
-python3 -m infrastructure.literature.core.cli library validate
+# Check library statistics
+python3 -m infrastructure.literature.core.cli library stats
 
 # Update metadata from sources
 python3 -m infrastructure.literature.core.cli library refresh
@@ -350,7 +350,7 @@ python3 -m infrastructure.literature.core.cli library refresh
 ### Backup Strategy
 
 ```bash
-# Complete backup
+# Backup
 tar -czf data_backup_$(date +%Y%m%d).tar.gz data/
 
 # Selective backup (metadata only)
@@ -404,11 +404,11 @@ export UNPAYWALL_EMAIL=your@email.com
 
 **Citation Errors:**
 ```bash
-# Validate all citations exist
-python3 -m infrastructure.validation.cli markdown manuscript/
+# Check library statistics
+python3 -m infrastructure.literature.core.cli library stats
 
-# Check for missing BibTeX entries
-python3 -m infrastructure.literature.core.cli library validate
+# List all papers to verify entries
+python3 -m infrastructure.literature.core.cli library list
 ```
 
 **Library Corruption:**

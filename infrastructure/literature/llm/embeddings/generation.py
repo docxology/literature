@@ -713,6 +713,12 @@ def generate_document_embeddings(
         if checkpoint_data:
             skipped_from_checkpoint = checkpoint_data.get("skipped_indices", [])
             skipped_indices.extend(skipped_from_checkpoint)
+            # Restore skipped citation keys from checkpoint indices
+            for idx in skipped_from_checkpoint:
+                if idx < len(valid_indices):
+                    citation_key = corpus.citation_keys[valid_indices[idx]]
+                    if citation_key not in skipped_citation_keys:
+                        skipped_citation_keys.append(citation_key)
             # Remove skipped indices from missing_indices so they're not attempted
             missing_indices = [idx for idx in missing_indices if idx not in skipped_from_checkpoint]
             if skipped_from_checkpoint:
@@ -1243,6 +1249,7 @@ def generate_document_embeddings(
         embeddings=embeddings_array,
         titles=filtered_titles,
         years=filtered_years,
-        embedding_dimension=embeddings_array.shape[1]
+        embedding_dimension=embeddings_array.shape[1],
+        skipped_citation_keys=skipped_citation_keys if skipped_citation_keys else None
     )
 

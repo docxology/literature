@@ -1,6 +1,6 @@
 # Infrastructure Layer
 
-Reusable modules for literature search, PDF management, and AI-powered summarization.
+Reusable modules for literature search, PDF management, and LLM-powered summarization.
 
 ## Quick Start
 
@@ -26,14 +26,14 @@ summary = client.query("Summarize this paper...")
 ## Features
 
 - Standalone and self-contained
-- Comprehensive test coverage
+- Test coverage
 - Environment-based configuration
 - Modular architecture
 
 ## See Also
 
-- [`AGENTS.md`](AGENTS.md) - Complete documentation
-- [`../docs/`](../docs/) - Comprehensive documentation
+- [`AGENTS.md`](AGENTS.md) - Documentation
+- [`../docs/`](../docs/) - Documentation
 
 
 

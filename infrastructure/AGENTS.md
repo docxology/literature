@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The infrastructure layer provides reusable, standalone modules for literature search, PDF management, reference tracking, and AI-powered summarization. This layer is designed to be completely independent and self-contained.
+The infrastructure layer provides reusable, standalone modules for literature search, PDF management, reference tracking, and LLM-powered summarization. This layer is designed to be independent and self-contained.
 
 ## Architecture
 
@@ -41,7 +41,7 @@ Literature search and management:
 - **Sources**: API adapters for academic databases (arXiv, Semantic Scholar, etc.)
 - **PDF**: PDF downloading, extraction, and fallback strategies
 - **Library**: Library indexing, BibTeX generation, statistics
-- **Summarization**: AI-powered paper summarization
+- **Summarization**: LLM-powered paper summarization
 - **Meta-Analysis**: Analysis tools and visualizations
 - **Workflow**: Workflow orchestration and progress tracking
 - **Analysis**: Paper analysis, domain detection, context building

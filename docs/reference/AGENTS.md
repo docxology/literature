@@ -2,13 +2,13 @@
 
 ## Purpose
 
-The `reference/` directory contains complete reference documentation for APIs, CLI interfaces, and data formats. This documentation provides comprehensive, detailed information for developers and advanced users.
+The `reference/` directory contains reference documentation for APIs, CLI interfaces, and data formats. This documentation provides detailed information for developers and users.
 
 ## Reference Documentation Organization
 
 ### Available Reference Documentation
 
-1. **api-reference.md** - Complete Python API documentation
+1. **api-reference.md** - Python API documentation
    - LiteratureSearch API
    - LLMClient API
    - SummarizationEngine API
@@ -36,16 +36,16 @@ The `reference/` directory contains complete reference documentation for APIs, C
 Each reference document should follow this structure:
 
 1. **Overview** - Purpose and scope
-2. **Complete API/CLI/Format Reference** - Comprehensive documentation
+2. **API/CLI/Format Reference** - Documentation
 3. **Examples** - Usage examples
 4. **See Also** - Links to related documentation
 
 ### Writing Principles
 
-**Comprehensive:**
+**Thorough:**
 - Document all public APIs, CLI commands, and data formats
 - Include all parameters, return values, exceptions
-- Provide complete information, not summaries
+- Provide information, not summaries
 - Cover edge cases and error conditions
 
 **Accurate:**
@@ -131,7 +131,7 @@ python3 -m infrastructure.literature.core.cli search "machine learning"
 ### Documentation Requirements
 
 For each data format:
-- **Structure**: Complete structure with all fields
+- **Structure**: Structure with all fields
 - **Field Descriptions**: All fields with types and descriptions
 - **Examples**: Example data
 - **Validation**: Format requirements and constraints

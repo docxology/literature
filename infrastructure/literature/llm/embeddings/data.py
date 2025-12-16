@@ -18,6 +18,7 @@ class EmbeddingData:
     titles: List[str]
     years: List[Optional[int]]
     embedding_dimension: int
+    skipped_citation_keys: Optional[List[str]] = None  # Citation keys of documents skipped due to length limit
 
 
 @dataclass

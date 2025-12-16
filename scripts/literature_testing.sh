@@ -213,7 +213,6 @@ run_test_suite() {
 
     # Run pytest with coverage
     # Use tee to stream output in real-time while capturing for parsing
-    # Note: Excluding test_llm_review.py due to import errors (tests script that doesn't exist in this repo)
     local pytest_cmd=(
         pytest
         --cov=infrastructure
@@ -223,7 +222,6 @@ run_test_suite() {
         --tb=short
         -v
         --durations=10
-        --ignore=tests/infrastructure/llm/test_llm_review.py
     )
     
     # Add Ollama marker filter if needed
@@ -372,6 +370,7 @@ run_test_suite() {
         return 1
     fi
 }
+
 
 
 

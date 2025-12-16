@@ -74,7 +74,7 @@ The validation module is used by:
 
 ## See Also
 
-- **[Validation Module Documentation](../../infrastructure/validation/AGENTS.md)** - Complete technical documentation
+- **[Validation Module Documentation](../../infrastructure/validation/AGENTS.md)** - Technical documentation
 - **[API Reference](../reference/api-reference.md)** - API documentation
 - **[Modules AGENTS.md](AGENTS.md)** - Module documentation standards
 

@@ -4,7 +4,7 @@ Documentation for the infrastructure layer.
 
 ## Overview
 
-The infrastructure layer provides reusable, standalone modules for literature search, PDF management, reference tracking, and AI-powered summarization. It is designed to be completely independent and self-contained.
+The infrastructure layer provides reusable, standalone modules for literature search, PDF management, reference tracking, and LLM-powered summarization. It is designed to be independent and self-contained.
 
 ## Module Structure
 
@@ -115,7 +115,7 @@ Each module is designed to be:
 - **Self-contained**: All functionality within module boundaries
 - **Well-defined APIs**: Clear public interfaces via `__init__.py` exports
 - **Independent testing**: Each module has its own test suite
-- **Documented**: Complete AGENTS.md and README.md for each module
+- **Documented**: AGENTS.md and README.md for each module
 
 ## Configuration
 

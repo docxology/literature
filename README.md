@@ -1,6 +1,6 @@
 # Literature Search and Management System
 
-Standalone repository for academic literature search, PDF management, reference tracking, and AI-powered paper summarization.
+Standalone repository for academic literature search, PDF management, reference tracking, and LLM-powered paper summarization.
 
 ## Quick Navigation
 
@@ -25,7 +25,7 @@ Standalone repository for academic literature search, PDF management, reference 
 - **PDF Management**: Automatic downloading with citation key naming, parallel downloads, and open access fallback → [PDF Documentation](infrastructure/literature/pdf/AGENTS.md)
 - **Failed Download Tracking**: Automatic tracking of failed downloads with retry capability → [Troubleshooting](docs/guides/troubleshooting.md#pdf-download-failures)
 - **Reference Management**: BibTeX generation with deduplication and library indexing → [Library Documentation](infrastructure/literature/library/AGENTS.md)
-- **AI Summarization**: Local LLM-powered paper summarization with quality validation → [Summarization Guide](docs/guides/summarize-papers.md)
+- **LLM Summarization**: Local LLM-powered paper summarization with quality validation → [Summarization Guide](docs/guides/summarize-papers.md)
 - **Meta-Analysis**: PCA, keyword analysis, temporal trends, and visualization tools → [Meta-Analysis Guide](docs/guides/meta-analysis.md)
 - **Library Tracking**: JSON-based index with metadata and progress tracking → [Data Formats](docs/reference/data-formats.md)
 
@@ -344,7 +344,7 @@ See [Data Formats Reference](docs/reference/data-formats.md) for data structure 
 ## Requirements
 
 - Python >= 3.10
-- Ollama (for AI summarization) - optional but recommended → [LLM Operations Guide](docs/guides/llm-operations.md)
+- Ollama (for LLM summarization) - optional but recommended → [LLM Operations Guide](docs/guides/llm-operations.md)
 - Internet connection (for API searches and PDF downloads)
 
 ## Configuration

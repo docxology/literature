@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The `guides/` directory contains task-oriented how-to guides for common operations with the Literature Search and Management System. These guides focus on practical usage, step-by-step instructions, and real-world examples.
+The `guides/` directory contains task-oriented how-to guides for common operations with the Literature Search and Management System. These guides focus on practical usage, step-by-step instructions, and examples.
 
 ## Guide Organization
 
@@ -15,14 +15,14 @@ The `guides/` directory contains task-oriented how-to guides for common operatio
    - Deduplication
    - PDF download integration
 
-2. **summarize-papers.md** - Guide to generating AI-powered summaries
+2. **summarize-papers.md** - Guide to generating LLM-powered summaries
    - Prerequisites and setup
    - Summarization process
    - Quality validation
    - Progress tracking
    - Troubleshooting
 
-3. **llm-operations.md** - Advanced multi-paper LLM operations
+3. **llm-operations.md** - Multi-paper LLM operations
    - Available operations (6 types)
    - Paper selection
    - Operation workflow
@@ -60,7 +60,7 @@ Each guide should follow this structure:
 1. **Title and Overview** - Clear purpose and scope
 2. **Prerequisites** - Requirements and setup
 3. **Quick Start** - Fast path to getting started
-4. **Detailed Sections** - Comprehensive coverage
+4. **Detailed Sections** - Coverage
 5. **Examples** - Concrete, working examples
 6. **Best Practices** - Recommendations
 7. **Troubleshooting** - Common issues (or link to troubleshooting guide)
@@ -71,7 +71,7 @@ Each guide should follow this structure:
 **"Show Not Tell" Principle:**
 - Include concrete code examples, not just descriptions
 - Show actual usage patterns and workflows
-- Provide real-world scenarios
+- Provide scenarios
 - Demonstrate error handling
 
 **Understated and Factual:**
@@ -92,7 +92,7 @@ All code examples must:
 - Be tested and working
 - Use current best practices
 - Include error handling where appropriate
-- Show both simple and advanced usage
+- Show both simple and complex usage
 - Include necessary imports and setup
 
 Example format:
@@ -114,7 +114,7 @@ See [Literature Module Documentation](../modules/literature.md) for details.
 
 When referencing specific modules:
 ```markdown
-See [Summarization Module Documentation](../../infrastructure/literature/summarization/AGENTS.md) for complete documentation.
+See [Summarization Module Documentation](../../infrastructure/literature/summarization/AGENTS.md) for documentation.
 ```
 
 ### Links to Other Guides
@@ -133,7 +133,7 @@ See [Troubleshooting Guide](troubleshooting.md) for common issues.
 
 When referencing APIs:
 ```markdown
-See [API Reference](../reference/api-reference.md) for complete API documentation.
+See [API Reference](../reference/api-reference.md) for API documentation.
 ```
 
 When referencing CLI:
@@ -166,7 +166,7 @@ See [Architecture Overview](../architecture.md) for system design.
 - [ ] All cross-references are valid
 - [ ] Troubleshooting covers common issues
 - [ ] Best practices are current
-- [ ] Configuration options are complete
+- [ ] Configuration options are documented
 - [ ] Output locations are accurate
 
 ### Adding New Guides

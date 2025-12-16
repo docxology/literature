@@ -1,6 +1,6 @@
 # Summarizing Papers Guide
 
-Complete guide to generating AI-powered summaries for academic papers.
+Guide to generating LLM-powered summaries for academic papers.
 
 ## Prerequisites
 

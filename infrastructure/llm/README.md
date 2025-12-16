@@ -10,7 +10,7 @@ Local LLM integration for research assistance with flexible response modes and c
 - **Context Management**: Multi-turn conversations with automatic system prompt injection
 - **Research Templates**: Pre-built prompts for common research tasks
 - **Streaming Responses**: Real-time response generation
-- **Environment Configuration**: Full configuration via OLLAMA_* and LLM_* env vars
+- **Environment Configuration**: Configuration via OLLAMA_* and LLM_* env vars
 - **Validation**: Output quality and format checking
 - **Command-Line Interface**: Interactive queries from terminal
 
@@ -208,7 +208,7 @@ if OutputValidator.validate_short_response(response):
 # Validate structure against schema
 OutputValidator.validate_structure(data, schema)
 
-# Comprehensive validation
+# Validation
 OutputValidator.validate_complete(response, mode="structured", schema=schema)
 ```
 

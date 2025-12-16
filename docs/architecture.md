@@ -1,10 +1,10 @@
 # System Architecture
 
-Complete architecture overview of the Literature Search and Management System.
+Architecture overview of the Literature Search and Management System.
 
 ## Overview
 
-The Literature Search and Management System is a **standalone repository** for academic literature search, PDF management, reference tracking, and AI-powered paper summarization. It provides a complete workflow from paper discovery to analysis and citation management.
+The Literature Search and Management System is a **standalone repository** for academic literature search, PDF management, reference tracking, and LLM-powered paper summarization. It provides a workflow from paper discovery to analysis and citation management.
 
 ## Architecture Principles
 
@@ -14,7 +14,7 @@ The system is completely independent and self-contained:
 - **No dependencies** on external template or manuscript systems
 - **Duplicated shared infrastructure** (`infrastructure/core/`, `infrastructure/llm/`) for independence
 - **Separate bibliography** (`data/references.bib`) from any manuscript system
-- **Complete test suite** for all functionality
+- **Test suite** for all functionality
 
 ### Thin Orchestrator Pattern
 
@@ -63,7 +63,7 @@ The system is organized into logical, independent modules:
 
 Foundation utilities used across all modules:
 - **Logging**: Unified Python logging system
-- **Exceptions**: Comprehensive exception hierarchy
+- **Exceptions**: Exception hierarchy
 - **Configuration**: YAML and environment variable management
 - **Progress**: Progress tracking and visual indicators
 - **Checkpoint**: Pipeline checkpoint management
@@ -90,20 +90,20 @@ Literature search and management:
 - **Sources**: API adapters (arXiv, Semantic Scholar, PubMed, CrossRef, OpenAlex, DBLP, bioRxiv, Europe PMC, Unpaywall)
 - **PDF**: PDF downloading and extraction
 - **Library**: Library indexing and BibTeX generation
-- **Summarization**: AI-powered paper summarization
+- **Summarization**: LLM-powered paper summarization
 - **Meta-Analysis**: Analysis tools and visualizations
 - **Workflow**: Workflow orchestration with progress tracking
 - **Analysis**: Paper analysis and domain detection
 - **HTML Parsers**: Publisher-specific PDF URL extraction
-- **Reporting**: Comprehensive reporting with multi-format export
-- **LLM Operations**: Advanced LLM operations for multi-paper synthesis
+- **Reporting**: Reporting with multi-format export
+- **LLM Operations**: Multi-paper LLM operations for synthesis
 
 ### Validation Module (`infrastructure/validation/`)
 
 PDF validation and text extraction:
 - **PDF Text Extraction**: Multi-library support (pdfplumber, pypdf, PyPDF2)
 - **Automatic Fallback**: Tries libraries in order if one fails
-- **Error Handling**: Comprehensive error handling for PDF issues
+- **Error Handling**: Error handling for PDF issues
 
 ## Data Flow
 
@@ -196,7 +196,7 @@ tests/
 
 ### Test Philosophy
 
-- **No mocks**: Real data and computations
+- **No mocks**: Data and computations
 - **Integration tests**: Marked with `@pytest.mark.requires_ollama`
 - **Graceful skipping**: Tests skip when services unavailable
 
@@ -215,7 +215,7 @@ data/
 └── output/                   # Meta-analysis outputs
 
 literature/                   # LLM operation outputs (created at repo root)
-└── llm_outputs/              # Advanced LLM operation results
+└── llm_outputs/              # LLM operation results
     ├── review_outputs/
     ├── communication_outputs/
     ├── compare_outputs/
@@ -231,7 +231,7 @@ The architecture supports extension at multiple levels:
 2. **New Analyzers**: Add analysis tools in `infrastructure/literature/analysis/`
 3. **New Templates**: Add LLM templates in `infrastructure/llm/templates/`
 4. **New HTML Parsers**: Add publisher-specific parsers in `infrastructure/literature/html_parsers/`
-5. **New LLM Operations**: Add advanced LLM operations in `infrastructure/literature/llm/`
+5. **New LLM Operations**: Add multi-paper LLM operations in `infrastructure/literature/llm/`
 6. **New Workflows**: Add workflow orchestrators in `scripts/` (thin coordinators only)
 7. **New Report Formats**: Add export formats in `infrastructure/literature/reporting/`
 
@@ -239,7 +239,7 @@ The architecture supports extension at multiple levels:
 
 - **[Getting Started](getting-started.md)** - Quick start guide
 - **[Module Documentation](modules/)** - Detailed module documentation
-- **[LLM Operations Guide](guides/llm-operations.md)** - Advanced multi-paper LLM operations
-- **[API Reference](reference/api-reference.md)** - Complete API documentation
+- **[LLM Operations Guide](guides/llm-operations.md)** - Multi-paper LLM operations
+- **[API Reference](reference/api-reference.md)** - API documentation
 - **[Documentation AGENTS.md](AGENTS.md)** - Documentation structure and organization
 

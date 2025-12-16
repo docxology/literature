@@ -63,7 +63,7 @@ Each module documentation file should follow this structure:
 
 **Clear Examples:**
 - Include working code examples
-- Show both simple and advanced usage
+- Show both simple and complex usage
 - Demonstrate integration patterns
 - Include error handling
 
@@ -73,7 +73,7 @@ Each module documentation file should follow this structure:
 
 When referencing detailed technical information:
 ```markdown
-See [Literature Module Documentation](../../infrastructure/literature/AGENTS.md) for complete documentation.
+See [Literature Module Documentation](../../infrastructure/literature/AGENTS.md) for documentation.
 ```
 
 When referencing specific submodules:
@@ -97,7 +97,7 @@ See [Configuration Guide](../guides/configuration.md) for configuration options.
 
 When referencing APIs:
 ```markdown
-See [API Reference](../reference/api-reference.md) for complete API documentation.
+See [API Reference](../reference/api-reference.md) for API documentation.
 ```
 
 ### Links to Architecture
@@ -123,7 +123,7 @@ See [Architecture Overview](../architecture.md) for system architecture.
 - Implementation details
 - Internal architecture
 - Developer-focused
-- Comprehensive reference
+- Reference
 
 ### Integration Patterns
 
@@ -144,7 +144,7 @@ Main interface for literature operations:
 - Configuration management
 - CLI interface
 
-See [Literature Module Documentation](../../infrastructure/literature/AGENTS.md) for complete technical documentation.
+See [Literature Module Documentation](../../infrastructure/literature/AGENTS.md) for technical documentation.
 ```
 
 **In `infrastructure/literature/AGENTS.md`:**

@@ -1,6 +1,6 @@
 # LLM Operations Guide
 
-This guide describes the advanced LLM operations available for multi-paper literature analysis.
+This guide describes the multi-paper LLM operations available for literature analysis.
 
 ## Overview
 
@@ -21,7 +21,7 @@ All LLM operations use local Ollama models to generate text-based analyses. Thes
 - **Format:** Markdown files
 - **Location:** `data/summaries/{citation_key}_summary.md`
 - **Length:** 600-1000 words per paper
-- **Content:** Comprehensive technical summaries with sections for overview, key contributions, methodology, results, and limitations
+- **Content:** Technical summaries with sections for overview, key contributions, methodology, results, and limitations
 
 **Use Cases:**
 - Generate summaries for all papers in your library
@@ -134,7 +134,7 @@ python3 scripts/literature_search.py --llm-operation compare
 **Purpose:** Identify unanswered questions, methodological gaps, and future research directions.
 
 **Input Requirements:**
-- Multiple papers (typically 5-20 for comprehensive gap analysis)
+- Multiple papers (typically 5-20 for gap analysis)
 - Prefers full summaries, falls back to abstracts
 - Domain context for focused analysis
 

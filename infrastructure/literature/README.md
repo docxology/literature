@@ -18,7 +18,7 @@ Tools for searching papers, downloading PDFs, and managing citations.
 ```
 data/
 ├── references.bib    # BibTeX entries
-├── library.json      # JSON index with full metadata
+├── library.json      # JSON index with metadata
 └── pdfs/             # Downloaded PDFs
     └── author2024title.pdf
 ```
@@ -74,7 +74,7 @@ python3 -m infrastructure.literature.core.cli library export --output export.jso
 # Clean up library
 python3 scripts/literature_search.py --cleanup
 
-# Advanced LLM operations
+# Multi-paper LLM operations
 python3 scripts/literature_search.py --llm-operation review
 python3 scripts/literature_search.py --llm-operation communication
 python3 scripts/literature_search.py --llm-operation compare

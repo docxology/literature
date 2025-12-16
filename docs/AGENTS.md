@@ -1,8 +1,8 @@
-# Documentation Directory - Comprehensive Guide
+# Documentation Directory - Guide
 
 ## Purpose
 
-The `docs/` directory contains comprehensive user-facing documentation for the Literature Search and Management System. This documentation is organized into logical sections: getting started guides, architecture overview, module documentation, how-to guides, and complete reference documentation.
+The `docs/` directory contains user-facing documentation for the Literature Search and Management System. This documentation is organized into logical sections: getting started guides, architecture overview, module documentation, how-to guides, and reference documentation.
 
 ## Documentation Structure
 
@@ -12,7 +12,7 @@ The documentation follows a hierarchical structure designed for different user n
 docs/
 ├── README.md              # Documentation index and navigation
 ├── getting-started.md     # Quick start guide for new users
-├── architecture.md        # Complete system architecture and design
+├── architecture.md        # System architecture and design
 ├── guides/                # How-to guides for common tasks
 │   ├── search-papers.md
 │   ├── summarize-papers.md
@@ -26,7 +26,7 @@ docs/
 │   ├── llm.md
 │   ├── literature.md
 │   └── validation.md
-└── reference/             # Complete reference documentation
+└── reference/             # Reference documentation
     ├── api-reference.md
     ├── cli-reference.md
     └── data-formats.md
@@ -69,7 +69,7 @@ All documentation follows these principles:
 The `docs/` directory complements but does not replace module-level documentation:
 
 ### Module-Level Documentation (`infrastructure/*/AGENTS.md`)
-- Comprehensive technical documentation
+- Technical documentation
 - Implementation details
 - Internal architecture
 - Developer-focused information
@@ -110,7 +110,7 @@ See [Configuration Guide](../guides/configuration.md) for detailed configuration
 
 **To Module AGENTS.md:**
 ```markdown
-See [infrastructure/literature/AGENTS.md](../../infrastructure/literature/AGENTS.md) for complete module documentation.
+See [infrastructure/literature/AGENTS.md](../../infrastructure/literature/AGENTS.md) for module documentation.
 ```
 
 **To Root Documentation:**
@@ -143,7 +143,7 @@ See [Root AGENTS.md](../../AGENTS.md) for system overview.
 - [ ] Information matches actual implementation
 - [ ] Navigation is clear and logical
 - [ ] Code examples follow current best practices
-- [ ] Configuration options are complete and accurate
+- [ ] Configuration options are accurate
 - [ ] Troubleshooting covers common issues
 
 ### Adding New Documentation
@@ -188,7 +188,7 @@ When adding new documentation:
 - [Documentation README](README.md) - Documentation index and navigation
 - [Getting Started Guide](getting-started.md) - Quick start for new users
 - [Architecture Overview](architecture.md) - System architecture and design
-- [Root AGENTS.md](../AGENTS.md) - Complete system documentation
+- [Root AGENTS.md](../AGENTS.md) - System documentation
 - [Module Documentation](../infrastructure/) - Detailed module documentation
 
 
