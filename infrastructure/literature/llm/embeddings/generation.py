@@ -620,6 +620,9 @@ def generate_document_embeddings(
         logger.info("")
         logger.info("Skipping Phase 3/3 - all embeddings are available")
         logger.info("")
+        # Initialize variables for consistency (no documents were skipped or failed since all are from cache)
+        skipped_citation_keys = []
+        failed_citation_keys = []
     elif missing_indices:
         n_to_generate = len(missing_indices)
         # checkpoint_loaded_count is defined in the checkpoint section above

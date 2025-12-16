@@ -1,6 +1,6 @@
 # Meta-Analysis Summary Report
 
-**Generated**: 2025-12-16T07:53:41.949447
+**Generated**: 2025-12-16T10:38:21.705774
 
 ---
 
@@ -64,8 +64,8 @@
 | 14 | systems | 151 |
 | 15 | information | 151 |
 | 16 | action | 148 |
-| 17 | agent | 148 |
-| 18 | agents | 148 |
+| 17 | agents | 148 |
+| 18 | agent | 148 |
 | 19 | show | 143 |
 | 20 | such | 141 |
 
@@ -123,7 +123,7 @@
 - energy (loading: 0.3029)
 - free energy (loading: 0.2982)
 - free (loading: 0.2898)
-- fep (loading: 0.2631)
+- fep (loading: 0.2630)
 - principle (loading: 0.2591)
 
 #### PC2
@@ -131,44 +131,44 @@
 - **Variance Explained**: 1.76%
 
 **Top Contributing Words**:
-- active inference (loading: 0.2877)
-- active (loading: 0.2680)
-- inference (loading: 0.2673)
+- active inference (loading: 0.2874)
+- active (loading: 0.2677)
+- inference (loading: 0.2668)
 - free (loading: 0.2196)
-- energy (loading: 0.2168)
+- energy (loading: 0.2170)
 
 #### PC3
 
 - **Variance Explained**: 1.30%
 
 **Top Contributing Words**:
-- control (loading: 0.2812)
-- navigation (loading: -0.1863)
-- agents (loading: -0.1760)
-- exploration (loading: -0.1724)
-- perception (loading: 0.1703)
+- control (loading: 0.2838)
+- navigation (loading: -0.1874)
+- agents (loading: -0.1755)
+- exploration (loading: -0.1723)
+- perception (loading: 0.1689)
 
 #### PC4
 
 - **Variance Explained**: 1.27%
 
 **Top Contributing Words**:
-- model (loading: 0.1791)
-- learning (loading: 0.1690)
-- navigation (loading: 0.1638)
-- fep (loading: 0.1507)
-- cognitive (loading: 0.1451)
+- model (loading: 0.1773)
+- fep (loading: 0.1694)
+- learning (loading: 0.1620)
+- navigation (loading: 0.1569)
+- cognitive (loading: 0.1529)
 
 #### PC5
 
-- **Variance Explained**: 1.21%
+- **Variance Explained**: 1.20%
 
 **Top Contributing Words**:
-- ai (loading: 0.3886)
-- systems (loading: 0.2021)
-- intelligence (loading: 0.1830)
-- active inference (loading: 0.1567)
-- agents (loading: 0.1538)
+- ai (loading: 0.3984)
+- systems (loading: 0.2024)
+- intelligence (loading: 0.1857)
+- active inference (loading: 0.1577)
+- agents (loading: 0.1522)
 
 ---
 
