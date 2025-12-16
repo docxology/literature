@@ -76,6 +76,13 @@
 
 ## Architecture Principles
 
+### Thin Orchestrator Pattern
+- Business logic lives in infrastructure modules, not in orchestrator scripts
+- Orchestrator scripts (`scripts/`) are thin coordinators that delegate to infrastructure
+- Scripts handle user interaction, argument parsing, and workflow coordination
+- All business logic must be in `infrastructure/` modules for testability and reusability
+- Clear separation: Logic (infrastructure) vs. Orchestration (scripts)
+
 ### Separation of Concerns
 - Separate concerns clearly and consistently
 - Avoid mixing responsibilities
@@ -116,6 +123,59 @@
 
 ## System Structure
 
+### Module Organization
+The system follows a modular architecture with clear module boundaries:
+
+**Infrastructure Core (`infrastructure/core/`):**
+- Foundation utilities (logging, exceptions, configuration, progress, checkpoint, retry, performance)
+- No dependencies on other infrastructure modules
+
+**LLM Module (`infrastructure/llm/`):**
+- Local LLM integration (Ollama client, templates, validation, review system)
+- Depends on: `infrastructure/core/`
+
+**Literature Module (`infrastructure/literature/`):**
+- Complete literature search and management functionality
+- Submodules:
+  - `core/` - Main search interface and configuration
+  - `sources/` - API adapters (arXiv, Semantic Scholar, PubMed, CrossRef, OpenAlex, DBLP, bioRxiv, Europe PMC, Unpaywall)
+  - `pdf/` - PDF downloading, extraction, and failed download tracking
+  - `library/` - Library indexing and BibTeX generation
+  - `workflow/` - Workflow orchestration with progress tracking
+  - `summarization/` - AI-powered paper summarization
+  - `meta_analysis/` - Bibliographic and statistical analysis tools
+  - `analysis/` - Paper analysis, domain detection, context building
+  - `html_parsers/` - Publisher-specific PDF URL extraction (Elsevier, Springer, IEEE, ACM, Wiley, generic)
+  - `reporting/` - Multi-format export (JSON, CSV, HTML)
+  - `llm/` - Advanced LLM operations (literature review, science communication, comparative analysis, research gaps, citation network analysis)
+- Depends on: `infrastructure/core/`, `infrastructure/llm/` (for summarization and LLM operations), `infrastructure/validation/` (for PDF text extraction)
+
+**Validation Module (`infrastructure/validation/`):**
+- PDF validation and text extraction with multi-library support
+- No dependencies on other infrastructure modules
+
+### Output Structure
+System outputs are organized as follows:
+
+**Data Directory (`data/`):**
+- `library.json` - Paper metadata index
+- `references.bib` - BibTeX bibliography
+- `summarization_progress.json` - Summarization progress tracking
+- `failed_downloads.json` - Failed download tracking
+- `pdfs/` - Downloaded PDFs (named by citation key)
+- `summaries/` - AI-generated summaries
+- `extracted_text/` - Extracted PDF text
+- `embeddings/` - Cached embedding files (JSON) for semantic analysis
+- `output/` - Meta-analysis outputs and visualizations
+
+**LLM Outputs (`literature/llm_outputs/` at repo root):**
+- Advanced LLM operation results (created at repo root, not in data/)
+- `review_outputs/` - Literature review synthesis
+- `communication_outputs/` - Science communication narratives
+- `compare_outputs/` - Comparative analysis
+- `gaps_outputs/` - Research gap identification
+- `network_outputs/` - Citation network analysis (text-based)
+
 ### Layered Architecture
 - Use appropriate layering when beneficial
 - Maintain clear layer boundaries
@@ -133,6 +193,18 @@
 - Document data transformations
 - Ensure data flow is traceable
 - Plan for error handling in data flow
+
+## Extension Points
+
+The architecture supports extension at multiple levels:
+
+1. **New Sources**: Add source adapters in `infrastructure/literature/sources/`
+2. **New Analyzers**: Add analysis tools in `infrastructure/literature/analysis/`
+3. **New Templates**: Add LLM templates in `infrastructure/llm/templates/`
+4. **New HTML Parsers**: Add publisher-specific parsers in `infrastructure/literature/html_parsers/`
+5. **New LLM Operations**: Add advanced LLM operations in `infrastructure/literature/llm/`
+6. **New Workflows**: Add workflow orchestrators in `scripts/` (thin coordinators only)
+7. **New Report Formats**: Add export formats in `infrastructure/literature/reporting/`
 
 ## Architecture Documentation
 
@@ -161,6 +233,7 @@
 - Maintain architectural consistency
 - Document refactoring decisions
 - Ensure refactoring improves maintainability
+
 
 
 

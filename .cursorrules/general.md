@@ -26,6 +26,8 @@
 - Organize code into logical, reusable modules
 - Maintain clear separation of concerns
 - Avoid tight coupling between modules
+- Follow thin orchestrator pattern: business logic in infrastructure modules, scripts are thin coordinators
+- Keep orchestrator scripts (`scripts/`) focused on coordination, not business logic
 
 ### Code Structure
 - Keep functions and classes focused and single-purpose
@@ -38,6 +40,8 @@
 - Understand the full system before making changes
 - Consider downstream effects of modifications
 - Maintain awareness of related modules and dependencies
+- Understand thin orchestrator pattern: scripts coordinate, infrastructure contains logic
+- Distinguish between orchestrator scripts (`scripts/`) and infrastructure modules (`infrastructure/`)
 
 ## Development Workflow
 
@@ -46,6 +50,8 @@
 - Understand existing patterns and conventions
 - Identify related code and potential impacts
 - Plan changes thoughtfully
+- Understand whether you're working in infrastructure (business logic) or scripts (orchestration)
+- Follow thin orchestrator pattern: add logic to infrastructure, coordinate from scripts
 
 ### During Implementation
 - Follow established patterns and conventions
@@ -92,6 +98,7 @@
 - Note potential improvements or follow-up work
 - Identify areas that may need attention
 - Document any deviations from standard practices
+
 
 
 

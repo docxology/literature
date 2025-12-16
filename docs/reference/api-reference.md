@@ -219,6 +219,8 @@ Save summary to file.
 
 - **[Module Documentation](../modules/)** - Module-specific documentation
 - **[CLI Reference](cli-reference.md)** - Command-line interface
+- **[Reference AGENTS.md](AGENTS.md)** - Reference documentation standards
+
 
 
 

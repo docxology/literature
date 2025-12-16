@@ -2,11 +2,37 @@
 
 ## Documentation Structure
 
+### Documentation Directory (`docs/`)
+The system maintains comprehensive documentation in the `docs/` directory:
+
+- **Getting Started** (`docs/getting-started.md`) - Quick start guide for new users
+- **Architecture** (`docs/architecture.md`) - Complete system architecture and design
+- **Module Documentation** (`docs/modules/`) - Documentation for all system modules
+  - `infrastructure.md` - Infrastructure layer overview
+  - `core.md` - Foundation utilities
+  - `llm.md` - Local LLM integration
+  - `literature.md` - Literature search and management
+  - `validation.md` - PDF validation and text extraction
+- **Guides** (`docs/guides/`) - How-to guides for common tasks
+  - `search-papers.md` - Searching for papers
+  - `summarize-papers.md` - Generating AI-powered summaries
+  - `llm-operations.md` - Advanced multi-paper LLM operations
+  - `meta-analysis.md` - Running meta-analysis on library
+  - `configuration.md` - System configuration
+  - `troubleshooting.md` - Troubleshooting guide
+- **Reference** (`docs/reference/`) - Complete reference documentation
+  - `api-reference.md` - Python API documentation
+  - `cli-reference.md` - Command-line interface reference
+  - `data-formats.md` - Data structure and file format documentation
+
+All documentation should be consistent with the `docs/` directory structure and cross-reference appropriately.
+
 ### Folder-Level Documentation
 - **Every folder level must have accurate and complete AGENTS.md and README.md**
 - AGENTS.md provides comprehensive module documentation
 - README.md provides usage and quick reference
 - Both files must be maintained and kept current
+- Documentation should align with and reference the `docs/` directory structure
 
 ### AGENTS.md Requirements
 - Comprehensive module documentation
@@ -69,6 +95,9 @@
 - Keep documentation synchronized with code
 - Verify all examples work correctly
 - Update documentation when code changes
+- Maintain consistency between `docs/` directory and module-level AGENTS.md/README.md files
+- Ensure documentation matches actual implementation exactly
+- Reference actual file paths and module names accurately
 
 ### Clarity and Organization
 - Organize documentation logically
@@ -137,10 +166,16 @@
 - Show both simple and advanced usage
 
 ### Cross-References
-- Link to related documentation
-- Reference other modules and components
-- Provide links to external resources
+- Link to related documentation in `docs/` directory
+- Reference other modules and components using relative paths
+- Provide links to external resources when appropriate
 - Maintain consistent linking patterns
+- Cross-reference between:
+  - Module documentation (`docs/modules/`) and module AGENTS.md/README.md files
+  - Guides (`docs/guides/`) and relevant module documentation
+  - Reference documentation (`docs/reference/`) and implementation code
+- Use clear, descriptive link text
+- Verify all links are valid and current
 
 ## Documentation for Different Audiences
 
@@ -161,6 +196,7 @@
 - Explain maintenance procedures
 - Provide troubleshooting guides
 - Include backup and recovery procedures
+
 
 
 

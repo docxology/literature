@@ -18,6 +18,7 @@ Welcome to the documentation for the Literature Search and Management System. Th
 ### Guides
 - **[Searching Papers](guides/search-papers.md)** - How to search for papers
 - **[Summarizing Papers](guides/summarize-papers.md)** - How to generate summaries
+- **[LLM Operations](guides/llm-operations.md)** - Advanced multi-paper LLM operations (reviews, comparisons, gap analysis)
 - **[Meta-Analysis](guides/meta-analysis.md)** - Running meta-analysis
 - **[Configuration](guides/configuration.md)** - System configuration
 - **[Troubleshooting](guides/troubleshooting.md)** - Troubleshooting guide
@@ -38,6 +39,7 @@ Welcome to the documentation for the Literature Search and Management System. Th
 **I want to...**
 - **Search for papers** → [Searching Papers](guides/search-papers.md)
 - **Generate summaries** → [Summarizing Papers](guides/summarize-papers.md)
+- **Run advanced LLM operations** → [LLM Operations Guide](guides/llm-operations.md)
 - **Run meta-analysis** → [Meta-Analysis Guide](guides/meta-analysis.md)
 - **Configure the system** → [Configuration Guide](guides/configuration.md)
 - **Troubleshoot issues** → [Troubleshooting Guide](guides/troubleshooting.md)
@@ -61,4 +63,8 @@ Welcome to the documentation for the Literature Search and Management System. Th
 ## Contributing
 
 Documentation improvements are welcome! See module-specific AGENTS.md files for detailed documentation standards.
+
+## Documentation Structure
+
+For detailed information about the documentation organization, see [Documentation AGENTS.md](AGENTS.md).
 

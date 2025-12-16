@@ -66,6 +66,7 @@ from infrastructure.literature.workflow.orchestrator import (
     run_meta_analysis,
     run_cleanup,
     run_llm_operation,
+    run_enrich_dois,
     display_file_locations,
     DEFAULT_LIMIT_PER_KEYWORD,
 )
@@ -261,6 +262,11 @@ Examples:
         help="Clean up library by removing papers without PDFs"
     )
     parser.add_argument(
+        "--enrich-dois",
+        action="store_true",
+        help="Enrich library entries with DOIs by searching CrossRef, Semantic Scholar, and OpenAlex"
+    )
+    parser.add_argument(
         "--llm-operation",
         choices=["review", "communication", "compare", "gaps", "network"],
         help="Perform advanced LLM operation on selected papers"
@@ -305,9 +311,9 @@ Examples:
     args = parser.parse_args()
     
     # Require at least one action
-    if not args.search and not args.meta_analysis and not args.search_only and not args.download_only and not args.extract_text and not args.summarize and not args.cleanup and not args.llm_operation:
+    if not args.search and not args.meta_analysis and not args.search_only and not args.download_only and not args.extract_text and not args.summarize and not args.cleanup and not args.llm_operation and not args.enrich_dois:
         parser.print_help()
-        print("\nError: Must specify one of --search, --meta-analysis, --search-only, --download-only, --extract-text, --summarize, --cleanup, or --llm-operation")
+        print("\nError: Must specify one of --search, --meta-analysis, --search-only, --download-only, --extract-text, --summarize, --cleanup, --enrich-dois, or --llm-operation")
         return 1
     
     # Validate --with-embeddings requires --meta-analysis
@@ -317,7 +323,7 @@ Examples:
         return 1
 
     # Check for conflicting operations
-    operation_count = sum([args.search, args.meta_analysis, args.search_only, args.download_only, args.extract_text, args.summarize, args.cleanup, bool(args.llm_operation)])
+    operation_count = sum([args.search, args.meta_analysis, args.search_only, args.download_only, args.extract_text, args.summarize, args.cleanup, args.enrich_dois, bool(args.llm_operation)])
     if operation_count > 1:
         parser.print_help()
         print("\nError: Can only specify one operation at a time")
@@ -345,8 +351,8 @@ Examples:
     
     try:
         # Set up infrastructure
-        if args.meta_analysis:
-            # Meta-analysis doesn't require Ollama
+        if args.meta_analysis or args.enrich_dois:
+            # Meta-analysis and DOI enrichment don't require Ollama
             workflow = setup_infrastructure_for_meta_analysis()
         else:
             # Other operations require Ollama
@@ -389,6 +395,8 @@ Examples:
             exit_code = run_summarize(workflow)
         elif args.cleanup:
             exit_code = run_cleanup(workflow)
+        elif args.enrich_dois:
+            exit_code = run_enrich_dois(workflow)
         elif args.llm_operation:
             exit_code = run_llm_operation(workflow, args.llm_operation, args.paper_config)
 
@@ -406,5 +414,6 @@ Examples:
 
 if __name__ == "__main__":
     sys.exit(main())
+
 
 

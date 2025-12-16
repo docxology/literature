@@ -294,7 +294,8 @@ keyword_data = extract_keywords_over_time(
 
 ## See Also
 
-- **[Meta-Analysis Module Documentation](../infrastructure/literature/meta_analysis/AGENTS.md)** - Complete documentation
+- **[Meta-Analysis Module Documentation](../modules/literature.md)** - Module documentation
 - **[API Reference](../reference/api-reference.md)** - API documentation
+- **[Guides AGENTS.md](AGENTS.md)** - Guide organization and standards
 
 

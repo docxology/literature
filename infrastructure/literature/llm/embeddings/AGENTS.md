@@ -44,6 +44,50 @@ Core embedding generation with three-phase process.
 - Progress tracking and logging
 - Graceful shutdown handling
 
+**Progress Logging:**
+
+The embedding generation process provides detailed progress logging at multiple levels:
+
+**Document-Level Progress:**
+```
+[11/129] Generating embedding for: malekzadeh2022active
+  Text length: 204,107 chars | Estimated timeout: 240.0s
+  Starting chunk processing for malekzadeh2022active...
+  → Calling Ollama embedding API for malekzadeh2022active...
+  → Document will be processed in ~51 chunks (progress will be shown per chunk)
+```
+
+**Chunk Processing Progress:**
+For documents that require chunking, each chunk shows:
+```
+  → Document will be processed in 55 chunks (text length: 204,107 chars)
+  → Average chunk size: 3,711 chars
+  → Per-chunk timeout: 92.8s
+  → Processing chunk 1/55 (3,979 chars, ~99.5s estimated)
+  → Sending embedding request to Ollama (text: 3,979 chars, timeout: 92.8s, model: embeddinggemma)...
+  → Request monitor started (heartbeat every 20s)
+  ✓ Chunk 1/55 completed (avg: 1.0s/chunk, ETA: 55s remaining)
+```
+
+**Request Monitoring:**
+For long-running requests (timeout > 30s), a request monitor provides periodic heartbeats:
+```
+  → Request monitor started (heartbeat every 20s)
+  ↻ Still processing embedding request... (15.2s elapsed, 77.6s remaining, text length: 3,979 chars)
+```
+
+**Overall Progress:**
+Periodic summaries show overall generation progress:
+```
+  Progress: 11/129 generated (2m 15s, avg: 12.3s/embedding, recent avg: 1.2s, ETA: 1h 9m)
+  Generating embeddings [██░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 11/129 (8%) ✓:11 ✗:0 ETA: 1h 9m
+```
+
+**ETA Calculation:**
+- Chunk-level ETA: Based on average time per chunk multiplied by remaining chunks
+- Document-level ETA: Based on average time per document multiplied by remaining documents
+- Progress bar ETA: Uses exponential moving average for improved accuracy
+
 ### `computation.py` (~300 lines)
 Similarity computation, clustering, search, and dimensionality reduction.
 
@@ -126,4 +170,5 @@ The embeddings module is integrated into the meta-analysis workflow:
 - [`README.md`](README.md) - Quick reference
 - [`../AGENTS.md`](../AGENTS.md) - LLM module documentation
 - [`../../meta_analysis/AGENTS.md`](../../meta_analysis/AGENTS.md) - Meta-analysis documentation
+
 

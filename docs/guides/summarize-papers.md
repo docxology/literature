@@ -227,6 +227,7 @@ The progress bar now shows:
 
 ## See Also
 
-- **[Summarization Module Documentation](../infrastructure/literature/summarization/AGENTS.md)** - Complete documentation
+- **[Summarization Module Documentation](../modules/literature.md)** - Module documentation
 - **[API Reference](../reference/api-reference.md)** - API documentation
+- **[Guides AGENTS.md](AGENTS.md)** - Guide organization and standards
 

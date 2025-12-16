@@ -27,7 +27,7 @@ Standalone repository for academic literature search, PDF management, reference 
 - **Reference Management**: BibTeX generation with deduplication and library indexing → [Library Documentation](infrastructure/literature/library/AGENTS.md)
 - **AI Summarization**: Local LLM-powered paper summarization with quality validation → [Summarization Guide](docs/guides/summarize-papers.md)
 - **Meta-Analysis**: PCA, keyword analysis, temporal trends, and visualization tools → [Meta-Analysis Guide](docs/guides/meta-analysis.md)
-- **Library Tracking**: JSON-based index with complete metadata and progress tracking → [Data Formats](docs/reference/data-formats.md)
+- **Library Tracking**: JSON-based index with metadata and progress tracking → [Data Formats](docs/reference/data-formats.md)
 
 ## System Overview
 
@@ -159,7 +159,7 @@ for paper in papers:
             print(f"  PDF: {pdf_path}")
 ```
 
-See [API Reference](docs/reference/api-reference.md) for complete API documentation.
+See [API Reference](docs/reference/api-reference.md) for API documentation.
 
 ## Core Workflows
 
@@ -252,7 +252,7 @@ flowchart LR
 - **[Summarizing Papers](docs/guides/summarize-papers.md)** - How to generate summaries
 - **[Meta-Analysis](docs/guides/meta-analysis.md)** - Running meta-analysis
 - **[Configuration](docs/guides/configuration.md)** - System configuration
-- **[LLM Operations](docs/guides/llm-operations.md)** - Advanced LLM operations
+- **[LLM Operations](docs/guides/llm-operations.md)** - Multi-paper LLM operations
 - **[Troubleshooting](docs/guides/troubleshooting.md)** - Troubleshooting guide
 
 ### Module Documentation
@@ -263,7 +263,7 @@ flowchart LR
 - **[Validation Module](docs/modules/validation.md)** - PDF validation and text extraction
 
 ### Reference Documentation
-- **[API Reference](docs/reference/api-reference.md)** - Complete API documentation
+- **[API Reference](docs/reference/api-reference.md)** - API documentation
 - **[CLI Reference](docs/reference/cli-reference.md)** - Command-line interface reference
 - **[Data Formats](docs/reference/data-formats.md)** - Data structure documentation
 
@@ -272,10 +272,10 @@ flowchart LR
 - **[Literature Module README](infrastructure/literature/README.md)** - CLI reference
 - **[Core Module AGENTS.md](infrastructure/core/AGENTS.md)** - Core utilities
 - **[LLM Module AGENTS.md](infrastructure/llm/AGENTS.md)** - LLM integration
-- **[Complete System AGENTS.md](AGENTS.md)** - Complete system documentation
+- **[System AGENTS.md](AGENTS.md)** - System documentation
 
 ### Additional Resources
-- **[Documentation Index](docs/README.md)** - Complete documentation index
+- **[Documentation Index](docs/README.md)** - Documentation index
 - **[Review Reports](docs/review/)** - Documentation review reports
 
 ## Module Reference
@@ -326,7 +326,7 @@ See [Data Formats](docs/reference/data-formats.md) for detailed data structure d
 
 All outputs are saved to the `data/` directory:
 
-- **`data/library.json`** - JSON index with complete paper metadata → [Data Formats](docs/reference/data-formats.md#library-index-libraryjson)
+- **`data/library.json`** - JSON index with paper metadata → [Data Formats](docs/reference/data-formats.md#library-index-libraryjson)
 - **`data/references.bib`** - BibTeX entries for citations → [Data Formats](docs/reference/data-formats.md#bibliography-referencesbib)
 - **`data/summarization_progress.json`** - Summarization progress tracking (auto-generated)
 - **`data/failed_downloads.json`** - Failed download tracker (auto-generated)
@@ -337,9 +337,9 @@ All outputs are saved to the `data/` directory:
 - **`data/output/`** - Meta-analysis visualizations and reports → [Meta-Analysis Guide](docs/guides/meta-analysis.md)
 
 **LLM Operation Outputs** (created at repo root):
-- **`literature/llm_outputs/`** - Advanced LLM operation results (reviews, comparisons, etc.) → [LLM Operations Guide](docs/guides/llm-operations.md)
+- **`literature/llm_outputs/`** - LLM operation results (reviews, comparisons, etc.) → [LLM Operations Guide](docs/guides/llm-operations.md)
 
-See [Data Formats Reference](docs/reference/data-formats.md) for complete data structure documentation.
+See [Data Formats Reference](docs/reference/data-formats.md) for data structure documentation.
 
 ## Requirements
 
@@ -349,7 +349,7 @@ See [Data Formats Reference](docs/reference/data-formats.md) for complete data s
 
 ## Configuration
 
-Configuration is managed via environment variables. See [Configuration Guide](docs/guides/configuration.md) for complete options.
+Configuration is managed via environment variables. See [Configuration Guide](docs/guides/configuration.md) for configuration options.
 
 ### Quick Reference
 
@@ -370,7 +370,7 @@ export OLLAMA_MODEL=gemma3:4b
 export LLM_TIMEOUT=600
 ```
 
-See `infrastructure/literature/core/config.py` for complete configuration options and [Configuration Guide](docs/guides/configuration.md) for detailed documentation.
+See `infrastructure/literature/core/config.py` for configuration options and [Configuration Guide](docs/guides/configuration.md) for detailed documentation.
 
 ## Troubleshooting
 

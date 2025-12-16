@@ -77,6 +77,8 @@
 - Use appropriate patterns for workflow management
 - Ensure error handling is comprehensive
 - Provide clear feedback during long-running operations
+- Follow thin orchestrator pattern: scripts coordinate, infrastructure contains logic
+- Keep orchestrator scripts focused on coordination, not business logic
 
 ### Validation
 - Validate inputs and outputs appropriately
@@ -145,6 +147,7 @@
 - Use clear, descriptive names
 - Structure code logically
 - Make code self-documenting
+
 
 
 

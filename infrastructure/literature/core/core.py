@@ -612,6 +612,76 @@ class LiteratureSearch:
         """
         return [entry.to_dict() for entry in self.library_index.list_entries()]
 
+    def enrich_dois(
+        self,
+        entries: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """Enrich library entries with DOIs from multiple sources.
+        
+        Searches CrossRef, Semantic Scholar, and OpenAlex for published
+        versions of papers that don't have DOIs, especially arXiv preprints.
+        
+        Args:
+            entries: Optional list of entry dictionaries to enrich.
+                If None, enriches all entries missing DOIs.
+        
+        Returns:
+            Dictionary with enrichment statistics:
+            - total_processed: Total entries processed
+            - found: Number of DOIs found
+            - updated: Number of entries successfully updated
+            - failed: Number of entries that failed
+            - errors: List of error messages
+        """
+        from infrastructure.literature.library.enrichment import DOIEnrichment
+        
+        # Get entries to enrich
+        if entries:
+            # Convert dict entries to LibraryEntry objects
+            entry_objects = []
+            for entry_dict in entries:
+                citation_key = entry_dict.get("citation_key")
+                if citation_key:
+                    entry = self.library_index.get_entry(citation_key)
+                    if entry and not entry.doi:
+                        entry_objects.append(entry)
+        else:
+            entry_objects = None  # Will use all missing DOIs
+        
+        # Initialize enrichment
+        enrichment = DOIEnrichment(
+            config=self.config,
+            library_index=self.library_index,
+            sources={
+                "crossref": self.sources.get("crossref"),
+                "semanticscholar": self.sources.get("semanticscholar"),
+                "openalex": self.sources.get("openalex"),
+            }
+        )
+        
+        # Track entries before enrichment for BibTeX updates
+        entries_to_check = entry_objects or self.library_index.get_entries_missing_doi()
+        citation_keys_to_check = {e.citation_key for e in entries_to_check}
+        
+        # Run enrichment
+        stats = enrichment.enrich_all(entry_objects)
+        
+        # Update BibTeX references for found DOIs
+        if stats.updated > 0:
+            # Get updated entries (those that now have DOIs and were in the original list)
+            for citation_key in citation_keys_to_check:
+                entry = self.library_index.get_entry(citation_key)
+                if entry and entry.doi:
+                    try:
+                        self.reference_manager.update_reference_doi(
+                            entry.citation_key,
+                            entry.doi
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to update BibTeX for {entry.citation_key}: {e}")
+        
+        return stats.to_dict()
+
     def _deduplicate_results(self, results: List[SearchResult]) -> List[SearchResult]:
         """Remove duplicate results with fuzzy matching and relevance ranking.
         

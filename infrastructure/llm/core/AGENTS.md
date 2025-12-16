@@ -73,6 +73,33 @@ Background monitoring for long-running embedding requests:
 - Timeout warning thresholds (50%, 75%, 90%)
 - Non-blocking background thread monitoring
 
+**Behavior:**
+- Automatically started for requests with timeout > 30s
+- Heartbeat interval adapts based on text length:
+  - Very long documents (>50K chars): 5s intervals
+  - Medium documents (10K-50K chars): 10s intervals
+  - Shorter documents: 20s intervals
+- Runs in daemon thread, automatically stops when request completes
+- Provides visibility into long-running operations that might appear hung
+
+**Log Messages:**
+When a request monitor is started:
+```
+  → Request monitor started (heartbeat every 20s)
+```
+
+During processing, periodic heartbeats indicate the request is still active:
+```
+  ↻ Still processing embedding request... (15.2s elapsed, 77.6s remaining, text length: 3,979 chars)
+```
+
+Timeout warnings are logged at 50%, 75%, and 90% of timeout elapsed:
+```
+  ⚠ Embedding request at 50% of timeout (60.0s/120.0s elapsed, 60.0s remaining, text length: 50,000 chars)
+```
+
+The monitor automatically stops when the request completes or fails.
+
 **Usage:**
 ```python
 from infrastructure.llm.core.embedding_client import EmbeddingClient

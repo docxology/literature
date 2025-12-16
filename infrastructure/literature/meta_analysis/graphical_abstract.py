@@ -249,17 +249,26 @@ def create_multi_page_abstract(
     aggregator: Optional[DataAggregator] = None,
     keywords: Optional[List[str]] = None,
     output_path: Optional[Path] = None,
-    format: str = "pdf"
+    format: str = "pdf",
+    include_embeddings: bool = False
 ) -> Path:
-    """Create multi-page graphical abstract PDF.
+    """Create multi-page graphical abstract PDF with all visualizations.
     
-    Creates a PDF with one visualization per page.
+    Creates a PDF with one visualization per page, organized into logical sections:
+    - Title page
+    - Overview (publications by year, metadata completeness)
+    - Keyword analysis (frequency, evolution)
+    - Author & venue analysis (contributions, distribution)
+    - PCA analysis (2D, 3D, loadings visualizations)
+    - Embedding analysis (if enabled): quality, similarity, clusters, etc.
     
     Args:
         aggregator: Optional DataAggregator instance.
         keywords: Optional list of search keywords for title.
         output_path: Optional output path.
         format: Output format (pdf recommended).
+        include_embeddings: Whether to include embedding visualizations (default: False).
+            Requires embedding analysis to have been run.
         
     Returns:
         Path to saved PDF.
@@ -283,6 +292,57 @@ def create_multi_page_abstract(
     from infrastructure.literature.meta_analysis.metadata import calculate_completeness_stats
     completeness_stats = calculate_completeness_stats(aggregator)
     
+    if not PIL_AVAILABLE:
+        logger.warning("PIL/Pillow not available, skipping multi-page abstract image pages")
+        return output_path
+    
+    def _add_image_page(pdf: PdfPages, image_path: Path, title: str, page_num: int = None) -> None:
+        """Helper function to add an image page to PDF with title and page number."""
+        try:
+            if not image_path.exists():
+                logger.warning(f"Image not found: {image_path}, skipping page")
+                return
+            
+            img = Image.open(image_path)
+            pdf_fig = plt.figure(figsize=(11, 8.5))
+            ax = pdf_fig.add_subplot(111)
+            
+            # Add title at top
+            if title:
+                ax.text(0.5, 0.98, title, ha='center', va='top',
+                       fontsize=FONT_SIZE_TITLE + 2, fontweight='bold',
+                       transform=ax.transAxes)
+            
+            # Add page number if provided
+            if page_num is not None:
+                ax.text(0.99, 0.01, f"Page {page_num}", ha='right', va='bottom',
+                       fontsize=FONT_SIZE_TITLE - 4, style='italic',
+                       transform=ax.transAxes, alpha=0.7)
+            
+            # Display image
+            ax.imshow(img)
+            ax.axis('off')
+            pdf.savefig(pdf_fig, bbox_inches='tight', pad_inches=0.2)
+            plt.close(pdf_fig)
+        except Exception as e:
+            logger.warning(f"Failed to add image page '{title}': {e}")
+    
+    def _add_section_header(pdf: PdfPages, section_name: str, page_num: int = None) -> None:
+        """Add a section header page."""
+        fig = plt.figure(figsize=(11, 8.5))
+        ax = fig.add_subplot(111)
+        ax.axis('off')
+        ax.text(0.5, 0.5, section_name, ha='center', va='center',
+               fontsize=FONT_SIZE_TITLE + 6, fontweight='bold')
+        if page_num is not None:
+            ax.text(0.99, 0.01, f"Page {page_num}", ha='right', va='bottom',
+                   fontsize=FONT_SIZE_TITLE - 4, style='italic',
+                   transform=ax.transAxes, alpha=0.7)
+        pdf.savefig(fig, bbox_inches='tight')
+        plt.close(fig)
+    
+    page_num = 1
+    
     with PdfPages(output_path) as pdf:
         # Title page
         fig = plt.figure(figsize=(11, 8.5))
@@ -293,77 +353,268 @@ def create_multi_page_abstract(
             title_text += f"\n\nKeywords: {', '.join(keywords)}"
         title_text += f"\n\nTotal Papers: {len(entries)}"
         title_text += f"\nDate: {datetime.now().strftime('%Y-%m-%d')}"
+        if include_embeddings:
+            title_text += "\n\n(Includes Embedding Analysis)"
         ax.text(0.5, 0.5, title_text, ha='center', va='center',
-               fontsize=FONT_SIZE_TITLE + 4, fontweight='bold')
+               fontsize=FONT_SIZE_TITLE + 6, fontweight='bold')
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
+        page_num += 1
         
-        # Individual visualizations
+        # Overview Section
+        _add_section_header(pdf, "Overview", page_num)
+        page_num += 1
+        
         try:
+            # Publications by year
+            from infrastructure.literature.meta_analysis.temporal import create_publication_timeline_plot
+            timeline_path = create_publication_timeline_plot(aggregator=aggregator, format="png")
+            _add_image_page(pdf, timeline_path, "Publications by Year", page_num)
+            page_num += 1
+        except Exception as e:
+            logger.warning(f"Failed to add publication timeline: {e}")
+        
+        try:
+            # Metadata completeness
+            from infrastructure.literature.meta_analysis.metadata import create_metadata_completeness_plot
+            completeness_path = create_metadata_completeness_plot(aggregator=aggregator, format="png")
+            _add_image_page(pdf, completeness_path, "Metadata Completeness", page_num)
+            page_num += 1
+        except Exception as e:
+            logger.warning(f"Failed to add metadata completeness: {e}")
+        
+        # Keyword Analysis Section
+        _add_section_header(pdf, "Keyword Analysis", page_num)
+        page_num += 1
+        
+        try:
+            # Keyword frequency
+            from infrastructure.literature.meta_analysis.keywords import create_keyword_frequency_plot
+            keyword_path = create_keyword_frequency_plot(keyword_data, format="png")
+            _add_image_page(pdf, keyword_path, "Keyword Frequency", page_num)
+            page_num += 1
+        except Exception as e:
+            logger.warning(f"Failed to add keyword frequency: {e}")
+        
+        try:
+            # Keyword evolution
+            from infrastructure.literature.meta_analysis.keywords import create_keyword_evolution_plot
+            sorted_keywords = sorted(
+                keyword_data.keyword_counts.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:10]
+            top_keywords = [k for k, _ in sorted_keywords]
+            if top_keywords:
+                keyword_evol_path = create_keyword_evolution_plot(
+                    keyword_data, keywords=top_keywords, format="png"
+                )
+                _add_image_page(pdf, keyword_evol_path, "Keyword Evolution", page_num)
+                page_num += 1
+        except Exception as e:
+            logger.warning(f"Failed to add keyword evolution: {e}")
+        
+        # Author & Venue Analysis Section
+        _add_section_header(pdf, "Author & Venue Analysis", page_num)
+        page_num += 1
+        
+        try:
+            # Author contributions
+            from infrastructure.literature.meta_analysis.metadata import create_author_contributions_plot
+            author_path = create_author_contributions_plot(
+                top_n=20, aggregator=aggregator, format="png"
+            )
+            _add_image_page(pdf, author_path, "Author Contributions", page_num)
+            page_num += 1
+        except Exception as e:
+            logger.warning(f"Failed to add author contributions: {e}")
+        
+        try:
+            # Venue distribution
+            from infrastructure.literature.meta_analysis.metadata import create_venue_distribution_plot
+            venue_path = create_venue_distribution_plot(
+                top_n=15, aggregator=aggregator, format="png"
+            )
+            _add_image_page(pdf, venue_path, "Venue Distribution", page_num)
+            page_num += 1
+        except Exception as e:
+            logger.warning(f"Failed to add venue distribution: {e}")
+        
+        # PCA Analysis Section
+        _add_section_header(pdf, "PCA Analysis", page_num)
+        page_num += 1
+        
+        try:
+            # PCA 2D
             from infrastructure.literature.meta_analysis.pca import (
                 create_pca_2d_plot,
                 create_pca_3d_plot,
             )
-            from infrastructure.literature.meta_analysis.keywords import create_keyword_frequency_plot
-            from infrastructure.literature.meta_analysis.metadata import create_metadata_completeness_plot
-            from infrastructure.literature.meta_analysis.temporal import create_publication_timeline_plot
-            
-            if not PIL_AVAILABLE:
-                logger.warning("PIL/Pillow not available, skipping multi-page abstract image pages")
-                return output_path
-            
-            # PCA 2D
             pca_2d_path = create_pca_2d_plot(aggregator=aggregator, n_clusters=5, format="png")
-            img = Image.open(pca_2d_path)
-            pdf_fig = plt.figure(figsize=(11, 8.5))
-            plt.imshow(img)
-            plt.axis('off')
-            pdf.savefig(pdf_fig, bbox_inches='tight')
-            plt.close(pdf_fig)
-            
+            _add_image_page(pdf, pca_2d_path, "PCA Analysis (2D)", page_num)
+            page_num += 1
+        except Exception as e:
+            logger.warning(f"Failed to add PCA 2D: {e}")
+        
+        try:
             # PCA 3D
             pca_3d_path = create_pca_3d_plot(aggregator=aggregator, n_clusters=5, format="png")
-            img = Image.open(pca_3d_path)
-            pdf_fig = plt.figure(figsize=(11, 8.5))
-            plt.imshow(img)
-            plt.axis('off')
-            pdf.savefig(pdf_fig, bbox_inches='tight')
-            plt.close(pdf_fig)
-            
-            # Keyword frequency
-            keyword_data = aggregator.prepare_keyword_data()
-            keyword_path = create_keyword_frequency_plot(keyword_data, format="png")
-            img = Image.open(keyword_path)
-            pdf_fig = plt.figure(figsize=(11, 8.5))
-            plt.imshow(img)
-            plt.axis('off')
-            pdf.savefig(pdf_fig, bbox_inches='tight')
-            plt.close(pdf_fig)
-            
-            # Metadata completeness
-            completeness_path = create_metadata_completeness_plot(aggregator=aggregator, format="png")
-            img = Image.open(completeness_path)
-            pdf_fig = plt.figure(figsize=(11, 8.5))
-            plt.imshow(img)
-            plt.axis('off')
-            pdf.savefig(pdf_fig, bbox_inches='tight')
-            plt.close(pdf_fig)
-            
-            # Publication timeline
-            timeline_path = create_publication_timeline_plot(aggregator=aggregator, format="png")
-            img = Image.open(timeline_path)
-            pdf_fig = plt.figure(figsize=(11, 8.5))
-            plt.imshow(img)
-            plt.axis('off')
-            pdf.savefig(pdf_fig, bbox_inches='tight')
-            plt.close(pdf_fig)
-            
+            _add_image_page(pdf, pca_3d_path, "PCA Analysis (3D)", page_num)
+            page_num += 1
         except Exception as e:
-            logger.warning(f"Failed to add some pages to multi-page abstract: {e}")
-            if not PIL_AVAILABLE:
-                logger.warning("PIL/Pillow not available, cannot create multi-page abstract from images")
+            logger.warning(f"Failed to add PCA 3D: {e}")
+        
+        try:
+            # PCA loadings visualizations
+            from infrastructure.literature.meta_analysis.pca_loadings import create_loadings_visualizations
+            output_dir = Path("data/output")
+            loadings_viz = create_loadings_visualizations(
+                aggregator=aggregator,
+                n_components=5,
+                top_n_words=20,
+                output_dir=output_dir,
+                format="png"
+            )
+            
+            # PCA loadings heatmap
+            if 'heatmap' in loadings_viz:
+                _add_image_page(pdf, loadings_viz['heatmap'], "PCA Loadings Heatmap", page_num)
+                page_num += 1
+            
+            # PCA loadings barplots
+            if 'barplots' in loadings_viz:
+                _add_image_page(pdf, loadings_viz['barplots'], "PCA Loadings Barplots", page_num)
+                page_num += 1
+            
+            # PCA biplot
+            if 'biplot' in loadings_viz:
+                _add_image_page(pdf, loadings_viz['biplot'], "PCA Biplot", page_num)
+                page_num += 1
+            
+            # PCA word vectors
+            if 'word_vectors' in loadings_viz:
+                _add_image_page(pdf, loadings_viz['word_vectors'], "PCA Word Vectors", page_num)
+                page_num += 1
+        except Exception as e:
+            logger.warning(f"Failed to add PCA loadings visualizations: {e}")
+        
+        # Embedding Analysis Section (if enabled)
+        if include_embeddings:
+            _add_section_header(pdf, "Embedding Analysis", page_num)
+            page_num += 1
+            
+            output_dir = Path("data/output")
+            
+            # Embedding quality
+            try:
+                quality_path = output_dir / "embedding_quality.png"
+                if quality_path.exists():
+                    _add_image_page(pdf, quality_path, "Embedding Quality", page_num)
+                    page_num += 1
+            except Exception as e:
+                logger.warning(f"Failed to add embedding quality: {e}")
+            
+            # Similarity distribution
+            try:
+                sim_dist_path = output_dir / "similarity_distribution.png"
+                if sim_dist_path.exists():
+                    _add_image_page(pdf, sim_dist_path, "Similarity Distribution", page_num)
+                    page_num += 1
+            except Exception as e:
+                logger.warning(f"Failed to add similarity distribution: {e}")
+            
+            # Embedding coverage
+            try:
+                coverage_path = output_dir / "embedding_coverage.png"
+                if coverage_path.exists():
+                    _add_image_page(pdf, coverage_path, "Embedding Coverage", page_num)
+                    page_num += 1
+            except Exception as e:
+                logger.warning(f"Failed to add embedding coverage: {e}")
+            
+            # Dimensionality analysis
+            try:
+                dim_analysis_path = output_dir / "dimensionality_analysis.png"
+                if dim_analysis_path.exists():
+                    _add_image_page(pdf, dim_analysis_path, "Dimensionality Analysis", page_num)
+                    page_num += 1
+            except Exception as e:
+                logger.warning(f"Failed to add dimensionality analysis: {e}")
+            
+            # Similarity heatmap
+            try:
+                heatmap_path = output_dir / "embedding_similarity_heatmap.png"
+                if heatmap_path.exists():
+                    _add_image_page(pdf, heatmap_path, "Similarity Heatmap", page_num)
+                    page_num += 1
+            except Exception as e:
+                logger.warning(f"Failed to add similarity heatmap: {e}")
+            
+            # Embedding clusters 2D
+            try:
+                cluster_2d_path = output_dir / "embedding_clusters_2d.png"
+                if cluster_2d_path.exists():
+                    _add_image_page(pdf, cluster_2d_path, "Embedding Clusters (2D)", page_num)
+                    page_num += 1
+            except Exception as e:
+                logger.warning(f"Failed to add embedding clusters 2D: {e}")
+            
+            # Embedding clusters 3D
+            try:
+                cluster_3d_path = output_dir / "embedding_clusters_3d.png"
+                if cluster_3d_path.exists():
+                    _add_image_page(pdf, cluster_3d_path, "Embedding Clusters (3D)", page_num)
+                    page_num += 1
+            except Exception as e:
+                logger.warning(f"Failed to add embedding clusters 3D: {e}")
+            
+            # Cluster quality metrics
+            try:
+                cluster_quality_path = output_dir / "cluster_quality_metrics.png"
+                if cluster_quality_path.exists():
+                    _add_image_page(pdf, cluster_quality_path, "Cluster Quality Metrics", page_num)
+                    page_num += 1
+            except Exception as e:
+                logger.warning(f"Failed to add cluster quality metrics: {e}")
+            
+            # Silhouette analysis
+            try:
+                silhouette_path = output_dir / "silhouette_analysis.png"
+                if silhouette_path.exists():
+                    _add_image_page(pdf, silhouette_path, "Silhouette Analysis", page_num)
+                    page_num += 1
+            except Exception as e:
+                logger.warning(f"Failed to add silhouette analysis: {e}")
+            
+            # Cluster size distribution
+            try:
+                cluster_sizes_path = output_dir / "cluster_size_distribution.png"
+                if cluster_sizes_path.exists():
+                    _add_image_page(pdf, cluster_sizes_path, "Cluster Size Distribution", page_num)
+                    page_num += 1
+            except Exception as e:
+                logger.warning(f"Failed to add cluster size distribution: {e}")
+            
+            # Embedding outliers
+            try:
+                outliers_path = output_dir / "embedding_outliers.png"
+                if outliers_path.exists():
+                    _add_image_page(pdf, outliers_path, "Embedding Outliers", page_num)
+                    page_num += 1
+            except Exception as e:
+                logger.warning(f"Failed to add embedding outliers: {e}")
+            
+            # Similarity network (only for smaller collections)
+            try:
+                if len(entries) <= 50:
+                    network_path = output_dir / "similarity_network.png"
+                    if network_path.exists():
+                        _add_image_page(pdf, network_path, "Similarity Network", page_num)
+                        page_num += 1
+            except Exception as e:
+                logger.warning(f"Failed to add similarity network: {e}")
     
-    logger.info(f"Created multi-page graphical abstract: {output_path}")
+    logger.info(f"Created multi-page graphical abstract: {output_path} ({page_num - 1} pages)")
     return output_path
 
 

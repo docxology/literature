@@ -321,4 +321,5 @@ limit: 10          # Maximum papers
 - [Configuration Guide](configuration.md) - LLM and system configuration
 - [Troubleshooting Guide](troubleshooting.md) - Common issues and solutions
 - [Meta-Analysis Guide](meta-analysis.md) - Bibliographic and statistical analysis
+- [Guides AGENTS.md](AGENTS.md) - Guide organization and standards
 

@@ -141,8 +141,10 @@ Progress tracking for summarization operations.
 
 ## See Also
 
-- **[Data Directory Documentation](../data/AGENTS.md)** - Complete data documentation
+- **[Data Directory Documentation](../../data/AGENTS.md)** - Complete data documentation
 - **[API Reference](api-reference.md)** - API documentation
+- **[Reference AGENTS.md](AGENTS.md)** - Reference documentation standards
+
 
 
 

@@ -565,3 +565,11 @@ class LibraryIndex:
         logger.info(f"Removed {removed_count} entries without PDFs from library")
         return removed_count
 
+    def get_entries_missing_doi(self) -> List[LibraryEntry]:
+        """Get all entries that do not have a DOI.
+
+        Returns:
+            List of LibraryEntry objects that are missing DOIs.
+        """
+        return [entry for entry in self._entries.values() if not entry.doi]
+

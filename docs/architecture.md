@@ -230,11 +230,16 @@ The architecture supports extension at multiple levels:
 1. **New Sources**: Add source adapters in `infrastructure/literature/sources/`
 2. **New Analyzers**: Add analysis tools in `infrastructure/literature/analysis/`
 3. **New Templates**: Add LLM templates in `infrastructure/llm/templates/`
-4. **New Workflows**: Add workflow orchestrators in `scripts/`
+4. **New HTML Parsers**: Add publisher-specific parsers in `infrastructure/literature/html_parsers/`
+5. **New LLM Operations**: Add advanced LLM operations in `infrastructure/literature/llm/`
+6. **New Workflows**: Add workflow orchestrators in `scripts/` (thin coordinators only)
+7. **New Report Formats**: Add export formats in `infrastructure/literature/reporting/`
 
 ## See Also
 
 - **[Getting Started](getting-started.md)** - Quick start guide
 - **[Module Documentation](modules/)** - Detailed module documentation
+- **[LLM Operations Guide](guides/llm-operations.md)** - Advanced multi-paper LLM operations
 - **[API Reference](reference/api-reference.md)** - Complete API documentation
+- **[Documentation AGENTS.md](AGENTS.md)** - Documentation structure and organization
 

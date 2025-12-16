@@ -162,4 +162,5 @@ python3 scripts/literature_search.py --meta-analysis --with-embeddings --keyword
 
 - **[API Reference](api-reference.md)** - Python API documentation
 - **[Configuration Guide](../guides/configuration.md)** - Configuration options
+- **[Reference AGENTS.md](AGENTS.md)** - Reference documentation standards
 

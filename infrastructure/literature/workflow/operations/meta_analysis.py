@@ -375,7 +375,8 @@ def run_meta_analysis(
         multi_page_path = create_multi_page_abstract(
             aggregator=aggregator,
             keywords=None,  # No keywords since we're analyzing existing library
-            format="pdf"
+            format="pdf",
+            include_embeddings=include_embeddings
         )
         outputs_generated.append(("Graphical Abstract (Multi-Page)", multi_page_path))
         step_time = time.time() - step_start

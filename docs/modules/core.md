@@ -173,6 +173,7 @@ setup_directories(["output", "output/figures"])
 
 ## See Also
 
-- **[Core Module Documentation](../infrastructure/core/AGENTS.md)** - Documentation
+- **[Core Module Documentation](../../infrastructure/core/AGENTS.md)** - Complete technical documentation
 - **[API Reference](../reference/api-reference.md)** - API documentation
+- **[Modules AGENTS.md](AGENTS.md)** - Module documentation standards
 

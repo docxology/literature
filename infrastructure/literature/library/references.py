@@ -1,6 +1,7 @@
 """Reference management for literature search."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
@@ -183,3 +184,90 @@ class ReferenceManager:
             raise RuntimeError("No library index configured for export")
         
         return self._library_index.export_json(path)
+
+    def update_reference_doi(self, citation_key: str, doi: str) -> bool:
+        """Update DOI field for an existing BibTeX entry.
+        
+        Args:
+            citation_key: Citation key of the entry to update.
+            doi: DOI to add or update.
+            
+        Returns:
+            True if entry was found and updated, False otherwise.
+        """
+        path = Path(self.config.bibtex_file)
+        
+        if not path.exists():
+            logger.warning(f"BibTeX file not found: {path}")
+            return False
+        
+        try:
+            content = path.read_text(encoding='utf-8')
+            
+            # Find the entry by citation key
+            # Pattern: @type{citation_key,
+            pattern = rf'@\w+\{{{re.escape(citation_key)}\s*,'
+            match = re.search(pattern, content)
+            
+            if not match:
+                logger.debug(f"BibTeX entry not found for citation key: {citation_key}")
+                return False
+            
+            # Find the end of this entry (next @ or end of file)
+            start_pos = match.start()
+            # Find the closing brace for this entry
+            brace_count = 0
+            in_entry = False
+            end_pos = start_pos
+            
+            for i in range(start_pos, len(content)):
+                if content[i] == '{':
+                    brace_count += 1
+                    in_entry = True
+                elif content[i] == '}':
+                    brace_count -= 1
+                    if in_entry and brace_count == 0:
+                        end_pos = i + 1
+                        break
+            
+            entry_text = content[start_pos:end_pos]
+            
+            # Check if DOI already exists
+            doi_pattern = r'\s*doi\s*=\s*\{[^}]+\},?\s*\n?'
+            if re.search(doi_pattern, entry_text, re.IGNORECASE):
+                # Replace existing DOI
+                new_entry_text = re.sub(
+                    doi_pattern,
+                    f'  doi={{{doi}}},\n',
+                    entry_text,
+                    flags=re.IGNORECASE
+                )
+            else:
+                # Add DOI before the closing brace
+                # Find the last field before closing brace
+                last_field_match = re.search(r'(\s+[^,\s]+=\{[^}]+\},?\s*\n?)(?=\s*\})', entry_text)
+                if last_field_match:
+                    insert_pos = last_field_match.end()
+                    new_entry_text = (
+                        entry_text[:insert_pos] +
+                        f'  doi={{{doi}}},\n' +
+                        entry_text[insert_pos:]
+                    )
+                else:
+                    # Fallback: insert before closing brace
+                    new_entry_text = entry_text.rstrip()[:-1] + f',\n  doi={{{doi}}}\n}}\n'
+            
+            # Replace entry in content
+            new_content = content[:start_pos] + new_entry_text + content[end_pos:]
+            
+            # Write back to file
+            path.write_text(new_content, encoding='utf-8')
+            logger.info(f"Updated DOI for {citation_key} in BibTeX file")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to update BibTeX DOI for {citation_key}: {e}")
+            raise FileOperationError(
+                f"Failed to update BibTeX DOI: {e}",
+                context={"path": str(path), "citation_key": citation_key}
+            )

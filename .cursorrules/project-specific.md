@@ -32,12 +32,17 @@
 - `infrastructure/llm/` - LLM integration (duplicated for independence)
 - `infrastructure/literature/` - Literature-specific modules
   - `core/` - Core search functionality
-  - `sources/` - API adapters (arXiv, Semantic Scholar, PubMed, etc.)
-  - `pdf/` - PDF handling
-  - `library/` - Library management
-  - `workflow/` - Workflow orchestration
-  - `summarization/` - AI summarization
-  - `meta_analysis/` - Meta-analysis tools
+  - `sources/` - API adapters (arXiv, Semantic Scholar, PubMed, CrossRef, OpenAlex, DBLP, bioRxiv, Europe PMC, Unpaywall)
+  - `pdf/` - PDF handling (downloading, extraction, failed download tracking)
+  - `library/` - Library management (indexing, BibTeX generation)
+  - `workflow/` - Workflow orchestration with progress tracking
+  - `summarization/` - AI summarization (individual paper summaries)
+  - `meta_analysis/` - Meta-analysis tools (bibliographic and statistical analysis)
+  - `analysis/` - Paper analysis (paper analyzer, domain detector, context builder)
+  - `html_parsers/` - Publisher-specific PDF URL extraction (Elsevier, Springer, IEEE, ACM, Wiley, generic)
+  - `reporting/` - Multi-format export (JSON, CSV, HTML)
+  - `llm/` - Advanced LLM operations (multi-paper synthesis: literature review, science communication, comparative analysis, research gaps, citation network analysis)
+- `infrastructure/validation/` - PDF validation and text extraction
 
 ### Data Directory Structure
 - `data/library.json` - Paper metadata index (JSON format)
@@ -190,31 +195,138 @@
 - Provide author contribution analysis
 - Generate visualizations for analysis results
 
+### Standard Meta-Analysis
+- Bibliographic analysis (publication trends, venue distribution, author contributions)
+- Citation analysis (citation distribution, metadata completeness)
+- Keyword analysis (keyword frequency, keyword evolution over time)
+- PCA analysis (text feature extraction and clustering)
+- Visualization generation (PNG, PDF formats)
+- No LLM/Ollama required
+
+### Meta-Analysis with Embeddings
+- Includes all standard meta-analysis features
+- Requires Ollama server running and embedding model installed
+- Generates semantic embeddings using Ollama embeddinggemma model
+- Computes similarity matrices and clustering
+- Provides comprehensive validation and quality metrics
+- Enhanced visualizations (embedding clusters, similarity networks, quality plots)
+- Automatic retry logic and Ollama health checks
+- Embedding caching to avoid regeneration
+- See [Meta-Analysis Guide](docs/guides/meta-analysis.md) for details
+
 ### Output Management
 - Save all meta-analysis outputs to `data/output/` directory
 - Generate visualizations (PNG, PDF formats)
 - Create summary reports (JSON, Markdown)
 - Organize outputs by analysis type
+- Embedding analysis outputs include: embeddings.json, similarity matrices, clustering results, validation reports, statistics, and enhanced visualizations
 
 ### Visualization
 - Generate publication trends visualizations
 - Create keyword frequency charts
 - Produce author network visualizations
 - Support multiple visualization formats
+- Embedding analysis includes: cluster visualizations, similarity heatmaps, quality metrics plots, dimensionality analysis
+
+## Advanced LLM Operations
+
+The system provides advanced LLM operations for multi-paper literature analysis. All operations use local Ollama models to generate text-based analyses.
+
+### Available Operations
+
+1. **Summarize Papers** (Individual)
+   - Generate comprehensive summaries for individual papers with PDFs
+   - Output: `data/summaries/{citation_key}_summary.md`
+   - Length: 600-1000 words per paper
+   - Requires: PDFs downloaded and text extracted
+
+2. **Literature Review Synthesis**
+   - Synthesize multiple papers into cohesive literature review paragraphs
+   - Output: `literature/llm_outputs/review_outputs/literature_review_{timestamp}.md`
+   - Length: 300-500 words
+   - Configurable focus: methodology, results, theory, general
+   - Uses paper summaries or abstracts
+
+3. **Science Communication Narrative**
+   - Create accessible science communication narratives for general audiences
+   - Output: `literature/llm_outputs/communication_outputs/science_communication_{timestamp}.md`
+   - Length: 600-800 words
+   - Configurable audience: general_public, students, researchers
+   - Narrative styles: storytelling, explanation, timeline
+
+4. **Comparative Analysis**
+   - Compare methods, findings, datasets, or performance across papers
+   - Output: `literature/llm_outputs/compare_outputs/comparative_analysis_{timestamp}.md`
+   - Length: 500-700 words
+   - Configurable aspect: methods, results, datasets, performance
+
+5. **Research Gap Identification**
+   - Identify unanswered questions, methodological gaps, and future research directions
+   - Output: `literature/llm_outputs/gaps_outputs/research_gaps_{timestamp}.md`
+   - Length: 400-600 words
+   - Configurable domain context for focused analysis
+
+6. **Citation Network Analysis**
+   - Analyze intellectual connections and relationships between papers (text-based)
+   - Output: `literature/llm_outputs/network_outputs/citation_network_{timestamp}.md`
+   - Length: 500-700 words
+   - Note: This is text-based analysis, not graph visualization
+
+### Paper Selection
+- All multi-paper operations (2-6) use paper selection configuration
+- Create `literature/paper_selection.yaml` for filtering
+- Selection criteria: citation keys, year range, source filtering, PDF/summary availability, keyword matching, limit
+- See [LLM Operations Guide](docs/guides/llm-operations.md) for details
+
+## HTML Parsers
+
+### Publisher-Specific PDF URL Extraction
+- Extract PDF URLs from publisher landing pages when direct PDF links unavailable
+- Modular parser system with publisher-specific implementations:
+  - **Elsevier** - Elsevier journal pages
+  - **Springer** - Springer journal pages
+  - **IEEE** - IEEE Xplore pages
+  - **ACM** - ACM Digital Library pages
+  - **Wiley** - Wiley Online Library pages
+  - **Generic** - Fallback parser for other publishers
+- Automatic parser selection based on URL patterns
+- Handles HTML parsing, link extraction, and PDF URL validation
+
+## Reporting Module
+
+### Multi-Format Export
+- Export library data in multiple formats:
+  - **JSON** - Complete library data with all metadata
+  - **CSV** - Tabular format for spreadsheet analysis
+  - **HTML** - Formatted reports for web viewing
+- Library statistics and summaries
+- Configurable export options
+- See `infrastructure/literature/reporting/` for implementation
+
+## Analysis Module
+
+### Paper Analysis Tools
+- **PaperAnalyzer** - Structure and content analysis of papers
+- **DomainDetector** - Automatic domain detection from paper content
+- **ContextBuilder** - Rich context generation for papers
+- Supports enhanced paper understanding and categorization
+- See `infrastructure/literature/analysis/` for implementation
 
 ## Workflow Orchestration
 
 ### Script Organization
-- Use `scripts/` directory for orchestrator scripts
+- Use `scripts/` directory for orchestrator scripts (thin coordinators)
 - Implement interactive menu in `run_literature.sh`
 - Support both interactive and command-line workflows
 - Provide clear workflow options and feedback
+- Scripts delegate to infrastructure modules (thin orchestrator pattern)
 
 ### Workflow Operations
 - Support full pipeline (search → download → extract → summarize)
 - Allow individual operations (search-only, download-only, etc.)
 - Implement workflow state tracking
 - Provide progress feedback for long-running operations
+- Support advanced LLM operations and meta-analysis workflows
 
 ## Configuration Management
 

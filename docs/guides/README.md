@@ -17,3 +17,7 @@ How-to guides for common tasks.
 - [API Reference](../reference/api-reference.md) - API documentation
 - [CLI Reference](../reference/cli-reference.md) - Command-line reference
 
+## Guide Documentation
+
+For guide organization standards and writing guidelines, see [Guides AGENTS.md](AGENTS.md).
+

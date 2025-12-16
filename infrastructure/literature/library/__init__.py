@@ -10,6 +10,11 @@ from infrastructure.literature.library.clear import (
     clear_summaries,
     clear_library,
 )
+from infrastructure.literature.library.enrichment import (
+    DOIEnrichment,
+    EnrichmentResult,
+    EnrichmentStatistics,
+)
 
 __all__ = [
     "LibraryIndex",
@@ -20,6 +25,9 @@ __all__ = [
     "clear_pdfs",
     "clear_summaries",
     "clear_library",
+    "DOIEnrichment",
+    "EnrichmentResult",
+    "EnrichmentStatistics",
 ]
 
 

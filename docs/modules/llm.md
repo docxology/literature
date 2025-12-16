@@ -189,6 +189,7 @@ See [Configuration Guide](../guides/configuration.md) for environment variables 
 
 ## See Also
 
-- **[LLM Module Documentation](../infrastructure/llm/AGENTS.md)** - Documentation
+- **[LLM Module Documentation](../../infrastructure/llm/AGENTS.md)** - Complete technical documentation
 - **[API Reference](../reference/api-reference.md)** - API documentation
+- **[Modules AGENTS.md](AGENTS.md)** - Module documentation standards
 

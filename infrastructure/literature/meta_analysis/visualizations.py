@@ -21,9 +21,11 @@ logger = get_logger(__name__)
 plt.style.use('seaborn-v0_8-darkgrid' if 'seaborn-v0_8-darkgrid' in plt.style.available else 'default')
 
 # Accessibility constants
-FONT_SIZE_LABELS = 14
-FONT_SIZE_TITLE = 16
-FONT_SIZE_LEGEND = 14  # Increased from 12 for better readability
+FONT_SIZE_LABELS = 16
+FONT_SIZE_TITLE = 18
+FONT_SIZE_LEGEND = 16  # Increased from 14 for better readability
+FONT_SIZE_TICKS = 12  # Tick label font size
+FONT_SIZE_CBAR = 14  # Colorbar label font size
 GRID_ALPHA = 0.3
 EDGE_WIDTH = 0.8
 MARKER_SIZE = 120
@@ -602,8 +604,8 @@ def plot_pca_2d(
         
         # Add colorbar for year (positioned on right side)
         cbar = plt.colorbar(scatter, ax=ax, label='Publication Year', pad=0.08)
-        cbar.ax.tick_params(labelsize=FONT_SIZE_LEGEND - 1)
-        cbar.set_label('Publication Year', fontsize=FONT_SIZE_LEGEND, fontweight='medium')
+        cbar.ax.tick_params(labelsize=FONT_SIZE_TICKS)
+        cbar.set_label('Publication Year', fontsize=FONT_SIZE_CBAR, fontweight='medium')
         
         # Add legend for clusters (positioned at bottom-left to avoid overlap with colorbar)
         n_clusters = len(unique_clusters)
@@ -1720,9 +1722,9 @@ def plot_embedding_similarity_heatmap(
     citation_keys: List[str],
     titles: Optional[List[str]] = None,
     title: str = "Paper Similarity Matrix",
-    figsize: Tuple[int, int] = (12, 10)
+    figsize: Tuple[int, int] = (14, 12)
 ) -> plt.Figure:
-    """Plot similarity heatmap for embeddings.
+    """Plot similarity heatmap for embeddings with hierarchical clustering dendrogram.
     
     Args:
         similarity_matrix: Similarity matrix, shape (n_documents, n_documents).
@@ -1736,33 +1738,97 @@ def plot_embedding_similarity_heatmap(
     """
     import seaborn as sns
     
-    fig, ax = plt.subplots(figsize=figsize)
-    
-    # Create heatmap
-    sns.heatmap(
-        similarity_matrix,
-        xticklabels=citation_keys,
-        yticklabels=citation_keys,
-        cmap='viridis',
-        center=0,
-        vmin=-1,
-        vmax=1,
-        square=True,
-        linewidths=0.5,
-        cbar_kws={"label": "Cosine Similarity"},
-        ax=ax
-    )
-    
-    ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
-    ax.set_xlabel("Papers", fontsize=FONT_SIZE_LABELS)
-    ax.set_ylabel("Papers", fontsize=FONT_SIZE_LABELS)
-    
-    # Rotate labels for readability
-    plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
-    plt.setp(ax.get_yticklabels(), rotation=0)
-    
-    plt.tight_layout()
-    return fig
+    # Try to use hierarchical clustering with dendrogram
+    try:
+        from scipy.cluster import hierarchy
+        from scipy.spatial.distance import squareform
+        
+        # Convert similarity to distance (1 - similarity)
+        # Ensure diagonal is 0 (self-similarity = 1, so distance = 0)
+        distance_matrix = 1 - similarity_matrix
+        np.fill_diagonal(distance_matrix, 0)
+        
+        # Convert to condensed distance matrix for linkage
+        condensed_distances = squareform(distance_matrix, checks=False)
+        
+        # Compute linkage
+        linkage_matrix = hierarchy.linkage(condensed_distances, method='average')
+        
+        # Create clustermap with dendrograms
+        g = sns.clustermap(
+            similarity_matrix,
+            row_linkage=linkage_matrix,
+            col_linkage=linkage_matrix,
+            xticklabels=citation_keys,
+            yticklabels=citation_keys,
+            cmap='viridis',
+            center=0,
+            vmin=-1,
+            vmax=1,
+            square=True,
+            linewidths=0.5,
+            cbar_kws={"label": "Cosine Similarity"},
+            figsize=figsize,
+            dendrogram_ratio=(0.1, 0.1),  # Space for dendrograms
+            cbar_pos=(0.02, 0.8, 0.03, 0.15)  # Position colorbar
+        )
+        
+        # Set title
+        g.fig.suptitle(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', y=0.98)
+        
+        # Improve font sizes
+        g.ax_heatmap.set_xlabel("Papers", fontsize=FONT_SIZE_LABELS, fontweight='medium')
+        g.ax_heatmap.set_ylabel("Papers", fontsize=FONT_SIZE_LABELS, fontweight='medium')
+        
+        # Rotate labels for readability
+        plt.setp(g.ax_heatmap.get_xticklabels(), rotation=45, ha='right', fontsize=FONT_SIZE_TICKS)
+        plt.setp(g.ax_heatmap.get_yticklabels(), rotation=0, fontsize=FONT_SIZE_TICKS)
+        
+        # Improve colorbar font size
+        cbar = g.cax
+        if cbar is not None:
+            cbar.set_ylabel("Cosine Similarity", fontsize=FONT_SIZE_CBAR, fontweight='medium')
+            cbar.tick_params(labelsize=FONT_SIZE_TICKS)
+        
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        return g.fig
+        
+    except ImportError:
+        # Fallback to regular heatmap if scipy is not available
+        logger.warning("scipy not available, using unsorted heatmap without dendrogram")
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Create heatmap
+        sns.heatmap(
+            similarity_matrix,
+            xticklabels=citation_keys,
+            yticklabels=citation_keys,
+            cmap='viridis',
+            center=0,
+            vmin=-1,
+            vmax=1,
+            square=True,
+            linewidths=0.5,
+            cbar_kws={"label": "Cosine Similarity"},
+            ax=ax
+        )
+        
+        ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
+        ax.set_xlabel("Papers", fontsize=FONT_SIZE_LABELS, fontweight='medium')
+        ax.set_ylabel("Papers", fontsize=FONT_SIZE_LABELS, fontweight='medium')
+        
+        # Rotate labels for readability
+        plt.setp(ax.get_xticklabels(), rotation=45, ha='right', fontsize=FONT_SIZE_TICKS)
+        plt.setp(ax.get_yticklabels(), rotation=0, fontsize=FONT_SIZE_TICKS)
+        
+        # Improve colorbar font size
+        cbar = ax.collections[0].colorbar
+        if cbar is not None:
+            cbar.set_label("Cosine Similarity", fontsize=FONT_SIZE_CBAR, fontweight='medium')
+            cbar.ax.tick_params(labelsize=FONT_SIZE_TICKS)
+        
+        plt.tight_layout()
+        return fig
 
 
 def plot_embedding_clusters_2d(
@@ -1811,11 +1877,12 @@ def plot_embedding_clusters_2d(
             linewidths=EDGE_WIDTH
         )
     
-    ax.set_xlabel("Dimension 1", fontsize=FONT_SIZE_LABELS)
-    ax.set_ylabel("Dimension 2", fontsize=FONT_SIZE_LABELS)
+    ax.set_xlabel("Dimension 1", fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_ylabel("Dimension 2", fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
-    ax.legend(fontsize=FONT_SIZE_LEGEND, loc='best')
+    ax.legend(fontsize=FONT_SIZE_LEGEND, loc='best', title='Clusters', title_fontsize=FONT_SIZE_LEGEND + 1)
     ax.grid(True, alpha=GRID_ALPHA)
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     plt.tight_layout()
     return fig
@@ -1871,11 +1938,12 @@ def plot_embedding_clusters_3d(
             linewidths=EDGE_WIDTH
         )
     
-    ax.set_xlabel("Dimension 1", fontsize=FONT_SIZE_LABELS)
-    ax.set_ylabel("Dimension 2", fontsize=FONT_SIZE_LABELS)
-    ax.set_zlabel("Dimension 3", fontsize=FONT_SIZE_LABELS)
+    ax.set_xlabel("Dimension 1", fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_ylabel("Dimension 2", fontsize=FONT_SIZE_LABELS, fontweight='medium')
+    ax.set_zlabel("Dimension 3", fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
-    ax.legend(fontsize=FONT_SIZE_LEGEND, loc='best')
+    ax.legend(fontsize=FONT_SIZE_LEGEND, loc='best', title='Clusters', title_fontsize=FONT_SIZE_LEGEND + 1)
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     plt.tight_layout()
     return fig
@@ -1915,16 +1983,17 @@ def plot_semantic_search_results(
     ax.set_yticks(range(len(results)))
     ax.set_yticklabels([f"{key}\n{t[:50]}..." if len(t) > 50 else f"{key}\n{t}" 
                         for key, t in zip(citation_keys, titles)],
-                       fontsize=FONT_SIZE_LABELS - 2)
-    ax.set_xlabel("Similarity Score", fontsize=FONT_SIZE_LABELS)
+                       fontsize=FONT_SIZE_TICKS)
+    ax.set_xlabel("Similarity Score", fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title(f"{title}\nQuery: {query_text[:100]}...", fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
     
     # Add value labels on bars
     for i, (bar, sim) in enumerate(zip(bars, similarities)):
-        ax.text(sim + 0.01, i, f"{sim:.3f}", va='center', fontsize=FONT_SIZE_LABELS - 3)
+        ax.text(sim + 0.01, i, f"{sim:.3f}", va='center', fontsize=FONT_SIZE_TICKS)
     
     ax.grid(True, alpha=GRID_ALPHA, axis='x')
     ax.set_xlim(0, 1.1)
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     plt.tight_layout()
     return fig
@@ -1960,6 +2029,7 @@ def plot_embedding_quality(
     ax.set_ylabel('Variance', fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title('Variance per Dimension', fontsize=FONT_SIZE_LABELS, fontweight='bold')
     ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     # 2. Distribution of L2 norms
     ax = axes[0, 1]
@@ -1970,8 +2040,9 @@ def plot_embedding_quality(
     ax.set_xlabel('L2 Norm', fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_ylabel('Frequency', fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title('Distribution of Embedding Norms', fontsize=FONT_SIZE_LABELS, fontweight='bold')
-    ax.legend(fontsize=FONT_SIZE_LEGEND - 1)
+    ax.legend(fontsize=FONT_SIZE_LEGEND, title='Statistics', title_fontsize=FONT_SIZE_LEGEND + 1)
     ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     # 3. Mean per dimension
     ax = axes[1, 0]
@@ -1982,6 +2053,7 @@ def plot_embedding_quality(
     ax.set_ylabel('Mean Value', fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title('Mean Value per Dimension', fontsize=FONT_SIZE_LABELS, fontweight='bold')
     ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     # 4. Standard deviation per dimension
     ax = axes[1, 1]
@@ -1991,6 +2063,7 @@ def plot_embedding_quality(
     ax.set_ylabel('Standard Deviation', fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title('Standard Deviation per Dimension', fontsize=FONT_SIZE_LABELS, fontweight='bold')
     ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     fig.suptitle(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', y=0.995)
     plt.tight_layout(rect=[0, 0, 1, 0.98])
@@ -2030,8 +2103,9 @@ def plot_similarity_distribution(
                    label=f'Median: {np.median(values):.3f}')
         ax.set_xlabel('Cosine Similarity', fontsize=FONT_SIZE_LABELS, fontweight='medium')
         ax.set_ylabel('Frequency', fontsize=FONT_SIZE_LABELS, fontweight='medium')
-        ax.legend(fontsize=FONT_SIZE_LEGEND)
+        ax.legend(fontsize=FONT_SIZE_LEGEND, title='Statistics', title_fontsize=FONT_SIZE_LEGEND + 1)
         ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+        ax.tick_params(labelsize=FONT_SIZE_TICKS)
     else:
         ax.text(0.5, 0.5, 'No similarity data available', ha='center', va='center',
                fontsize=FONT_SIZE_LABELS)
@@ -2115,14 +2189,15 @@ def plot_cluster_quality_metrics(
     for i, (bar, label) in enumerate(zip(bars, metric_labels)):
         width = bar.get_width()
         ax.text(width, bar.get_y() + bar.get_height()/2, 
-               f' {label}', va='center', fontsize=FONT_SIZE_LEGEND - 1, fontweight='medium')
+               f' {label}', va='center', fontsize=FONT_SIZE_TICKS, fontweight='medium')
     
     ax.set_yticks(y_pos)
-    ax.set_yticklabels(metric_names, fontsize=FONT_SIZE_LABELS - 1)
+    ax.set_yticklabels(metric_names, fontsize=FONT_SIZE_LABELS)
     ax.set_xlabel('Normalized Score', fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
     ax.set_xlim(0, 1.1)
     ax.grid(True, alpha=GRID_ALPHA, axis='x', linestyle='--')
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     plt.tight_layout()
     return fig
@@ -2186,7 +2261,7 @@ def plot_silhouette_analysis(
                         facecolor=colors[i], edgecolor=colors[i], alpha=0.7)
         
         # Label cluster
-        ax.text(-0.05, y_lower + 0.5 * size_cluster, str(int(cluster_id)), fontsize=FONT_SIZE_LABELS - 2)
+        ax.text(-0.05, y_lower + 0.5 * size_cluster, str(int(cluster_id)), fontsize=FONT_SIZE_TICKS)
         
         y_lower = y_upper + 10
     
@@ -2199,8 +2274,9 @@ def plot_silhouette_analysis(
     ax.set_ylabel('Cluster Label', fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
     ax.set_xlim(-1, 1)
-    ax.legend(fontsize=FONT_SIZE_LEGEND)
+    ax.legend(fontsize=FONT_SIZE_LEGEND, title='Statistics', title_fontsize=FONT_SIZE_LEGEND + 1)
     ax.grid(True, alpha=GRID_ALPHA, axis='x', linestyle='--')
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     plt.tight_layout()
     return fig
@@ -2269,6 +2345,7 @@ def plot_embedding_coverage(
                   fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
     ax.grid(True, alpha=GRID_ALPHA, linestyle='--')
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     plt.tight_layout()
     return fig
@@ -2344,8 +2421,9 @@ def plot_embedding_outliers(
     ax.set_ylabel(f'PC2 ({explained_var[1]*100:.1f}% variance)', 
                   fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
-    ax.legend(fontsize=FONT_SIZE_LEGEND)
+    ax.legend(fontsize=FONT_SIZE_LEGEND, title='Points', title_fontsize=FONT_SIZE_LEGEND + 1)
     ax.grid(True, alpha=GRID_ALPHA, linestyle='--')
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     plt.tight_layout()
     return fig
@@ -2389,6 +2467,7 @@ def plot_dimensionality_analysis(
     ax.set_ylabel('Explained Variance Ratio', fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title('Explained Variance per Component', fontsize=FONT_SIZE_LABELS, fontweight='bold')
     ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     # Plot 2: Cumulative explained variance
     ax = axes[1]
@@ -2409,8 +2488,9 @@ def plot_dimensionality_analysis(
     ax.set_ylabel('Cumulative Explained Variance', fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title('Cumulative Explained Variance', fontsize=FONT_SIZE_LABELS, fontweight='bold')
     ax.set_ylim(0, 1.05)
-    ax.legend(fontsize=FONT_SIZE_LEGEND - 1)
+    ax.legend(fontsize=FONT_SIZE_LEGEND, title='Thresholds', title_fontsize=FONT_SIZE_LEGEND + 1)
     ax.grid(True, alpha=GRID_ALPHA, linestyle='--')
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     fig.suptitle(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', y=0.995)
     plt.tight_layout(rect=[0, 0, 1, 0.98])
@@ -2449,15 +2529,16 @@ def plot_cluster_size_distribution(
         height = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2., height,
                f'{int(size)}', ha='center', va='bottom',
-               fontsize=FONT_SIZE_LEGEND - 1, fontweight='medium')
+               fontsize=FONT_SIZE_TICKS, fontweight='medium')
     
     ax.set_xlabel('Cluster ID', fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_ylabel('Number of Documents', fontsize=FONT_SIZE_LABELS, fontweight='medium')
     ax.set_title(title, fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)
     ax.set_xticks(range(len(cluster_ids)))
     ax.set_xticklabels([f'Cluster {int(cid)}' for cid in cluster_ids],
-                       fontsize=FONT_SIZE_LABELS - 2)
+                       fontsize=FONT_SIZE_TICKS)
     ax.grid(True, alpha=GRID_ALPHA, axis='y', linestyle='--')
+    ax.tick_params(labelsize=FONT_SIZE_TICKS)
     
     plt.tight_layout()
     return fig
@@ -2532,7 +2613,7 @@ def plot_similarity_network(
     # Add labels (only for nodes with high degree to avoid clutter)
     high_degree_nodes = [n for n in G.nodes() if G.degree(n) >= 2]
     labels = {n: n[:20] + '...' if len(n) > 20 else n for n in high_degree_nodes}
-    nx.draw_networkx_labels(G, pos, labels, font_size=8, font_weight='bold', ax=ax)
+    nx.draw_networkx_labels(G, pos, labels, font_size=FONT_SIZE_TICKS, font_weight='bold', ax=ax)
     
     ax.set_title(f"{title}\n(Threshold: {threshold})", 
                 fontsize=FONT_SIZE_TITLE, fontweight='bold', pad=15)

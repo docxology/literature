@@ -16,3 +16,7 @@ Documentation for all system modules.
 - [Architecture Overview](../architecture.md) - System architecture
 - [API Reference](../reference/api-reference.md) - Complete API documentation
 
+## Module Documentation Standards
+
+For module documentation organization and standards, see [Modules AGENTS.md](AGENTS.md).
+

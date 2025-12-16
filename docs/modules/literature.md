@@ -201,8 +201,10 @@ reporter.export_library_report(
 
 ## See Also
 
-- **[Literature Module Documentation](../infrastructure/literature/AGENTS.md)** - Documentation
+- **[Literature Module Documentation](../../infrastructure/literature/AGENTS.md)** - Complete technical documentation
 - **[Searching Papers Guide](../guides/search-papers.md)** - Search guide
 - **[Summarizing Papers Guide](../guides/summarize-papers.md)** - Summarization guide
+- **[LLM Operations Guide](../guides/llm-operations.md)** - Advanced LLM operations
 - **[Meta-Analysis Guide](../guides/meta-analysis.md)** - Meta-analysis guide
+- **[Modules AGENTS.md](AGENTS.md)** - Module documentation standards
 

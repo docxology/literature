@@ -130,4 +130,5 @@ All modules support environment variable configuration. See [Configuration Guide
 - **[LLM Module](llm.md)** - Local LLM integration
 - **[Literature Module](literature.md)** - Literature search and management
 - **[Validation Module](validation.md)** - PDF validation and text extraction
+- **[Modules AGENTS.md](AGENTS.md)** - Module documentation standards
 

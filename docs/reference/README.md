@@ -14,6 +14,11 @@ Complete reference documentation for APIs, CLI, and data formats.
 - [Guides](../guides/) - How-to guides
 - [Module Documentation](../modules/) - Module documentation
 
+## Reference Documentation Standards
+
+For reference documentation organization and standards, see [Reference AGENTS.md](AGENTS.md).
+
+
 
 
 

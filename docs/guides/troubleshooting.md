@@ -717,14 +717,34 @@ print(diagnostics)
 
 **Monitor Embedding Generation:**
 
-```python
-# Progress is logged automatically
-# Look for:
-# - "Phase 1/3: Checking cache..."
-# - "Phase 2/3: Loading cached..."
-# - "Phase 3/3: Generating embeddings..."
-# - "Still processing..." (heartbeat every 30s)
-# - Checkpoint saves after each successful embedding
+Progress is logged automatically at multiple levels:
+
+**Phase Indicators:**
+- `Phase 1/3: Checking cache...` - Checking for cached embeddings
+- `Phase 2/3: Loading cached...` - Loading cached embeddings from disk
+- `Phase 3/3: Generating embeddings...` - Generating missing embeddings
+
+**Document-Level Progress:**
+- `[X/129] Generating embedding for: citation_key` - Current document being processed
+- `Text length: X chars | Estimated timeout: X.Xs` - Document size and timeout estimate
+- `Starting chunk processing for citation_key...` - Document requires chunking
+
+**Chunk Processing (for large documents):**
+- `→ Processing chunk X/Y (X chars, ~X.Xs estimated)` - Chunk being processed
+- `→ Request monitor started (heartbeat every Xs)` - Background monitor active
+- `✓ Chunk X/Y completed (avg: X.Xs/chunk, ETA: Xs remaining)` - Chunk completion
+
+**Request Monitoring:**
+For long-running requests (timeout > 30s), a request monitor provides periodic heartbeats:
+- `→ Request monitor started (heartbeat every 20s)` - Monitor started
+- `↻ Still processing embedding request... (X.Xs elapsed, X.Xs remaining, text length: X chars)` - Periodic heartbeat
+- Heartbeat interval adapts: 5s (very long), 10s (medium), 20s (short documents)
+- Timeout warnings at 50%, 75%, and 90% of timeout elapsed
+
+**Overall Progress:**
+- `Progress: X/Y generated (Xm Xs, avg: X.Xs/embedding, recent avg: X.Xs, ETA: Xh Xm)` - Periodic summary
+- Progress bar with completion percentage and ETA
+- Checkpoint saves after each successful embedding
 ```
 
 ## Performance Issues
@@ -823,5 +843,6 @@ Review log output for detailed error messages and diagnostics.
 - **[Configuration Guide](configuration.md)** - Detailed configuration options
 - **[Getting Started](../getting-started.md)** - Quick start guide
 - **[API Reference](../reference/api-reference.md)** - API documentation
+- **[Guides AGENTS.md](AGENTS.md)** - Guide organization and standards
 
 

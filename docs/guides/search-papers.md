@@ -200,5 +200,6 @@ python3 scripts/literature_search.py --download-only --retry-failed
 ## See Also
 
 - **[API Reference](../reference/api-reference.md)** - API documentation
-- **[Literature Module Documentation](../infrastructure/literature/AGENTS.md)** - Module documentation
+- **[Literature Module Documentation](../modules/literature.md)** - Module documentation
+- **[Guides AGENTS.md](AGENTS.md)** - Guide organization and standards
 

@@ -122,6 +122,31 @@ def library_stats_command(args):
             print(f"  {year}: {count}")
 
 
+def enrich_dois_command(args):
+    """Handle DOI enrichment command."""
+    config = LiteratureConfig.from_env() if any(os.environ.get(k) for k in ['LITERATURE_LIBRARY_INDEX', 'LITERATURE_BIBTEX_FILE', 'LITERATURE_DOWNLOAD_DIR']) else LiteratureConfig()
+    manager = LiteratureSearch(config)
+
+    print("Enriching DOIs for library entries...")
+    print("This may take a while as we search multiple sources...\n")
+
+    stats = manager.enrich_dois()
+
+    print("\nDOI Enrichment Results")
+    print("=" * 40)
+    print(f"Total processed: {stats.get('total_processed', 0)}")
+    print(f"DOIs found: {stats.get('found', 0)}")
+    print(f"Entries updated: {stats.get('updated', 0)}")
+    print(f"Failed: {stats.get('failed', 0)}")
+
+    if stats.get('errors'):
+        print(f"\nErrors ({len(stats['errors'])}):")
+        for error in stats['errors'][:10]:  # Show first 10 errors
+            print(f"  - {error}")
+        if len(stats['errors']) > 10:
+            print(f"  ... and {len(stats['errors']) - 10} more errors")
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -172,6 +197,10 @@ def main():
     # Library stats
     stats_parser = library_subparsers.add_parser("stats", help="Show library statistics")
     stats_parser.set_defaults(func=library_stats_command)
+
+    # Enrich DOIs command
+    enrich_parser = subparsers.add_parser("enrich-dois", help="Enrich library entries with DOIs")
+    enrich_parser.set_defaults(func=enrich_dois_command)
 
     args = parser.parse_args()
 

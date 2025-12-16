@@ -206,5 +206,6 @@ These delays are configurable via source-specific settings in `LiteratureConfig.
 ## See Also
 
 - **[API Reference](../reference/api-reference.md)** - Configuration API documentation
-- **[Literature Config](../infrastructure/literature/core/config.py)** - Config implementation
+- **[Module Documentation](../modules/)** - Module documentation
+- **[Guides AGENTS.md](AGENTS.md)** - Guide organization and standards
 

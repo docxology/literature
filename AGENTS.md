@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is a **standalone repository** for academic literature search, PDF management, reference tracking, and AI-powered paper summarization. The system provides a complete workflow from paper discovery to analysis and citation management.
+This is a **standalone repository** for academic literature search, PDF management, reference tracking, and LLM-powered paper summarization. The system provides a workflow from paper discovery to analysis and citation management.
 
 ## System Architecture
 
@@ -12,7 +12,7 @@ This repository is independent and self-contained:
 - **No dependencies** on external template or manuscript systems
 - **Duplicated shared infrastructure** (`infrastructure/core/`, `infrastructure/llm/`) for independence
 - **Separate bibliography** (`data/references.bib`) from any manuscript system
-- **Complete test suite** for all functionality
+- **Test suite** for all functionality
 
 ### Directory Structure
 
@@ -177,11 +177,11 @@ python3 scripts/literature_search.py --meta-analysis --keywords "optimization"
 
 ## Workflow Operations
 
-### Full Pipeline
+### Pipeline
 
 ```bash
 ./run_literature.sh
-# Select option 0: Full Pipeline (search → download → extract → summarize)
+# Select option 0: Pipeline (search → download → extract → summarize)
 ```
 
 ### Individual Operations
@@ -323,7 +323,7 @@ python3 scripts/literature_search.py --cleanup
 ### Backup
 
 ```bash
-# Complete backup
+# Backup
 tar -czf literature_backup_$(date +%Y%m%d).tar.gz data/
 
 # Metadata only
