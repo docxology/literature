@@ -2,6 +2,8 @@
 
 Standalone repository for academic literature search, PDF management, reference tracking, and LLM-powered paper summarization.
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17954157.svg)](https://doi.org/10.5281/zenodo.17954157)
+
 ## Quick Navigation
 
 **I want to...**
@@ -381,6 +383,14 @@ Quick links to common issues:
 - **Configuration Problems** → [Configuration Guide](docs/guides/configuration.md)
 
 See [Troubleshooting Guide](docs/guides/troubleshooting.md) for troubleshooting information.
+
+## Citation
+
+This repository is archived on Zenodo. If you use this software in your research, please cite:
+
+**DOI:** [10.5281/zenodo.17954157](https://doi.org/10.5281/zenodo.17954157)
+
+**Zenodo Archive:** [https://zenodo.org/record/17954157](https://zenodo.org/record/17954157)
 
 ## License
 
