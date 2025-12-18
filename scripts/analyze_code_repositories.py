@@ -249,6 +249,147 @@ def detect_language(repo_path: Path) -> List[str]:
     
     return list(languages)
 
+def extract_data_sources(repo_path: Path) -> Dict:
+    """Extract information about where data comes from."""
+    data_sources = {
+        'urls': set(),
+        'dataset_names': set(),
+        'data_citations': [],
+        'download_scripts': [],
+        'readme_mentions': [],
+        'data_readme_files': [],
+        'external_links': set()
+    }
+    
+    # Check README files for data source information
+    readme_files = list(repo_path.glob('README*')) + list(repo_path.glob('readme*'))
+    for readme in readme_files:
+        try:
+            content = readme.read_text(encoding='utf-8', errors='ignore')
+            content_lower = content.lower()
+            
+            # Look for data-related sections
+            if any(keyword in content_lower for keyword in ['data', 'dataset', 'download', 'zenodo', 'kaggle']):
+                # Extract URLs
+                urls = re.findall(r'https?://[^\s\)]+', content)
+                for url in urls:
+                    # Filter for data-related URLs
+                    if any(domain in url.lower() for domain in [
+                        'zenodo', 'kaggle', 'drive.google', 'dropbox', 'figshare',
+                        'github', 'gitlab', 'bitbucket', 'data.gov', 'opendata',
+                        'uci.edu', 'archive.ics', 'kdd', 'data.world', 'datahub.io'
+                    ]):
+                        data_sources['urls'].add(url)
+                        data_sources['external_links'].add(url)
+                
+                # Extract dataset mentions
+                dataset_patterns = [
+                    r'dataset[:\s]+([^\n]+)',
+                    r'data[:\s]+([^\n]+)',
+                    r'using\s+([A-Z][a-zA-Z0-9\s]+)\s+dataset',
+                ]
+                for pattern in dataset_patterns:
+                    matches = re.findall(pattern, content, re.IGNORECASE)
+                    for match in matches:
+                        if len(match.strip()) > 3 and len(match.strip()) < 100:
+                            data_sources['readme_mentions'].append(match.strip())
+        except:
+            pass
+    
+    # Check for data directory README files
+    data_dirs = ['data', 'dataset', 'datasets', 'input', 'inputs', 'raw_data']
+    for data_dir in data_dirs:
+        data_dir_path = repo_path / data_dir
+        if data_dir_path.exists() and data_dir_path.is_dir():
+            for readme in data_dir_path.glob('README*'):
+                data_sources['data_readme_files'].append(str(readme.relative_to(repo_path)))
+                try:
+                    content = readme.read_text(encoding='utf-8', errors='ignore')
+                    urls = re.findall(r'https?://[^\s\)]+', content)
+                    data_sources['urls'].update(urls)
+                except:
+                    pass
+    
+    # Scan code files for data sources
+    code_files = list(repo_path.rglob('*.py')) + list(repo_path.rglob('*.R')) + \
+                 list(repo_path.rglob('*.jl')) + list(repo_path.rglob('*.m')) + \
+                 list(repo_path.rglob('*.sh'))  # Shell scripts for downloads
+    
+    for code_file in code_files:
+        try:
+            content = code_file.read_text(encoding='utf-8', errors='ignore')
+            
+            # Look for URLs in code (data downloads, API calls)
+            urls = re.findall(r'https?://[^\s\)"\']+', content)
+            for url in urls:
+                # Filter for data-related URLs
+                if any(domain in url.lower() for domain in [
+                    'zenodo', 'kaggle', 'drive.google', 'dropbox', 'figshare',
+                    'github', 'gitlab', 'bitbucket', 'data.gov', 'opendata',
+                    'uci.edu', 'archive.ics', 'kdd', 'data.world', 'datahub.io',
+                    'download', 'dataset', 'data'
+                ]):
+                    data_sources['urls'].add(url)
+                    data_sources['external_links'].add(url)
+            
+            # Look for dataset loading with URLs
+            dataset_url_patterns = [
+                r'load_dataset\(["\']([^"\']+)["\']',  # HuggingFace
+                r'fetch_[a-z_]+\(["\']([^"\']+)["\']',  # sklearn fetch functions
+                r'download[_\w]*\(["\']([^"\']+)["\']',  # download functions
+                r'wget\s+([^\s\)]+)',  # wget commands
+                r'curl\s+([^\s\)]+)',  # curl commands
+                r'urllib\.(?:request|urlopen)\(["\']([^"\']+)["\']',  # urllib
+                r'requests\.(?:get|post)\(["\']([^"\']+)["\']',  # requests
+            ]
+            
+            for pattern in dataset_url_patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    if match.startswith('http'):
+                        data_sources['urls'].add(match)
+                        data_sources['external_links'].add(match)
+            
+            # Look for dataset names
+            dataset_name_patterns = [
+                r'dataset[_\s]*[=:]\s*["\']([^"\']+)["\']',
+                r'data[_\s]*[=:]\s*["\']([^"\']+)["\']',
+                r'using\s+["\']([^"\']+)["\']\s+dataset',
+                r'load[_\w]*\(["\']([^"\']+)["\']',  # Generic load functions
+            ]
+            
+            for pattern in dataset_name_patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    # Filter out common false positives
+                    if match and len(match) > 3 and len(match) < 100:
+                        if not match.startswith(('.', '/', '\\')):  # Not file paths
+                            if any(keyword in match.lower() for keyword in [
+                                'mnist', 'cifar', 'imagenet', 'coco', 'kaggle',
+                                'uci', 'wine', 'iris', 'boston', 'diabetes'
+                            ]) or 'dataset' in match.lower() or 'data' in match.lower():
+                                data_sources['dataset_names'].add(match)
+            
+            # Look for download scripts
+            if any(keyword in code_file.name.lower() for keyword in ['download', 'fetch', 'get_data']):
+                data_sources['download_scripts'].append(str(code_file.relative_to(repo_path)))
+            
+            # Look for data citations (DOI, paper references)
+            doi_pattern = r'doi[:\s]+([0-9]+\.[0-9]+/[^\s\)]+)'
+            dois = re.findall(doi_pattern, content, re.IGNORECASE)
+            for doi in dois:
+                data_sources['data_citations'].append(f"DOI: {doi}")
+            
+        except:
+            pass
+    
+    # Convert sets to lists for JSON serialization
+    data_sources['urls'] = list(data_sources['urls'])
+    data_sources['dataset_names'] = list(data_sources['dataset_names'])
+    data_sources['external_links'] = list(data_sources['external_links'])
+    
+    return data_sources
+
 def analyze_data_files(repo_path: Path) -> Dict:
     """Analyze data files and data-related code patterns."""
     data_analysis = {
@@ -264,7 +405,8 @@ def analyze_data_files(repo_path: Path) -> Dict:
         'config_files': [],
         'results_files': [],
         'seed_usage': False,
-        'visualization_code': False
+        'visualization_code': False,
+        'data_sources': extract_data_sources(repo_path)  # Add data source extraction
     }
     
     # Find data files
@@ -697,8 +839,113 @@ def generate_report(analyses: List[Dict], summary: Dict, output_dir: Path):
         else:
             f.write("No evaluation metrics detected.\n")
         
-        # Dataset references
-        f.write("\n### Dataset References\n\n")
+        # Data Sources - Comprehensive Analysis
+        f.write("\n### Data Sources & Origins\n\n")
+        
+        all_data_sources = [da.get('data_sources', {}) for da in data_analyses]
+        
+        # Collect all URLs
+        all_urls = set()
+        all_dataset_names = set()
+        all_citations = []
+        all_download_scripts = []
+        all_data_readmes = []
+        
+        for ds in all_data_sources:
+            all_urls.update(ds.get('urls', []))
+            all_dataset_names.update(ds.get('dataset_names', []))
+            all_citations.extend(ds.get('data_citations', []))
+            all_download_scripts.extend(ds.get('download_scripts', []))
+            all_data_readmes.extend(ds.get('data_readme_files', []))
+        
+        # Categorize URLs by source
+        url_categories = {
+            'Zenodo': [],
+            'Kaggle': [],
+            'Google Drive': [],
+            'GitHub/GitLab': [],
+            'UCI ML Repository': [],
+            'HuggingFace': [],
+            'Other': []
+        }
+        
+        for url in all_urls:
+            url_lower = url.lower()
+            if 'zenodo' in url_lower:
+                url_categories['Zenodo'].append(url)
+            elif 'kaggle' in url_lower:
+                url_categories['Kaggle'].append(url)
+            elif 'drive.google' in url_lower:
+                url_categories['Google Drive'].append(url)
+            elif 'github.com' in url_lower or 'gitlab' in url_lower:
+                url_categories['GitHub/GitLab'].append(url)
+            elif 'archive.ics.uci.edu' in url_lower or 'uci.edu' in url_lower:
+                url_categories['UCI ML Repository'].append(url)
+            elif 'huggingface' in url_lower:
+                url_categories['HuggingFace'].append(url)
+            else:
+                url_categories['Other'].append(url)
+        
+        # Report URLs by category
+        f.write("#### Data Source URLs\n\n")
+        total_urls = len(all_urls)
+        if total_urls > 0:
+            f.write(f"**Total data source URLs found:** {total_urls}\n\n")
+            
+            for category, urls in url_categories.items():
+                if urls:
+                    f.write(f"**{category}** ({len(urls)} URLs):\n")
+                    for url in urls[:10]:  # Show first 10
+                        f.write(f"- {url}\n")
+                    if len(urls) > 10:
+                        f.write(f"  ... and {len(urls) - 10} more\n")
+                    f.write("\n")
+        else:
+            f.write("No data source URLs detected.\n\n")
+        
+        # Dataset names
+        f.write("#### Dataset Names Referenced\n\n")
+        if all_dataset_names:
+            f.write(f"Found {len(all_dataset_names)} unique dataset names:\n\n")
+            for name in sorted(list(all_dataset_names))[:30]:  # Top 30
+                f.write(f"- {name}\n")
+            if len(all_dataset_names) > 30:
+                f.write(f"\n... and {len(all_dataset_names) - 30} more\n")
+        else:
+            f.write("No dataset names detected.\n\n")
+        
+        # Data citations
+        f.write("#### Data Citations (DOIs)\n\n")
+        if all_citations:
+            unique_citations = list(set(all_citations))
+            f.write(f"Found {len(unique_citations)} data citations:\n\n")
+            for citation in unique_citations[:20]:
+                f.write(f"- {citation}\n")
+        else:
+            f.write("No data citations (DOIs) detected.\n\n")
+        
+        # Download scripts
+        f.write("#### Data Download Scripts\n\n")
+        if all_download_scripts:
+            unique_scripts = list(set(all_download_scripts))
+            f.write(f"Found {len(unique_scripts)} download/fetch scripts:\n\n")
+            for script in unique_scripts:
+                f.write(f"- `{script}`\n")
+        else:
+            f.write("No download scripts detected.\n\n")
+        
+        # Data README files
+        f.write("#### Data Directory README Files\n\n")
+        if all_data_readmes:
+            unique_readmes = list(set(all_data_readmes))
+            f.write(f"Found {len(unique_readmes)} README files in data directories:\n\n")
+            for readme in unique_readmes:
+                f.write(f"- `{readme}`\n")
+        else:
+            f.write("No data directory README files detected.\n\n")
+        
+        # Dataset references (legacy)
+        f.write("\n### Dataset References (Legacy)\n\n")
         all_datasets = []
         for da in data_analyses:
             all_datasets.extend(da.get('dataset_references', []))
