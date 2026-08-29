@@ -29,7 +29,7 @@ Foundation utilities used across all infrastructure modules.
 - Retry logic
 - Performance monitoring
 
-**See:** [Core Module Documentation](../infrastructure/core/AGENTS.md)
+**See:** [Core Module Documentation](../../infrastructure/core/AGENTS.md)
 
 ## LLM Module
 
@@ -43,7 +43,7 @@ Local LLM integration for research assistance.
 - Output validation
 - Review generation
 
-**See:** [LLM Module Documentation](../infrastructure/llm/AGENTS.md)
+**See:** [LLM Module Documentation](../../infrastructure/llm/AGENTS.md)
 
 ## Literature Module
 
@@ -57,7 +57,7 @@ Literature search and management functionality.
 - Summarization system
 - Meta-analysis tools
 
-**See:** [Literature Module Documentation](../infrastructure/literature/AGENTS.md)
+**See:** [Literature Module Documentation](../../infrastructure/literature/AGENTS.md)
 
 ## Validation Module
 
@@ -68,7 +68,7 @@ PDF validation and text extraction utilities.
 - Automatic fallback between PDF parsing libraries
 - Error handling for PDF issues
 
-**See:** [Validation Module Documentation](../infrastructure/validation/AGENTS.md)
+**See:** [Validation Module Documentation](../../infrastructure/validation/AGENTS.md)
 
 ## Module Dependencies
 
