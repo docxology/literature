@@ -12,10 +12,9 @@ data/
 ├── references.bib        # BibTeX bibliography file
 ├── summarization_progress.json # Summarization progress tracking (auto-generated)
 ├── failed_downloads.json # Failed PDF download attempts (for retry, auto-generated)
-├── pdfs/                 # Downloaded PDF files (named by citation key)
-│   ├── smith2024machine.pdf
-│   ├── jones2023deep.pdf
-│   └── ...
+├── pdfs/                 # Downloaded PDFs (named by citation key) — created
+│   │                     #   on demand by download operations; not present in
+│   │                     #   the current checkout (verified 2026-08-29)
 ├── summaries/            # LLM-generated paper summaries
 │   ├── smith2024machine_summary.md
 │   ├── jones2023deep_summary.md
@@ -243,22 +242,17 @@ python3 -m infrastructure.literature.core.cli library export --output my_library
 
 ## Data Management
 
-### Library Statistics
+### Library Statistics (verified 2026-08-29)
 
-Current library contains **hundreds of papers** across multiple domains:
+`library.json` currently holds **456 entries** (`"count": 456`, last updated
+`2025-12-16T05:10:15Z`). Per-domain counts are not tracked by the library
+schema; recompute from `entries[*].source` if needed rather than trusting
+older prose claims.
 
-| Domain | Count | Sources |
-|--------|-------|---------|
-| Machine Learning | 185 | arXiv, Semantic Scholar |
-| Physics | 142 | arXiv, CrossRef |
-| Biology | 98 | PubMed, Semantic Scholar |
-| Computer Science | 74 | arXiv, Semantic Scholar |
+### Quality Metrics (unverified — recompute from library.json before citing)
 
-### Quality Metrics
-
-- **Metadata**: 100% of entries have title, authors, year
-- **DOI coverage**: 87% of papers have Digital Object Identifiers
-- **PDF availability**: 91% of papers have downloaded PDFs
+- Metadata/DOI/PDF coverage percentages below are legacy prose claims, not
+  recomputed from the current `library.json`:
 - **Citation keys**: All unique and BibTeX-compatible
 - **Source diversity**: Multiple academic databases represented
 

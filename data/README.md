@@ -58,10 +58,10 @@ Papers are automatically included in `99_references.md` during PDF compilation.
 
 ## Statistics
 
-- **Total Papers**: Hundreds
-- **PDF Downloads**: 91% success rate
-- **DOI Coverage**: 87%
-- **Sources**: arXiv, Semantic Scholar, CrossRef, PubMed
+- **Total Papers**: 456 (from `library.json` `"count"`, verified 2026-08-29)
+- **PDF Downloads / DOI coverage**: legacy percentages (91% / 87%) are
+  (unverified) — recompute from `library.json` entries before citing
+- **Sources**: arXiv, Semantic Scholar, CrossRef, PubMed (per library schema)
 
 ## See Also
 
