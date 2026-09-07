@@ -1,139 +1,55 @@
-# Scripts Module
+# AGENTS: `scripts/` — Thin Orchestrator Scripts
 
-## Purpose
+## Thin-Orchestrator Contract
 
-The scripts module contains orchestrator scripts that coordinate literature processing workflows. These are thin orchestrators that delegate business logic to infrastructure modules.
+- Scripts carry **only** orchestration: path bootstrap
+  (`sys.path.insert(0, str(Path(__file__).parent.parent))`), argparse, and a
+  single delegated call into an `infrastructure/` entrypoint.
+- Business, data, plot, and analysis logic lives in
+  `infrastructure/literature/` (importable and tested) — **never** inline in a
+  script. Shared logic lives once in `infrastructure/`; scripts must not
+  copy-paste it (e.g. the GitHub-URL pattern lives only in
+  `infrastructure/literature/tool_analysis/common.py`).
+- Scripts that import other scripts are prohibited: promote the shared logic
+  into `infrastructure/` and have both call it.
+- Bash modules in this directory are sourced libraries for `run_literature.sh`
+  (`bash_utils.sh`, `literature_*.sh`); they must stay delegation layers over
+  `infrastructure.literature` / `infrastructure.llm` and document their
+  purpose in their header block.
+- Reusable script behavior must be covered by tests in `tests/` (see
+  `tests/infrastructure/literature/test_tool_analysis.py` for the analysis
+  scripts).
 
-## Components
+## Script Inventory
 
-### Literature Search Orchestrator (`literature_search.py`)
+| Script | Delegates to | Inputs | Outputs |
+|--------|--------------|--------|---------|
+| `literature_search.py` | `infrastructure.literature.workflow.orchestrator`, `infrastructure.literature.summarization`, `infrastructure.llm` | env config, `data/library.json` | `data/references.bib`, `data/library.json`, `data/pdfs/`, `data/summaries/`, `data/extracted_text/`, `data/output/` |
+| `analyze_specific_tools.py` | `tool_analysis/specific_tools.py::run` | `data/extracted_text/*.txt` | `data/plots/specific_tools_analysis.txt`, `specific_tools_by_paper.csv`, `specific_tools_frequency.csv`, `specific_tools.html` |
+| `analyze_tool_cooccurrence.py` | `tool_analysis/cooccurrence.py::run` | `data/extracted_text/*.txt` | `data/plots/tool_cooccurrence_analysis.txt`, `tool_cooccurrence_matrix.csv`, `tool_combinations.csv`, `tool_cooccurrence.html` |
+| `analyze_tools_and_languages_over_time.py` | `tool_analysis/over_time.py::run` | `data/extracted_text/*.txt` | `data/plots/tools_and_languages_summary.md`, `languages_over_time.csv`, `tools_over_time.csv`, `tools_and_languages_over_time.html` |
+| `plot_language_trends.py` | `tool_analysis/language_trends.py::run` | `data/extracted_text/*.txt` | `data/plots/language_usage_by_year.csv`, `language_usage_long.csv`, `language_trends.html`, `language_statistics.txt` |
+| `extract_github_repos.py` | `tool_analysis/repo_extractor.py::run` | `data/extracted_text/*.txt`, `data/library.json` | `data/github_repositories.md` |
+| `compare_analysis_runs.py` | `tool_analysis/run_comparison.py::run` | `data/extracted_text/*.txt`, `data/plots/tools_and_languages_summary.md` | `data/plots/analysis_comparison.md` |
+| `re_extract_incomplete.py` | `infrastructure.literature.pdf.re_extract::check_and_re_extract_incomplete_files` | `data/library.json`, `data/pdfs/` | updated `data/extracted_text/` |
+| `bash_utils.sh` | (sourced library) color codes, logging, choice parsing | — | terminal output |
+| `literature_helpers.sh` | (sourced library) timed command execution, env validation, Python invocation, Ollama checks | env config | terminal output |
+| `literature_errors.sh` | (sourced library) error context extraction, safe command execution | — | terminal output |
+| `literature_operations.sh` | (sourced library) pipeline/meta-analysis/individual operations; delegates to `infrastructure.literature` + `infrastructure.llm` via `literature_helpers.sh` Python invocations | env config, `data/` | library, PDFs, summaries, plots |
+| `literature_menu.sh` | (sourced library) interactive menu rendering and routing | — | terminal output |
+| `literature_cli.sh` | (sourced library) non-interactive CLI mode and help | argv | terminal output |
+| `literature_testing.sh` | (sourced library) pytest/coverage execution and result parsing | `tests/` | terminal output, coverage |
 
-Main orchestrator for literature search and summarization operations:
+(`tool_analysis/*` is shorthand for
+`infrastructure/literature/tool_analysis/`.)
 
-**Modes:**
-- **Search mode**: Search for papers with configurable keywords and limits
-- **Summarize mode**: Generate summaries for existing PDFs in library
-- **Download mode**: Download PDFs for existing library entries
-- **Extract text mode**: Extract text from PDFs
-- **Meta-analysis mode**: Run meta-analysis on library
-- **Cleanup mode**: Clean up library entries
-- **LLM operations mode**: Multi-paper LLM operations (reviews, comparisons, etc.)
+## Design Contract
 
-**Features:**
-- Interactive keyword input
-- Progress tracking
-- Parallel summarization support
-- Error handling
-- Environment-based configuration
-
-### Bash Utilities (`bash_utils.sh`)
-
-Shared bash utilities for script orchestration:
-- Logging functions
-- Error handling
-- Progress display
-- Common operations
-
-## Usage Examples
-
-### Search for Papers
-
-```bash
-# Interactive search
-python3 scripts/literature_search.py --search
-
-# Search with specific keywords
-python3 scripts/literature_search.py --search --keywords "machine learning,deep learning"
-
-# Search with custom limit
-python3 scripts/literature_search.py --search --limit 50 --keywords "optimization"
-```
-
-### Generate Summaries
-
-```bash
-# Summarize existing PDFs
-python3 scripts/literature_search.py --summarize
-
-# Search and summarize
-python3 scripts/literature_search.py --search --summarize
-```
-
-### Download PDFs
-
-```bash
-# Download PDFs for existing entries
-python3 scripts/literature_search.py --download-only
-```
-
-### Meta-Analysis
-
-```bash
-# Run standard meta-analysis on existing library (no embeddings, no Ollama required)
-python3 scripts/literature_search.py --meta-analysis
-
-# Run meta-analysis with embeddings on existing library (requires Ollama)
-python3 scripts/literature_search.py --meta-analysis --with-embeddings
-```
-
-**Note**: Meta-analysis works only with existing library data. It does not search, download, or extract.
-Use `--search-only`, `--download-only`, or `--extract-text` for those operations.
-
-### Multi-paper LLM Operations
-
-```bash
-# Generate literature review
-python3 scripts/literature_search.py --llm-operation review
-
-# Science communication
-python3 scripts/literature_search.py --llm-operation communication
-
-# Comparative analysis
-python3 scripts/literature_search.py --llm-operation compare
-```
-
-## Configuration
-
-### Environment Variables
-
-```bash
-# Search settings
-export LITERATURE_DEFAULT_LIMIT=25
-export LITERATURE_SOURCES=arxiv,semanticscholar
-
-# Summarization settings
-export MAX_PARALLEL_SUMMARIES=1
-export LLM_SUMMARIZATION_TIMEOUT=600
-
-# Logging
-export LOG_LEVEL=1  # 0=DEBUG, 1=INFO, 2=WARN, 3=ERROR
-```
-
-## Output Structure
-
-```
-data/
-├── references.bib              # BibTeX entries
-├── library.json                # JSON index
-├── summarization_progress.json # Progress tracking
-├── pdfs/                       # Downloaded PDFs
-├── summaries/                  # AI-generated summaries
-├── extracted_text/            # Extracted PDF text
-└── output/                    # Meta-analysis outputs
-```
-
-## Error Handling
-
-The orchestrator provides:
-- Graceful error handling
-- Progress persistence
-- Retry logic for transient failures
-- Detailed error messages
-
-## See Also
-
-- [`README.md`](README.md) - Quick reference
-- [`../infrastructure/literature/AGENTS.md`](../infrastructure/literature/AGENTS.md) - Literature module documentation
-- [`literature_search.py`](literature_search.py) - Implementation
-
-
+- No script may implement analysis, parsing, aggregation, or plotting logic
+  inline; add it to the owning `infrastructure/` module and delegate.
+- Analysis entrypoints are the `run(...)` functions of
+  `infrastructure/literature/tool_analysis/*.py`; scripts pass CLI flags
+  through as parameters.
+- Defaults preserve the historical behavior: input `data/extracted_text/`,
+  outputs under `data/plots/` (repository report at
+  `data/github_repositories.md`).
