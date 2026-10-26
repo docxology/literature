@@ -31,10 +31,10 @@ literature/
 │   │   ├── progress.py             # Progress tracking
 │   │   └── ...
 │   ├── llm/                        # LLM integration (duplicated)
-│   │   ├── core.py                 # LLM client
-│   │   ├── templates.py            # Prompt templates
+│   │   ├── core/                   # LLM client
+│   │   ├── templates/              # Prompt templates
 │   │   └── ...
-│   └── literature/                 # Literature-specific modules
+│   ├── literature/                 # Literature-specific modules
 │       ├── core/                   # Core search functionality
 │       ├── sources/                # API adapters (arXiv, Semantic Scholar, etc.)
 │       ├── pdf/                    # PDF handling
@@ -43,6 +43,7 @@ literature/
 │       ├── summarization/          # AI summarization
 │       ├── meta_analysis/           # Meta-analysis tools
 │       └── ...
+│   └── validation/                 # PDF validation and text extraction
 ├── tests/                          # Test suite
 │   └── infrastructure/
 │       ├── core/                   # Core tests (filtered)
