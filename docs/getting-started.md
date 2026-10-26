@@ -14,7 +14,7 @@ Quick start guide for the Literature Search and Management System.
 
 ```bash
 # Clone the repository
-git clone <your-repository-url>
+git clone https://github.com/docxology/literature.git
 cd literature
 
 # Install dependencies

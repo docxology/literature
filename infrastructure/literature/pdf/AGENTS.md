@@ -270,7 +270,7 @@ Total attempts are limited by `max_url_attempts_per_pdf` (default: 8).
 ### Missing PDF Libraries
 
 If you see "No PDF parsing library available":
-- Install one of: `pdfplumber`, `pypdf`, or `PyPDF2`
+- Install one of: `pdfplumber` or `pypdf`
 - `pypdf>=5.0` should be installed automatically with the project
 - If missing, try: `pip install -e .` or `pip install pypdf`
 - For best quality, install: `pip install pdfplumber`

@@ -102,7 +102,7 @@ flowchart TB
 
 ```bash
 # Clone the repository
-git clone <your-repository-url>
+git clone https://github.com/docxology/literature.git
 cd literature
 
 # Install dependencies

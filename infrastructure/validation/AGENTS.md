@@ -10,7 +10,7 @@ The validation module provides PDF text extraction functionality needed by the l
 
 Extracts text content from PDF files with automatic fallback:
 - **Text extraction**: Extracts all text from PDF files
-- **Multi-library support**: Tries libraries in order: pdfplumber → pypdf → PyPDF2
+- **Multi-library support**: Tries libraries in order: pdfplumber → pypdf
 - **Warning suppression**: Suppresses harmless pypdf warnings
 - **Error handling**: Error handling for PDF issues
 - **Fallback logic**: Automatically tries alternative libraries if one fails
@@ -23,8 +23,7 @@ The validation module uses environment variables for configuration:
 
 The module automatically tries PDF parsing libraries in order:
 1. `pdfplumber` (recommended for higher quality)
-2. `pypdf` (modern PyPDF2 replacement)
-3. `PyPDF2` (legacy library)
+2. `pypdf` (modern, maintained parser)
 
 At least one of these libraries must be installed. The module will automatically use the first available library.
 
@@ -70,8 +69,7 @@ except PDFValidationError as e:
 
 The module supports multiple PDF parsing libraries with automatic fallback:
 - **pdfplumber** (recommended): Higher quality extraction, tries first
-- **pypdf**: Modern PyPDF2 replacement, tries second
-- **PyPDF2**: Legacy library, tries third
+- **pypdf**: Modern, maintained parser, tries second
 
 At least one of these libraries must be installed. The module will automatically use the first available library in the order listed above.
 
@@ -85,8 +83,6 @@ uv pip install pdfplumber
 uv pip install -e ".[pdf]"
 
 # pypdf is included in project dependencies (installed automatically)
-# Or install legacy PyPDF2
-pip install PyPDF2
 ```
 
 **Note:** `pdfplumber` is now available as an optional dependency group `[pdf]` in `pyproject.toml`. 

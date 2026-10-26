@@ -79,31 +79,14 @@ def extract_text_from_pdf(pdf_path: Path) -> str:
     except ImportError:
         pass
     except Exception as e:
-        logger.warning(f"pypdf extraction failed: {e}, trying PyPDF2...")
-
-    # Try PyPDF2 (legacy)
-    try:
-        import PyPDF2
-        text_parts = []
-        with open(pdf_path, 'rb') as f:
-            pdf_reader = PyPDF2.PdfReader(f)
-            for page in pdf_reader.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text_parts.append(page_text)
-        return '\n'.join(text_parts)
-    except ImportError:
-        pass
-    except Exception as e:
-        logger.warning(f"PyPDF2 extraction failed: {e}")
+        logger.warning(f"pypdf extraction failed: {e}")
 
     # No PDF library available
     raise PDFValidationError(
-        "No PDF parsing library available. Install one of: pdfplumber, pypdf, or PyPDF2.\n"
+        "No PDF parsing library available. Install one of: pdfplumber or pypdf.\n"
         "Installation commands:\n"
         "  pip install pdfplumber  # Recommended: best quality extraction\n"
         "  pip install pypdf        # Included in project dependencies\n"
-        "  pip install PyPDF2       # Legacy option\n"
         "\n"
         "Note: pypdf>=5.0 should be installed automatically with this project. "
         "If you see this error, try: pip install -e . or pip install pypdf"

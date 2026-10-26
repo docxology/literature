@@ -189,6 +189,6 @@ When adding new documentation:
 - [Getting Started Guide](getting-started.md) - Quick start guide
 - [Architecture Overview](architecture.md) - System architecture and design
 - [Root AGENTS.md](../AGENTS.md) - System documentation
-- [Module Documentation](../../infrastructure/) - Detailed module documentation
+- [Module Documentation](../infrastructure/) - Detailed module documentation
 
 

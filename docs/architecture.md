@@ -101,7 +101,7 @@ Literature search and management:
 ### Validation Module (`infrastructure/validation/`)
 
 PDF validation and text extraction:
-- **PDF Text Extraction**: Multi-library support (pdfplumber, pypdf, PyPDF2)
+- **PDF Text Extraction**: Multi-library support (pdfplumber, pypdf)
 - **Automatic Fallback**: Tries libraries in order if one fails
 - **Error Handling**: Error handling for PDF issues
 

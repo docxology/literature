@@ -315,7 +315,7 @@ def extract_manuscript_text(pdf_path: str) -> str:
     """Extract text from a PDF manuscript.
     
     Attempts to extract text using available PDF parsing libraries.
-    Supports PyPDF2, pdfplumber, and pypdf as optional dependencies.
+    Supports pdfplumber and pypdf as optional dependencies.
     
     Args:
         pdf_path: Path to the PDF file
@@ -370,27 +370,11 @@ def extract_manuscript_text(pdf_path: str) -> str:
     except ImportError:
         pass
     except Exception as e:
-        logger.warning(f"pypdf extraction failed: {e}, trying PyPDF2...")
-    
-    # Try PyPDF2 (legacy)
-    try:
-        import PyPDF2
-        text_parts = []
-        with open(pdf_file, 'rb') as f:
-            pdf_reader = PyPDF2.PdfReader(f)
-            for page in pdf_reader.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text_parts.append(page_text)
-        return "\n\n".join(text_parts)
-    except ImportError:
-        pass
-    except Exception as e:
-        logger.warning(f"PyPDF2 extraction failed: {e}")
+        logger.warning(f"pypdf extraction failed: {e}")
     
     # No PDF library available
     raise ValueError(
-        "No PDF parsing library available. Install one of: pdfplumber, pypdf, or PyPDF2. "
+        "No PDF parsing library available. Install one of: pdfplumber or pypdf. "
         "Example: pip install pdfplumber"
     )
 

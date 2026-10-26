@@ -36,7 +36,7 @@ class TestExtractManuscriptText:
         original_import = __import__
         
         def mock_import(name, *args, **kwargs):
-            if name in ('pdfplumber', 'pypdf', 'PyPDF2'):
+            if name in ('pdfplumber', 'pypdf'):
                 raise ImportError(f"No module named '{name}'")
             return original_import(name, *args, **kwargs)
         
