@@ -3,7 +3,7 @@
 > Local-only path under `projects/ongoing/DataTools/` — matched by the
 > root `.gitignore` rule `projects/*`; never commit. This `literature/`
 > subtree is its own git repo — read-only for doc agents (no git writes).
-> Repo-wide policy: see `/Volumes/external_drive/Git/template/projects/ongoing/AGENTS.md`.
+> Repo-wide policy: the shared policy for template projects is maintained in the template repository, not restated here.
 
 ## What this is
 
