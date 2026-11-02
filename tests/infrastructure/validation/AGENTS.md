@@ -1,8 +1,6 @@
 # AGENTS.md — `literature/tests/infrastructure/validation`
 
-> Local-only path under `projects/ongoing/DataTools/` — matched by the
-> root `.gitignore` rule `projects/*`; never commit. The `literature/`
-> subtree is its own git repo — read-only for doc agents (no git writes).
+> The `literature/` subtree is its own git repo — read-only for doc agents (no git writes).
 > Repo-wide policy: the shared policy for template projects is maintained in the template repository, not restated here.
 
 ## What this is
