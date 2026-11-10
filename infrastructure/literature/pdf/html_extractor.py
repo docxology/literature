@@ -284,15 +284,15 @@ class HTMLTextExtractor:
             html_str = html_content.decode('utf-8', errors='ignore')
             
             # Remove script and style tags
-            html_str = re.sub(r'<script[^>]*>.*?</script>', '', html_str, flags=re.DOTALL | re.IGNORECASE)
-            html_str = re.sub(r'<style[^>]*>.*?</style>', '', html_str, flags=re.DOTALL | re.IGNORECASE)
-            html_str = re.sub(r'<nav[^>]*>.*?</nav>', '', html_str, flags=re.DOTALL | re.IGNORECASE)
-            html_str = re.sub(r'<header[^>]*>.*?</header>', '', html_str, flags=re.DOTALL | re.IGNORECASE)
-            html_str = re.sub(r'<footer[^>]*>.*?</footer>', '', html_str, flags=re.DOTALL | re.IGNORECASE)
-            html_str = re.sub(r'<aside[^>]*>.*?</aside>', '', html_str, flags=re.DOTALL | re.IGNORECASE)
+            html_str = re.sub(r'<script\b[^>]*>.*?</script\b[^>]*>', '', html_str, flags=re.DOTALL | re.IGNORECASE)
+            html_str = re.sub(r'<style\b[^>]*>.*?</style\b[^>]*>', '', html_str, flags=re.DOTALL | re.IGNORECASE)
+            html_str = re.sub(r'<nav\b[^>]*>.*?</nav\b[^>]*>', '', html_str, flags=re.DOTALL | re.IGNORECASE)
+            html_str = re.sub(r'<header\b[^>]*>.*?</header\b[^>]*>', '', html_str, flags=re.DOTALL | re.IGNORECASE)
+            html_str = re.sub(r'<footer\b[^>]*>.*?</footer\b[^>]*>', '', html_str, flags=re.DOTALL | re.IGNORECASE)
+            html_str = re.sub(r'<aside\b[^>]*>.*?</aside\b[^>]*>', '', html_str, flags=re.DOTALL | re.IGNORECASE)
             
             # Extract title
-            title_match = re.search(r'<title[^>]*>(.*?)</title>', html_str, re.IGNORECASE | re.DOTALL)
+            title_match = re.search(r'<title\b[^>]*>(.*?)</title\b[^>]*>', html_str, re.IGNORECASE | re.DOTALL)
             text_parts = []
             if title_match:
                 title = self._strip_html_tags(title_match.group(1))
