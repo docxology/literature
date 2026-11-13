@@ -344,7 +344,7 @@ See [Data Formats Reference](docs/reference/data-formats.md) for data structure 
 
 ## Requirements
 
-- Python >= 3.10
+- Python >= 3.11
 - Ollama (for LLM summarization) - optional but recommended → [LLM Operations Guide](docs/guides/llm-operations.md)
 - Internet connection (for API searches and PDF downloads)
 
