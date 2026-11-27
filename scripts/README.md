@@ -10,6 +10,7 @@ call into an `infrastructure/` entrypoint. Testable logic lives in
 
 | Script | Purpose | Delegates to | Command |
 |--------|---------|--------------|---------|
+| `replay_manuscript_fixture.py` | Build the synthetic metadata example and figure | `infrastructure.literature.library.replay_fixture` | `python scripts/replay_manuscript_fixture.py` |
 | `literature_search.py` | Search / download / extract / summarize / meta-analysis / LLM operations | `infrastructure.literature.workflow.orchestrator`, `infrastructure.literature.summarization`, `infrastructure.llm` | `python3 scripts/literature_search.py --search --keywords "machine learning"` |
 | `analyze_specific_tools.py` | Library/framework/tool usage analysis across repos | `infrastructure.literature.tool_analysis.specific_tools` | `python3 scripts/analyze_specific_tools.py` |
 | `analyze_tool_cooccurrence.py` | Tool co-occurrence and Jaccard similarity analysis | `infrastructure.literature.tool_analysis.cooccurrence` | `python3 scripts/analyze_tool_cooccurrence.py` |
