@@ -5,7 +5,10 @@ Welcome to the documentation for the Literature Search and Management System. Th
 ## Documentation Structure
 
 ### Getting Started
-- **[Getting Started Guide](getting-started.md)** - Quick start guide
+- [Getting started](getting-started.md) for local installation and library commands.
+- [Offline reproduction](reproduction.md) for a synthetic metadata fixture, tests, and the pinned PDF and HTML build.
+- [Methods manuscript](manuscript/README.md) for source files and the evidence boundary.
+- [Backlog](backlog.md) for the prior implementation review.
 - **[Architecture Overview](architecture.md)** - System architecture and design
 
 ### Module Documentation

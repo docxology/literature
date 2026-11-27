@@ -4,24 +4,21 @@ Quick start guide for the Literature Search and Management System.
 
 ## Installation
 
-### Prerequisites
-
-- Python >= 3.10
-- Ollama (optional, for AI summarization)
-- Internet connection (for API searches)
-
-### Setup
+Install Python 3.11 or newer and [uv](https://docs.astral.sh/uv/).
+From the repository root, create the project environment and install dependencies:
 
 ```bash
-# Clone the repository
-git clone https://github.com/docxology/literature.git
-cd literature
-
-# Install dependencies
-uv sync
-# or
-pip install -e .
+uv sync --extra dev
+uv run python -m infrastructure.literature.core --help
 ```
+
+The checkout's default Python version is set in `.python-version`. The
+repository does not commit a lockfile. A fresh environment can resolve
+different compatible packages.
+
+Use the [offline reproduction guide](reproduction.md) for a first run in a
+fixture-only workspace. Search, download, and summarization are separate
+workflows with their own service and data requirements.
 
 ## Quick Start
 
