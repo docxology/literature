@@ -1040,5 +1040,5 @@ The research employs gradient-based optimization techniques...
 
 - [`README.md`](README.md) - Quick reference guide
 - [`../AGENTS.md`](../AGENTS.md) - Infrastructure layer documentation
-- [`../../scripts/06_llm_review.py`](../../scripts/06_llm_review.py) - Manuscript review script
+- [`review/generator.py`](review/generator.py) - Manuscript review implementation
 - [Ollama Documentation](https://ollama.ai/)

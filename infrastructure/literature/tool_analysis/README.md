@@ -32,5 +32,5 @@ run_specific_tools(output_dir="data/plots")
 
 ## See Also
 
-- [`../../scripts/README.md`](../../scripts/README.md) - thin orchestrators that call `run()` entry points
+- [`../../../scripts/README.md`](../../../scripts/README.md) - thin orchestrators that call `run()` entry points
 - [`../AGENTS.md`](../AGENTS.md) - Literature module overview
